@@ -1,0 +1,550 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+
+* {
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* Logo */
+.top-login-logo {
+    width: 600px;
+    animation: fadeIn 1s ease;
+    position: absolute;
+    top: 20px;
+    z-index: 10;
+}
+
+/* Background */
+.login-background {
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    padding: 20px;
+    overflow-y: auto; /* Allow scrolling on small devices */
+}
+
+/* Container for login form */
+/* Container */
+.login-container {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    max-width: 540px;
+    margin: 0 auto;
+}
+
+/* Left side form wrapper */
+.login-left {
+    width: 100%;
+}
+
+/* Make sure the glass card padding is consistent */
+.glass {
+    padding: 40px 30px;
+}
+
+/* Responsive tweaks */
+@media (max-width: 768px) {
+    .login-container {
+        max-width: 90%;
+        padding: 0 10px;
+    }
+    .glass {
+        padding: 30px 20px;
+    }
+    .login-header h2 {
+        font-size: 24px;
+    }
+}
+
+/* Glass card */
+.glass {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 40px;
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    max-width: 510px;
+    width: 100%;
+    text-align: center;
+    animation: slideIn 0.6s ease forwards;
+    opacity: 0;
+}
+
+/* Header */
+.login-header h2 {
+    font-weight: 700;
+    font-size: 28px;
+    margin-bottom: 10px;
+    background: linear-gradient(90deg, #0072ff, #00c6ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Animated subtext */
+.lightning-text span {
+    display: inline-block;
+    opacity: 0;
+    animation: lightningFade 0.6s forwards;
+    color: #333;
+}
+
+/* Form styling */
+.input-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.input-group label {
+    color: #0072ff;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.input-icon-wrapper {
+    position: relative;
+}
+
+.input-icon-wrapper input {
+    width: 100%;
+    padding: 12px 40px 12px 15px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #000;
+    font-size: 14px;
+    transition: 0.3s;
+}
+
+.input-icon-wrapper input::placeholder {
+    color: rgba(0, 0, 0, 0.5);
+}
+
+.input-icon-wrapper input:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* Toggle eye icon */
+.toggle-password {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #0072ff;
+    font-size: 16px;
+}
+
+/* Login button */
+.login-button {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(90deg, #00c6ff 0%, #0072ff 100%);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    transition: background 0.3s ease;
+    cursor: pointer;
+}
+
+.login-button:hover {
+    background: linear-gradient(90deg, #0072ff 0%, #00c6ff 100%);
+    box-shadow: 0 4px 15px rgba(0, 114, 255, 0.5);
+}
+
+/* Error message */
+.error-message {
+    color: #ff6b6b;
+    font-size: 14px;
+    margin-top: -10px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+/* ---------------------- */
+/* 📱 Responsive Styling  */
+/* ---------------------- */
+
+/* Tablets */
+@media (max-width: 1024px) {
+    .top-login-logo {
+        width: 400px;
+        top: 60px;
+    }
+
+    .glass {
+        max-width: 460px;
+        padding: 30px;
+    }
+}
+
+/* Mobile devices */
+@media (max-width: 768px) {
+    .top-login-logo {
+        width: 300px;
+        top: 40px;
+    }
+
+    .glass {
+        max-width: 90%;
+        padding: 25px;
+    }
+
+    .login-header h2 {
+        font-size: 24px;
+    }
+
+    .input-group label {
+        font-size: 14px;
+    }
+
+    .input-icon-wrapper input {
+        font-size: 13px;
+        padding: 10px 36px 10px 12px;
+    }
+
+    .login-button {
+        font-size: 15px;
+        padding: 10px;
+    }
+
+    .toggle-password {
+        font-size: 14px;
+    }
+}
+
+/* Very small screens */
+@media (max-width: 480px) {
+    .top-login-logo {
+        width: 220px;
+        top: 30px;
+    }
+
+    .login-header h2 {
+        font-size: 22px;
+    }
+
+    .glass {
+        padding: 20px;
+    }
+
+    .lightning-text {
+        font-size: 13px;
+    }
+
+    .input-group label {
+        font-size: 13px;
+    }
+
+    .input-icon-wrapper input {
+        font-size: 12px;
+    }
+
+    .login-button {
+        font-size: 14px;
+    }
+}
+
+/* Ultra small phones */
+@media (max-width: 360px) {
+    .top-login-logo {
+        width: 180px;
+    }
+
+    .glass {
+        padding: 15px;
+    }
+
+    .input-group label {
+        font-size: 13px;
+    }
+
+    .input-icon-wrapper input {
+        font-size: 11px;
+    }
+
+    .login-button {
+        font-size: 13px;
+        padding: 9px;
+    }
+}
+
+/* Animations */
+@keyframes lightningFade {
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(50px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Fade slide helper classes */
+.fade-slide {
+    animation: slideIn 0.6s ease forwards;
+    opacity: 0;
+}
+
+.fade-slide.delay-1 {
+    animation-delay: 0.3s;
+}
+
+.fade-slide.delay-2 {
+    animation-delay: 0.6s;
+}
+/* Custom breakpoint for screens around 1260px width */
+/* Custom breakpoint for screens around 1260px width */
+@media (min-width: 1200px) and (max-width: 1300px) and (max-height: 650px) {
+    /* Make logo bigger */
+    .top-login-logo {
+        width: 550px; /* increased from 450px */
+        top: 20px;    /* a little closer to top */
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+    }
+
+    /* Adjust glass card max-width and padding */
+    .glass {
+        max-width: 480px;
+        padding: 30px 25px;
+    }
+
+    /* Login container max-width */
+    .login-container {
+        max-width: 90%;
+        padding: 0 15px;
+    }
+
+    /* Header font size */
+    .login-header h2 {
+        font-size: 26px;
+    }
+
+    /* Slightly adjust input label size */
+    .input-group label {
+        font-size: 15px;
+    }
+
+    /* Inputs font size & padding */
+    .input-icon-wrapper input {
+        font-size: 14px;
+        padding: 12px 38px 12px 14px;
+    }
+
+    /* Button size */
+    .login-button {
+        font-size: 16px;
+        padding: 12px;
+    }
+
+    /* Toggle password icon size */
+    .toggle-password {
+        font-size: 16px;
+    }
+}
+/* Laptop screens: make login smaller and nicely centered */
+@media (max-width: 1440px) and (min-width: 1025px) {
+    .login-container {
+        max-width: 420px;  /* smaller width than default 540px */
+        padding: 0 15px;
+    }
+
+    .glass {
+        max-width: 400px;  /* smaller form width */
+        padding: 30px 25px; /* a bit less padding */
+        font-size: 14px;    /* slightly smaller font base */
+    }
+
+    /* Optional: slightly smaller headers */
+    .login-header h2 {
+        font-size: 24px;
+    }
+
+    /* Adjust input labels & inputs */
+    .input-group label {
+        font-size: 14px;
+    }
+
+    .input-icon-wrapper input {
+        font-size: 13px;
+        padding: 10px 35px 10px 12px;
+    }
+
+    /* Smaller login button */
+    .login-button {
+        font-size: 15px;
+        padding: 10px;
+    }
+}
+/* Base styles remain unchanged */
+
+/* Laptop responsive styling for login page and logo */
+@media (max-width: 1440px) and (min-width: 1024px) {
+    /* Logo scaling */
+    .top-login-logo {
+        width: 450px;       /* smaller than desktop but still big */
+        top: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        position: absolute;
+        z-index: 10;
+    }
+
+    /* Login container smaller and centered */
+    .login-container {
+        max-width: 420px;   /* smaller container */
+        padding: 0 20px;
+        margin: 0 auto;
+        display: flex;
+        justify-content: center;
+        width: 100%;
+    }
+
+    /* Glass card smaller and padding reduced */
+    .glass {
+        max-width: 400px;
+        padding: 30px 25px;
+        font-size: 14px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        animation: slideIn 0.6s ease forwards;
+        opacity: 1; /* ensure visible */
+    }
+
+    /* Login header */
+    .login-header h2 {
+        font-size: 24px;
+    }
+
+    /* Labels smaller */
+    .input-group label {
+        font-size: 14px;
+    }
+
+    /* Inputs smaller */
+    .input-icon-wrapper input {
+        font-size: 13px;
+        padding: 10px 36px 10px 12px;
+    }
+
+    /* Login button smaller */
+    .login-button {
+        font-size: 15px;
+        padding: 10px;
+    }
+
+    /* Toggle password icon size */
+    .toggle-password {
+        font-size: 14px;
+    }
+}
+
+/* Default: Large screen - logo outside the card */
+.desktop-logo {
+  display: block;
+  width: 500px;
+  max-width: 90%;
+  margin: 30px auto;
+}
+
+/* Mobile logo hidden by default */
+.mobile-logo-wrapper {
+  display: none;
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.mobile-login-logo {
+  width: 150px;
+  max-width: 80%;
+  height: auto;
+}
+
+/* On medium and small screens (laptop/tablet and below), switch logos */
+@media screen and (max-width: 1024px),
+       screen and (max-height: 750px) {
+  .desktop-logo {
+    display: none;
+  }
+
+  .mobile-logo-wrapper {
+    display: block;
+  }
+
+  .login-container {
+    padding-top: 20px;
+  }
+
+  .mobile-login-logo {
+    width: 300px;      /* Adjust for smaller space */
+  }
+}@media screen and (max-width: 1387px),
+       screen and (max-height: 750px) {
+  .desktop-logo {
+    display: none;
+  }
+
+  .mobile-logo-wrapper {
+    display: block;
+  }
+
+  .login-container {
+    padding-top: 20px;
+  }
+
+  .mobile-login-logo {
+    width: 300px;
+  }
+}
+@media screen and (max-width: 1435px),
+       screen and (max-height: 750px) {
+  .desktop-logo {
+    display: none;
+  }
+
+  .mobile-logo-wrapper {
+    display: block;
+  }
+
+  .login-container {
+    padding-top: 20px;
+  }
+
+  .mobile-login-logo {
+    width: 300px;
+  }
+}

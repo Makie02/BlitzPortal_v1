@@ -1,0 +1,59 @@
+/* RolePermissionForm.css */
+
+.role-form-container {
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 12px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+}
+
+.role-card {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease-in-out;
+  min-height: 260px;
+}
+
+.role-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.form-check-input {
+  transition: all 0.25s ease;
+  border: 2px solid #adb5bd;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.2rem;
+}
+
+.form-check-input:checked {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  transform: scale(1.15);
+  box-shadow: 0 0 6px rgba(13, 110, 253, 0.5);
+}
+
+.form-check-input:focus {
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

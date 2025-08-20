@@ -1,0 +1,136 @@
+.rentals-container {
+  padding: 20px;
+  font-family: 'Segoe UI', sans-serif;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+h1, h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #2d3748;
+}
+
+.form-step {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.form-card {
+  background-color: #f7fafc;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+}
+
+.form-grid {
+  display: grid;
+  gap: 15px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.input-group label {
+  margin-bottom: 5px;
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 14px;
+}
+
+.input-group input {
+  padding: 8px;
+  border: 1px solid #ccc;
+  color: #2d3748;
+  border-radius: 6px;
+}
+
+.footer {
+  text-align: center;
+  margin-top: 30px;
+}
+
+.next-btn {
+  background-color: #3182ce;
+  color: white;
+  padding: 12px 30px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.next-btn:hover {
+  background-color: #2b6cb0;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.table-header button {
+  padding: 10px 20px;
+  background-color: #38a169;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.rentals-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rentals-table th,
+.rentals-table td {
+  padding: 8px;
+  border: 1px solid #ccc;
+  text-align: left;
+}
+
+.rentals-table input {
+  width: 100%;
+  padding: 6px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+@media (max-width: 768px) {
+  .table-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.footer {
+  margin-top: 20px;
+  text-align: left;
+}
+
+.back-btn {
+  background-color: #4b72f3;
+  color: #ffffff;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}

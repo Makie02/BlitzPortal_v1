@@ -1,0 +1,158 @@
+.filters-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.filters-select,
+.filters-input {
+  padding: 6px 10px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .filters-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters-select,
+  .filters-input {
+    width: 100%;
+  }
+
+  .filters-container label {
+    width: 100%;
+  }
+}
+
+
+.filters-input,
+.filters-select {
+  padding: 10px 15px;
+  flex-grow: 1;
+  min-width: 150px;
+  max-width: 300px;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  border: 2px solid #ccc;
+  border-radius: 6px;
+  background-color: #fff;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+  outline: none;
+  appearance: none; /* Remove default arrow on some browsers */
+  cursor: pointer;
+}
+
+/* Add subtle arrow styling for selects (optional) */
+.filters-select {
+  background-image:
+    url("data:image/svg+xml;utf8,<svg fill='%23666' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+  padding-right: 40px;
+}
+
+/* On hover & focus: animate border color and add subtle shadow + scale */
+.animated-input:hover,
+.animated-select:hover,
+.animated-input:focus,
+.animated-select:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 8px rgba(0, 123, 255, 0.5);
+  transform: scale(1.03);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+/* Responsive tweaks */
+@media (max-width: 480px) {
+  .filters-input,
+  .filters-select {
+    max-width: 100%;
+    margin-bottom: 10px;
+  }
+}
+.filters-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* default layout */
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+}
+
+.filters-select,
+.filters-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.filters-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 1rem;
+  grid-column: span 1; /* default span */
+}
+
+/* Responsive: on small screens (phones) */
+@media (max-width: 600px) {
+  .filters-container {
+    grid-template-columns: repeat(2, 1fr); /* 2 columns on phones */
+  }
+
+  .filters-checkbox {
+    grid-column: span 2; /* checkbox spans both columns for better layout */
+  }
+}
+.search-checkbox-container {
+  display: flex;
+  flex-direction: column; /* stacked by default */
+  gap: 8px;
+  width: 100%;
+}
+
+.filters-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.filters-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+/* On small screens (phones), make it side-by-side */
+@media (max-width: 600px) {
+  .search-checkbox-container {
+    flex-direction: row; /* horizontal */
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .filters-input {
+    flex: 1; /* take all space on left */
+    margin-right: 12px; /* spacing */
+  }
+  
+  .filters-checkbox {
+    flex-shrink: 0; /* don’t shrink */
+  }
+}
