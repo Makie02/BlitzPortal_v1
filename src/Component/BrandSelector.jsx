@@ -188,7 +188,7 @@ const handleDelete = async (id) => {
 return (
   <div className="brand-selector-wrapper">
     <div className="brand-grid-container">
-      <h1 className="brand-header">Principals</h1>
+      <h1 className="brand-header">Brands</h1>
       <div className="brand-grid">
         {brandNames.map((brand) => (
           <button
