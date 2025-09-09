@@ -6,7 +6,7 @@ import {
   FaUser, FaTasks, FaTags, FaCreditCard, FaBuilding,
   FaMoneyBillAlt, FaSitemap, FaHome, FaBriefcase,
   FaCheckCircle, FaChartPie, FaUsers, FaBook, FaBalanceScale,
-  FaRulerCombined, FaUserShield, FaPassport, FaStar
+  FaRulerCombined, FaUserShield, FaPassport, FaStar,FaUserTie
 } from "react-icons/fa";
 
 import { supabase } from "../supabaseClient";
