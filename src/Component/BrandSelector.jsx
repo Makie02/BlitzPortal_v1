@@ -21,10 +21,10 @@ function BrandSelector() {
     const { data, error } = await supabase
       .from("References")
       .select("name")
-      .eq("reference_type", "Principals");
+      .eq("reference_type", "Distributor");
 
     if (error) {
-      console.error("Error fetching Principals:", error);
+      console.error("Error fetching Distributor:", error);
       setBrandNames([]);
     } else if (isMounted) {
       const names = data.map((item) => item.name || item); // if `item` is just a string
