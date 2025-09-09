@@ -11,9 +11,9 @@ import {
 
 import { supabase } from "../supabaseClient";
 const referenceItems = [
-  "AccountType", "GroupAccount", "Customer", "CustomerGroup", "Activity", "BrandDetail", "ChargeTo", "Company", "CostDetail",
+  "AccountType", "GroupAccount", "Customer", "CustomerGroup", "Distributor","Activity", "BrandDetail", "ChargeTo", "Company", "CostDetail",
   "Department", "HomeText", "Position", "ResultOfActivity", "SalesDivision",
-  "SalesGroup", "UnitOfMeasurement", "UserRole", "Principals", "Promoted-SKU/s" // <-- Added here
+  "SalesGroup", "UnitOfMeasurement", "UserRole",  "Promoted-SKU/s" // <-- Added here
 ];
 
 
@@ -37,7 +37,8 @@ const iconMap = {
   Brands: <FaPassport />,
   Customer: <FaUser />,
   CustomerGroup: <FaUsers />,
-  "Promoted-SKU/s": <FaStar />
+  "Promoted-SKU/s": <FaStar />,
+  Distributor: <FaUserTie />, 
 
 };
 
