@@ -2275,20 +2275,15 @@ const RegularVisaForm = () => {
                                             className="form-control"
                                             defaultValue=""
                                             onChange={(e) => {
-                                                if (e.target.value === "continue") {
-                                                    setShowCoverVisaCode(true);
-                                                    setFormData(prev => ({ ...prev, coverVisaCode: "" })); // <-- clear previous code
-                                                }
+                                                if (e.target.value === "continue") setShowCoverVisaCode(true);
                                             }}
                                         >
                                             <option value="">-- Select to Continue --</option>
                                             <option value="continue">Yes, Show COVER PWP CODE</option>
                                         </select>
-
                                     </div>
                                 )}
 
-                                {/* Step 2: Show Input if selected */}
                                 {formData.isPartOfCoverVisa && showCoverVisaCode && (
                                     <div className="form-group mt-3" style={{ position: 'relative' }}>
                                         <label className="form-label text-uppercase">Cover PWP Code</label>
@@ -2298,7 +2293,7 @@ const RegularVisaForm = () => {
                                             className="form-control"
                                             value={formData.coverVisaCode || ''}
                                             placeholder="Select Cover Visa Code"
-                                            onClick={() => setShowCoverModal(true)} // ✅ Only open modal on input click
+                                            onClick={() => setShowCoverModal(true)}
                                             style={{
                                                 cursor: 'pointer',
                                                 paddingRight: '40px',
@@ -2306,8 +2301,7 @@ const RegularVisaForm = () => {
                                                 transition: 'border-color 0.3s',
                                             }}
                                         />
-
-                                        {/* Optional: Green checkmark */}
+                                        {/* Checkmark */}
                                         {formData.coverVisaCode && (
                                             <span
                                                 style={{

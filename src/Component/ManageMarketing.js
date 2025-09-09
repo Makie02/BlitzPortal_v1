@@ -143,216 +143,216 @@ function ManageMarketing() {
     }
   };
 
-  const statusToCollection = {
-    Regular: "Regular_Visa",
-    Corporate: "Corporate_Visa",
-    Cover: "Cover_Visa",
-  };
+const statusToCollection = {
+  Regular: "Regular_Visa",
+  Corporate: "Corporate_Visa",
+  Cover: "Cover_Visa",
+};
 
-  const deleteVisaFromSupabase = async (visaCode, setVisaData) => {
-    if (!visaCode) return;
+const deleteVisaFromSupabase = async (visaCode, setVisaData) => {
+  if (!visaCode) return;
 
-    let table = null;
+  let table = null;
 
-    if (visaCode.startsWith("R")) {
-      table = statusToCollection.Regular;
+  if (visaCode.startsWith("R")) {
+    table = statusToCollection.Regular;
 
-      // Delete related Regular Visa data
-      try {
-        const { error: attachmentsError } = await supabase
-          .from("Regular_Visa_Attachments")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (attachmentsError) {
-          console.warn("Failed to delete from Regular_Visa_Attachments:", attachmentsError.message);
-        }
-
-        const { error: costDetailsError } = await supabase
-          .from("Regular_Visa_CostDetails")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (costDetailsError) {
-          console.warn("Failed to delete from Regular_Visa_CostDetails:", costDetailsError.message);
-        }
-
-        const { error: volumePlanError } = await supabase
-          .from("Regular_Visa_VolumePlan")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (volumePlanError) {
-          console.warn("Failed to delete from Regular_Visa_VolumePlan:", volumePlanError.message);
-        }
-      } catch (relatedDeleteError) {
-        console.warn("Error deleting related regular visa data:", relatedDeleteError.message);
-      }
-    } else if (visaCode.startsWith("C")) {
-      table = statusToCollection.Corporate;
-
-      // Delete related Corporate Visa Details and Attachments
-      try {
-        const { error: detailsError } = await supabase
-          .from("Corporate_Visa_Details")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (detailsError) {
-          console.warn("Failed to delete from Corporate_Visa_Details:", detailsError.message);
-        }
-
-        const { error: attachmentsError } = await supabase
-          .from("Corporate_Visa_Attachments")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (attachmentsError) {
-          console.warn("Failed to delete from Corporate_Visa_Attachments:", attachmentsError.message);
-        }
-      } catch (relatedDeleteError) {
-        console.warn("Error deleting related corporate visa data:", relatedDeleteError.message);
-      }
-    } else if (visaCode.startsWith("V")) {
-      table = statusToCollection.Cover;
-
-      // Delete related Cover Visa data
-      try {
-        const { error: attachmentsError } = await supabase
-          .from("Cover_Visa_Attachments")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (attachmentsError) {
-          console.warn("Failed to delete from Cover_Visa_Attachments:", attachmentsError.message);
-        }
-
-        const { error: costDetailsError } = await supabase
-          .from("Cover_Visa_CostDetails")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (costDetailsError) {
-          console.warn("Failed to delete from Cover_Visa_CostDetails:", costDetailsError.message);
-        }
-
-        const { error: volumePlanError } = await supabase
-          .from("Cover_Visa_VolumePlan")
-          .delete()
-          .eq("visaCode", visaCode);
-
-        if (volumePlanError) {
-          console.warn("Failed to delete from Cover_Visa_VolumePlan:", volumePlanError.message);
-        }
-      } catch (relatedDeleteError) {
-        console.warn("Error deleting related cover visa data:", relatedDeleteError.message);
-      }
-    } else {
-      await Swal.fire("Error", "Unrecognized visa code format.", "error");
-      return;
-    }
-
+    // Delete related Regular Visa data
     try {
-      // Delete main visa record
-      const { error } = await supabase
-        .from(table)
+      const { error: attachmentsError } = await supabase
+        .from("Regular_Visa_Attachments")
         .delete()
         .eq("visaCode", visaCode);
 
-      if (error) {
-        console.error("Supabase delete error:", error);
-        await Swal.fire("Error", "Failed to delete visa from Supabase.", "error");
-        return;
+      if (attachmentsError) {
+        console.warn("Failed to delete from Regular_Visa_Attachments:", attachmentsError.message);
       }
 
-      // ===== Handle amount_badget history and deletion =====
-      // 1. Fetch amount_badget records for visaCode
-      const { data: amountBadgetRecords, error: fetchError } = await supabase
-        .from("amount_badget")
-        .select("*")
-        .eq("visacode", visaCode);
+      const { error: costDetailsError } = await supabase
+        .from("Regular_Visa_CostDetails")
+        .delete()
+        .eq("visaCode", visaCode);
 
-      if (fetchError) {
-        console.error("Failed to fetch amount_badget records:", fetchError);
-      } else if (amountBadgetRecords && amountBadgetRecords.length > 0) {
-        for (const record of amountBadgetRecords) {
-          const historyEntry = {
-            original_id: record.id,
-            visacode: record.visacode,
-            amountbadget: record.amountbadget,
-            createduser: record.createduser,
-            createdate: record.createdate,
-            remainingbalance: record.remainingbalance,
-            RegularID: null, // Adjust if you have related RegularID
-            action_type: "DELETE",
-            action_user: JSON.parse(localStorage.getItem("loggedInUser"))?.UserID || "unknown",
-            action_date: new Date().toISOString(),
-            TotalCost: null, // Add if applicable
-          };
-
-          const { error: historyError } = await supabase
-            .from("amount_badget_history")
-            .insert(historyEntry);
-
-          if (historyError) {
-            console.warn("Failed to insert into amount_badget_history:", historyError.message);
-          }
-        }
-
-        // 2. Delete from amount_badget after history insert
-        const { error: deleteBadgetError } = await supabase
-          .from("amount_badget")
-          .delete()
-          .eq("visacode", visaCode);
-
-        if (deleteBadgetError) {
-          console.error("Failed to delete from amount_badget:", deleteBadgetError);
-        } else {
-          console.log(`✅ Deleted amount_badget records for visaCode: ${visaCode}`);
-        }
+      if (costDetailsError) {
+        console.warn("Failed to delete from Regular_Visa_CostDetails:", costDetailsError.message);
       }
 
-      await Swal.fire("Deleted", `Visa ${visaCode} deleted successfully.`, "success");
+      const { error: volumePlanError } = await supabase
+        .from("Regular_Visa_VolumePlan")
+        .delete()
+        .eq("visaCode", visaCode);
 
-      if (typeof setVisaData === "function") {
-        setVisaData((prev) => prev.filter((item) => item.visaCode !== visaCode));
+      if (volumePlanError) {
+        console.warn("Failed to delete from Regular_Visa_VolumePlan:", volumePlanError.message);
+      }
+    } catch (relatedDeleteError) {
+      console.warn("Error deleting related regular visa data:", relatedDeleteError.message);
+    }
+  } else if (visaCode.startsWith("C")) {
+    table = statusToCollection.Corporate;
+
+    // Delete related Corporate Visa Details and Attachments
+    try {
+      const { error: detailsError } = await supabase
+        .from("Corporate_Visa_Details")
+        .delete()
+        .eq("visaCode", visaCode);
+
+      if (detailsError) {
+        console.warn("Failed to delete from Corporate_Visa_Details:", detailsError.message);
       }
 
-      // Log RecentActivity
-      try {
-        const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-        const userId = currentUser?.UserID || "unknown";
+      const { error: attachmentsError } = await supabase
+        .from("Corporate_Visa_Attachments")
+        .delete()
+        .eq("visaCode", visaCode);
 
-        const ipRes = await fetch("https://api.ipify.org?format=json");
-        const { ip } = await ipRes.json();
+      if (attachmentsError) {
+        console.warn("Failed to delete from Corporate_Visa_Attachments:", attachmentsError.message);
+      }
+    } catch (relatedDeleteError) {
+      console.warn("Error deleting related corporate visa data:", relatedDeleteError.message);
+    }
+  } else if (visaCode.startsWith("V")) {
+    table = statusToCollection.Cover;
 
-        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-        const geo = await geoRes.json();
+    // Delete related Cover Visa data
+    try {
+      const { error: attachmentsError } = await supabase
+        .from("Cover_Visa_Attachments")
+        .delete()
+        .eq("visaCode", visaCode);
 
-        const activityLog = {
-          userId: userId,
-          device: navigator.userAgent || "Unknown Device",
-          location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
-          ip,
-          time: new Date().toISOString(),
-          action: `Deleted visa with code: ${visaCode}`,
+      if (attachmentsError) {
+        console.warn("Failed to delete from Cover_Visa_Attachments:", attachmentsError.message);
+      }
+
+      const { error: costDetailsError } = await supabase
+        .from("Cover_Visa_CostDetails")
+        .delete()
+        .eq("visaCode", visaCode);
+
+      if (costDetailsError) {
+        console.warn("Failed to delete from Cover_Visa_CostDetails:", costDetailsError.message);
+      }
+
+      const { error: volumePlanError } = await supabase
+        .from("Cover_Visa_VolumePlan")
+        .delete()
+        .eq("visaCode", visaCode);
+
+      if (volumePlanError) {
+        console.warn("Failed to delete from Cover_Visa_VolumePlan:", volumePlanError.message);
+      }
+    } catch (relatedDeleteError) {
+      console.warn("Error deleting related cover visa data:", relatedDeleteError.message);
+    }
+  } else {
+    await Swal.fire("Error", "Unrecognized visa code format.", "error");
+    return;
+  }
+
+  try {
+    // Delete main visa record
+    const { error } = await supabase
+      .from(table)
+      .delete()
+      .eq("visaCode", visaCode);
+
+    if (error) {
+      console.error("Supabase delete error:", error);
+      await Swal.fire("Error", "Failed to delete visa from Supabase.", "error");
+      return;
+    }
+
+    // ===== Handle amount_badget history and deletion =====
+    // 1. Fetch amount_badget records for visaCode
+    const { data: amountBadgetRecords, error: fetchError } = await supabase
+      .from("amount_badget")
+      .select("*")
+      .eq("visacode", visaCode);
+
+    if (fetchError) {
+      console.error("Failed to fetch amount_badget records:", fetchError);
+    } else if (amountBadgetRecords && amountBadgetRecords.length > 0) {
+      for (const record of amountBadgetRecords) {
+        const historyEntry = {
+          original_id: record.id,
+          visacode: record.visacode,
+          amountbadget: record.amountbadget,
+          createduser: record.createduser,
+          createdate: record.createdate,
+          remainingbalance: record.remainingbalance,
+          RegularID: null, // Adjust if you have related RegularID
+          action_type: "DELETE",
+          action_user: JSON.parse(localStorage.getItem("loggedInUser"))?.UserID || "unknown",
+          action_date: new Date().toISOString(),
+          TotalCost: null, // Add if applicable
         };
 
-        const { error: activityError } = await supabase
-          .from("RecentActivity")
-          .insert(activityLog);
+        const { error: historyError } = await supabase
+          .from("amount_badget_history")
+          .insert(historyEntry);
 
-        if (activityError) {
-          console.warn("Failed to log visa deletion activity:", activityError.message);
+        if (historyError) {
+          console.warn("Failed to insert into amount_badget_history:", historyError.message);
         }
-      } catch (logError) {
-        console.warn("Error logging visa deletion activity:", logError.message);
       }
-    } catch (err) {
-      console.error("Unexpected Supabase error:", err);
-      await Swal.fire("Error", "Unexpected error deleting from Supabase.", "error");
+
+      // 2. Delete from amount_badget after history insert
+      const { error: deleteBadgetError } = await supabase
+        .from("amount_badget")
+        .delete()
+        .eq("visacode", visaCode);
+
+      if (deleteBadgetError) {
+        console.error("Failed to delete from amount_badget:", deleteBadgetError);
+      } else {
+        console.log(`✅ Deleted amount_badget records for visaCode: ${visaCode}`);
+      }
     }
-  };
+
+    await Swal.fire("Deleted", `Visa ${visaCode} deleted successfully.`, "success");
+
+    if (typeof setVisaData === "function") {
+      setVisaData((prev) => prev.filter((item) => item.visaCode !== visaCode));
+    }
+
+    // Log RecentActivity
+    try {
+      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+      const userId = currentUser?.UserID || "unknown";
+
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const { ip } = await ipRes.json();
+
+      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+      const geo = await geoRes.json();
+
+      const activityLog = {
+        userId: userId,
+        device: navigator.userAgent || "Unknown Device",
+        location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
+        ip,
+        time: new Date().toISOString(),
+        action: `Deleted visa with code: ${visaCode}`,
+      };
+
+      const { error: activityError } = await supabase
+        .from("RecentActivity")
+        .insert(activityLog);
+
+      if (activityError) {
+        console.warn("Failed to log visa deletion activity:", activityError.message);
+      }
+    } catch (logError) {
+      console.warn("Error logging visa deletion activity:", logError.message);
+    }
+  } catch (err) {
+    console.error("Unexpected Supabase error:", err);
+    await Swal.fire("Error", "Unexpected error deleting from Supabase.", "error");
+  }
+};
 
 
 
@@ -465,22 +465,6 @@ function ManageMarketing() {
   const [selectedVisa, setSelectedVisa] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalFile, setModalFile] = useState(null);
-
-  useEffect(() => {
-    const fetchApprovalHistory = async () => {
-      const { data, error } = await supabase
-        .from("Approval_History")
-        .select("*");
-
-      if (error) {
-        console.error("Failed to load approval history:", error);
-      } else {
-        setApprovalHistory(data);
-      }
-    };
-
-    fetchApprovalHistory();
-  }, []);
 
   const handleViewDetails = (visa) => {
     if (visa?.visaCode?.startsWith("V2025")) {
@@ -735,77 +719,44 @@ function ManageMarketing() {
                       >
                         <FontAwesomeIcon icon={faSearch} size="lg" />
                       </button>
-                      {(() => {
-                        const latestApproval = approvalHistory
-                          .filter((h) => h.BabyVisaId === item.visaCode)
-                          .sort((a, b) => new Date(b.DateResponded) - new Date(a.DateResponded))[0];
-
-                        const responseLower = latestApproval?.Response?.toLowerCase();
-                        const isBlocked = ["declined", "cancelled", "canceled"].includes(responseLower);
-
-                        // Tooltip if blocked
-                        const blockedTooltip =
-                          responseLower === "declined"
-                            ? "Declined (See Addendum)"
-                            : responseLower === "cancelled" || responseLower === "canceled"
-                              ? "Cancelled (See Addendum)"
-                              : "";
-
-                        return (
-                          <button
-                            onClick={() => {
-                              if (!isBlocked) handleDeleteVisa(item);
-                            }}
-                            title={isBlocked ? blockedTooltip : "Delete "}
-                            disabled={isBlocked}
-                            style={{
-                              border: "none",
-                              background: "none",
-                              cursor: isBlocked ? "not-allowed" : "pointer",
-                              padding: "6px 8px",
-                              color: isBlocked ? "#aaa" : "#d32f2f",
-                              transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                              boxShadow: isBlocked ? "0 0 0 rgba(0,0,0,0)" : "0 4px 6px rgba(0,0,0,0.2)",
-                              borderRadius: "8px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              marginLeft: "8px",
-                              outline: "none",
-                              fontSize: "1rem",
-                              pointerEvents: isBlocked ? "none" : "auto",
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!isBlocked) {
-                                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                                e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!isBlocked) {
-                                e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                                e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                              }
-                            }}
-                            onMouseDown={(e) => {
-                              if (!isBlocked) {
-                                e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                                e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                              }
-                            }}
-                            onMouseUp={(e) => {
-                              if (!isBlocked) {
-                                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                                e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                              }
-                            }}
-                          >
-                            <FontAwesomeIcon icon={faTrash} size="lg" />
-                          </button>
-                        );
-                      })()}
-
-
+                      <button
+                        onClick={() => handleDeleteVisa(item)}
+                        title="Delete Visa"
+                        style={{
+                          border: "none",
+                          background: "none",
+                          cursor: "pointer",
+                          padding: "6px 8px",
+                          color: "#d32f2f",
+                          transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                          boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                          borderRadius: "8px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          marginLeft: "8px",
+                          outline: "none",
+                          fontSize: "1rem",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                          e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                          e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                        }}
+                        onMouseDown={(e) => {
+                          e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                        }}
+                        onMouseUp={(e) => {
+                          e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                          e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
+                        }}
+                      >
+                        <FontAwesomeIcon icon={faTrash} size="lg" />
+                      </button>
                     </td>
                   </tr>
                 ))

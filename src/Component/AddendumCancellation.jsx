@@ -8,7 +8,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import Swal from 'sweetalert2';
 import { faTrash } from "@fortawesome/free-solid-svg-icons";
 import View_Regular_upload from "./View_Regular_upload";
-import '../App.css'
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
   useEffect(() => {
@@ -119,7 +118,7 @@ export default function AddendumCancellation() {
   const [totalCostSum, setTotalCostSum] = useState(null);
 
   useEffect(() => {
-    if (!selectedVisa?.visaCode || selectedVisa?.type !== "Regular Pwp") {
+    if (!selectedVisa?.visaCode || selectedVisa?.type !== "Regular Pwp ") {
       setTotalCostSum(null);
       return;
     }
@@ -142,46 +141,9 @@ export default function AddendumCancellation() {
     fetchTotalCostSum();
   }, [selectedVisa?.visaCode, selectedVisa?.type]);
 
+
   const cancelAddendum = async () => {
-    if (!selectedVisa || !selectedVisa.visaCode) return;
-
-    const visaCode = selectedVisa.visaCode;
-
-    // Handle non-R/V visa codes
-    if (!visaCode.startsWith("R") && !visaCode.startsWith("V")) {
-      return; // Not eligible for cancellation
-    }
-
-    // Determine message based on prefix
-    const confirmationText = visaCode.startsWith("R")
-      ? 'This will cancel the addendum and return the amount to your account.'
-      : 'This will cancel the addendum.';
-
-    // Step 1: Show confirmation alert
-    const confirmResult = await Swal.fire({
-      title: 'Are you sure?',
-      text: confirmationText,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, cancel it',
-      cancelButtonText: 'No, keep it',
-      reverseButtons: true,
-    });
-
-    if (!confirmResult.isConfirmed) return;
-
-    // Step 2: Show 3-second loading
-    await Swal.fire({
-      title: 'Cancelling...',
-      html: 'Please wait while we process the cancellation.',
-      timer: 3000,
-      allowOutsideClick: false,
-      didOpen: () => {
-        Swal.showLoading();
-      },
-    });
-
-    // Step 3: Proceed with cancellation
+    if (!selectedVisa) return;
     setCancelling(true);
     setError(null);
     setSuccessMsg(null);
@@ -192,13 +154,8 @@ export default function AddendumCancellation() {
       const approverId = currentUser?.UserID || "unknown";
       const now = new Date().toISOString();
 
-      // Refund logic only for 'R' type visas
-      if (
-        visaCode.startsWith("R") &&
-        selectedVisa.type === "Regular Pwp" &&
-        selectedVisa.coverVisaCode &&
-        totalCostSum !== null
-      ) {
+      // If Regular Pwp has coverVisaCode, update parent balance
+      if (selectedVisa.type === "Regular Pwp " && selectedVisa.coverVisaCode && totalCostSum !== null) {
         const { data: parentData, error: parentError } = await supabase
           .from("amount_badget")
           .select("id, remainingbalance")
@@ -206,7 +163,9 @@ export default function AddendumCancellation() {
           .order("createdate", { ascending: false })
           .limit(1);
 
-        if (parentError) throw new Error("Failed to fetch parent cover visa balance.");
+        if (parentError) {
+          throw new Error("Failed to fetch parent cover visa balance.");
+        }
 
         const parentEntry = parentData?.[0];
         if (parentEntry) {
@@ -214,22 +173,28 @@ export default function AddendumCancellation() {
 
           const { error: updateError } = await supabase
             .from("amount_badget")
-            .update({ remainingbalance: updatedBalance })
+            .update({
+              remainingbalance: updatedBalance,
+            })
             .eq("id", parentEntry.id);
 
-          if (updateError) throw new Error("Failed to update remaining balance.");
+          if (updateError) {
+            throw new Error("Failed to update remaining balance of cover visa.");
+          }
         }
       }
 
-      // Log to Approval_History
-      const { error: insertError } = await supabase.from("Approval_History").insert([{
-        BabyVisaId: visaCode,
-        ApproverId: approverId,
-        DateResponded: now,
-        Response: "Cancelled",
-        Type: "Cancellation",
-        Notication: false,
-      }]);
+      // Insert into Approval_History
+      const { error: insertError } = await supabase.from("Approval_History").insert([
+        {
+          BabyVisaId: selectedVisa.visaCode || "",
+          ApproverId: approverId,
+          DateResponded: now,
+          Response: "Cancelled",
+          Type: "Cancellation",
+          Notication: false,
+        },
+      ]);
 
       if (insertError) {
         setError("Failed to record cancellation: " + insertError.message);
@@ -237,6 +202,9 @@ export default function AddendumCancellation() {
         setCancelling(false);
         return;
       }
+
+      setSuccessMsg("Addendum cancellation recorded successfully.");
+      setShowMsg(true);
 
       // Log to RecentActivity
       try {
@@ -252,41 +220,24 @@ export default function AddendumCancellation() {
           location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
           ip,
           time: now,
-          action: `Cancelled addendum for ${visaCode}`,
+          action: `Cancelled addendum for ${selectedVisa.visaCode}`,
         };
 
         await supabase.from("RecentActivity").insert(activityLog);
       } catch (activityCatch) {
-        console.warn("Activity logging error:", activityCatch.message);
+        console.warn("RecentActivity logging error:", activityCatch.message);
       }
-
-      // Step 4: Show success message
-      await Swal.fire({
-        icon: 'success',
-        title: 'Cancelled!',
-        text: 'The addendum has been successfully cancelled.',
-        timer: 2000,
-        showConfirmButton: false,
-      });
-
-      // Step 5: Reload page
-      window.location.reload();
-
     } catch (e) {
       setError("An error occurred: " + e.message);
       setShowMsg(true);
-
-      await Swal.fire({
-        icon: 'error',
-        title: 'Error!',
-        text: e.message || "Something went wrong.",
-      });
     }
 
     setCancelling(false);
   };
 
 
+
+  
   useEffect(() => {
     if (!selectedVisa) return;
 
@@ -342,7 +293,7 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
   }
 
   try {
-    // Delete main visa record
+    // Delete from main visa table
     const { error } = await supabase.from(table).delete().eq("visaCode", visaCode);
     if (error) {
       console.error("Supabase delete error:", error);
@@ -350,68 +301,54 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
       return;
     }
 
-    // ✅ Delete related records based on visa type
-    if (table === "Regular_Visa" || table === "RegularUpload") {
-      // Regular-specific deletions
+    // Delete from related tables depending on type
+    const deleteRelatedTables = async (volumePlanTable, costDetailsTable, attachmentsTable = null) => {
       const { error: volumePlanError } = await supabase
-        .from("Regular_Visa_VolumePlan")
+        .from(volumePlanTable)
         .delete()
         .eq("visaCode", visaCode);
+
+      if (volumePlanError) {
+        console.error(`Failed to delete ${volumePlanTable}:`, volumePlanError);
+        await Swal.fire("Error", "Failed to delete volume plan data.", "error");
+        return false;
+      }
 
       const { error: costDetailsError } = await supabase
-        .from("Regular_Visa_CostDetails")
+        .from(costDetailsTable)
         .delete()
         .eq("visaCode", visaCode);
 
-      const { error: attachmentsError } = await supabase
-        .from("Regular_Visa_Attachments")
-        .delete()
-        .eq("visaCode", visaCode);
-
-      if (volumePlanError || costDetailsError || attachmentsError) {
-        console.error("Error deleting Regular Visa related data:", volumePlanError || costDetailsError || attachmentsError);
-        await Swal.fire("Error", "Failed to delete some Regular Visa related data.", "error");
-        return;
+      if (costDetailsError) {
+        console.error(`Failed to delete ${costDetailsTable}:`, costDetailsError);
+        await Swal.fire("Error", "Failed to delete cost details data.", "error");
+        return false;
       }
-    }
 
-    if (table === "Cover_Visa") {
-      // Cover-specific deletions
-      const { error: coverCostError } = await supabase
-        .from("Cover_Visa_CostDetails")
-        .delete()
-        .eq("visaCode", visaCode);
+      if (attachmentsTable) {
+        const { error: attachmentsError } = await supabase
+          .from(attachmentsTable)
+          .delete()
+          .eq("visaCode", visaCode);
 
-      const { error: coverVolumeError } = await supabase
-        .from("Cover_Visa_VolumePlan")
-        .delete()
-        .eq("visaCode", visaCode);
-
-      const { error: coverAttachmentsError } = await supabase
-        .from("Cover_Visa_Attachments")
-        .delete()
-        .eq("visaCode", visaCode);
-
-      if (coverCostError || coverVolumeError || coverAttachmentsError) {
-        console.error("Error deleting Cover Visa related data:", coverCostError || coverVolumeError || coverAttachmentsError);
-        await Swal.fire("Error", "Failed to delete some Cover Visa related data.", "error");
-        return;
+        if (attachmentsError) {
+          console.error(`Failed to delete ${attachmentsTable}:`, attachmentsError);
+          await Swal.fire("Error", "Failed to delete attachments.", "error");
+          return false;
+        }
       }
+
+      return true;
+    };
+
+    // Route deletions
+    if (table === "Regular_Visa" || table === "RegularUpload") {
+      await deleteRelatedTables("Regular_Visa_VolumePlan", "Regular_Visa_CostDetails","Regular_Visa_Attachments");
+    } else if (table === "Cover_Visa") {
+      await deleteRelatedTables("Cover_Visa_VolumePlan", "Cover_Visa_CostDetails", "Cover_Visa_Attachments");
     }
 
-    // ✅ Delete Approval History
-    const { error: approvalHistoryError } = await supabase
-      .from("Approval_History")
-      .delete()
-      .eq("BabyVisaId", visaCode);
-
-    if (approvalHistoryError) {
-      console.error("Failed to delete from Approval_History:", approvalHistoryError);
-      await Swal.fire("Error", "Failed to delete approval history.", "error");
-      return;
-    }
-
-    // ✅ Delete amount_badget and archive to history
+    // Handle amount_badget
     const { data: amountBadgetRecords, error: fetchError } = await supabase
       .from("amount_badget")
       .select("*")
@@ -451,17 +388,18 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
 
       if (deleteBadgetError) {
         console.error("Failed to delete from amount_badget:", deleteBadgetError);
+      } else {
+        console.log(`✅ Deleted amount_badget records for visaCode: ${visaCode}`);
       }
-    }
-
-    // ✅ Remove from UI
-    if (typeof setVisaData === "function") {
-      setVisaData((prev) => prev.filter((item) => item.visaCode !== visaCode));
     }
 
     await Swal.fire("Deleted", `Visa ${visaCode} deleted successfully.`, "success");
 
-    // ✅ Log user action
+    if (typeof setVisaData === "function") {
+      setVisaData((prev) => prev.filter((item) => item.visaCode !== visaCode));
+    }
+
+    // Log recent activity
     try {
       const ipRes = await fetch("https://api.ipify.org?format=json");
       const { ip } = await ipRes.json();
@@ -479,6 +417,7 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
       };
 
       const { error: activityError } = await supabase.from("RecentActivity").insert(activityLog);
+
       if (activityError) {
         console.warn("Failed to log deletion activity:", activityError.message);
       }
@@ -490,7 +429,7 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
     await Swal.fire("Error", "Unexpected error deleting from Supabase.", "error");
   }
 }
-  
+
 
 
 
@@ -532,13 +471,13 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
     if (visa.type === "Regular Upload") {
       setSelectedVisa(visa);
       setCurrentView("regularUploadDetails"); // new view state for RegularUpload
-    } else if (visa?.visaCode?.startsWith("V")) {
+    } else if (visa?.visaCode?.startsWith("V2025")) {
       setSelectedVisa(visa);
       setCurrentView("details");
-    } else if (visa?.visaCode?.startsWith("R")) {
+    } else if (visa?.visaCode?.startsWith("R2025")) {
       setSelectedVisa(visa);
       setCurrentView("regularDetails");
-    } else if (visa?.visaCode?.startsWith("C")) {
+    } else if (visa?.visaCode?.startsWith("C2025")) {
       setSelectedVisa(visa);
       setCurrentView("corporateDetails");
     } else {
@@ -782,7 +721,7 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
             <div>
               <strong style={strongLabelStyle}>Account:</strong> {selectedVisa.account || "N/A"}
             </div>
-            {selectedVisa.type === "Regular Pwp" && (
+            {selectedVisa.type === "Regular Pwp " && (
               <>
                 <div>
                   <strong style={strongLabelStyle}>IS PART OF COVER PWP?:</strong>{" "}
@@ -841,12 +780,7 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
               aria-live="polite"
               aria-busy={cancelling}
               style={{
-                backgroundColor: isCancelled
-                  ? "#9ca3af" // Gray
-                  : cancelling
-                    ? "#dc2626" // Dimmed red
-                    : "#ef4444", // Bright red
-
+                backgroundColor: "#ef4444",
                 color: "#fff",
                 padding: "10px 16px",
                 fontSize: "16px",
@@ -854,32 +788,25 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
                 border: "none",
                 borderRadius: "8px",
                 cursor: cancelling || isCancelled ? "not-allowed" : "pointer",
-                boxShadow: isCancelled
-                  ? "none"
-                  : "0 4px 12px rgba(239, 68, 68, 0.5)",
+                boxShadow: "0 4px 12px rgba(239, 68, 68, 0.5)",
                 flex: "1 1 200px",
                 transition: "background-color 0.3s ease, box-shadow 0.3s ease",
               }}
               onMouseEnter={(e) => {
                 if (!cancelling && !isCancelled) {
-                  e.currentTarget.style.backgroundColor = "#dc2626"; // Darker red
+                  e.currentTarget.style.backgroundColor = "#dc2626";
                   e.currentTarget.style.boxShadow = "0 6px 14px rgba(220, 38, 38, 0.6)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!cancelling && !isCancelled) {
-                  e.currentTarget.style.backgroundColor = "#ef4444"; // Reset to red
+                  e.currentTarget.style.backgroundColor = "#ef4444";
                   e.currentTarget.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.5)";
                 }
               }}
             >
-              {cancelling
-                ? "Cancelling..."
-                : isCancelled
-                  ? "Already Cancelled"
-                  : "Cancel Addendum"}
+              {cancelling ? "Cancelling..." : isCancelled ? "Already Cancelled" : "Cancel Addendum"}
             </button>
-
 
             {/* View Button */}
             <button
@@ -920,66 +847,43 @@ async function deleteVisa({ visaCode, userId, setVisaData }) {
             </button>
 
             {/* Delete Button */}
-            {/* Delete Button with tooltip wrapper */}
-            <div
-              className="tooltip-wrapper"
-              data-tooltip={
-                isCancelled
-                  ? "Delete this cancelled addendum"
-                  : "You must cancel the addendum before deleting"
-              }
+            <button
+              onClick={() => handleDeleteVisa(selectedVisa)}
+              title="Delete Visa"
+              style={{
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+                padding: "10px 12px",
+                color: "#d32f2f",
+                transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                borderRadius: "8px",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1rem",
+                flex: "1 1 60px", // narrower than others, but flexible
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
+              }}
             >
-              <button
-                onClick={() => handleDeleteVisa(selectedVisa)}
-                disabled={!isCancelled}
-                style={{
-                  border: "none",
-                  background: "none",
-                  cursor: isCancelled ? "pointer" : "not-allowed",
-                  padding: "10px 12px",
-                  color: isCancelled ? "#d32f2f" : "#9ca3af", // Red if active, gray if disabled
-                  transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                  boxShadow: isCancelled
-                    ? "0 4px 6px rgba(0,0,0,0.2)"
-                    : "none",
-                  borderRadius: "8px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "1rem",
-                  flex: "1 1 60px",
-                  pointerEvents: isCancelled ? "auto" : "none", // prevent interaction if disabled
-                }}
-                onMouseEnter={(e) => {
-                  if (isCancelled) {
-                    e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                    e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (isCancelled) {
-                    e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                    e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                  }
-                }}
-                onMouseDown={(e) => {
-                  if (isCancelled) {
-                    e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                  }
-                }}
-                onMouseUp={(e) => {
-                  if (isCancelled) {
-                    e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                    e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                  }
-                }}
-              >
-                <FontAwesomeIcon icon={faTrash} style={{ fontSize: "24px" }} />
-              </button>
-            </div>
-
-
+              <FontAwesomeIcon icon={faTrash} style={{ fontSize: "24px" }} />
+            </button>
           </div>
 
 

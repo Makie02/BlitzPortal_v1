@@ -22,11 +22,9 @@ export default function ApprovalsPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function handleRowClick(entry) {
-    setSelectedEntryCode(entry.code);
-    setModalVisaCode(entry.code); // or just use selectedEntryCode for modalVisaCode
-  }
-
+  const handleRowClick = (entry) => {
+    setModalVisaCode(entry.code);
+  };
   const disableModal = () => {
     setModalVisaCode(false);
   };
@@ -446,7 +444,97 @@ export default function ApprovalsPage() {
 
 
 
-  const handleApproveClick = async (entryCode) => {
+const handleApproveClick = async (entryCode) => {
+  const entry = approvals.find((item) => item.code === entryCode);
+  if (!entry || !entry.code) return;
+
+  const dateTime = new Date().toISOString();
+  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+  const userId = currentUser?.UserID || "unknown";
+
+  try {
+    // 1. Insert into Approval_History
+    const { error: supabaseError } = await supabase
+      .from("Approval_History")
+      .insert({
+        BabyVisaId: entry.code,
+        ApproverId: userId,
+        DateResponded: dateTime,
+        Response: "Approved",
+        Type: userType || 'admin',
+        Notication: false,
+        CreatedForm: entry.createdForm,
+      });
+
+    if (supabaseError) {
+      console.error("Supabase insert error:", supabaseError.message);
+      return;
+    }
+
+    // 2. Update Approved + createdate in amount_badget
+    const { error: updateError } = await supabase
+      .from('amount_badget')
+      .update({
+        Approved: true,
+        createdate: dateTime  // ✅ set current date/time here
+      })
+      .eq('visacode', entry.code);
+
+    if (updateError) {
+      console.error("Failed to update amount_badget:", updateError.message);
+    }
+
+    // 3. Log to RecentActivity
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const { ip } = await ipRes.json();
+
+      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+      const geo = await geoRes.json();
+
+      const activity = {
+        userId,
+        device: navigator.userAgent || "Unknown Device",
+        location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+        ip,
+        time: dateTime,
+        action: `Approved the ${entry.code}`,
+      };
+
+      const { error: activityError } = await supabase
+        .from("RecentActivity")
+        .insert(activity);
+
+      if (activityError) {
+        console.error("Activity logging failed:", activityError.message);
+      }
+    } catch (logErr) {
+      console.warn("Activity logging failed:", logErr.message);
+    }
+
+    // 4. Update local state
+    setApprovals((prev) =>
+      prev.map((item) =>
+        item.code === entryCode
+          ? { ...item, status: "Approved", responseDate: dateTime }
+          : item
+      )
+    );
+
+    window.location.reload();
+  } catch (error) {
+    console.error(`Failed to approve ${entry.code}:`, error.message || error);
+  }
+};
+
+
+
+
+
+
+
+
+  const handleDeclineClick = async (entryCode) => {
     const entry = approvals.find((item) => item.code === entryCode);
     if (!entry || !entry.code) return;
 
@@ -462,29 +550,16 @@ export default function ApprovalsPage() {
           BabyVisaId: entry.code,
           ApproverId: userId,
           DateResponded: dateTime,
-          Response: "Approved",
-          Type: userType || 'admin',
+          Response: "Declined",
+          Type: userType || null,
           Notication: false,
-          CreatedForm: entry.createdForm,  // <-- existing
         });
 
       if (supabaseError) {
         console.error("Supabase insert error:", supabaseError.message);
-        return; // exit if history insert fails
       }
 
-      // 2. Update Approved column to true in amount_badget for matching visacode
-      const { error: updateError } = await supabase
-        .from('amount_badget')
-        .update({ Approved: true })
-        .eq('visacode', entry.code);
-
-      if (updateError) {
-        console.error("Failed to update amount_badget Approved:", updateError.message);
-        // You can decide if you want to continue or return here
-      }
-
-      // 3. Log to RecentActivity
+      // 2. Log to RecentActivity
       try {
         const ipRes = await fetch("https://api.ipify.org?format=json");
         const { ip } = await ipRes.json();
@@ -498,7 +573,7 @@ export default function ApprovalsPage() {
           location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
           ip: ip,
           time: dateTime,
-          action: `Approved the ${entry.code}`,
+          action: `Declined the ${entry.code}`,
         };
 
         const { error: activityError } = await supabase
@@ -506,17 +581,17 @@ export default function ApprovalsPage() {
           .insert(activity);
 
         if (activityError) {
-          console.error("Failed to log activity:", activityError.message);
+          console.error("RecentActivity log error:", activityError.message);
         }
       } catch (logErr) {
         console.warn("Activity logging failed:", logErr.message);
       }
 
-      // 4. Update local state
+      // 3. Update UI state and reload
       setApprovals((prevApprovals) =>
         prevApprovals.map((item) =>
           item.code === entryCode
-            ? { ...item, status: "Approved", responseDate: dateTime }
+            ? { ...item, status: "Declined", responseDate: dateTime }
             : item
         )
       );
@@ -524,195 +599,9 @@ export default function ApprovalsPage() {
       window.location.reload();
 
     } catch (error) {
-      console.error(`Failed to approve ${entry.code}:`, error.message || error);
+      console.error(`Failed to decline ${entry.code}:`, error.message);
     }
   };
-  const [selectedEntryCode, setSelectedEntryCode] = useState(null);
-
-useEffect(() => {
-  if (modalVisaCode && selectedEntryCode) {
-    async function fetchAndSaveData() {
-      try {
-        // Fetch totalCostSum from Regular_Visa_CostDetails
-        const { data: costData, error: costError } = await supabase
-          .from("Regular_Visa_CostDetails")
-          .select("totalCostSum")
-          .eq("visaCode", selectedEntryCode)
-          .single();
-
-        if (costError) {
-          console.error("Error fetching totalCostSum:", costError);
-        } else if (costData?.totalCostSum !== undefined) {
-          localStorage.setItem(`totalCostSum_${selectedEntryCode}`, costData.totalCostSum);
-          console.log(`Saved totalCostSum for ${selectedEntryCode}:`, costData.totalCostSum);
-        }
-
-        // Fetch coverVisaCode from Regular_Visa
-        const { data: visaData, error: visaError } = await supabase
-          .from("Regular_Visa")
-          .select("coverVisaCode")
-          .eq("visaCode", selectedEntryCode)
-          .single();
-
-        if (visaError) {
-          console.error("Error fetching coverVisaCode:", visaError);
-        } else if (visaData?.coverVisaCode) {
-          const coverVisaCode = visaData.coverVisaCode;
-          localStorage.setItem(`coverVisaCode_${selectedEntryCode}`, coverVisaCode);
-          console.log(`Saved coverVisaCode for ${selectedEntryCode}:`, coverVisaCode);
-
-          // Fetch remainingbalance from amount_badget based on coverVisaCode
-          const { data: balanceData, error: balanceError } = await supabase
-            .from("amount_badget")
-            .select("remainingbalance")
-            .eq("visacode", coverVisaCode)
-            .order("createdate", { ascending: false })
-            .limit(1);
-
-          if (balanceError) {
-            console.error("Error fetching remainingbalance:", balanceError);
-          } else if (balanceData && balanceData.length > 0) {
-            const remainingBalance = balanceData[0].remainingbalance;
-            localStorage.setItem(`remainingbalance_${coverVisaCode}`, remainingBalance);
-            console.log(`Saved remainingbalance for ${coverVisaCode}:`, remainingBalance);
-          } else {
-            console.warn(`No remainingbalance data found for coverVisaCode ${coverVisaCode}`);
-            localStorage.removeItem(`remainingbalance_${coverVisaCode}`);
-          }
-        } else {
-          localStorage.removeItem(`coverVisaCode_${selectedEntryCode}`);
-          console.warn(`No coverVisaCode found for visaCode ${selectedEntryCode}`);
-        }
-      } catch (err) {
-        console.error("Unexpected error fetching visa data:", err);
-      }
-    }
-
-    fetchAndSaveData();
-  }
-}, [modalVisaCode, selectedEntryCode]);
-
-
-
-const handleDeclineClick = async (entryCode) => {
-  // Confirm decline action
-  const confirmed = window.confirm("Are you sure you want to decline this visa?");
-  if (!confirmed) return;
-
-  // Find the entry
-  const entry = approvals.find((item) => item.code === entryCode);
-  if (!entry) {
-    console.error("Entry not found for code:", entryCode);
-    alert("Visa entry not found.");
-    return;
-  }
-
-  const dateTime = new Date().toISOString();
-  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-  const userId = currentUser?.UserID || "unknown";
-
-  try {
-    // 1. Insert into Approval_History
-    const { error: approvalError } = await supabase
-      .from("Approval_History")
-      .insert({
-        BabyVisaId: entry.code,
-        ApproverId: userId,
-        DateResponded: dateTime,
-        Response: "Declined",
-        Type: userType || null,
-        Notication: false,
-      });
-
-    if (approvalError) {
-      console.error("Approval_History insert error:", approvalError);
-      alert("Failed to record decline action. Please try again.");
-      return;
-    }
-
-    // 2. Log Recent Activity (optional, but good for audit)
-    try {
-      const ipRes = await fetch("https://api.ipify.org?format=json");
-      const { ip } = await ipRes.json();
-
-      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-      const geo = await geoRes.json();
-
-      const activity = {
-        userId,
-        device: navigator.userAgent || "Unknown Device",
-        location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
-        ip,
-        time: dateTime,
-        action: `Declined the visa ${entry.code}`,
-      };
-
-      const { error: activityError } = await supabase.from("RecentActivity").insert(activity);
-      if (activityError) console.error("RecentActivity log error:", activityError);
-    } catch (logErr) {
-      console.warn("Activity logging failed:", logErr.message);
-    }
-
-    // 3. Update parent's remaining balance if conditions met
-    const visaCode = entryCode;
-    const coverVisaCode = localStorage.getItem(`coverVisaCode_${visaCode}`);
-    const totalCostSumStr = localStorage.getItem(`totalCostSum_${visaCode}`);
-    const totalCostSum = totalCostSumStr ? parseFloat(totalCostSumStr) : null;
-
-    if (coverVisaCode && totalCostSum !== null && totalCostSum > 0) {
-      // Fetch the latest parent balance entry
-      const { data: parentData, error: parentError } = await supabase
-        .from("amount_badget")
-        .select("id, remainingbalance")
-        .eq("visacode", coverVisaCode)
-        .order("createdate", { ascending: false })
-        .limit(1);
-
-      if (parentError) {
-        console.error("Failed to fetch parent cover visa balance:", parentError);
-        alert("Failed to update parent's balance due to fetch error.");
-      } else if (parentData && parentData.length > 0) {
-        const parentEntry = parentData[0];
-        const oldBalance = parseFloat(parentEntry.remainingbalance) || 0;
-        const newBalance = oldBalance + totalCostSum;
-
-        // Update the remainingbalance
-        const { error: updateError } = await supabase
-          .from("amount_badget")
-          .update({ remainingbalance: newBalance })
-          .eq("id", parentEntry.id);
-
-        if (updateError) {
-          console.error("Failed to update remaining balance:", updateError);
-          alert("Failed to update parent's remaining balance.");
-        } else {
-          console.log(`Parent balance updated successfully. New balance: ${newBalance}`);
-        }
-      } else {
-        console.warn("No parent entry found to update remaining balance.");
-      }
-    } else {
-      console.log("Skipping parent's balance update: missing coverVisaCode or totalCostSum");
-    }
-
-    // 4. Update UI state
-    setApprovals((prev) =>
-      prev.map((item) =>
-        item.code === entryCode
-          ? { ...item, status: "Declined", responseDate: dateTime }
-          : item
-      )
-    );
-
-    alert("Visa declined successfully.");
-  } catch (err) {
-    console.error(`Failed to decline visa ${entry.code}:`, err);
-    alert(`Failed to decline visa: ${err.message || err}`);
-  }
-};
-
-
-
 
 
 
@@ -745,162 +634,162 @@ const handleDeclineClick = async (entryCode) => {
     );
   };
 
-  const handleDeleteSelected = async () => {
-    try {
-      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-      const userId = currentUser?.UserID || "unknown";
-      const actionUser = currentUser?.name || "unknown";
+const handleDeleteSelected = async () => {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
+    const actionUser = currentUser?.name || "unknown";
 
-      for (const code of selectedRows) {
-        const entry = approvals.find((item) => item.code === code);
-        if (!entry) continue;
+    for (const code of selectedRows) {
+      const entry = approvals.find((item) => item.code === code);
+      if (!entry) continue;
 
-        const prefix = entry.code[0].toUpperCase();
+      const prefix = entry.code[0].toUpperCase();
 
-        let table = "";
-        if (prefix === "R") {
-          table = "Regular_Visa";
-        } else if (prefix === "C") {
-          table = "Corporate_Visa";
-        } else if (prefix === "V") {
-          table = "Cover_Visa";
-        } else {
-          console.warn(`Unrecognized visa code prefix for ${code}`);
-          continue;
-        }
+      let table = "";
+      if (prefix === "R") {
+        table = "Regular_Visa";
+      } else if (prefix === "C") {
+        table = "Corporate_Visa";
+      } else if (prefix === "V") {
+        table = "Cover_Visa";
+      } else {
+        console.warn(`Unrecognized visa code prefix for ${code}`);
+        continue;
+      }
 
-        // 1. Delete related visa sub-tables based on prefix
-        const relatedTables = {
-          R: [
-            "Regular_Visa_Attachments",
-            "Regular_Visa_CostDetails",
-            "Regular_Visa_VolumePlan",
-          ],
-          C: [
-            "Corporate_Visa_Attachments",
-            "Corporate_Visa_Details",
-          ],
-          V: [
-            "Cover_Visa_Attachments",
-            "Cover_Visa_CostDetails",
-            "Cover_Visa_VolumePlan",
-          ],
-        };
+      // 1. Delete related visa sub-tables based on prefix
+      const relatedTables = {
+        R: [
+          "Regular_Visa_Attachments",
+          "Regular_Visa_CostDetails",
+          "Regular_Visa_VolumePlan",
+        ],
+        C: [
+          "Corporate_Visa_Attachments",
+          "Corporate_Visa_Details",
+        ],
+        V: [
+          "Cover_Visa_Attachments",
+          "Cover_Visa_CostDetails",
+          "Cover_Visa_VolumePlan",
+        ],
+      };
 
-        for (const relTable of relatedTables[prefix] || []) {
-          const { error: relErr } = await supabase
-            .from(relTable)
-            .delete()
-            .eq("visaCode", code);
-
-          if (relErr) {
-            console.warn(`Failed to delete from ${relTable}:`, relErr.message);
-          }
-        }
-
-        // 2. Delete the visa main record
-        const { error: visaDeleteError } = await supabase
-          .from(table)
+      for (const relTable of relatedTables[prefix] || []) {
+        const { error: relErr } = await supabase
+          .from(relTable)
           .delete()
           .eq("visaCode", code);
 
-        if (visaDeleteError) {
-          console.error(`Failed to delete visa from ${table}:`, visaDeleteError.message);
-          continue;
+        if (relErr) {
+          console.warn(`Failed to delete from ${relTable}:`, relErr.message);
         }
+      }
 
-        // 3. Fetch related amount_badget record to archive it before delete
-        const { data: amountBadgetData, error: amountFetchError } = await supabase
-          .from("amount_badget")
-          .select("*")
-          .eq("visacode", code)
-          .single();
+      // 2. Delete the visa main record
+      const { error: visaDeleteError } = await supabase
+        .from(table)
+        .delete()
+        .eq("visaCode", code);
 
-        if (amountFetchError) {
-          console.warn("Could not fetch amount_badget record for archiving:", amountFetchError.message);
-        }
+      if (visaDeleteError) {
+        console.error(`Failed to delete visa from ${table}:`, visaDeleteError.message);
+        continue;
+      }
 
-        // 4. Insert into amount_badget_history (archive)
-        if (amountBadgetData) {
-          const {
-            id: original_id,
+      // 3. Fetch related amount_badget record to archive it before delete
+      const { data: amountBadgetData, error: amountFetchError } = await supabase
+        .from("amount_badget")
+        .select("*")
+        .eq("visacode", code)
+        .single();
+
+      if (amountFetchError) {
+        console.warn("Could not fetch amount_badget record for archiving:", amountFetchError.message);
+      }
+
+      // 4. Insert into amount_badget_history (archive)
+      if (amountBadgetData) {
+        const {
+          id: original_id,
+          visacode,
+          amountbadget,
+          createduser,
+          createdate,
+          remainingbalance,
+          RegularID,
+        } = amountBadgetData;
+
+        const { error: historyError } = await supabase
+          .from("amount_badget_history")
+          .insert({
+            original_id,
             visacode,
             amountbadget,
             createduser,
             createdate,
             remainingbalance,
             RegularID,
-          } = amountBadgetData;
+            action_type: "DELETE",
+            action_user: actionUser,
+            action_date: new Date().toISOString(),
+            TotalCost: null, // add if applicable
+          });
 
-          const { error: historyError } = await supabase
-            .from("amount_badget_history")
-            .insert({
-              original_id,
-              visacode,
-              amountbadget,
-              createduser,
-              createdate,
-              remainingbalance,
-              RegularID,
-              action_type: "DELETE",
-              action_user: actionUser,
-              action_date: new Date().toISOString(),
-              TotalCost: null, // add if applicable
-            });
-
-          if (historyError) {
-            console.warn("Failed to insert into amount_badget_history:", historyError.message);
-          }
-        }
-
-        // 5. Delete from amount_badget
-        const { error: amountDeleteError } = await supabase
-          .from("amount_badget")
-          .delete()
-          .eq("visacode", code);
-
-        if (amountDeleteError) {
-          console.warn("Failed to delete from amount_badget:", amountDeleteError.message);
-        }
-
-        // 6. Log RecentActivity
-        try {
-          const ipRes = await fetch("https://api.ipify.org?format=json");
-          const { ip } = await ipRes.json();
-
-          const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-          const geo = await geoRes.json();
-
-          const activityLog = {
-            userId: userId,
-            device: navigator.userAgent || "Unknown Device",
-            location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
-            ip,
-            time: new Date().toISOString(),
-            action: `Deleted visa with code: ${code}`,
-          };
-
-          const { error: activityError } = await supabase
-            .from("RecentActivity")
-            .insert(activityLog);
-
-          if (activityError) {
-            console.warn("Failed to log visa deletion activity:", activityError.message);
-          }
-        } catch (logError) {
-          console.warn("Error logging visa deletion activity:", logError.message);
+        if (historyError) {
+          console.warn("Failed to insert into amount_badget_history:", historyError.message);
         }
       }
 
-      // Refresh the approvals list locally (UI)
-      setApprovals((prevApprovals) =>
-        prevApprovals.filter((item) => !selectedRows.includes(item.code))
-      );
-      setSelectedRows([]); // Clear selected rows
-    } catch (error) {
-      console.error("Failed to delete selected entries:", error.message);
+      // 5. Delete from amount_badget
+      const { error: amountDeleteError } = await supabase
+        .from("amount_badget")
+        .delete()
+        .eq("visacode", code);
+
+      if (amountDeleteError) {
+        console.warn("Failed to delete from amount_badget:", amountDeleteError.message);
+      }
+
+      // 6. Log RecentActivity
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activityLog = {
+          userId: userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
+          ip,
+          time: new Date().toISOString(),
+          action: `Deleted visa with code: ${code}`,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activityLog);
+
+        if (activityError) {
+          console.warn("Failed to log visa deletion activity:", activityError.message);
+        }
+      } catch (logError) {
+        console.warn("Error logging visa deletion activity:", logError.message);
+      }
     }
-  };
+
+    // Refresh the approvals list locally (UI)
+    setApprovals((prevApprovals) =>
+      prevApprovals.filter((item) => !selectedRows.includes(item.code))
+    );
+    setSelectedRows([]); // Clear selected rows
+  } catch (error) {
+    console.error("Failed to delete selected entries:", error.message);
+  }
+};
 
 
   return (

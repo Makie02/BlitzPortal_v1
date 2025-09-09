@@ -71,7 +71,7 @@ const coverVisaRecordsData = [
 
 
 function RecordsPage() {
-    const [activeTab, setActiveTab] = useState("Regular");
+    const [activeTab, setActiveTab] = useState("visa");
 
     const [selectedDetail, setSelectedDetail] = useState(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
@@ -86,7 +86,7 @@ function RecordsPage() {
     // Get current page data depending on activeTab
     const getData = () => {
         switch (activeTab) {
-            case "Regular":
+            case "visa":
                 return visaRecordsData;
 
             case "coverVisa":
@@ -99,75 +99,75 @@ function RecordsPage() {
 
 
 
-    const [currentDatas, setCurrentDatas] = useState([]);
+const [currentDatas, setCurrentDatas] = useState([]);
 
-    useEffect(() => {
-        const fetchAllData = async () => {
-            // Fetch Regular_Visa
-            const { data: visaData, error: visaError } = await supabase.from('Regular_Visa').select('*');
-            if (visaError) {
-                console.error('Error fetching Regular_Visa:', visaError);
-                return;
-            }
+useEffect(() => {
+  const fetchAllData = async () => {
+    // Fetch Regular_Visa
+    const { data: visaData, error: visaError } = await supabase.from('Regular_Visa').select('*');
+    if (visaError) {
+      console.error('Error fetching Regular_Visa:', visaError);
+      return;
+    }
 
-            // Fetch RegularUpload
-            const { data: uploadData, error: uploadError } = await supabase.from('RegularUpload').select('*');
-            if (uploadError) {
-                console.error('Error fetching RegularUpload:', uploadError);
-                return;
-            }
+    // Fetch RegularUpload
+    const { data: uploadData, error: uploadError } = await supabase.from('RegularUpload').select('*');
+    if (uploadError) {
+      console.error('Error fetching RegularUpload:', uploadError);
+      return;
+    }
 
-            // Format Regular_Visa data
-            const formattedVisaData = (visaData || []).map(row => ({
-                id: row.id,
-                visaCode: row.visaCode || 'N/A',
-                visaTitle: row.visaTitle || 'N/A',
-                visaType: row.visaType || 'N/A',
-                company: row.company || 'N/A',
-                principal: row.principal || 'N/A',
-                brand: row.brand || 'N/A',
-                status: row.status || (row.approved ? 'Approved' : row.declined ? 'Declined' : 'Pending'),
-                approver: row.approver || 'N/A',
-                ownerName: row.ownerName || 'N/A',
-                dateCreated: row.created_at ? row.created_at.split('T')[0] : '—',
-                // add other fields you need from Regular_Visa
-                source: 'Regular_Visa',  // mark source
-            }));
+    // Format Regular_Visa data
+    const formattedVisaData = (visaData || []).map(row => ({
+      id: row.id,
+      visaCode: row.visaCode || 'N/A',
+      visaTitle: row.visaTitle || 'N/A',
+      visaType: row.visaType || 'N/A',
+      company: row.company || 'N/A',
+      principal: row.principal || 'N/A',
+      brand: row.brand || 'N/A',
+      status: row.status || (row.approved ? 'Approved' : row.declined ? 'Declined' : 'Pending'),
+      approver: row.approver || 'N/A',
+      ownerName: row.ownerName || 'N/A',
+      dateCreated: row.created_at ? row.created_at.split('T')[0] : '—',
+      // add other fields you need from Regular_Visa
+      source: 'Regular_Visa',  // mark source
+    }));
 
-            // Format RegularUpload data
-            const formattedUploadData = (uploadData || []).map(row => ({
-                id: row.id,
-                visaCode: row.visaCode || 'N/A',
-                company: row.company || 'N/A',
-                principal: row.principal || 'N/A',
-                brand: row.brand || 'N/A',
-                accountType: row.accountType || 'N/A',
-                account: row.account || 'N/A',
-                activity: row.activity || 'N/A',
-                visaType: row.visaType || 'N/A',
-                Notification: row.Notification || false,
-                objective: row.objective || '',
-                promoScheme: row.promoScheme || '',
-                activityDurationFrom: row.activityDurationFrom ? new Date(row.activityDurationFrom).toLocaleDateString() : '',
-                activityDurationTo: row.activityDurationTo ? new Date(row.activityDurationTo).toLocaleDateString() : '',
-                isPartOfCoverVisa: row.isPartOfCoverVisa || false,
-                coverVisaCode: row.coverVisaCode || '',
-                created_at: row.created_at ? new Date(row.created_at).toLocaleString() : '',
-                CreatedForm: row.CreatedForm || '',
-                supportType: row.supportType || '',
-                Regular: row.Regular || false,
-                UploadRegular: row.UploadRegular || false,
-                RegularPwpCode: row.RegularPwpCode || '',
-                source: 'RegularUpload',  // mark source
-            }));
+    // Format RegularUpload data
+    const formattedUploadData = (uploadData || []).map(row => ({
+      id: row.id,
+      visaCode: row.visaCode || 'N/A',
+      company: row.company || 'N/A',
+      principal: row.principal || 'N/A',
+      brand: row.brand || 'N/A',
+      accountType: row.accountType || 'N/A',
+      account: row.account || 'N/A',
+      activity: row.activity || 'N/A',
+      visaType: row.visaType || 'N/A',
+      Notification: row.Notification || false,
+      objective: row.objective || '',
+      promoScheme: row.promoScheme || '',
+      activityDurationFrom: row.activityDurationFrom ? new Date(row.activityDurationFrom).toLocaleDateString() : '',
+      activityDurationTo: row.activityDurationTo ? new Date(row.activityDurationTo).toLocaleDateString() : '',
+      isPartOfCoverVisa: row.isPartOfCoverVisa || false,
+      coverVisaCode: row.coverVisaCode || '',
+      created_at: row.created_at ? new Date(row.created_at).toLocaleString() : '',
+      CreatedForm: row.CreatedForm || '',
+      supportType: row.supportType || '',
+      Regular: row.Regular || false,
+      UploadRegular: row.UploadRegular || false,
+      RegularPwpCode: row.RegularPwpCode || '',
+      source: 'RegularUpload',  // mark source
+    }));
 
-            // Combine arrays (or keep separate if you want)
-            const combined = [...formattedVisaData, ...formattedUploadData];
-            setCurrentDatas(combined);
-        };
+    // Combine arrays (or keep separate if you want)
+    const combined = [...formattedVisaData, ...formattedUploadData];
+    setCurrentDatas(combined);
+  };
 
-        fetchAllData();
-    }, []);
+  fetchAllData();
+}, []);
 
 
 
@@ -731,30 +731,30 @@ function RecordsPage() {
         }
     };
 
-
     useEffect(() => {
         const fetchRegularVisa = async () => {
-            setLoading(true);
-            const { data, error } = await supabase.from("Regular_Visa").select("*");
+            if (selectedDetail?.RegularID) {
+                const { data, error } = await supabase
+                    .from('Regular_Visa')
+                    .select('*')
+                    .eq('id', selectedDetail.RegularID)
+                    .single();
 
-            if (error) {
-                console.error("Error fetching Regular_Visa:", error);
-                setError(error);
+                if (!error) {
+                    setRegularVisaData(data);
+                } else {
+                    console.error('Error fetching Regular_Visa:', error);
+                    setRegularVisaData(null);
+                }
             } else {
-                const formattedData = data.map((row) => ({
-                    ...row,
-                    status: row.status || (row.approved ? 'Approved' : row.declined ? 'Declined' : 'Pending'),
-                    dateCreated: row.created_at ? row.created_at.split('T')[0] : '—',
-                }));
-                setRegularVisaData(formattedData);
+                setRegularVisaData(null);
             }
-            setLoading(false);
         };
 
-        fetchRegularVisa();
-    }, []);
-
-
+        if (showDetailModal && selectedDetail) {
+            fetchRegularVisa();
+        }
+    }, [showDetailModal, selectedDetail]);
 
     useEffect(() => {
         const loadCoverVisa = async () => {
@@ -1063,9 +1063,9 @@ function RecordsPage() {
                             flexWrap: "wrap",
                         }}
                     >
-                        {["Regular", "coverVisa"].map((tabKey, idx) => {
+                        {["visa", "coverVisa"].map((tabKey, idx) => {
                             const labelMap = {
-                                Regular: "Regular Records",
+                                visa: "Regular Records",
                                 coverVisa: "Cover Records",
                             };
 
@@ -1178,7 +1178,7 @@ function RecordsPage() {
                             `}
                         </style>
 
-                        {activeTab === "Regular" && (
+                        {activeTab === "visa" && (
                             <div
                                 style={{
                                     display: "flex",
@@ -1395,47 +1395,26 @@ function RecordsPage() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {regularVisaData
-                                                .filter((row) => {
-                                                    const matchesSearch =
-                                                        row.visaCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                        row.activity?.toLowerCase().includes(searchTerm.toLowerCase());
-
-                                                    const matchesStatus = statusFilter ? row.status === statusFilter : true;
-
-                                                    const createdDate = new Date(row.created_at);
-                                                    const from = fromDate ? new Date(fromDate) : null;
-                                                    const to = toDate ? new Date(toDate) : null;
-
-                                                    const matchesDate =
-                                                        (!from || createdDate >= from) && (!to || createdDate <= to);
-
-                                                    return matchesSearch && matchesStatus && matchesDate;
-                                                })
-                                                .map((row, index) => (
-                                                    <tr key={index}>
-                                                        <td style={{ textAlign: "center" }}>{row.visaCode}</td>
-                                                        <td style={{ textAlign: "center" }}>{row.visaType}</td>
-                                                        <td style={{ textAlign: "center" }}>{row.principal}</td>
-                                                        <td style={{ textAlign: "center" }}>{row.brand}</td>
-                                                        <td style={{ textAlign: "center" }}>{row.company}</td>
-                                                        <td style={{ textAlign: "center" }}>{row.status}</td>
-                                                        <td style={{ textAlign: "center" }}>
-                                                            {row.dateCreated || "—"}
-                                                        </td>
-                                                        <td style={thTdStyle}>
-                                                            <button
-                                                                style={buttonBaseStyle}
-                                                                onClick={() => handleView(row.visaCode)}
-                                                            >
-                                                                View
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                            {filteredData.map((row, index) => (
+                                                <tr key={index}>
+                                                    <td style={{ textAlign: "center" }}>{row.visaCode}</td>
+                                                    <td style={{ textAlign: "center" }}>{row.visaType}</td>
+                                                    <td style={{ textAlign: "center" }}>{row.principal}</td>
+                                                    <td style={{ textAlign: "center" }}>{row.brand}</td>
+                                                    <td style={{ textAlign: "center" }}>{row.company}</td>
+                                                    <td style={{ textAlign: "center" }}>{row.status}</td>
+                                                    <td style={{ textAlign: "center" }}>{row.dateCreated}</td>
+                                                    <td style={thTdStyle}>
+                                                        <button
+                                                            style={buttonBaseStyle}
+                                                            onClick={() => handleView(row.visaCode)}
+                                                        >
+                                                            View
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
                                         </tbody>
-
-
                                     </table>
                                 </div>
                             </div>

@@ -136,74 +136,74 @@ function ManageVisa() {
     }
   };
 
-  const deleteVisaFromSupabase = async (visaCode) => {
-    if (!visaCode) return;
+const deleteVisaFromSupabase = async (visaCode) => {
+  if (!visaCode) return;
 
-    let table = null;
+  let table = null;
 
-    if (visaCode.startsWith("R")) {
-      table = statusToCollection.Regular;
-    } else if (visaCode.startsWith("C")) {
-      table = statusToCollection.Corporate;
-    } else if (visaCode.startsWith("V")) {
-      table = statusToCollection.Cover;
+  if (visaCode.startsWith("R")) {
+    table = statusToCollection.Regular;
+  } else if (visaCode.startsWith("C")) {
+    table = statusToCollection.Corporate;
+  } else if (visaCode.startsWith("V")) {
+    table = statusToCollection.Cover;
+  } else {
+    await Swal.fire("Error", "Unrecognized visa code format.", "error");
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from(table)
+      .delete()
+      .eq("visaCode", visaCode);
+
+    if (error) {
+      console.error("Supabase delete error:", error);
+      await Swal.fire("Error", "Failed to delete visa from Supabase.", "error");
     } else {
-      await Swal.fire("Error", "Unrecognized visa code format.", "error");
-      return;
-    }
+      // Successfully deleted visa
+      await Swal.fire("Deleted", `Visa ${visaCode} deleted successfully.`, "success");
+      setVisaData(prev => prev.filter(item => item.visaCode !== visaCode));
 
-    try {
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .eq("visaCode", visaCode);
+      // --- Log RecentActivity ---
+      try {
+        // Get current user info from localStorage
+        const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+        const userId = currentUser?.UserID || "unknown";
 
-      if (error) {
-        console.error("Supabase delete error:", error);
-        await Swal.fire("Error", "Failed to delete visa from Supabase.", "error");
-      } else {
-        // Successfully deleted visa
-        await Swal.fire("Deleted", `Visa ${visaCode} deleted successfully.`, "success");
-        setVisaData(prev => prev.filter(item => item.visaCode !== visaCode));
+        // Fetch user IP and geo location
+        const ipRes = await fetch('https://api.ipify.org?format=json');
+        const { ip } = await ipRes.json();
 
-        // --- Log RecentActivity ---
-        try {
-          // Get current user info from localStorage
-          const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-          const userId = currentUser?.UserID || "unknown";
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
 
-          // Fetch user IP and geo location
-          const ipRes = await fetch('https://api.ipify.org?format=json');
-          const { ip } = await ipRes.json();
+        const activityLog = {
+          userId: userId,
+          device: navigator.userAgent || 'Unknown Device',
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip,
+          time: new Date().toISOString(),
+          action: `Deleted visa with code: ${visaCode}`,
+        };
 
-          const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-          const geo = await geoRes.json();
+        const { error: activityError } = await supabase
+          .from('RecentActivity')
+          .insert(activityLog);
 
-          const activityLog = {
-            userId: userId,
-            device: navigator.userAgent || 'Unknown Device',
-            location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
-            ip,
-            time: new Date().toISOString(),
-            action: `Deleted visa with code: ${visaCode}`,
-          };
-
-          const { error: activityError } = await supabase
-            .from('RecentActivity')
-            .insert(activityLog);
-
-          if (activityError) {
-            console.warn('Failed to log visa deletion activity:', activityError.message);
-          }
-        } catch (logError) {
-          console.warn('Error logging visa deletion activity:', logError.message);
+        if (activityError) {
+          console.warn('Failed to log visa deletion activity:', activityError.message);
         }
+      } catch (logError) {
+        console.warn('Error logging visa deletion activity:', logError.message);
       }
-    } catch (err) {
-      console.error("Unexpected Supabase error:", err);
-      await Swal.fire("Error", "Unexpected error deleting from Supabase.", "error");
     }
-  };
+  } catch (err) {
+    console.error("Unexpected Supabase error:", err);
+    await Swal.fire("Error", "Unexpected error deleting from Supabase.", "error");
+  }
+};
 
 
   const handleDeleteVisa = async (visa) => {
@@ -316,22 +316,6 @@ function ManageVisa() {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalFile, setModalFile] = useState(null);
 
-  useEffect(() => {
-    const fetchApprovalHistory = async () => {
-      const { data, error } = await supabase
-        .from("Approval_History")
-        .select("*");
-
-      if (error) {
-        console.error("Failed to load approval history:", error);
-      } else {
-        setApprovalHistory(data);
-      }
-    };
-
-    fetchApprovalHistory();
-  }, []);
-
   const handleViewDetails = (visa) => {
     if (visa?.visaCode?.startsWith("V2025")) {
       setSelectedVisa(visa);
@@ -423,346 +407,308 @@ function ManageVisa() {
         </label>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          overflowX: "auto", // allow horizontal scroll on small screens
-          border: "1px solid #ccc",
-          borderRadius: "4px",
-          backgroundColor: "#fff",
-          fontSize: "0.85rem", // smaller text globally in table container
-        }}
-      >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            minWidth: "700px", // minimum width so buttons and columns don't get squished too much
-          }}
-        >
-          <thead
-            style={{
-              backgroundColor: "#f4f4f4",
-              position: "sticky",
-              top: 0,
-              zIndex: 1,
-
-            }}
-          >
-            <tr>
-              <th style={{ padding: "8px" }}>Code</th>
-              <th style={{ padding: "8px" }}>Title</th>
-              <th style={{ padding: "8px" }}>Type</th>
-              <th style={{ padding: "8px" }}>Company</th>
-              <th style={{ padding: "8px" }}>Principal</th>
-              <th style={{ padding: "8px" }}>Brand</th>
-              <th style={{ padding: "8px" }}>Date Created</th>
-              <th style={{ padding: "8px" }}>Attachment</th>
-              <th style={{ padding: "8px" }}>Status</th>
-              <th style={{ padding: "8px" }}> </th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayedData.length === 0 ? (
-              <tr>
-                <td colSpan="10" style={{ textAlign: "center", padding: "15px" }}>
-                  No data found.
-                </td>
-              </tr>
-            ) : (
-              displayedData.map((item, index) => (
-                <tr key={`${item.visaCode || "code"}-${index}`}>
-                  <td style={{ padding: "6px" }}>{item.visaCode || "-"}</td>
-                  <td style={{ padding: "6px" }}>{item.visaTitle || "-"}</td>
-                  <td style={{ padding: "6px" }}>{item.visaType || "-"}</td>
-                  <td style={{ padding: "6px" }}>{item.company || "-"}</td>
-                  <td style={{ padding: "6px" }}>{item.principal || "-"}</td>
-                  <td style={{ padding: "6px" }}>{item.brand || "-"}</td>
-                  <td style={{ padding: "6px" }}>{formatDate(item.DateCreated || item.created_at)}</td>
-                  <td style={{ padding: "6px" }}>
-                    {item.attachments?.length > 0 ? (
-                      item.attachments.map((file, i) => (
-                        <div key={file.id || i} style={{ marginBottom: "6px" }}>
-                          <button
-                            style={{
-                              background: "none",
-                              border: "none",
-                              color: "#1976d2",
-                              cursor: "pointer",
-                              textDecoration: "underline",
-                              padding: 0,
-                              fontSize: "0.85rem",
-                            }}
-                            onClick={() => {
-                              setModalFile(file);
-                              setModalVisible(true);
-                            }}
-                          >
-                            {file.name || `Attachment ${i + 1}`}
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td style={{ padding: "6px" }}>
-                    {(() => {
-                      const latestApproval = approvalHistory
-                        .filter((h) => h.BabyVisaId === item.visaCode)
-                        .sort((a, b) => new Date(b.DateResponded) - new Date(a.DateResponded))[0];
-
-                      if (!latestApproval) return "-";
-
-                      const date = new Date(latestApproval.DateResponded);
-                      const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${String(date.getFullYear()).slice(-2)}`;
-                      const formattedTime = date.toLocaleTimeString("en-US", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                      });
-
-                      let color = "black";
-                      switch (latestApproval.Response.toLowerCase()) {
-                        case "approved":
-                          color = "green";
-                          break;
-                        case "declined":
-                          color = "red";
-                          break;
-                        case "sent back for revision":
-                          color = "orange";
-                          break;
-                        default:
-                          color = "black";
-                      }
-
-                      return (
-                        <span style={{ color }}>
-                          {`${latestApproval.Response} (${formattedDate} ${formattedTime})`}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td style={{ padding: "6px", whiteSpace: "nowrap" }}>
+  <div
+  style={{
+    flex: 1,
+    overflowX: "auto", // allow horizontal scroll on small screens
+    border: "1px solid #ccc",
+    borderRadius: "4px",
+    backgroundColor: "#fff",
+    fontSize: "0.85rem", // smaller text globally in table container
+  }}
+>
+  <table
+    style={{
+      width: "100%",
+      borderCollapse: "collapse",
+      minWidth: "700px", // minimum width so buttons and columns don't get squished too much
+    }}
+  >
+    <thead
+      style={{
+        backgroundColor: "#f4f4f4",
+        position: "sticky",
+        top: 0,
+        zIndex: 1,
+     
+      }}
+    >
+      <tr>
+        <th style={{ padding: "8px" }}>Code</th>
+        <th style={{ padding: "8px" }}>Title</th>
+        <th style={{ padding: "8px" }}>Type</th>
+        <th style={{ padding: "8px" }}>Company</th>
+        <th style={{ padding: "8px" }}>Principal</th>
+        <th style={{ padding: "8px" }}>Brand</th>
+        <th style={{ padding: "8px" }}>Date Created</th>
+        <th style={{ padding: "8px" }}>Attachment</th>
+        <th style={{ padding: "8px" }}>Status</th>
+        <th style={{ padding: "8px" }}> </th>
+      </tr>
+    </thead>
+    <tbody>
+      {displayedData.length === 0 ? (
+        <tr>
+          <td colSpan="10" style={{ textAlign: "center", padding: "15px" }}>
+            No data found.
+          </td>
+        </tr>
+      ) : (
+        displayedData.map((item, index) => (
+          <tr key={`${item.visaCode || "code"}-${index}`}>
+            <td style={{ padding: "6px" }}>{item.visaCode || "-"}</td>
+            <td style={{ padding: "6px" }}>{item.visaTitle || "-"}</td>
+            <td style={{ padding: "6px" }}>{item.visaType || "-"}</td>
+            <td style={{ padding: "6px" }}>{item.company || "-"}</td>
+            <td style={{ padding: "6px" }}>{item.principal || "-"}</td>
+            <td style={{ padding: "6px" }}>{item.brand || "-"}</td>
+            <td style={{ padding: "6px" }}>{formatDate(item.DateCreated || item.created_at)}</td>
+            <td style={{ padding: "6px" }}>
+              {item.attachments?.length > 0 ? (
+                item.attachments.map((file, i) => (
+                  <div key={file.id || i} style={{ marginBottom: "6px" }}>
                     <button
-                      onClick={() => handleViewDetails(item)}
-                      title="View Details"
                       style={{
-                        border: "none",
                         background: "none",
-                        cursor: "pointer",
-                        padding: "6px 8px",
+                        border: "none",
                         color: "#1976d2",
-                        transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                        boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                        borderRadius: "8px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        outline: "none",
-                        fontSize: "1rem",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                        padding: 0,
+                        fontSize: "0.85rem",
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                        e.currentTarget.style.boxShadow = "0 8px 15px rgba(25, 118, 210, 0.5)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                        e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                      }}
-                      onMouseDown={(e) => {
-                        e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                        e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                      }}
-                      onMouseUp={(e) => {
-                        e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                        e.currentTarget.style.boxShadow = "0 8px 15px rgba(25, 118, 210, 0.5)";
+                      onClick={() => {
+                        setModalFile(file);
+                        setModalVisible(true);
                       }}
                     >
-                      <FontAwesomeIcon icon={faSearch} size="lg" />
+                      {file.name || `Attachment ${i + 1}`}
                     </button>
-                    {(() => {
-                      const latestApproval = approvalHistory
-                        .filter((h) => h.BabyVisaId === item.visaCode)
-                        .sort((a, b) => new Date(b.DateResponded) - new Date(a.DateResponded))[0];
+                  </div>
+                ))
+              ) : (
+                "-"
+              )}
+            </td>
+            <td style={{ padding: "6px" }}>
+              {(() => {
+                const latestApproval = approvalHistory
+                  .filter((h) => h.BabyVisaId === item.visaCode)
+                  .sort((a, b) => new Date(b.DateResponded) - new Date(a.DateResponded))[0];
 
-                      const isBlocked =
-                        latestApproval &&
-                        ["declined", "cancelled", "canceled"].includes(
-                          latestApproval.Response?.toLowerCase()
-                        );
+                if (!latestApproval) return "-";
 
-                      return (
-                        <button
-                          onClick={() => {
-                            if (!isBlocked) handleDeleteVisa(item);
-                          }}
-                          title={
-                            isBlocked
-                              ? `Cannot delete a ${latestApproval.Response} visa`
-                              : "Delete Visa"
-                          }
-                          disabled={isBlocked}
-                          style={{
-                            border: "none",
-                            background: "none",
-                            cursor: isBlocked ? "not-allowed" : "pointer",
-                            padding: "6px 8px",
-                            color: isBlocked ? "#aaa" : "#d32f2f",
-                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                            boxShadow: isBlocked
-                              ? "0 0 0 rgba(0,0,0,0)"
-                              : "0 4px 6px rgba(0,0,0,0.2)",
-                            borderRadius: "8px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            marginLeft: "8px",
-                            outline: "none",
-                            fontSize: "1rem",
-                            pointerEvents: isBlocked ? "none" : "auto",
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isBlocked) {
-                              e.currentTarget.style.transform =
-                                "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                              e.currentTarget.style.boxShadow =
-                                "0 8px 15px rgba(211, 47, 47, 0.5)";
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isBlocked) {
-                              e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                              e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                            }
-                          }}
-                          onMouseDown={(e) => {
-                            if (!isBlocked) {
-                              e.currentTarget.style.transform =
-                                "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                              e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                            }
-                          }}
-                          onMouseUp={(e) => {
-                            if (!isBlocked) {
-                              e.currentTarget.style.transform =
-                                "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                              e.currentTarget.style.boxShadow =
-                                "0 8px 15px rgba(211, 47, 47, 0.5)";
-                            }
-                          }}
-                        >
-                          <FontAwesomeIcon icon={faTrash} size="lg" />
-                        </button>
-                      );
-                    })()}
+                const date = new Date(latestApproval.DateResponded);
+                const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${String(date.getFullYear()).slice(-2)}`;
+                const formattedTime = date.toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                });
 
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                let color = "black";
+                switch (latestApproval.Response.toLowerCase()) {
+                  case "approved":
+                    color = "green";
+                    break;
+                  case "declined":
+                    color = "red";
+                    break;
+                  case "sent back for revision":
+                    color = "orange";
+                    break;
+                  default:
+                    color = "black";
+                }
 
-        {/* Modal preview */}
-        {modalVisible && modalFile && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: "100vw",
-              height: "100vh",
-              backgroundColor: "rgba(0, 0, 0, 0.7)",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 999,
-            }}
-            onClick={() => {
-              setModalVisible(false);
-              setModalFile(null);
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#fff",
-                padding: "20px",
-                borderRadius: "10px",
-                maxWidth: "100%",
-                maxHeight: "90%",
-                overflow: "auto",
-                position: "relative",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3>{modalFile.name || "Attachment Preview"}</h3>
-
-              <div style={{ marginTop: "10px", textAlign: "center" }}>
-                {modalFile.type?.startsWith("image/") ? (
-                  <img
-                    src={getContentURL(modalFile)}
-                    alt={modalFile.name}
-                    style={{ maxWidth: "100%", maxHeight: "600px", borderRadius: "6px" }}
-                  />
-                ) : modalFile.type?.includes("pdf") ? (
-                  <img
-                    src="https://img.icons8.com/color/96/pdf.png"
-                    alt="PDF Icon"
-                    style={{ height: "100px" }}
-                  />
-                ) : modalFile.name?.endsWith(".xlsx") || modalFile.name?.endsWith(".xls") ? (
-                  <img
-                    src="https://img.icons8.com/color/96/microsoft-excel-2019--v1.png"
-                    alt="Excel Icon"
-                    style={{ height: "100px" }}
-                  />
-                ) : (
-                  <div>No preview available</div>
-                )}
-              </div>
-
+                return (
+                  <span style={{ color }}>
+                    {`${latestApproval.Response} (${formattedDate} ${formattedTime})`}
+                  </span>
+                );
+              })()}
+            </td>
+            <td style={{ padding: "6px", whiteSpace: "nowrap" }}>
               <button
-                onClick={() => {
-                  const link = document.createElement("a");
-                  link.href = getContentURL(modalFile);
-                  link.download = modalFile.name || "attachment";
-                  link.click();
-                }}
+                onClick={() => handleViewDetails(item)}
+                title="View Details"
                 style={{
-                  marginTop: "10px",
-                  backgroundColor: "#1976d2",
-                  color: "#fff",
                   border: "none",
-                  borderRadius: "5px",
-                  padding: "6px 12px",
+                  background: "none",
                   cursor: "pointer",
+                  padding: "6px 8px",
+                  color: "#1976d2",
+                  transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                  boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                  borderRadius: "8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  outline: "none",
+                  fontSize: "1rem",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                  e.currentTarget.style.boxShadow = "0 8px 15px rgba(25, 118, 210, 0.5)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                  e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                  e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                  e.currentTarget.style.boxShadow = "0 8px 15px rgba(25, 118, 210, 0.5)";
                 }}
               >
-                Download
+                <FontAwesomeIcon icon={faSearch} size="lg" />
               </button>
-
               <button
-                onClick={() => setModalVisible(false)}
+                onClick={() => handleDeleteVisa(item)}
+                title="Delete Visa"
                 style={{
-                  position: "absolute",
-                  top: 10,
-                  right: 10,
-                  background: "#d32f2f",
-                  color: "#fff",
                   border: "none",
-                  borderRadius: "5px",
-                  padding: "5px 10px",
+                  background: "none",
                   cursor: "pointer",
+                  padding: "6px 8px",
+                  color: "#d32f2f",
+                  transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                  boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                  borderRadius: "8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginLeft: "8px",
+                  outline: "none",
+                  fontSize: "1rem",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                  e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                  e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                  e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                  e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
                 }}
               >
-                Close
+                <FontAwesomeIcon icon={faTrash} size="lg" />
               </button>
-            </div>
-          </div>
-        )}
+            </td>
+          </tr>
+        ))
+      )}
+    </tbody>
+  </table>
+
+  {/* Modal preview */}
+  {modalVisible && modalFile && (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        backgroundColor: "rgba(0, 0, 0, 0.7)",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 999,
+      }}
+      onClick={() => {
+        setModalVisible(false);
+        setModalFile(null);
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: "#fff",
+          padding: "20px",
+          borderRadius: "10px",
+          maxWidth: "100%",
+          maxHeight: "90%",
+          overflow: "auto",
+          position: "relative",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3>{modalFile.name || "Attachment Preview"}</h3>
+
+        <div style={{ marginTop: "10px", textAlign: "center" }}>
+          {modalFile.type?.startsWith("image/") ? (
+            <img
+              src={getContentURL(modalFile)}
+              alt={modalFile.name}
+              style={{ maxWidth: "100%", maxHeight: "600px", borderRadius: "6px" }}
+            />
+          ) : modalFile.type?.includes("pdf") ? (
+            <img
+              src="https://img.icons8.com/color/96/pdf.png"
+              alt="PDF Icon"
+              style={{ height: "100px" }}
+            />
+          ) : modalFile.name?.endsWith(".xlsx") || modalFile.name?.endsWith(".xls") ? (
+            <img
+              src="https://img.icons8.com/color/96/microsoft-excel-2019--v1.png"
+              alt="Excel Icon"
+              style={{ height: "100px" }}
+            />
+          ) : (
+            <div>No preview available</div>
+          )}
+        </div>
+
+        <button
+          onClick={() => {
+            const link = document.createElement("a");
+            link.href = getContentURL(modalFile);
+            link.download = modalFile.name || "attachment";
+            link.click();
+          }}
+          style={{
+            marginTop: "10px",
+            backgroundColor: "#1976d2",
+            color: "#fff",
+            border: "none",
+            borderRadius: "5px",
+            padding: "6px 12px",
+            cursor: "pointer",
+          }}
+        >
+          Download
+        </button>
+
+        <button
+          onClick={() => setModalVisible(false)}
+          style={{
+            position: "absolute",
+            top: 10,
+            right: 10,
+            background: "#d32f2f",
+            color: "#fff",
+            border: "none",
+            borderRadius: "5px",
+            padding: "5px 10px",
+            cursor: "pointer",
+          }}
+        >
+          Close
+        </button>
       </div>
+    </div>
+  )}
+</div>
 
 
       {viewAll && totalPages > 1 && (

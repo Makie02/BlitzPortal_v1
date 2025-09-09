@@ -111,29 +111,3 @@ body {
 .glass-button:hover {
   background: rgba(255,255,255,0.3);
 }
-.tooltip-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.tooltip-wrapper[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  top: -42px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: #1f75f5; /* ✅ Green */
-  color: white;
-  padding: 6px 10px;
-  border-radius: 6px;
-  white-space: nowrap;
-  font-size: 14px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-  z-index: 999;
-}
-
-.tooltip-wrapper[data-tooltip]:hover::after {
-  opacity: 1;
-}
