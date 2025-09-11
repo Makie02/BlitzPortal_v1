@@ -69,14 +69,17 @@ const handleClick = async (brand) => {
     setShowFormModal(false);
   };
 
-  const openFormModal = (existing = null) => {
-    if (existing) {
-      setFormData({ ...existing });
-    } else {
-      setFormData({ name: selectedBrand || "", description: "", id: null });
-    }
-    setShowFormModal(true);
-  };
+const openFormModal = (existing = null) => {
+  if (existing) {
+    // For edit
+    setFormData({ ...existing }); // includes id, name, description
+  } else {
+    // For create: make name and description blank
+    setFormData({ name: "", description: "", id: null });
+  }
+  setShowFormModal(true);
+};
+
   async function fetchBrandDetailsFromSupabase(principalName) {
     try {
       const { data, error } = await supabase
@@ -130,7 +133,7 @@ const handleSave = async (e) => {
 
   try {
     if (formData.id) {
-      // ✅ UPDATE brand in Branddetails table
+      // ✅ UPDATE existing brand
       const { error } = await supabase
         .from("Branddetails")
         .update({
@@ -141,22 +144,41 @@ const handleSave = async (e) => {
 
       if (error) throw error;
     } else {
-      // ✅ INSERT brand in Branddetails table
-      const { error } = await supabase
+      // ✅ INSERT new brand with auto-incremented ItemCode
+      const { data: maxCodeData, error: codeError } = await supabase
+        .from("Branddetails")
+        .select("ItemCode")
+        .order("ItemCode", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (codeError) throw codeError;
+
+      let nextItemCode = 10001; // Default starting point
+      if (maxCodeData && maxCodeData.ItemCode) {
+        const currentMax = parseInt(maxCodeData.ItemCode, 10);
+        if (!isNaN(currentMax)) {
+          nextItemCode = currentMax + 1;
+        }
+      }
+
+      const { error: insertError } = await supabase
         .from("Branddetails")
         .insert({
           name: formData.name,
           description: formData.description,
           principal_name: selectedBrand,
-          parentname: selectedBrand, // optional if needed
+          parentname: selectedBrand,
+          ItemCode: nextItemCode.toString(), // Ensure string type for consistency
         });
 
-      if (error) throw error;
+      if (insertError) throw insertError;
     }
 
+    // ✅ Refresh and reset
     setShowFormModal(false);
     setFormData({ id: null, name: "", description: "" });
-    handleClick(selectedBrand); // Refresh
+    handleClick(selectedBrand); // Reload list
   } catch (error) {
     console.error("Failed to save brand to Supabase:", error);
     alert("Save failed.");
@@ -166,23 +188,28 @@ const handleSave = async (e) => {
 
 
 
+
+
+
 const handleDelete = async (id) => {
   if (!window.confirm("Are you sure you want to delete this brand?")) return;
 
   try {
     const { error } = await supabase
-      .from("User_Brands")
+      .from("Branddetails") // ✅ Correct table
       .delete()
       .eq("id", id);
 
     if (error) throw error;
 
+    // ✅ Remove deleted item from UI state
     setBrandDetails((prev) => prev.filter((item) => item.id !== id));
   } catch (error) {
     console.error("Failed to delete brand from Supabase:", error);
     alert("Delete failed.");
   }
 };
+
 
 
 return (

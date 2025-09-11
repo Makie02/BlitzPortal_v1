@@ -937,6 +937,56 @@ const CoverVisa = () => {
     const [supportSearch, setSupportSearch] = useState('');
     const [showCoverModal, setShowCoverModal] = useState(false);
     const [coverVisaSearch, setCoverVisaSearch] = useState('');
+
+
+
+    useEffect(() => {
+        const fetchBrandDetails = async () => {
+            const { data, error } = await supabase
+                .from("Branddetails")
+                .select("name, ItemCode");
+
+            if (!error) setBrandOptions(data);
+        };
+
+        fetchBrandDetails();
+    }, []);
+    const handleSelectBrand = (brand) => {
+        if (
+            activeRowIndex === null ||
+            activeRowIndex < 0 ||
+            activeRowIndex >= volumePlanRows.length
+        ) {
+            console.error("Invalid row index:", activeRowIndex);
+            return;
+        }
+
+        const updatedRows = [...volumePlanRows];
+        updatedRows[activeRowIndex] = {
+            ...updatedRows[activeRowIndex],
+            ItemCode: brand.ItemCode, // ✅ Use capitalized ItemCode here
+        };
+        setVolumePlanRows(updatedRows);
+        handleCloseBrandModal();
+    };
+
+
+
+    const handleCloseBrandModal = () => {
+        setShowBrandModal(false);
+        setActiveRowIndex(null);
+        setBrandSearch('');
+    };
+    const handleOpenBrandModal = (index) => {
+        setActiveRowIndex(index);
+        setShowBrandModal(true);
+    };
+    const [showBrandModal, setShowBrandModal] = useState(false);
+    const [activeRowIndex, setActiveRowIndex] = useState(null);
+    const [brandSearch, setBrandSearch] = useState('');
+    const [brandOptions, setBrandOptions] = useState([]);
+    const [promoRows, setPromoRows] = useState([]);
+
     return (
         <div style={{ padding: '30px', height: "90vh", }} className="containers">
             <div className="row align-items-center mb-4">
@@ -1098,7 +1148,7 @@ const CoverVisa = () => {
                                 className="form-control"
                                 value={formData.brand || ''}
                                 onClick={handleInputClick}
-                                placeholder="Select Brand"
+                                placeholder="Select Item Code"
                                 style={{
                                     cursor: formData.principal ? 'pointer' : 'not-allowed',
                                     borderColor: formData.brand ? 'green' : '',
@@ -1618,7 +1668,89 @@ const CoverVisa = () => {
                             <tbody>
                                 {volumePlanRows.map((row, i) => (
                                     <tr key={i}>
-                                        <td><input type="text" name="itemCode" className="form-control" value={row.itemCode} onChange={e => handleVolumePlanChange(i, e)} /></td>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                                <input
+                                                    type="text"
+                                                    name="ItemCode"
+                                                    readOnly
+                                                    className="form-control"
+                                                    value={row.ItemCode || ''}
+                                                    onClick={() => formData.principal && handleOpenBrandModal(i)} // clickable only if principal is set
+                                                    placeholder="Select Item Code"
+                                                    style={{
+                                                        cursor: formData.principal ? 'pointer' : 'not-allowed',
+                                                        borderColor: row.ItemCode ? 'green' : '',
+                                                        transition: 'border-color 0.3s',
+                                                        paddingRight: '35px',
+                                                    }}
+                                                />
+
+
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-outline-secondary ml-2"
+                                                    onClick={() => handleOpenBrandModal(i)}
+                                                    title="Select ItemCode"
+                                                >
+                                                    🔍
+                                                </button>
+                                            </div>
+                                        </td>
+
+                                        {showBrandModal && (
+                                            <div
+                                                className="modal show fade d-block"
+                                                tabIndex="-1"
+                                                role="dialog"
+                                                style={{
+                                                    backgroundColor: "rgba(0, 0, 0, 0.5)",
+                                                    overflowY: "auto",
+                                                    paddingTop: "100px",
+                                                    paddingBottom: "100px",
+                                                }}
+                                            >
+                                                <div className="modal-dialog modal-lg modal-dialog-centered" role="document" style={{ maxWidth: "600px" }}>
+                                                    <div className="modal-content shadow-lg rounded">
+                                                        <div className="modal-header d-flex justify-content-between align-items-center">
+                                                            <h5 className="modal-title font-weight-bold">Select Item Code</h5>
+                                                            <button type="button" onClick={handleCloseBrandModal} style={{ border: 'none', background: 'transparent', fontSize: '1.5rem' }}>
+                                                                ×
+                                                            </button>
+                                                        </div>
+                                                        <div className="modal-body">
+                                                            <input
+                                                                type="text"
+                                                                className="form-control mb-3"
+                                                                placeholder="Search Item..."
+                                                                value={brandSearch}
+                                                                onChange={(e) => setBrandSearch(e.target.value)}
+                                                            />
+                                                            <ul className="list-group" style={{ maxHeight: "300px", overflowY: "auto" }}>
+                                                                {brandOptions
+                                                                    .filter((b) =>
+                                                                        b.name.toLowerCase().includes(brandSearch.toLowerCase()) ||
+                                                                        (b.ItemCode && b.ItemCode.toLowerCase().includes(brandSearch.toLowerCase()))
+                                                                    )
+                                                                    .map((brand) => (
+                                                                        <li
+                                                                            key={brand.ItemCode}
+                                                                            className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                                                            onClick={() => handleSelectBrand(brand)}
+                                                                            style={{ cursor: 'pointer' }}
+                                                                        >
+                                                                            <span className="text-muted">{brand.ItemCode}</span>
+
+                                                                            <span>{brand.name}</span>
+                                                                        </li>
+                                                                    ))}
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <td><input type="number" name="projectedAvgSales" className="form-control" value={row.projectedAvgSales} onChange={e => handleVolumePlanChange(i, e)} /></td>
                                         <td style={{ position: "relative" }}>
                                             <select

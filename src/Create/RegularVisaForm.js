@@ -1049,25 +1049,25 @@ const RegularVisaForm = () => {
     useEffect(() => {
         let isMounted = true;
 
-        const fetchPromotedSKUs = async () => {
+        const fetchBrandDetails = async () => {
             const { data, error } = await supabase
-                .from("References")
-                .select("id, name") // only fetch what you need
-                .eq("reference_type", "Promoted-SKU/s");
+                .from("Branddetails")
+                .select("id, principal_name, name, description, parentname, ItemCode");
 
             if (error) {
-                console.error("Error fetching Promoted SKUs:", error);
+                console.error("Error fetching Brand details:", error);
             } else if (isMounted) {
                 setPromotedSKUs(data);
             }
         };
 
-        fetchPromotedSKUs();
+        fetchBrandDetails();
 
         return () => {
             isMounted = false;
         };
     }, []);
+
 
 
     const [brands, setBrands] = React.useState({});
@@ -2618,20 +2618,28 @@ const RegularVisaForm = () => {
                                                         type="text"
                                                         readOnly
                                                         className="form-control"
-                                                        value={row.promotedSKU || ""}
+                                                        value={row.promotedSKU || ''}
+                                                        onClick={() => formData.principal && handleOpenSkuModal(i)}
                                                         placeholder="Select SKU"
-                                                        style={{ width: '150px' }}
+                                                        style={{
+                                                            cursor: formData.principal ? 'pointer' : 'not-allowed',
+                                                            borderColor: row.promotedSKU ? 'green' : '',
+                                                            transition: 'border-color 0.3s',
+                                                            paddingRight: '35px'
+                                                        }}
                                                     />
                                                     <button
                                                         type="button"
                                                         className="btn btn-outline-secondary ml-2"
-                                                        onClick={() => handleOpenSkuModal(i)}
+                                                        onClick={() => formData.principal && handleOpenSkuModal(i)}
                                                         title="Select SKU"
+                                                        disabled={!formData.principal}
                                                     >
                                                         🔍
                                                     </button>
                                                 </div>
                                             </td>
+
                                             {showSkuModal && (
                                                 <div
                                                     className="modal show fade d-block"
@@ -2713,18 +2721,23 @@ const RegularVisaForm = () => {
                                                                     )}
                                                                     {promotedSKUs
                                                                         .filter((sku) =>
-                                                                            sku.name.toLowerCase().includes(skuSearch.toLowerCase())
+                                                                            sku.name.toLowerCase().includes(skuSearch.toLowerCase()) ||
+                                                                            (sku.ItemCode && sku.ItemCode.toLowerCase().includes(skuSearch.toLowerCase()))
                                                                         )
                                                                         .map((sku) => (
                                                                             <li
                                                                                 key={sku.id}
-                                                                                className="list-group-item list-group-item-action"
+                                                                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
                                                                                 onClick={() => handleSelectSku(sku.name)}
-                                                                                style={{ fontSize: "1rem" }}
+                                                                                style={{ fontSize: "1rem", cursor: "pointer" }}
                                                                             >
-                                                                                {sku.name}
+                                                                                <span>{sku.name}</span>
+                                                                                <span className="text-muted" style={{ fontSize: "0.9rem" }}>
+                                                                                    {sku.ItemCode}
+                                                                                </span>
                                                                             </li>
                                                                         ))}
+
                                                                 </ul>
                                                             </div>
                                                         </div>
