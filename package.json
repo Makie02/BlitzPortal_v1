@@ -27,6 +27,7 @@
     "react": "^19.1.0",
     "react-big-calendar": "^1.19.4",
     "react-bootstrap": "^2.10.10",
+    "react-csv": "^2.2.2",
     "react-dom": "^19.1.0",
     "react-dropzone": "^14.3.8",
     "react-hook-form": "^7.59.0",
