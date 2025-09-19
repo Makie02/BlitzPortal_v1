@@ -5,6 +5,10 @@ import Swal from 'sweetalert2';  // <---- import sweetalert2
 import { supabase } from '../supabaseClient';
 import { Modal, Button } from 'react-bootstrap'; // Ensure react-bootstrap is installed
 import { FaExclamationTriangle } from 'react-icons/fa'; // Make sure react-icons is installed
+import { Table, Form, Container, Card, Spinner } from 'react-bootstrap';
+import * as XLSX from 'xlsx';
+import { FaFileExcel, FaCloudUploadAlt, FaDownload, FaSave, FaSearch } from 'react-icons/fa';
+import { CSVLink } from 'react-csv';
 
 const RegularVisaForm = () => {
 
@@ -18,10 +22,10 @@ const RegularVisaForm = () => {
             setLoading(true);
 
             // Fetch singleapprovals
-            const { data: approvalsData, error: approvalsError } = await supabase
-                .from('singleapprovals')
-                .select('*')
-                .order('created_at', { ascending: false });
+            // const { data: approvalsData, error: approvalsError } = await supabase
+            //     .from('singleapprovals')
+            //     .select('*')
+            //     .order('created_at', { ascending: false });
 
             // Fetch user approvers
             const { data: userApproversData, error: userApproversError } = await supabase
@@ -34,11 +38,11 @@ const RegularVisaForm = () => {
                 .from('Account_Users')
                 .select('UserID, name');
 
-            if (approvalsError) console.error('Error fetching approvals:', approvalsError);
+            // if (approvalsError) console.error('Error fetching approvals:', approvalsError);
             if (userApproversError) console.error('Error fetching user approvers:', userApproversError);
             if (usersError) console.error('Error fetching users:', usersError);
 
-            setSingleApprovals(approvalsData || []);
+            // setSingleApprovals(approvalsData || []);
             setUserApprovers(userApproversData || []);
             setUsers(usersData || []);
             setLoading(false);
@@ -82,194 +86,102 @@ const RegularVisaForm = () => {
 
     // Step 0: Form data
     const [formData, setFormData] = useState({
-        visaCode: "",
-        company: "MEGASOFT",
-        principal: "",
-        brand: "",
-        accountType: "",
-        account: "",
+        regularpwpcode: "",
+        accountType: [],
         activity: "",
-        visaType: "Regular", // ✅ Set default
-        Notification: false,
+        pwptype: "Regular",
+        notification: false,
         objective: "",
         promoScheme: "",
-        leadTimeFrom: today,
-        leadTimeTo: today,
-        activityDurationFrom: today,
-        activityDurationTo: today,
-        isPartOfCoverVisa: null, // null = no selection yet, true/false
-        coverVisaCode: "",
-        supportType: "",
+        activityDurationFrom: new Date().toISOString().split('T')[0], // today
+        activityDurationTo: new Date().toISOString().split('T')[0], // today
+
+
+
+        isPartOfCoverPwp: false,
+        coverPwpCode: "",
+        distributor: "",
+        amountbadget: "0",
+        categoryCode: [],
+        categoryName: [],
+        sku: null,              // New Field
+        accounts: null,         // New Field
+        amount_display: null,   // New Field
     });
 
-    // Step control: 0 = form, 1 = promoted sales, 2 = cost details, 3 = upload
-    const [step, setStep] = useState(0);
 
-    // Promoted sales rows
-    const [promoRows, setPromoRows] = useState([
-        {
-            promotedSKU: "",
-            listPrice: "",
-            nonPromoAvgSales: "",
-            UM: "Cases", // default UM
-            nonPromoAvgSalesAmount: "",
-            projectedAvgSales: "",
-            projectedAvgSalesAmount: "",
-            increasePercent: "",
-        },
-    ]);
 
-    // Cost details rows
-    const [costRows, setCostRows] = useState([
-        {
-            costDetails: "",
-            quantity: "",
-            unitCost: "",
-            discount: "",
-            chargeTo: "Company", // default option
-        },
-    ]);
 
-    // Handle input change for form fields
-    const handleFormChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value,
-            ...(name === "accountType" ? { account: "" } : {}) // reset groupAccount if accountType changed
-        }));
+    const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
+    const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true); // Loading state for fetching codes
+
+    useEffect(() => {
+        async function fetchRegularPwpCodes() {
+            const { data, error } = await supabase
+                .from('regular_pwp') // Assuming your table is called 'regular_pwp'
+                .select('regularpwpcode'); // Selecting the column with regular pwp codes
+
+            if (error) {
+                console.error('Error fetching regular pwp codes:', error);
+                setLoadingRegularPwpCodes(false); // Set loading to false on error
+            } else {
+                const codes = data
+                    .map(row => row.regularpwpcode) // Extracting regularpwpcode
+                    .filter(Boolean); // Removing any falsy values (null, undefined)
+
+                setAllRegularPwpCodes(codes); // Set the codes in the state
+
+                // Generate a new code if the coverCode is not set in formData
+                if (!formData.regularpwpcode) {
+                    const newCode = generateRegularCode(codes); // Generate the new cover code
+                    setFormData(prev => ({ ...prev, regularpwpcode: newCode })); // Update formData with the new coverCode
+                }
+
+                setLoadingRegularPwpCodes(false); // Set loading to false after data fetch
+            }
+        }
+
+        fetchRegularPwpCodes(); // Call the fetch function when the component mounts
+    }, []); // Empty dependency array so it runs only once when the component mounts
+
+    useEffect(() => {
+        // This effect runs whenever `allRegularPwpCodes` changes
+        if (!formData.regularpwpcode && allRegularPwpCodes.length > 0) {
+            const newCode = generateRegularCode(allRegularPwpCodes); // Generate the new cover code
+            setFormData(prev => ({ ...prev, regularpwpcode: newCode })); // Update formData with the new coverCode
+        }
+    }, [allRegularPwpCodes]); // Dependencies are the fetched codes
+
+    // Generate a new code based on the existing ones
+    const generateRegularCode = (existingCodes = []) => {
+        const year = new Date().getFullYear(); // Get the current year
+        const prefix = `R${year}-`; // Prefix with the year (e.g., R2025-)
+
+        // Filter out existing codes that start with the prefix and extract numeric parts
+        const codesForYear = existingCodes
+            .filter(code => code?.startsWith(prefix)) // Only keep codes with the current year prefix
+            .map(code => parseInt(code.replace(prefix, ''), 10)) // Remove the prefix and convert to integers
+            .filter(num => !isNaN(num)); // Ensure we only keep valid numbers
+
+        // Get the next code number by incrementing the maximum of existing ones
+        const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1; // If codes exist, find the highest number and increment
+
+        return `${prefix}${newNumber}`; // Return the new generated code
     };
 
+
+
+
+    // Handle input change for form fields
 
     // Handle toggle change for Is Part of Cover Visa
     const [coverVisas, setCoverVisas] = useState([]);
 
-    const handleToggleChange = (value) => {
-        setFormData({ ...formData, isPartOfCoverVisa: value, coverVisaCode: "" });
-        setShowCoverVisaCode(false);
-    };
-
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchCoverVisas = async () => {
-            const { data, error } = await supabase
-                .from("Cover_Visa") // ✅ Fixed table name
-                .select("*");
-
-            if (error) {
-                console.error("❌ Error fetching Cover Visas from Supabase:", error);
-                if (isMounted) setCoverVisas([]);
-                return;
-            }
-
-            if (data && isMounted) {
-                const parsedList = data.map((item) => ({
-                    coverVisaCode: item.visaCode || item.id, // ✅ Correct key
-                    ...item,
-                }));
-                console.log("✅ Supabase Cover Visas:", parsedList);
-                setCoverVisas(parsedList);
-            }
-        };
-
-        fetchCoverVisas();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
 
 
 
 
-    const handleSubmitToSupabase = async () => {
-        const storedUser = JSON.parse(localStorage.getItem('user'));
-        if (!storedUser) {
-            Swal.fire({
-                icon: 'error',
-                title: 'User not found',
-                text: 'Please log in again.',
-            });
-            return;
-        }
 
-        // Insert data into Regular_Visa table
-        const { data: insertData, error: insertError } = await supabase
-            .from('Regular_Visa')
-            .insert([{
-                visaCode: formData.visaCode,
-                company: formData.company,
-                principal: formData.principal,
-                brand: formData.brand,
-                accountType: formData.accountType,
-                account: formData.account,
-                activity: formData.activity,
-                visaType: formData.visaType,
-                objective: formData.objective,
-                promoScheme: formData.promoScheme,
-                activityDurationFrom: formData.activityDurationFrom,
-                activityDurationTo: formData.activityDurationTo,
-                isPartOfCoverVisa: formData.isPartOfCoverVisa,
-                coverVisaCode: formData.coverVisaCode || 'No',
-                Notification: formData.Notification,
-                CreatedForm: storedUser.name,
-                supportType: formData.supportType,
-                Regular: true,
-                UploadRegular: false,
-
-            }])
-            .select()
-            .single();
-
-        if (insertError) {
-            console.error("❌ Failed to insert into Supabase:", insertError);
-            return;
-        }
-
-        console.log("✅ Data successfully posted to Supabase:", insertData);
-
-        // Calculate remaining balance
-        const remainingBalance = Math.abs(totalCostSum - (amountBadget ?? 0));
-
-        // Update remaining balance in amount_badget table
-        const { data: updateData, error: updateError } = await supabase
-            .from('amount_badget')
-            .update({ remainingbalance: remainingBalance })
-            .eq('visacode', formData.coverVisaCode)
-            .select()
-            .single();
-
-        if (updateError) {
-            console.error('❌ Failed to update remaining balance:', updateError);
-            return;
-        }
-
-        console.log('✅ Remaining balance updated:', updateData);
-
-        // Insert into amount_badget_history table
-        const { error: historyError } = await supabase
-            .from('amount_badget_history')
-            .insert([{
-                original_id: updateData.id,
-                visacode: updateData.visacode,
-                amountbadget: updateData.amountbadget,
-                createduser: updateData.createduser,
-                remainingbalance: remainingBalance,
-                RegularID: insertData.id,
-                action_type: 'update',
-                action_user: storedUser.name,
-                TotalCost: totalCostSum, // ✅ Corrected casing
-            }]);
-
-
-        if (historyError) {
-            console.error("❌ Failed to insert history record:", historyError);
-        } else {
-            console.log("✅ History record added to amount_badget_history.");
-        }
-    };
 
 
 
@@ -277,19 +189,19 @@ const RegularVisaForm = () => {
 
 
     // Auto-select first Cover Visa when toggled ON
-    useEffect(() => {
-        if (formData.isPartOfCoverVisa && coverVisas.length > 0) {
-            setFormData((prev) => ({
-                ...prev,
-                coverVisaCode: coverVisas[0].coverVisaCode || coverVisas[0].code || '',
-            }));
-        } else {
-            setFormData((prev) => ({
-                ...prev,
-                coverVisaCode: '',
-            }));
-        }
-    }, [formData.isPartOfCoverVisa, coverVisas]);
+    // useEffect(() => {
+    //     if (formData.isPartOfCoverPwp && coverVisas.length > 0) {
+    //         setFormData((prev) => ({
+    //             ...prev,
+    //             coverVisaCode: coverVisas[0].coverVisaCode || coverVisas[0].code || '',
+    //         }));
+    //     } else {
+    //         setFormData((prev) => ({
+    //             ...prev,
+    //             coverVisaCode: '',
+    //         }));
+    //     }
+    // }, [formData.isPartOfCoverPwp, coverVisas]);
 
 
     const formatCurrency = (num) =>
@@ -300,162 +212,9 @@ const RegularVisaForm = () => {
 
 
     // Handle promo table row change
-    const handlePromoChange = (index, e) => {
-        const { name, value } = e.target;
-        setPromoRows((prevRows) => {
-            const newRows = [...prevRows];
-            const row = { ...newRows[index], [name]: value };
-
-            // Convert strings to numbers for calculation, default to 0 if NaN
-            const listPrice = parseFloat(row.listPrice) || 0;
-            const nonPromoAvgSales = parseFloat(row.nonPromoAvgSales) || 0;
-            const projectedAvgSales = parseFloat(row.projectedAvgSales) || 0;
-
-            // Calculate dependent fields
-            row.nonPromoAvgSalesAmount = (nonPromoAvgSales * listPrice).toFixed(2);
-            row.projectedAvgSalesAmount = (projectedAvgSales * listPrice).toFixed(2);
-
-            if (nonPromoAvgSales > 0) {
-                row.increasePercent = (
-                    ((projectedAvgSales - nonPromoAvgSales) / nonPromoAvgSales) *
-                    100
-                ).toFixed(2);
-            } else {
-                row.increasePercent = "0.00";
-            }
-
-            newRows[index] = row;
-            return newRows;
-        });
-    };
-
-
-    // Add promo row
-    const addPromoRow = () => {
-        setPromoRows((prev) => [
-            ...prev,
-            {
-                promotedSKU: "",
-                listPrice: "",
-                nonPromoAvgSales: "",
-                UM: "Cases",
-                nonPromoAvgSalesAmount: "",
-                projectedAvgSales: "",
-                projectedAvgSalesAmount: "",
-                increasePercent: "",
-            },
-        ]);
-    };
-
-    // Handle cost table row change
-    const handleCostChange = (index, e) => {
-        const { name, value } = e.target;
-        const newRows = [...costRows];
-        newRows[index][name] = value;
-        setCostRows(newRows);
-    };
-
-    // Add cost row
-    const addCostRow = () => {
-        setCostRows((prev) => [
-            ...prev,
-            {
-                costDetails: "",
-                quantity: "",
-                unitCost: "",
-                discount: "",
-                chargeTo: "Company",
-            },
-        ]);
-    };
 
 
 
-
-    useEffect(() => {
-        const generateVisaCodeIfNeeded = async () => {
-            const year = new Date().getFullYear();
-            const prefix = `R${year}-`;
-            const startNumber = 1;
-
-            try {
-                if (formData.visaCode) {
-                    // If visaCode already exists, verify if it's in Supabase
-                    const { data: existingCodes, error } = await supabase
-                        .from('Regular_Visa')
-                        .select('visaCode')
-                        .ilike('visaCode', `${prefix}%`);
-
-                    if (error) throw error;
-
-                    const codesSet = new Set(existingCodes.map(item => item.visaCode));
-                    if (codesSet.has(formData.visaCode)) {
-                        // visaCode already exists in DB, keep it
-                        setFormData(prev => ({ ...prev, visaCode: formData.visaCode }));
-                        return;
-                    }
-                }
-
-                // If no visaCode or code not found, generate a new one
-                const { data: allCodes, error: fetchError } = await supabase
-                    .from('Regular_Visa')
-                    .select('visaCode')
-                    .ilike('visaCode', `${prefix}%`);
-
-                if (fetchError) throw fetchError;
-
-                const existingNumbers = new Set();
-
-                allCodes.forEach(({ visaCode }) => {
-                    const numPart = visaCode.substring(prefix.length);
-                    const num = parseInt(numPart, 10);
-                    if (!isNaN(num)) {
-                        existingNumbers.add(num);
-                    }
-                });
-
-                // Find next available number
-                let nextNumber = startNumber;
-                while (existingNumbers.has(nextNumber)) {
-                    nextNumber++;
-                }
-
-                const newVisaCode = `${prefix}${nextNumber}`;
-                setFormData(prev => ({ ...prev, visaCode: newVisaCode }));
-
-            } catch (err) {
-                console.error('Error checking/generating visa code:', err);
-            }
-        };
-
-        generateVisaCodeIfNeeded();
-    }, [formData.visaCode]);
-
-    const totalNonPromoSalesAmount = promoRows.reduce((sum, row) => sum + parseFloat(row.nonPromoAvgSalesAmount || 0), 0);
-    const totalProjectedSalesAmount = promoRows.reduce((sum, row) => sum + parseFloat(row.projectedAvgSalesAmount || 0), 0);
-    const avgIncreasePercent = promoRows.length > 0
-        ? promoRows.reduce((sum, row) => sum + parseFloat(row.increasePercent || 0), 0) / promoRows.length
-        : 0;
-
-
-
-    // Assume totalSales is defined somewhere in your component, e.g.:
-    const totalSales = 200000; // example value
-
-    const totalQuantity = costRows.reduce(
-        (sum, row) => sum + (parseFloat(row.quantity) || 0),
-        0
-    );
-
-    const totalCostSum = costRows.reduce((sum, row) => {
-        const quantity = parseFloat(row.quantity) || 0;
-        const unitCost = parseFloat(row.unitCost) || 0;
-        const discount = parseFloat(row.discount) || 0;
-        const rowTotal = quantity * unitCost * (1 - discount / 100);
-        return sum + rowTotal;
-    }, 0);
-
-    const costToSales = totalSales > 0 ? (totalCostSum / totalSales) * 100 : 0;
 
 
 
@@ -504,126 +263,1387 @@ const RegularVisaForm = () => {
 
 
 
-    const handlePrevious = () => {
-        setStep((prev) => Math.max(prev - 1, 0)); // prevents going below 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    const [submitAction, setSubmitAction] = useState(null);
+
+
+    const [options, setOptions] = useState([]);
+
+    const [showCoverVisaCode, setShowCoverVisaCode] = useState(false);
+
+    const [hovered, setHovered] = useState(false);
+
+    const borderColor = formData.company ? 'green' : hovered ? '#ccc' : '';
+    const [groupAccount, setGroupAccount] = useState([]);
+    const [accountTypes, setAccountTypes] = useState([]);
+    const [visaTypes, setVisaTypes] = useState([]);
+    const [activity, setActvity] = useState([]);
+    const [principal, setPrincipal] = useState([]);
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // Load group account list when accountType is selected
+
+
+
+
+
+
+
+
+
+
+
+
+    const [promotedSKUs, setPromotedSKUs] = useState([]);
+    const [showSkuModal, setShowSkuModal] = useState(false);
+    const [tableData, setTableData] = useState([
+        { promotedSKU: '' }, // Example row
+        // You can dynamically populate this depending on your case
+    ]);
+    const [skuSearch, setSkuSearch] = useState('');
+
+    const [currentRowIndex, setCurrentRowIndex] = useState(null);
+
+
+
+    const handleCloseSkuModal = () => {
+        setShowSkuModal(false);
+        setSkuSearch('');
     };
 
 
-    const handleAddRow = () => {
-        setCostRows((prev) => [
-            ...prev,
-            {
-                costDetails: '',
-                quantity: '',
-                unitCost: '',
-                discount: '',
-                chargeTo: 'Company'
-            }
-        ]);
-    };
 
-    const handleDeleteRow = (index) => {
-        setCostRows((prev) => prev.filter((_, i) => i !== index));
-    };
-    const handleDeletePromoRow = (index) => {
-        setPromoRows((prevRows) => prevRows.filter((_, i) => i !== index));
-    };
+    const [brands, setBrands] = React.useState({});
+    // State to hold filtered brands for selected principal
+    const [filteredBrands, setFilteredBrands] = useState([]); // Always an array
 
-
-    const postCostAndVolumeToSupabase = async () => {
-        if (!formData.visaCode) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Visa Code Required',
-                text: 'Please enter Visa Code before submitting.',
-            });
+    useEffect(() => {
+        if (!formData.principal) {
+            setFilteredBrands([]);
             return;
         }
 
+        let isMounted = true;
+
+        const fetchBrands = async () => {
+            const { data, error } = await supabase
+                .from("Branddetails")
+                .select("*")
+                .eq("parentname", formData.principal); // Match selected principal
+
+            if (error) {
+                console.error("Error fetching Branddetails:", error);
+                if (isMounted) setFilteredBrands([]);
+                return;
+            }
+
+            if (isMounted) {
+                setFilteredBrands(data || []); // Always an array
+            }
+        };
+
+        fetchBrands();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [formData.principal]);
+
+    const [Costdetails, setCostdetails] = useState([]);
+
+
+    // When principal changes, filter brands
+    const [amountBadget, setAmountBadget] = useState(null);
+    const [coverPwps, setCoverPwps] = useState([]); // This replaces coverVisas
+
+    // useEffect(() => {
+    //     const fetchAmount = async () => {
+    //         if (!formData.coverVisaCode) {
+    //             setAmountBadget(null);
+    //             return;
+    //         }
+
+    //         const { data, error } = await supabase
+    //             .from('amount_badget')
+    //             .select('remainingbalance')
+    //             .eq('pwp_code', formData.coverVisaCode)
+    //             .single();
+
+    //         if (error) {
+    //             console.error('Supabase error:', error.message);
+    //             setAmountBadget(null);
+    //         } else {
+    //             console.log('Fetched remainingbalance:', data?.remainingbalance);
+    //             setAmountBadget(data?.remainingbalance ?? null);
+    //         }
+    //     };
+
+    //     fetchAmount();
+    // }, [formData.coverVisaCode]);
+
+
+
+
+    const [coverPwpWithStatus, setCoverPwpWithStatus] = React.useState([]);
+    const [coverPwpSearch, setCoverPwpSearch] = React.useState('');
+    const [selectedBalance, setSelectedBalance] = React.useState(null);
+
+    React.useEffect(() => {
+        async function fetchCoverPwpWithStatus() {
+            try {
+                // Step 1: Fetch coverPwp codes from amount_badget
+                const { data: amountData, error: amountError } = await supabase
+                    .from('amount_badget')
+                    .select('pwp_code, amountbadget, remainingbalance');
+
+                if (amountError) throw amountError;
+
+                // Extract all pwp_codes
+                const pwpCodes = amountData.map(item => item.pwp_code);
+
+                // Step 2: Fetch latest approval response for each pwp_code from Approval_History
+                // We'll fetch all approval history entries for these codes, sorted by DateResponded desc
+                const { data: approvalData, error: approvalError } = await supabase
+                    .from('Approval_History')
+                    .select('PwpCode, Response, DateResponded')
+                    .in('PwpCode', pwpCodes)
+                    .order('DateResponded', { ascending: false });
+
+                if (approvalError) throw approvalError;
+
+                // Step 3: Create a map from pwp_code -> latest Response
+                const latestResponseMap = new Map();
+                for (const record of approvalData) {
+                    if (!latestResponseMap.has(record.PwpCode)) {
+                        latestResponseMap.set(record.PwpCode, record.Response.toLowerCase());
+                    }
+                }
+
+                // Step 4: Merge amountData with approval status
+                // Approved = true only if latest response is "approved" (case insensitive), otherwise false
+                const mergedData = amountData.map(item => {
+                    const latestResponse = latestResponseMap.get(item.pwp_code) || null;
+                    return {
+                        ...item,
+                        Approved: latestResponse === 'approved',
+                    };
+                });
+
+                setCoverPwpWithStatus(mergedData);
+            } catch (error) {
+                console.error('Error fetching cover PWP data with status:', error);
+                setCoverPwpWithStatus([]);
+            }
+        }
+
+        fetchCoverPwpWithStatus();
+    }, []);
+
+
+    const [showCoverModal, setShowCoverModal] = useState(false);
+    const [coverVisaSearch, setCoverVisaSearch] = useState('');
+
+
+
+    const [showModal, setShowModal] = useState(false);
+    const [showListingsModal, setShowListingsModal] = useState(false);
+
+    const [categories, setCategories] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const [selectedCategory, setSelectedCategory] = useState(null);
+    const [listings, setListings] = useState([]);
+    const [selectedListings, setSelectedListings] = useState([]);
+    const [showListingModal, setShowListingModal] = useState(false);
+    const [selectedSkus, setSelectedSkus] = useState([]);
+
+    const [loadingListings, setLoadingListings] = useState(false);
+    const handleCheckboxToggle = (skuCode, isChecked) => {
+        // Only allow toggling if category-based SKU selection is allowed
+        const setting = settingsMap[formData.activity];
+        if (!setting?.sku) return;
+
+        setSelectedSkus(prev => {
+            if (isChecked) {
+                if (!prev.includes(skuCode)) {
+                    return [...prev, skuCode];
+                }
+                return prev;
+            } else {
+                return prev.filter(code => code !== skuCode);
+            }
+        });
+
+        setFormData(prev => ({
+            ...prev,
+            // selectedSkuCodes: isChecked
+            //     ? [...(prev.selectedSkuCodes || []), skuCode]
+            //     : (prev.selectedSkuCodes || []).filter(code => code !== skuCode)
+        }));
+
+        console.log(`✅ Updated selected SKUs:`, isChecked ? 'Added' : 'Removed', skuCode);
+    };
+
+
+
+    useEffect(() => {
+        // Sync rows to selectedSkus
+        const newRows = selectedSkus.map(sku => {
+            const existingRow = rows.find(row => row.SKU === sku);
+            return existingRow || { SKU: sku, SRP: '', QTY: '', UOM: '', DISCOUNT: '', BILLING_AMOUNT: '' };
+        });
+        setRows(newRows);
+    }, [selectedSkus]);
+    const handleChangesku = (index, field, value) => {
+        setRows(prevRows => {
+            const updated = [...prevRows];
+            const currentRow = { ...updated[index] };
+
+            // If updating SKUITEM, set it from value directly (allow manual input)
+            if (field === 'SKUITEM') {
+                currentRow.SKUITEM = value;
+            } else {
+                // Otherwise, keep SKUITEM as it was or from selectedSkus if available
+                currentRow.SKUITEM = selectedSkus[index] ?? currentRow.SKUITEM ?? '';
+                currentRow[field] = value;
+            }
+
+            if (['SRP', 'QTY', 'DISCOUNT'].includes(field)) {
+                const srp = parseFloat(field === 'SRP' ? value : currentRow.SRP) || 0;
+                const qty = parseInt(field === 'QTY' ? value : currentRow.QTY, 10) || 0;
+                const discount = parseFloat(field === 'DISCOUNT' ? value : currentRow.DISCOUNT) || 0;
+
+                currentRow.BILLING_AMOUNT = (srp * qty) - discount;
+            }
+
+            updated[index] = currentRow;
+            return updated;
+        });
+    };
+
+
+    const handleCloseModal = () => {
+        setShowModal(false);
+    };
+
+
+
+
+
+
+
+
+    // const handleCategorySelect = async (cat) => {
+    //     setFormData(prev => ({
+    //         ...prev,
+    //         categoryName: cat.name,
+    //         categoryCode: cat.code
+    //     }));
+    //     setSelectedCategory(cat);
+    //     setShowModal(false);
+
+    //     // Fetch listings related to selected category
+    //     const { data, error } = await supabase
+    //         .from("category_listing")
+    //         .select("id, name, sku_code, description")
+    //         .eq("category_code", cat.code);
+
+    //     if (error) {
+    //         console.error("Error fetching listings:", error.message);
+    //         setListings([]);
+    //     } else {
+    //         setListings(data);
+    //         setShowListingsModal(true);
+    //     }
+    // };
+
+
+    const openListingModal = async (category) => {
+        setSelectedCategory(category);
+        setLoadingListings(true);
+        setShowListingModal(true); // show modal before fetching so loading indicator shows
+
         try {
-            // Calculate totals for Volume Plan
-            const totalListPrice = promoRows.reduce((sum, row) => sum + parseFloat(row.listPrice || 0), 0);
-            const totalNonPromoAvgSales = promoRows.reduce((sum, row) => sum + parseFloat(row.nonPromoAvgSales || 0), 0);
-            const totalNonPromoAvgSalesAmount = promoRows.reduce((sum, row) => sum + parseFloat(row.nonPromoAvgSalesAmount || 0), 0);
-            const totalProjectedAvgSales = promoRows.reduce((sum, row) => sum + parseFloat(row.projectedAvgSales || 0), 0);
-            const totalProjectedAvgSalesAmount = promoRows.reduce((sum, row) => sum + parseFloat(row.projectedAvgSalesAmount || 0), 0);
-            const avgIncreasePercent = promoRows.reduce((sum, row) => sum + parseFloat(row.increasePercent || 0), 0) / (promoRows.length || 1);
+            const { data, error } = await supabase
+                .from("category_listing")
+                .select("*")
+                .eq("category_code", category.code);
 
-            // Calculate totals for Cost Details
-            const totalQuantity = costRows.reduce((sum, row) => sum + (parseFloat(row.quantity) || 0), 0);
-            const totalCostSum = costRows.reduce((sum, row) => {
-                const quantity = parseFloat(row.quantity) || 0;
-                const unitCost = parseFloat(row.unitCost) || 0;
-                const discount = parseFloat(row.discount) || 0;
-                return sum + quantity * unitCost * (1 - discount / 100);
-            }, 0);
-            const costToSalesValue = parseFloat(costToSales) || 0;
+            if (error) {
+                console.error("Error fetching listings:", error.message);
+                setListings([]);
+            } else {
+                setListings(data);
+            }
+        } catch (err) {
+            console.error("Unexpected error fetching listings:", err);
+            setListings([]);
+        } finally {
+            setLoadingListings(false);
+        }
+    };
 
-            // Insert Volume Plan
-            const { error: volumeError } = await supabase
-                .from('Regular_Visa_VolumePlan')
-                .insert([{
-                    visaCode: formData.visaCode,
-                    rows: promoRows,
-                    totalListPrice: parseFloat(totalListPrice.toFixed(2)),
-                    totalNonPromoAvgSales: parseFloat(totalNonPromoAvgSales.toFixed(2)),
-                    totalNonPromoAvgSalesAmount: parseFloat(totalNonPromoAvgSalesAmount.toFixed(2)),
-                    totalProjectedAvgSales: Math.round(totalProjectedAvgSales),
-                    totalProjectedAvgSalesAmount: parseFloat(totalProjectedAvgSalesAmount.toFixed(2)),
-                    avgIncreasePercent: parseFloat(avgIncreasePercent.toFixed(2)),
-                }]);
 
-            if (volumeError) throw volumeError;
+    // Fetch categories
+    useEffect(() => {
+        if (showModal) fetchCategories();
+    }, [showModal]);
 
-            // Insert Cost Details
-            const { error: costError } = await supabase
-                .from('Regular_Visa_CostDetails')
-                .insert([{
-                    visaCode: formData.visaCode,
-                    rows: costRows,
-                    totalQuantity: parseFloat(totalQuantity.toFixed(2)),
-                    totalCostSum: parseFloat(totalCostSum.toFixed(2)),
-                    costToSales: parseFloat(costToSalesValue.toFixed(2)),
-                    remarks: formData.remarks || '',
-                }]);
+    async function fetchCategories() {
+        setLoading(true);
+        const { data, error } = await supabase
+            .from('category')
+            .select('*')
+            .order('code', { ascending: true });
+        if (error) {
+            console.error('Error fetching categories:', error.message);
+            setCategories([]);
+        } else {
+            setCategories(data);
+        }
+        setLoading(false);
+    }
 
-            if (costError) throw costError;
+    // Filter by name or code
+    const filteredList = categories.filter(cat =>
+        cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        cat.code.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // Click input to open modal
+    const handleInputClick = () => {
+        if (formData.distributor) {
+            setShowModal(true);
+            setSearchTerm('');
+        }
+    };
+
+    // Handle checkbox toggle
+    const toggleListingSelection = (listingId) => {
+        setSelectedListings(prev =>
+            prev.includes(listingId)
+                ? prev.filter(id => id !== listingId)
+                : [...prev, listingId]
+        );
+    };
+
+    // When category is selected → also fetch its listings
+
+
+
+    const [activities, setActivities] = useState([]);
+
+    const [step, setStep] = useState(0);
+
+
+    const handlePrevious = () => {
+        const setting = settingsMap[formData.activity];
+
+        if (step === 2 && setting?.sku) {
+            setStep(1);
+        } else {
+            setStep(0);
+        }
+    };
+
+
+    const [settingsMap, setSettingsMap] = useState({});
+    const fetchActivities = async () => {
+        setLoading(true);
+        const { data, error } = await supabase
+            .from('activity')
+            .select('*')
+            .order('code', { ascending: true });
+
+        if (error) {
+            alert('Error fetching activities: ' + error.message);
+        } else {
+            setActivities(data);
+        }
+        setLoading(false);
+    };
+
+    // Fetch activity settings (e.g., amount_display)
+    // In your fetchSettings
+    const fetchSettings = async () => {
+        const { data, error } = await supabase
+            .from('activity_settings')
+            .select('activity_code, sku, accounts,amount_display');
+        if (error) {
+            console.error('❌ Error loading settings:', error);
+            return;
+        }
+        const map = {};
+        data.forEach(setting => {
+            map[setting.activity_code] = {
+                sku: setting.sku === true,
+                accounts: setting.accounts === true,
+                amount_display: setting.amount_display === true,
+
+            };
+        });
+        console.log('✅ Settings map loaded:', map);
+        setSettingsMap(map);
+    };
+
+    // In handleFormChange or wherever formData.activity gets set
+
+
+
+    useEffect(() => {
+        fetchActivities();
+        fetchSettings();
+    }, []);
+
+    const [distributors, setDistributors] = useState([]);
+
+    useEffect(() => {
+        async function fetchDistributors() {
+            const { data, error } = await supabase
+                .from('distributors')
+                .select('id, name, code');
+            if (error) {
+                console.error('Error fetching distributors:', error);
+            } else {
+                setDistributors(data);
+            }
+        }
+
+        fetchDistributors();
+    }, []);
+    const selectedDistributor = distributors.find(d => d.code === formData.distributor);
+    const selectedName = selectedDistributor ? selectedDistributor.name : '';
+
+
+
+    // useEffect(() => {
+    //     async function loadAccounts() {
+    //         const { data, error } = await supabase
+    //             .from('accounts')
+    //             .select('id, code, name')
+    //             .order('code', { ascending: true });
+    //         if (!error) setAccountTypes(data);
+    //     }
+    //     loadAccounts();
+    // }, []);
+
+    // compute selected
+
+
+
+
+
+    // Toggle selection of accountType
+
+
+    const [accountSearchTerm, setAccountSearchTerm] = useState("");
+    const [showModal_Account, setShowModal_Account] = useState(false);
+
+    // Fetch all accounts initially (optional)
+    // useEffect(() => {
+    //     const fetchAccounts = async () => {
+    //         const { data, error } = await supabase
+    //             .from("accounts")
+    //             .select("*")
+    //             .order("code", { ascending: true });
+    //         if (error) {
+    //             console.error("Error fetching account types:", error.message);
+    //         } else {
+    //             setAccountTypes(data);
+    //         }
+    //     };
+    //     fetchAccounts();
+    // }, []);
+
+    // Get selected account names for display
+    const getAccountNames = () => {
+        if (!formData.accountType.length) return "";
+
+        const selectedNames = accountTypes
+            .filter((opt) => formData.accountType.includes(opt.code))
+            .map((opt) => opt.name);
+
+        return selectedNames.join(", ");
+    };
+
+    // Toggle checkbox selection of account types
+    const toggleAccountType = (code) => {
+        setFormData((prev) => {
+            const accountType = prev.accountType.includes(code)
+                ? prev.accountType.filter((c) => c !== code) // remove
+                : [...prev.accountType, code]; // add
+            return { ...prev, accountType };
+        });
+    };
+
+    // Handle changes on form inputs, including distributor change
+    const handleFormChange = async (e) => {
+        const { name, value } = e.target;
+
+        setFormData((prev) => {
+            const newForm = { ...prev, [name]: value };
+
+            if (settingsMap[value]) {
+                newForm.sku = settingsMap[value].sku;
+                newForm.accounts = settingsMap[value].accounts;
+                newForm.amount_display = settingsMap[value].amount_display;
+                console.log("🔍 SKU enabled:", settingsMap[value].sku);
+            }
+
+            // Reset budget rows when distributor or accountType changes
+            if (name === "distributor" || name === "accountType") {
+                setRowsAccounts([]);  // Clear budget rows for fresh input
+            }
+
+            return newForm;
+        });
+
+        if (name === "distributor") {
+            try {
+                const selectedDistributor = distributors.find((d) => d.code === value);
+
+                if (!selectedDistributor) {
+                    console.warn("Distributor not found.");
+                    return;
+                }
+
+                const { data, error } = await supabase
+                    .from("categorydetails")
+                    .select("id, code, name, description")
+                    .eq("principal_id", selectedDistributor.id);
+
+                if (error) throw error;
+
+                const formatted = data.map((item) => ({
+                    id: item.id,
+                    code: item.code,
+                    name: item.name,
+                    description: item.description,
+                }));
+
+                setAccountTypes(formatted);
+                setAccountSearchTerm("");
+                // Reset selected accounts when distributor changes
+                setFormData((prev) => ({ ...prev, accountType: [] }));
+
+                console.log("✅ Fetched categories for distributor:", formatted);
+            } catch (error) {
+                console.error("❌ Failed to fetch category details:", error.message);
+                setAccountTypes([]);
+            }
+        }
+    };
+
+
+    // compute selected names
+    // const selectedNames = accountTypes
+    //     .filter(opt => formData.accountType && formData.accountType.includes(opt.id))
+    //     .map(opt => opt.name)
+    //     .join(', ');
+
+
+
+
+
+    const [rawAmount, setRawAmount] = React.useState(formData.amountbadget || '');
+
+    const formatNumberWithCommas = (num) => {
+        if (!num) return '';
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    };
+
+    const handleAmountChange = (e) => {
+        let value = e.target.value;
+
+        // Remove all commas
+        value = value.replace(/,/g, '');
+
+        // Allow only digits (empty string allowed for deletion)
+        if (/^\d*$/.test(value)) {
+            // Format with commas
+            const formattedValue = formatNumberWithCommas(value);
+            setRawAmount(formattedValue);
+            handleFormChange({ target: { name: 'amountbadget', value } }); // Save unformatted value in formData
+        }
+    };
+
+
+    // 1st page for SKU
+
+    const UOM_OPTIONS = ['Case', 'PC', 'IBX'];
+
+    const [rows, setRows] = useState([]);
+    const [tempIdCounter, setTempIdCounter] = useState(0);
+
+    // Fetch rows from Supabase
+
+
+    // Count how many rows per UOM
+
+    // Export full table to Excel
+    const triggerFileInput = () => {
+        if (window.excelInput) window.excelInput.click();
+    };
+
+    // Common handler for file import
+    const handleFileImport = (file) => {
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const data = new Uint8Array(event.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const imported = XLSX.utils.sheet_to_json(worksheet);
+
+            // ❌ Reject if more than 2 rows
+            if (imported.length > 2) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Import Limit Exceeded',
+                    text: 'You can only import up to 2 rows.',
+                });
+                return;
+            }
+
+            // ✅ Proceed with processing
+            const importedRows = imported.map((row, idx) => {
+                const SRP = parseFloat(row.SRP) || 0;
+                const QTY = parseInt(row.QTY) || 0;
+                const DISCOUNT = parseFloat(row.DISCOUNT) || 0;
+
+                return {
+                    id: Date.now() + idx,
+                    SKU: row.SKUITEM || '',
+                    SRP,
+                    QTY,
+                    UOM: row.UOM || '',
+                    DISCOUNT,
+                    BILLING_AMOUNT: (SRP * QTY) - DISCOUNT,
+                };
+            });
+
+            const totals = importedRows.reduce(
+                (acc, row) => {
+                    acc.SRP += row.SRP;
+                    acc.QTY += row.QTY;
+                    acc.DISCOUNT += row.DISCOUNT;
+                    acc.BILLING_AMOUNT += row.BILLING_AMOUNT;
+
+                    if (row.UOM && UOM_OPTIONS.includes(row.UOM)) {
+                        acc.UOMCount[row.UOM] = (acc.UOMCount[row.UOM] || 0) + 1;
+                    }
+
+                    return acc;
+                },
+                { SRP: 0, QTY: 0, DISCOUNT: 0, BILLING_AMOUNT: 0, UOMCount: {} }
+            );
+
+            setRows(importedRows);
+            setTotals(totals);
+        };
+
+        reader.readAsArrayBuffer(file);
+    };
+
+    // Calculate totals live
+
+    const [totals, setTotals] = useState({
+        SRP: 0,
+        QTY: 0,
+        DISCOUNT: 0,
+        BILLING_AMOUNT: 0,
+        UOMCount: {}
+    });
+
+    useEffect(() => {
+        const newTotals = rows.reduce(
+            (acc, row) => {
+                acc.SRP += parseFloat(row.SRP) || 0;
+                acc.QTY += parseInt(row.QTY) || 0;
+                acc.DISCOUNT += parseFloat(row.DISCOUNT) || 0;
+                acc.BILLING_AMOUNT += parseFloat(row.BILLING_AMOUNT) || 0;
+
+                if (row.UOM && UOM_OPTIONS.includes(row.UOM)) {
+                    acc.UOMCount[row.UOM] = (acc.UOMCount[row.UOM] || 0) + 1;
+                }
+                return acc;
+            },
+            { SRP: 0, QTY: 0, DISCOUNT: 0, BILLING_AMOUNT: 0, UOMCount: {} }
+        );
+
+        setTotals(newTotals);
+    }, [rows]);
+
+
+    // Export to Excel
+    const handleExport = () => {
+        if (rows.length === 0) {
+            alert("ADD 0 = 00  IN BUDGET.");
+            return;
+        }
+
+        const exportData = rows.map(row => ({
+            SKU: row.SKUITEM,
+            SRP: row.SRP,
+            QTY: row.QTY,
+            UOM: row.UOM,
+            DISCOUNT: row.DISCOUNT,
+            BILLING_AMOUNT: row.BILLING_AMOUNT
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "SKU_Data");
+
+        XLSX.writeFile(workbook, "SKU_List.xlsx");
+    };
+    // Handle input changes per row
+    const handleChange = (index, field, value) => {
+        setRows(prev => {
+            const updated = [...prev];
+            const row = { ...updated[index], [field]: value };
+
+            // Only recalculate billing amount if relevant fields change
+            if (['SRP', 'QTY', 'DISCOUNT'].includes(field)) {
+                const srp = parseFloat(field === 'SRP' ? value : row.SRP) || 0;
+                const qty = parseInt(field === 'QTY' ? value : row.QTY) || 0;
+                const discount = parseFloat(field === 'DISCOUNT' ? value : row.DISCOUNT) || 0;
+
+                row.BILLING_AMOUNT = (srp * qty) - discount;
+            }
+
+            updated[index] = row;
+            return updated;
+        });
+    };
+
+
+
+    // Save existing row to Supabase
+    // const saveRow = async (id) => {
+    //     const row = rows.find(r => r.id === id);
+    //     if (!row || typeof row.id !== 'number') return; // only save rows with real numeric IDs
+    //     const { error } = await supabase
+    //         .from('Regular_SKU')
+    //         .update({
+    //             PWP_CODE: row.PWP_CODE,
+    //             SKU: row.SKU,
+    //             SRP: parseFloat(row.SRP) || 0,
+    //             QTY: parseInt(row.QTY) || 0,
+    //             UOM: row.UOM,
+    //             DISCOUNT: parseFloat(row.DISCOUNT) || 0,
+    //             BILLING_AMOUNT: parseFloat(row.BILLING_AMOUNT) || 0,
+    //         })
+    //         .eq('id', id);
+    //     if (error) {
+    //         console.error('Error updating row:', error);
+    //         alert('Failed to save row');
+    //     } else {
+    //         fetchRows();
+    //     }
+    // };
+
+    // Delete row from Supabase
+    // const deleteRow = async (id) => {
+    //     if (typeof id !== 'number') {
+    //         // Just remove new unsaved row from state
+    //         setRows(prev => prev.filter(row => row.id !== id));
+    //         return;
+    //     }
+
+    //     const confirmed = window.confirm('Are you sure you want to delete this row?');
+    //     if (!confirmed) return;
+
+    //     const { error } = await supabase
+    //         .from('Regular_SKU')
+    //         .delete()
+    //         .eq('id', id);
+    //     if (error) {
+    //         console.error('Error deleting row:', error);
+    //         alert('Failed to delete');
+    //     } else {
+    //         fetchRows();
+    //     }
+    // };
+
+    // Add a new row with unique temp ID and balanced UOM default
+    // const addRow = () => {
+    //     const uomCounts = countUOMs(rows);
+    //     const minCount = Math.min(...UOM_OPTIONS.map(uom => uomCounts[uom] || 0));
+    //     const leastUsedUOMs = UOM_OPTIONS.filter(uom => (uomCounts[uom] || 0) === minCount);
+    //     const defaultUOM = leastUsedUOMs.length > 0 ? leastUsedUOMs[0] : 'Case';
+
+    //     const newId = `new-${tempIdCounter}`;
+    //     setTempIdCounter(tempIdCounter + 1);
+
+    //     const newRow = {
+    //         id: newId,
+    //         PWP_CODE: '',
+    //         SKU: '',
+    //         SRP: 0,
+    //         QTY: 0,
+    //         UOM: defaultUOM,
+    //         DISCOUNT: 0,
+    //         BILLING_AMOUNT: 0,
+    //     };
+    //     setRows(prev => [newRow, ...prev]);
+    // };
+
+    // Save a new row to Supabase
+
+
+
+    const [rowsAccounts, setRowsAccounts] = useState([]); // Account rows from database or imported data
+    const [loadingAccounts, setLoadingAccounts] = useState(false); // Loading state
+    const [fileImportAccounts, setFileImportAccounts] = useState(null); // File import reference
+    const fileInputRefs = useRef(null); // Reference to file input for triggering the file picker
+
+    // Fetch data from Supabase
+    const fetchRowsAccounts = async () => {
+        setLoadingAccounts(true);
+
+        const { data, error } = await supabase
+            .from('regular_accountlis_badget') // ✅ Correct table name
+            .select('*')
+            .order('id', { ascending: true }); // Optional, but fine
+
+        if (error) {
+            console.error('Error fetching data:', error);
+            // Optional: show alert
+        } else {
+            setRowsAccounts(data); // ✅ Assuming `setRowsAccounts` updates state
+        }
+
+        setLoadingAccounts(false);
+    };
+
+    useEffect(() => {
+        fetchRowsAccounts();
+    }, []);
+
+
+
+    const [importError, setImportError] = React.useState('');
+
+    const handleImportCSV = (file) => {
+        if (!file) return;
+
+        setImportError(''); // Clear previous errors
+
+        const reader = new FileReader();
+
+        reader.onload = (evt) => {
+            const bstr = evt.target.result;
+            const wb = XLSX.read(bstr, { type: 'binary' });
+            const wsname = wb.SheetNames[0];
+            const ws = wb.Sheets[wsname];
+            const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+            const requiredColumns = ['ACCOUNT_CODE', 'ACCOUNT_NAME', 'BUDGET'];
+
+            // Find header row index with all required columns
+            const headerRowIndex = data.findIndex(row =>
+                requiredColumns.every(col => row.includes(col))
+            );
+
+            if (headerRowIndex === -1) {
+                const errMsg = 'Ops! The imported file must have all required columns (ACCOUNT_CODE, ACCOUNT_NAME, BUDGET) in the same row.';
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Import Error',
+                    text: errMsg,
+                });
+                setImportError(errMsg);
+                return;
+            }
+
+            const headerRow = data[headerRowIndex];
+            const importedRows = data.slice(headerRowIndex + 1);
+
+            // Extract imported account codes from CSV
+            const importedAccountCodes = importedRows.map(row => row[headerRow.indexOf('ACCOUNT_CODE')] || '').filter(code => code !== '');
+
+            // Get the UI account codes filtered by formData.accountType (accounts visible in your UI table)
+            const uiAccountCodes = accountTypes
+                .filter(account => formData.accountType.includes(account.code))
+                .map(account => account.code);
+
+            // Compare length first
+            if (importedAccountCodes.length !== uiAccountCodes.length) {
+                const errMsg = `Ops! Imported data row count (${importedAccountCodes.length}) does not match the UI table row count (${uiAccountCodes.length}).`;
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Import Error',
+                    text: errMsg,
+                });
+                setImportError(errMsg);
+                return;
+            }
+
+            // Check if all imported codes exist in UI account codes
+            const invalidCodes = importedAccountCodes.filter(code => !uiAccountCodes.includes(code));
+
+            if (invalidCodes.length > 0) {
+                const errMsg = `Ops! Imported file contains account codes not in the UI table: ${invalidCodes.join(', ')}`;
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Import Error',
+                    text: errMsg,
+                });
+                setImportError(errMsg);
+                return;
+            }
+
+            // Passed validations, now map to newAccounts
+            const newAccounts = importedRows.map((row, index) => {
+                return {
+                    id: `new-${index + 1}`,
+                    account_code: row[headerRow.indexOf('ACCOUNT_CODE')] || '',
+                    account_name: row[headerRow.indexOf('ACCOUNT_NAME')] || '',
+                    budget: row[headerRow.indexOf('BUDGET')] !== '' && row[headerRow.indexOf('BUDGET')] !== null
+                        ? parseFloat(row[headerRow.indexOf('BUDGET')]) || 0
+                        : 0,
+                };
+            });
+
+            // Update your rowsAccounts with newAccounts accordingly
+            setRowsAccounts(prevRows => {
+                const updatedRows = [...prevRows];
+                newAccounts.forEach(newAccount => {
+                    const existingIndex = updatedRows.findIndex(r => r.account_code === newAccount.account_code);
+                    if (existingIndex !== -1) {
+                        updatedRows[existingIndex] = newAccount;
+                    } else {
+                        updatedRows.push(newAccount);
+                    }
+                });
+                return updatedRows;
+            });
+
+            setImportError(''); // Clear error on success
+        };
+
+        reader.readAsBinaryString(file);
+    };
+
+
+
+
+
+
+
+
+
+    const handleExportCSV = () => {
+        // Check if there's any data to export (i.e., if the table rows have data)
+        const selectedAccounts = accountTypes.filter(account => formData.accountType.includes(account.code));
+        // Check if there are any selected accounts to export
+        if (selectedAccounts.length === 0) {
+            alert("No accounts selected to export.");
+            return;
+        }
+
+        // Transform data before export
+        const exportData = selectedAccounts.map(account => {
+            // Find existing budget data for this account
+            const existingRow = rowsAccounts.find(r => r.account_code === account.code);
+            const budgetValue = existingRow?.budget !== undefined ? existingRow.budget : 0;
+
+            return {
+                ACCOUNT_CODE: account.code || '',
+                ACCOUNT_NAME: account.name || '',
+                BUDGET: budgetValue.toString() || "0"
+            };
+        });
+
+        console.log("Rows to export:", exportData);  // For debugging purposes
+
+        // Create a worksheet from the mapped export data
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+        // Create a new workbook and append the worksheet to it
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Account_Budget_Data");
+
+        // Trigger the file download
+        XLSX.writeFile(workbook, "RegularAccountBudget.xlsx");
+    };
+
+
+    // Handle file change from input
+    const handleFileChange = (e) => {
+        if (e.target.files.length > 0) {
+            handleImportCSV(e.target.files[0]);
+        }
+    };
+
+    // Trigger file input
+    const triggerFileInputs = () => {
+        fileInputRefs.current.click();
+    };
+
+    // Handle drag & drop file import
+    const handleFileDrop = (e) => {
+        e.preventDefault();
+        if (e.dataTransfer.files.length > 0) {
+            handleImportCSV(e.dataTransfer.files[0]);
+        }
+    };
+
+    // Handle export to Excel
+
+
+
+
+    // Calculate total budget
+    // const calculateTotalBudget = () => {
+    //     return rowsAccounts.reduce((sum, account) => sum + (parseFloat(account.BUDGET) || 0), 0).toFixed(2);
+    // };
+
+    // // Handle change for account data
+    // const handleChangeAccounts = (id, field, value) => {
+    //     setRowsAccounts(prev =>
+    //         prev.map(row => (row.id === id ? { ...row, [field]: value } : row))
+    //     );
+    // };
+
+    // Submit all rows (insert/update)
+
+
+
+    // Delete row function
+    const deleteRowAccounts = async (id) => {
+        const confirmed = window.confirm('Are you sure you want to delete this row?');
+        if (!confirmed) return;
+
+        const { error } = await supabase
+            .from('Regular_AccountLis_badget')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error('Error deleting row:', error);
+            alert('Failed to delete row');
+        } else {
+            fetchRowsAccounts();
+        }
+    };
+
+
+    // Handle export to Excel
+
+
+ 
+
+
+
+
+    const submitTosku = async () => {
+        try {
+            // ✅ Skip submitting if SKU is disabled
+            if (!formData.sku) {
+                console.log('🚫 SKU submission skipped (SKU not enabled for this activity).');
+                return; // Exit early if SKU is not enabled
+            }
+
+            // Prepare rows to submit with defaults
+            const rowsToSubmit = rows.map(row => ({
+                sku: row.SKUITEM,
+                srp: parseFloat(row.SRP) || 0,
+                qty: parseInt(row.QTY, 10) || 0,
+                uom: row.UOM || 'CASE',
+                discount: parseFloat(row.DISCOUNT) || 0,
+                billing_amount: parseFloat(row.BILLING_AMOUNT) || 0,
+                regular_code: row.regularpwpcode || generateRegularCode(allRegularPwpCodes),
+                remarks: formData.remarks || '',
+            }));
+
+            if (rows.length === 1) {
+                const updatedRow = rowsToSubmit[0];
+                updatedRow.regular_code = updatedRow.regular_code || generateRegularCode(allRegularPwpCodes);
+                rowsToSubmit.push(updatedRow);
+            } else {
+                const regularCodeForTotals = rowsToSubmit[0].regular_code || 'Total:';
+                const totalsData = {
+                    sku: 'Total:',
+                    srp: totals.SRP.toFixed(2),
+                    qty: totals.QTY,
+                    uom: 'EA',
+                    discount: totals.DISCOUNT.toFixed(2),
+                    billing_amount: totals.BILLING_AMOUNT.toFixed(2),
+                    regular_code: regularCodeForTotals,
+                    remarks: formData.remarks || 'Summary of all entries',
+                };
+                rowsToSubmit.push(totalsData);
+            }
+
+            // Removed Swal loading modal here
+
+            const { data, error } = await supabase
+                .from('regular_sku_listing')
+                .insert(rowsToSubmit);
+
+            if (error) {
+                throw new Error(error.message);
+            }
 
             Swal.fire({
-                icon: 'success',
                 title: 'Success!',
-                text: 'Volume Plan and Cost Details saved to Supabase successfully!',
-                timer: 2000,
-                showConfirmButton: false,
+                text: 'Your data has been successfully submitted to the database.',
+                icon: 'success',
+                confirmButtonText: 'Ok',
             });
+
         } catch (error) {
-            console.error('Supabase Submission Error:', error);
             Swal.fire({
+                title: 'Error!',
+                text: `There was an issue submitting your data: ${error.message}`,
                 icon: 'error',
-                title: 'Submission Failed',
-                text: 'Could not save data to Supabase. Please try again.',
+                confirmButtonText: 'Try Again',
             });
         }
     };
 
+ const submit_all = async (e) => {
+  e.preventDefault();
+
+  try {
+    // Show loading modal for 3 seconds (3000 ms)
+    await Swal.fire({
+      title: 'Submitting...',
+      html: 'Please wait while we save your data.',
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      },
+      timer: 3000,
+      timerProgressBar: true,
+    });
+
+    // After loading modal closes, start actual submission
+    console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
+    await submitTosku();
+    console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
+
+    console.log(`[${new Date().toLocaleString()}] 📝 Submitting form data...`);
+    await handleSubmitFormAndAttachments();
+    console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
+
+    console.log(`[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`);
+
+    const filteredRows = rowsAccounts.filter(row =>
+      formData.accountType.includes(row.account_code)
+    );
+
+    const totalBudget = filteredRows
+      .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+      .toFixed(2);
+
+    const budgetRowsToInsert = filteredRows.map(row => ({
+      regularcode: formData.regularpwpcode,
+      account_code: row.account_code,
+      account_name: row.account_name,
+      budget: row.budget || 0,
+      created_at: row.created_at || new Date().toISOString(),
+      createform: 'ADMINISTRATOR',
+      total_budget: totalBudget,
+    }));
+
+    if (budgetRowsToInsert.length > 0) {
+      const { data, error } = await supabase
+        .from('regular_accountlis_badget')
+        .insert(budgetRowsToInsert);
+
+      if (error) throw error;
+
+      console.log(`[${new Date().toLocaleString()}] ✅ Budget data saved:`, data);
+    } else {
+      console.log(`[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`);
+    }
+
+    await Swal.fire({
+      title: 'Success!',
+      text: 'Your data has been successfully submitted and saved.',
+      icon: 'success',
+      confirmButtonText: 'Ok',
+    });
+
+    window.location.reload();
+
+  } catch (error) {
+    console.error(`[${new Date().toLocaleString()}] ❌ Submit All Error:`, error);
+    Swal.fire({
+      title: 'Error!',
+      text: `There was an issue submitting your data: ${error.message}`,
+      icon: 'error',
+      confirmButtonText: 'Try Again',
+    });
+  }
+};
 
 
-    const postToFirebase = async () => {
+
+
+    const handleSubmitFormAndAttachments = async () => {
         try {
+            const storedUser = localStorage.getItem('loggedInUser');
+            const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+            const createdBy = parsedUser?.name || 'Unknown';
+
+            if (!formData.regularpwpcode || formData.regularpwpcode.trim() === "") {
+                throw new Error("regularpwpcode is required.");
+            }
+
+            // Validate distributor
+            let distributorCode = formData.distributor?.trim() || null;
+
+            if (distributorCode) {
+                const { data: distributorsData, error: distributorError } = await supabase
+                    .from('distributors')
+                    .select('code')
+                    .eq('code', distributorCode)
+                    .single();
+
+                if (distributorError || !distributorsData) {
+                    throw new Error(`Distributor code "${distributorCode}" is invalid.`);
+                }
+            }
+
+            // Prepare budget values
+            const amountBudget = parseFloat(formData.amountbadget || 0);
+            const billingAmountSKU = rows.reduce((acc, row) => {
+                const val = parseFloat(row.BILLING_AMOUNT);
+                return acc + (isNaN(val) ? 0 : val);
+            }, 0);
+            const totalAllocatedFromAccounts = rowsAccounts.reduce(
+                (sum, row) => sum + (parseFloat(row.budget) || 0),
+                0
+            );
+
+            // ✅ Use only one source for creditBudget based on priority
+            let creditBudget = 0;
+
+            if (amountBudget > 0) {
+                creditBudget = amountBudget;
+            } else if (billingAmountSKU > 0) {
+                creditBudget = billingAmountSKU;
+            } else if (totalAllocatedFromAccounts > 0) {
+                creditBudget = totalAllocatedFromAccounts;
+            }
+
+            // Calculate remaining balance
+            const remainingBalance =
+                selectedBalance !== null ? selectedBalance - creditBudget : null;
+
+            // Prepare form submission data
+            const submissionData = {
+                ...formData,
+                distributor: distributorCode,
+                created_at: new Date().toISOString(),
+                createForm: createdBy,
+                credit_budget: creditBudget,
+                remaining_balance: remainingBalance,
+            };
+
+            // Insert form into Supabase
+            const { data: formInsertData, error: formInsertError } = await supabase
+                .from('regular_pwp')
+                .insert([submissionData])
+                .select();
+
+            if (formInsertError) {
+                throw new Error(`Form Insert failed: ${formInsertError.message}`);
+            }
+
+            // Insert attachments (if any)
+            await Promise.all(
+                files.map(async (file) => {
+                    const { name, type, size } = file;
+
+                    const attachmentPayload = {
+                        regularpwpcode: formData.regularpwpcode,
+                        filename: name,
+                        mimetype: type,
+                        size: size,
+                    };
+
+                    const { error: attachmentError } = await supabase
+                        .from('regular_attachments')
+                        .insert([attachmentPayload])
+                        .select();
+
+                    if (attachmentError) {
+                        throw new Error(`Attachment insert failed for ${name}: ${attachmentError.message}`);
+                    }
+                })
+            );
+
+            // ✅ Reset everything after success
+            setFiles([]);
+            setRows([]);           // <-- Make sure you have setRows in your state
+            setRowsAccounts([]);   // <-- Same here
+            setFormData({
+                regularpwpcode: "",
+                accountType: [],
+                categoryCode: [],
+                categoryName: [],
+                activity: "",
+                pwptype: "Regular",
+                notification: false,
+                objective: "",
+                promoScheme: "",
+                activityDurationFrom: new Date().toISOString().split('T')[0],
+                activityDurationTo: new Date().toISOString().split('T')[0],
+                isPartOfCoverPwp: false,
+                coverPwpCode: "",
+                distributor: "",
+                amountbadget: "0",
+                categoryCode: "",
+                sku: null,
+                accounts: null,
+                amount_display: null,
+            });
+
+            // Optional: show success toast
+            // toast.success("Form submitted successfully");
+
         } catch (error) {
-            console.error('Error in postToFirebase:', error);
+            // Handle and show error to the user
+            console.error("Submission Error:", error.message);
+            alert(error.message); // Replace with a toast/snackbar if available
         }
     };
 
-    const postCostAndVolumeDetails = async () => {
-        try {
-            await postCostAndVolumeToSupabase();
-            console.log("✅ Cost details and volume plan submitted.");
-        } catch (error) {
-            console.error("❌ Error submitting cost/volume details:", error);
-            throw error; // Rethrow to handle it where called
-        }
-    };
+
+
+
 
     const saveRecentActivity = async ({ UserId }) => {
         try {
@@ -668,563 +1688,184 @@ const RegularVisaForm = () => {
     };
 
 
-    const handleSubmit = async () => {
-        if (!formData.visaCode) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Missing Visa Code',
-                text: 'Visa Code is required before submitting!',
-            });
-            return;
-        }
+    // Only update rows when categories change, NOT when accounts change
+    const handleCategoryChange = (cat, isSelected) => {
+        setFormData((prevData) => {
+            let newCodes = [...(prevData.categoryCode || [])];
+            let newNames = [...(prevData.categoryName || [])];
 
-        try {
-            if (files.length > 0) {
-                console.log("📂 Preparing files for upload...");
-
-                const filePromises = files.map((file) => {
-                    return new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            resolve({
-                                visaCode: formData.visaCode,
-                                name: file.name,
-                                type: file.type,
-                                size: file.size,
-                                content: reader.result, // 🔥 base64 content
-                                uploadedAt: new Date().toISOString(),
-                            });
-                        };
-                        reader.onerror = (error) => reject(error);
-                        reader.readAsDataURL(file);
-                    });
-                });
-
-                const encodedFiles = await Promise.all(filePromises);
-                console.log("✅ Files encoded:", encodedFiles);
-
-                // Save attachments metadata to Supabase table only (removed Firestore)
-                const { data: supaData, error: supaError } = await supabase
-                    .from('Regular_Visa_Attachments')
-                    .insert(encodedFiles);
-
-                if (supaError) {
-                    console.error("❌ Supabase metadata insert error:", supaError);
-                } else {
-                    console.log("✅ Metadata inserted into Supabase DB:", supaData);
+            if (isSelected) {
+                if (!newCodes.includes(cat.code)) {
+                    newCodes.push(cat.code);
+                    newNames.push(cat.name);
                 }
             } else {
-                console.log("ℹ️ No files selected. Skipping file upload.");
+                newCodes = newCodes.filter(code => code !== cat.code);
+                newNames = newNames.filter(name => name !== cat.name);
             }
 
-            const storedUser = JSON.parse(localStorage.getItem('user'));
-            if (!storedUser) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'User not found',
-                    text: 'Please log in again.',
-                });
-                return;
-            }
-
-            // Update the database with new data
-            await saveRecentActivity({ UserId: storedUser.id });
-
-            // Removed postToFirebase() call
-            await postCostAndVolumeDetails();
-
-            await handleSubmitToSupabase();
-
-            Swal.fire({
-                icon: 'success',
-                title: 'Submitted!',
-                text: 'Your data has been successfully submitted.',
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    window.location.reload(); // 🔄 Reload page after user clicks OK
-                }
-            });
-
-            setFiles([]);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-
-        } catch (error) {
-            console.error("❌ Submission Error:", error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Submission Failed',
-                text: 'There was a problem during submission. Check console for details.',
-            });
-        }
-    };
-
-
-
-
-    const [submitAction, setSubmitAction] = useState(null);
-
-    const handleSubmits = async (e) => {
-        e.preventDefault();
-
-        if (submitAction === 'submit') {
-        } else {
-        }
-
-        setSubmitAction(null); // reset state after action
-    };
-    const [options, setOptions] = useState([]);
-
-    const [showCoverVisaCode, setShowCoverVisaCode] = useState(false);
-
-    const [hovered, setHovered] = useState(false);
-
-    const borderColor = formData.company ? 'green' : hovered ? '#ccc' : '';
-    const [company, setCompany] = useState([]);
-    const [salesDivisions, setSalesDivisions] = useState([]);
-    const [groupAccount, setGroupAccount] = useState([]);
-    const [accountTypes, setAccountTypes] = useState([]);
-    const [visaTypes, setVisaTypes] = useState([]);
-    const [activity, setActvity] = useState([]);
-    const [principal, setPrincipal] = useState([]);
-
-
-
-
-
-    const [supportType, setSupportType] = useState([]);
-
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchSupportType = async () => {
-            const { data, error } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "CustomerGroup");
-
-            if (error) {
-                console.error("Error fetching CustomerGroup data:", error);
-            } else if (isMounted) {
-                setSupportType(data || []);
-            }
-        };
-
-        fetchSupportType();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchCompanies = async () => {
-            const { data, error } = await supabase
-                .from("References")           // your table name
-                .select("*")
-                .eq("reference_type", "Company");
-
-            if (error) {
-                console.error("Error fetching Company:", error);
-            } else if (isMounted) {
-                setCompany(data); // set state with the array of results
-            }
-        };
-
-        fetchCompanies();
-
-        return () => {
-            isMounted = false; // cleanup to avoid setting state if unmounted
-        };
-    }, []);
-
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchSalesDivisions = async () => {
-            const { data, error } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "SalesDivision");
-
-            if (error) {
-                console.error("Error fetching SalesDivisions:", error);
-                if (isMounted) setSalesDivisions([]);
-            } else if (isMounted) {
-                setSalesDivisions(data || []);
-            }
-        };
-
-        fetchSalesDivisions();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-    useEffect(() => {
-        if (!formData.accountType) {
-            setGroupAccount([]); // clear when no accountType selected
-            return;
-        }
-
-        let isMounted = true;
-
-        const fetchGroupAccountsByParentName = async () => {
-            // Get the AccountType's name by id
-            const { data: accountTypeData, error: accountTypeError } = await supabase
-                .from("References")
-                .select("name")
-                .eq("id", formData.accountType)
-                .single();
-
-            if (accountTypeError) {
-                console.error("Error fetching AccountType name:", accountTypeError);
-                if (isMounted) setGroupAccount([]);
-                return;
-            }
-
-            if (!accountTypeData) {
-                if (isMounted) setGroupAccount([]);
-                return;
-            }
-
-            const parentName = accountTypeData.name;
-
-            // Fetch GroupAccounts where parent_id = AccountType name
-            const { data: groupAccounts, error: groupAccountError } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "GroupAccount")
-                .eq("parent_id", parentName);
-
-            if (groupAccountError) {
-                console.error("Error fetching GroupAccounts:", groupAccountError);
-                if (isMounted) setGroupAccount([]);
-                return;
-            }
-
-            if (isMounted) setGroupAccount(groupAccounts || []);
-        };
-
-        fetchGroupAccountsByParentName();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [formData.accountType]);
-
-
-
-
-
-    // Load group account list when accountType is selected
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchAccountTypes = async () => {
-            const { data, error } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "AccountType");
-
-            if (error) {
-                console.error("Error fetching AccountTypes:", error);
-            } else if (isMounted) {
-                setAccountTypes(data);
-            }
-        };
-
-        fetchAccountTypes();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchActivities = async () => {
-            const { data, error } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "Activity");
-
-            if (error) {
-                console.error("Error fetching Activity data:", error);
-            } else if (isMounted) {
-                setActvity(data); // or setActivity if that’s the correct spelling
-            }
-        };
-
-        fetchActivities();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-
-
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchPrincipals = async () => {
-            const { data, error } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "Principals");
-
-            if (error) {
-                console.error("Error fetching Activity data:", error);
-            } else if (isMounted) {
-                setPrincipal(data); // or setActivity if that’s the correct spelling
-            }
-        };
-
-        fetchPrincipals();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-
-    const [chargeTo, setChargeTo] = useState([]);
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetcChargeTo = async () => {
-            const { data, error } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "ChargeTo");
-
-            if (error) {
-                console.error("Error fetching AccountTypes:", error);
-            } else if (isMounted) {
-                setChargeTo(data);
-            }
-        };
-
-        fetcChargeTo();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-    const [promotedSKUs, setPromotedSKUs] = useState([]);
-    const [showSkuModal, setShowSkuModal] = useState(false);
-    const [tableData, setTableData] = useState([
-        { promotedSKU: '' }, // Example row
-        // You can dynamically populate this depending on your case
-    ]);
-    const [skuSearch, setSkuSearch] = useState('');
-
-    const [currentRowIndex, setCurrentRowIndex] = useState(null);
-
-    const handleOpenSkuModal = (index) => {
-        setCurrentRowIndex(index);
-        setShowSkuModal(true);
-    };
-
-    const handleCloseSkuModal = () => {
-        setShowSkuModal(false);
-        setSkuSearch('');
-    };
-
-    const handleSelectSku = (skuName) => {
-        const updatedRows = [...promoRows];
-        updatedRows[currentRowIndex].promotedSKU = skuName;
-        setPromoRows(updatedRows);
-        handleCloseSkuModal();
-    };
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchBrandDetails = async () => {
-            const { data, error } = await supabase
-                .from("Branddetails")
-                .select("id, principal_name, name, description, parentname, ItemCode");
-
-            if (error) {
-                console.error("Error fetching Brand details:", error);
-            } else if (isMounted) {
-                setPromotedSKUs(data);
-            }
-        };
-
-        fetchBrandDetails();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-
-
-    const [brands, setBrands] = React.useState({});
-    // State to hold filtered brands for selected principal
-    const [filteredBrands, setFilteredBrands] = useState([]); // Always an array
-
-    useEffect(() => {
-        if (!formData.principal) {
-            setFilteredBrands([]);
-            return;
-        }
-
-        let isMounted = true;
-
-        const fetchBrands = async () => {
-            const { data, error } = await supabase
-                .from("Branddetails")
-                .select("*")
-                .eq("parentname", formData.principal); // Match selected principal
-
-            if (error) {
-                console.error("Error fetching Branddetails:", error);
-                if (isMounted) setFilteredBrands([]);
-                return;
-            }
-
-            if (isMounted) {
-                setFilteredBrands(data || []); // Always an array
-            }
-        };
-
-        fetchBrands();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [formData.principal]);
-
-    const [Costdetails, setCostdetails] = useState([]);
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchAccountTypes = async () => {
-            const { data, error } = await supabase
-                .from("References")
-                .select("*")
-                .eq("reference_type", "CostDetail");
-
-            if (error) {
-                console.error("Error fetching AccountTypes:", error);
-            } else if (isMounted) {
-                setCostdetails(data);
-            }
-        };
-
-        fetchAccountTypes();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-    // When principal changes, filter brands
-    const [amountBadget, setAmountBadget] = useState(null);
-
-    useEffect(() => {
-        const fetchAmount = async () => {
-            if (!formData.coverVisaCode) {
-                setAmountBadget(null);
-                return;
-            }
-
-            const { data, error } = await supabase
-                .from('amount_badget')
-                .select('remainingbalance')
-                .eq('visacode', formData.coverVisaCode)
-                .single();
-
-            if (error) {
-                console.error('Supabase error:', error.message);
-                setAmountBadget(null);
-            } else {
-                console.log('Fetched remainingbalance:', data?.remainingbalance);
-                setAmountBadget(data?.remainingbalance ?? null);
-            }
-        };
-
-        fetchAmount();
-    }, [formData.coverVisaCode]);
-    const remaining = (amountBadget ?? 0) - totalCostSum;
-
-    const [coverVisasWithStatus, setCoverVisasWithStatus] = React.useState([]);
-    const [selectedBalance, setSelectedBalance] = React.useState(null);
-
-    React.useEffect(() => {
-        async function fetchApprovalStatus() {
-            try {
-                const visaCodes = coverVisas.map(cv => cv.coverVisaCode);
-
-                const { data, error } = await supabase
-                    .from('amount_badget')
-                    .select('visacode, Approved, remainingbalance')  // <-- exact field name here
-                    .in('visacode', visaCodes);
-
-                if (error) {
-                    console.error('Error fetching amount_badget data:', error);
-                    return;
-                }
-
-                const approvalMap = {};
-                data.forEach(item => {
-                    approvalMap[item.visacode] = {
-                        Approved: item.Approved,
-                        remainingBalance: item.remainingbalance,  // note camelCase mapping
+            // Update rows based on codes
+            setRows((prevRows) => {
+                return newCodes.map(code => {
+                    const existingRow = prevRows.find(row => row.SKUITEM === code);
+                    return {
+                        SKUITEM: code,
+                        SRP: existingRow?.SRP || '',
+                        QTY: existingRow?.QTY || '',
+                        UOM: existingRow?.UOM || '',
+                        DISCOUNT: existingRow?.DISCOUNT || '',
+                        BILLING_AMOUNT: existingRow?.BILLING_AMOUNT || '',
                     };
                 });
+            });
 
-                const merged = coverVisas.map(cv => ({
-                    ...cv,
-                    Approved: approvalMap[cv.coverVisaCode]?.Approved ?? null,
-                    remainingBalance: approvalMap[cv.coverVisaCode]?.remainingBalance ?? null,
-                }));
-
-                setCoverVisasWithStatus(merged);
-            } catch (err) {
-                console.error('Failed to fetch or merge approval status:', err);
-            }
-        }
-
-        fetchApprovalStatus();
-    }, [coverVisas]);
-    // runs whenever coverVisas changes
-    const [showModal, setShowModal] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-
-    const handleBrandSelect = (brand) => {
-        setFormData(prev => ({ ...prev, brand }));
-        setShowModal(false);
+            return {
+                ...prevData,
+                categoryCode: newCodes,    // This will be saved to DB
+                categoryName: newNames,   // Only for display
+            };
+        });
     };
 
-    const handleInputClick = () => {
-        if (formData.principal) {
-            setShowModal(true);
-        }
-    };
 
-    const filteredList = filteredBrands.filter(brand =>
-        brand.name.toLowerCase().includes(searchTerm.toLowerCase())
+
+
+    const totalAllocatedBudget = rowsAccounts.reduce(
+        (sum, row) => sum + (parseFloat(row.budget) || 0),
+        0
     );
-    const [showAccountSearchModal, setShowAccountSearchModal] = useState(false);
-    const [accountSearchTerm, setAccountSearchTerm] = useState('');
-    const [showSupportTypeModal, setShowSupportTypeModal] = useState(false);
-    const [supportSearch, setSupportSearch] = useState('');
-    const [showCoverModal, setShowCoverModal] = useState(false);
-    const [coverVisaSearch, setCoverVisaSearch] = useState('');
 
-    // Render steps content
+
+    const [remainingBalance, setRemainingBalance] = useState(null);
+    const storedUser = localStorage.getItem('loggedInUser');
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    const createdBy = parsedUser?.name || 'Unknown';
+
+    useEffect(() => {
+        const fetchRemainingBalance = async () => {
+            if (formData.coverPwpCode && createdBy) {
+                const { data, error } = await supabase
+                    .from('amount_badget')
+                    .select('remainingbalance')
+                    .eq('pwp_code', formData.coverPwpCode)
+                    .eq('createduser', createdBy)
+                    .eq('Approved', true)
+                    .order('createdate', { ascending: false })
+                    .limit(1);
+
+                if (error) {
+                    console.error('Error fetching remaining balance:', error);
+                } else if (data && data.length > 0) {
+                    setRemainingBalance(data[0].remainingbalance);
+                } else {
+                    setRemainingBalance(0); // or null if you prefer
+                }
+            }
+        };
+
+        fetchRemainingBalance();
+    }, [formData.coverPwpCode, createdBy]);
+
+
+
+
+
+    const [selectedRowIndex, setSelectedRowIndex] = useState(null);
+    useEffect(() => {
+        const fetchCategoryListing = async () => {
+            const { data, error } = await supabase
+                .from('category_listing')
+                .select('*')
+                .order('sku_code', { ascending: true });
+
+            if (error) {
+                console.error('Error fetching category listing:', error.message);
+            } else {
+                setCategoryListing(data);
+            }
+        };
+
+        fetchCategoryListing();
+    }, []);
+
+    // categoryListing is your list of SKUs fetched from the database
+    const [categoryListing, setCategoryListing] = useState([]);
+
+
+
+    const [userDistributors, setUserDistributors] = useState([]);
+    const [filteredDistributors, setFilteredDistributors] = useState([]);
+
+    const loggedInUsername = parsedUser?.name || 'Unknown';
+    console.log('[DEBUG] Logged in user:', loggedInUsername);
+
+
+    useEffect(() => {
+        const fetchUserDistributors = async () => {
+            const { data, error } = await supabase
+                .from('user_distributors')
+                .select('distributor_name')
+                .eq('username', loggedInUsername);
+
+            if (error) {
+                console.error('[ERROR] Fetching user_distributors:', error);
+            } else {
+                const names = data.map((d) => d.distributor_name);
+                console.log('[DEBUG] Distributors assigned to user:', names);
+                setUserDistributors(names);
+            }
+        };
+
+        fetchUserDistributors();
+    }, [loggedInUsername]);
+
+    useEffect(() => {
+        const fetchDistributors = async () => {
+            const { data, error } = await supabase
+                .from('distributors')
+                .select('*')
+                .order('name', { ascending: true });
+
+            if (error) {
+                console.error('[ERROR] Fetching distributors:', error);
+            } else {
+                console.log('[DEBUG] All distributors from DB:', data);
+                setDistributors(data);
+
+                const allowed = data.filter((dist) =>
+                    userDistributors.includes(dist.name)
+                );
+                console.log('[DEBUG] Filtered distributors for dropdown:', allowed);
+                setFilteredDistributors(allowed);
+            }
+        };
+
+        if (userDistributors.length > 0) {
+            fetchDistributors();
+        }
+    }, [userDistributors]);
+
+    const [approvalList, setApprovalList] = useState([]);
+
+    useEffect(() => {
+        const fetchApprovalData = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('Single_Approval')
+                    .select('*');
+
+                if (error) throw error;
+                setApprovalList(data);
+            } catch (err) {
+                console.error("❌ Error fetching approval list:", err.message);
+                setApprovalList([]);
+            }
+        };
+
+        fetchApprovalData();
+    }, []);
+
+
     const renderStepContent = () => {
         switch (step) {
             case 0:
@@ -1232,7 +1873,7 @@ const RegularVisaForm = () => {
                     // ...inside the Step 0 case in renderStepContent function:
 
                     <div >
-                        <form onSubmit={handleSubmits}>
+                        <form onSubmit={submit_all}>
 
                             <div style={{ padding: '30px', overflowX: 'auto' }} className="containers">
                                 <div className="row align-items-center mb-4">
@@ -1263,86 +1904,62 @@ const RegularVisaForm = () => {
                                         </div>
                                     </div>
 
+
+
                                     <div className="col-12 col-md-6 text-md-end pt-3 pt-md-0">
                                         <h2
                                             className="fw-bold mb-0"
                                             style={{
                                                 letterSpacing: '1px',
                                                 fontSize: '24px',
-                                                marginBottom: '50px',
-                                                textAlign: 'right',  // <-- added this line
+                                                textAlign: 'right',
+                                                color: 'red', // This ensures the whole <h2> is red
                                             }}
                                         >
-                                            {' '}
-                                            <span className={formData.visaCode ? 'text-danger' : 'text-muted'}>
-                                                {formData.visaCode || 'N/A'}
+                                            <span className={formData.regularpwpcode ? 'text-danger' : 'text-muted'}>
+                                                {loadingRegularPwpCodes
+                                                    ? 'Generating...'
+                                                    : formData.regularpwpcode || generateRegularCode(allRegularPwpCodes)}
                                             </span>
                                         </h2>
-                                    </div>
-                                </div>    </div>
-                            <div className="row g-3">
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>Company</label>
-                                    <div
-                                        className="form-control"
-                                        style={{
-                                            backgroundColor: '#e6e6e6ff',
-                                            transition: 'border-color 0.3s',
-                                            paddingRight: '50px', // space for checkmark
-                                            paddingRight: '30px',
-                                            borderColor: borderColor,
-                                        }}
-                                    >
-                                        {formData.company || 'MEGASOFT'}
-                                    </div>
 
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            right: '20px',
-                                            top: '70%',
-                                            transform: 'translateY(-50%)',
-                                            color: 'green',
-                                            fontWeight: 'bold',
-                                            fontSize: '25px',
-                                            pointerEvents: 'none',
-                                            userSelect: 'none',
-                                        }}
-                                    >
-                                        ✓
-                                    </span>
+
+                                    </div>
                                 </div>
+                            </div>
+                            <div className="row g-3">
 
 
-                                {/* Principal */}
+                                {/* Distributor */}
                                 <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>Distributor</label>
+                                    <label>Distributor<span style={{ color: 'red' }}>*</span></label>
 
                                     <select
-                                        name="principal"
+                                        name="distributor"
                                         className="form-control"
-                                        value={formData.principal}
+                                        value={formData.distributor}
                                         onChange={handleFormChange}
                                         style={{
                                             paddingRight: '30px',
-                                            borderColor: formData.principal ? 'green' : '',
+                                            borderColor: formData.distributor ? 'green' : '',
                                             transition: 'border-color 0.3s',
                                         }}
-                                        onMouseEnter={e => {
-                                            if (formData.principal) e.currentTarget.style.borderColor = 'green';
+                                        onMouseEnter={(e) => {
+                                            if (formData.distributor) e.currentTarget.style.borderColor = 'green';
                                         }}
-                                        onMouseLeave={e => {
-                                            if (formData.principal) e.currentTarget.style.borderColor = 'green';
+                                        onMouseLeave={(e) => {
+                                            if (formData.distributor) e.currentTarget.style.borderColor = 'green';
                                             else e.currentTarget.style.borderColor = '';
                                         }}
                                     >
                                         <option value="">Select Distributor</option>
-                                        {principal.map((opt, index) => (
-                                            <option key={index} value={opt.name || opt}>
-                                                {opt.name || opt}
+                                        {filteredDistributors.map((dist) => (
+                                            <option key={dist.id} value={dist.code}>
+                                                {dist.name}
                                             </option>
                                         ))}
                                     </select>
+
                                     <span
                                         style={{
                                             position: 'absolute',
@@ -1357,7 +1974,7 @@ const RegularVisaForm = () => {
                                     >
                                         ▼
                                     </span>
-                                    {formData.principal && (
+                                    {formData.distributor && (
                                         <span
                                             style={{
                                                 position: 'absolute',
@@ -1375,338 +1992,29 @@ const RegularVisaForm = () => {
                                         </span>
                                     )}
                                 </div>
-
-                                {/* Brand */}
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>Brand</label>
-
-                                    <input
-                                        type="text"
-                                        readOnly
-                                        className="form-control"
-                                        value={formData.brand || ''}
-                                        onClick={handleInputClick}
-                                        placeholder="Select Brand"
-                                        style={{
-                                            cursor: formData.principal ? 'pointer' : 'not-allowed',
-                                            borderColor: formData.brand ? 'green' : '',
-                                            transition: 'border-color 0.3s',
-                                            paddingRight: '35px'
-                                        }}
-                                    />
-
-                                    {/* Magnifying Glass Icon */}
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            right: '10px',
-                                            top: '70%',
-                                            transform: 'translateY(-50%)',
-                                            pointerEvents: 'none',
-                                            color: '#555',
-                                            fontSize: '18px',
-                                            userSelect: 'none',
-                                        }}
-                                    >
-                                        🔍
-                                    </span>
-
-                                    {/* Checkmark if selected */}
-                                    {formData.brand && (
-                                        <span
-                                            style={{
-                                                position: 'absolute',
-                                                right: '35px',
-                                                top: '50%',
-                                                transform: 'translateY(-20%)',
-                                                color: 'green',
-                                                fontWeight: 'bold',
-                                                fontSize: '25px',
-                                                pointerEvents: 'none',
-                                                userSelect: 'none',
-                                            }}
-                                        >
-                                            ✓
-                                        </span>
-                                    )}
-
-                                    {/* Modal */}
-                                    <Modal show={showModal} onHide={() => setShowModal(false)} centered>
-
-
-                                        <Modal.Header
-                                            closeButton
-                                            style={{
-                                                background: "rgb(70, 137, 166)",
-                                                color: "white",
-                                            }}
-                                        >
-                                            <Modal.Title style={{ color: 'white' }} className="w-100 text-center">
-                                                🧾 Select a Brand
-                                            </Modal.Title>
-                                        </Modal.Header>
-                                        <Modal.Body>
-                                            <input
-                                                type="text"
-                                                className="form-control mb-3"
-                                                placeholder="Search brand..."
-                                                value={searchTerm}
-                                                onChange={e => setSearchTerm(e.target.value)}
-                                            />
-
-                                            <ul className="list-group" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                                {filteredList.length > 0 ? (
-                                                    filteredList.map((brand, idx) => (
-                                                        <li
-                                                            key={idx}
-                                                            className="list-group-item list-group-item-action"
-                                                            onClick={() => handleBrandSelect(brand.name)}
-                                                            style={{ cursor: 'pointer' }}
-                                                        >
-                                                            {brand.name}
-                                                        </li>
-                                                    ))
-                                                ) : (
-                                                    <li className="list-group-item text-muted">No brands found</li>
-                                                )}
-                                            </ul>
-                                        </Modal.Body>
-                                        <Modal.Footer>
-                                            <Button variant="secondary" onClick={() => setShowModal(false)}>
-                                                Close
-                                            </Button>
-                                        </Modal.Footer>
-                                    </Modal>
-                                </div>
-
-
-                                {/* Sales Division */}
-                                {/* <div className="col-md-4" style={{ position: 'relative', marginTop: '25px' }}>
-                                    <label>Sales Division</label>
-                                    <select
-                                        name="salesDivision"
-                                        className="form-control"
-                                        value={formData.salesDivision}
-                                        onChange={handleFormChange}
-                                        onMouseEnter={() => setHovered(true)}
-                                        onMouseLeave={() => setHovered(false)}
-                                        style={{
-                                            paddingRight: '30px',
-                                            borderColor: borderColor,
-                                            transition: 'border-color 0.3s',
-                                        }}
-                                    >
-                                        <option value="">Select Sales Division</option>
-                                        {salesDivisions.map((opt, index) => (
-                                            <option key={index} value={opt.name || opt}>
-                                                {opt.name || opt}
-                                            </option>
-                                        ))}
-
-                                    </select>
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            right: '20px',
-                                            top: '70%',
-                                            transform: 'translateY(-50%)',
-                                            pointerEvents: 'none',
-                                            color: '#555',
-                                            fontSize: '14px',
-                                            userSelect: 'none',
-                                        }}
-                                    >
-                                        ▼
-                                    </span>
-                                    {formData.salesDivision && (
-                                        <span
-                                            style={{
-                                                position: 'absolute',
-                                                right: '40px',
-                                                top: '50%',
-                                                transform: 'translateY(-20%)',
-                                                color: 'green',
-                                                fontWeight: 'bold',
-                                                fontSize: '25px',
-                                                pointerEvents: 'none',
-                                                userSelect: 'none',
-                                            }}
-                                        >
-                                            ✓
-                                        </span>
-                                    )}
-                                </div> */}
-
-                                {/* Account Type */}
-                                {/* Account Type */}
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label className="form-label">Account Group</label>
-                                    <select
-                                        name="accountType"
-                                        className="form-control"
-                                        value={formData.accountType}
-                                        onChange={handleFormChange}
-                                        style={{
-                                            paddingRight: '30px',
-                                            transition: 'border-color 0.3s',
-                                        }}
-                                    >
-                                        <option value="">Select Account </option>
-                                        {accountTypes.map(opt => (
-                                            <option key={opt.name} value={opt.id}>{opt.name}</option>
-                                        ))}
-                                    </select>
-                                    <span style={{ ...dropdownIconStyle }}>▼</span>
-                                    {formData.accountType && <span style={{ ...checkIconStyle }}>✓</span>}
-                                </div>
-
-
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label className="form-label">Account</label>
-
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        readOnly
-                                        value={formData.account || ''}
-                                        onClick={() => {
-                                            if (formData.accountType) setShowAccountSearchModal(true);
-                                        }}
-                                        placeholder="Search Group Account..."
-                                        style={{
-                                            paddingRight: '80px',
-                                            cursor: formData.accountType ? 'pointer' : 'not-allowed',
-                                            borderColor: formData.account ? 'green' : '',
-                                            transition: 'border-color 0.3s',
-                                        }}
-                                        disabled={!formData.accountType}
-                                    />
-
-                                    {/* Magnifying Glass */}
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            right: '10px',
-                                            top: '70%',
-                                            transform: 'translateY(-50%)',
-                                            pointerEvents: 'none',
-                                            color: '#555',
-                                            fontSize: '18px',
-                                            userSelect: 'none',
-                                        }}
-                                    >
-                                        🔍
-                                    </span>
-
-                                    {/* Checkmark */}
-                                    {formData.account && (
-                                        <span
-                                            style={{
-                                                position: 'absolute',
-                                                right: '35px',
-                                                top: '60%',
-                                                transform: 'translateY(-20%)',
-                                                color: 'green',
-                                                fontWeight: 'bold',
-                                                fontSize: '25px',
-                                                pointerEvents: 'none',
-                                                userSelect: 'none',
-                                            }}
-                                        >
-                                            ✓
-                                        </span>
-                                    )}
-
-                                    {/* Modal for Account Selection */}
-                                    <Modal
-                                        show={showAccountSearchModal}
-                                        onHide={() => setShowAccountSearchModal(false)}
-                                        centered
-                                    >
-                                        <Modal.Header
-                                            closeButton
-                                            style={{
-                                                background: "rgb(70, 137, 166)",
-                                                color: "white",
-                                            }}
-                                        >
-                                            <Modal.Title style={{ color: 'white' }} className="w-100 text-center">
-                                                🧾 Search  Account
-                                            </Modal.Title>
-                                        </Modal.Header>
-                                        <Modal.Body>
-                                            <input
-                                                type="text"
-                                                className="form-control mb-3"
-                                                placeholder="Search account..."
-                                                value={accountSearchTerm}
-                                                onChange={(e) => setAccountSearchTerm(e.target.value)}
-                                            />
-
-                                            <ul className="list-group" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                                {groupAccount
-                                                    .filter((opt) =>
-                                                        opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase())
-                                                    )
-                                                    .map((opt, idx) => (
-                                                        <li
-                                                            key={idx}
-                                                            className="list-group-item list-group-item-action"
-                                                            onClick={() => {
-                                                                setFormData((prev) => ({
-                                                                    ...prev,
-                                                                    account: opt.name,
-                                                                    accountName: opt.name,
-                                                                }));
-                                                                setShowAccountSearchModal(false);
-                                                            }}
-                                                            style={{ cursor: 'pointer' }}
-                                                        >
-                                                            {opt.name}
-                                                        </li>
-                                                    ))}
-                                                {groupAccount.filter((opt) =>
-                                                    opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase())
-                                                ).length === 0 && (
-                                                        <li className="list-group-item text-muted">No accounts found</li>
-                                                    )}
-                                            </ul>
-                                        </Modal.Body>
-                                        <Modal.Footer>
-                                            <Button variant="secondary" onClick={() => setShowAccountSearchModal(false)}>
-                                                Close
-                                            </Button>
-                                        </Modal.Footer>
-                                    </Modal>
-                                </div>
-
-
-
+                                {/* // ============================
+                                // Activity + Amount Budget
+                                // ============================ */}
 
                                 {/* Activity */}
                                 <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label style={{ marginBottom: '8px' }} >Activity</label>
+                                    <label>Activity <span style={{ color: 'red' }}>*</span></label>
                                     <select
                                         name="activity"
                                         className="form-control"
                                         value={formData.activity}
                                         onChange={handleFormChange}
-                                        onMouseEnter={() => setHovered(true)}
-                                        onMouseLeave={() => setHovered(false)}
-                                        style={{
-                                            paddingRight: '30px',
-                                            borderColor: borderColor,
-                                            transition: 'border-color 0.3s',
-                                        }}
                                     >
                                         <option value="">Select Activity</option>
-                                        {activity.map((opt, index) => (
-                                            <option key={index} value={opt.name || opt}>
-                                                {opt.name || opt}
+                                        {activities.map((opt, index) => (
+                                            <option key={index} value={opt.code}>
+                                                {opt.name}
                                             </option>
                                         ))}
-
                                     </select>
+
+
+                                    {/* Dropdown arrow */}
                                     <span
                                         style={{
                                             position: 'absolute',
@@ -1721,6 +2029,8 @@ const RegularVisaForm = () => {
                                     >
                                         ▼
                                     </span>
+
+                                    {/* Checkmark */}
                                     {formData.activity && (
                                         <span
                                             style={{
@@ -1739,123 +2049,255 @@ const RegularVisaForm = () => {
                                         </span>
                                     )}
                                 </div>
-                                <div className="col-md-4" style={{ position: "relative" }}>
-                                    <label >Support Type</label>
+
+
+
+                                <div className="col-md-4" style={{ position: 'relative' }}>
+                                    <label>
+                                        Category <span style={{ color: 'red' }}>*</span>
+                                    </label>
 
                                     <input
                                         type="text"
-                                        className="form-control"
                                         readOnly
-                                        value={formData.supportType || ""}
-                                        placeholder="Select Support Type"
-                                        onClick={() => setShowSupportTypeModal(true)}
+                                        className="form-control"
+                                        value={formData.categoryName?.join(', ') || ''}
+                                        onClick={handleInputClick}
+                                        placeholder="Select Categories"
                                         style={{
-                                            paddingRight: "35px",
-                                            borderColor: formData.supportType ? "green" : borderColor,
-                                            transition: "border-color 0.3s",
-                                            cursor: "pointer",
+                                            borderColor: formData.categoryName?.length > 0 ? 'green' : '',
+                                            transition: 'border-color 0.3s',
+                                            paddingRight: '35px',
+                                            cursor: 'pointer',
                                         }}
                                     />
 
-                                    {/* Magnifying glass icon */}
+
+                                    {/* Magnifying Glass Icon */}
                                     <span
                                         style={{
-                                            position: "absolute",
-                                            right: "10px",
-                                            top: "50%",
-                                            transform: "translateY(-50%)",
-                                            pointerEvents: "none",
-                                            color: "#555",
-                                            fontSize: "18px",
+                                            position: 'absolute',
+                                            right: '10px',
+                                            top: '70%',
+                                            transform: 'translateY(-50%)',
+                                            pointerEvents: 'none',
+                                            color: '#555',
+                                            fontSize: '18px',
+                                            userSelect: 'none',
                                         }}
                                     >
                                         🔍
                                     </span>
 
                                     {/* Checkmark if selected */}
-                                    {formData.supportType && (
+                                    {formData.categoryName?.length > 0 && (
                                         <span
                                             style={{
-                                                position: "absolute",
-                                                right: "35px",
-                                                top: "40%",
-                                                transform: "translateY(-20%)",
-                                                color: "green",
-                                                fontWeight: "bold",
-                                                fontSize: "25px",
-                                                pointerEvents: "none",
+                                                position: 'absolute',
+                                                right: '35px',
+                                                top: '50%',
+                                                transform: 'translateY(-20%)',
+                                                color: 'green',
+                                                fontWeight: 'bold',
+                                                fontSize: '25px',
+                                                pointerEvents: 'none',
+                                                userSelect: 'none',
                                             }}
                                         >
                                             ✓
                                         </span>
                                     )}
 
-                                    {/* Support Type Modal */}
-                                    <Modal
-                                        show={showSupportTypeModal}
-                                        onHide={() => setShowSupportTypeModal(false)}
-                                        centered
-                                    >
+                                    {/* Modal */}
+                                    <Modal show={showModal} onHide={handleCloseModal} size="lg" centered>
+
+
                                         <Modal.Header
                                             closeButton
-                                            style={{
-                                                background: "rgb(70, 137, 166)",
-                                                color: "white",
-                                            }}
-
-
+                                            style={{ background: "rgb(70, 137, 166)", color: "white" }}
                                         >
-                                            <Modal.Title style={{ color: 'white' }} className="w-100 text-center">
-                                                🛠️ Select Support Type
+                                            <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                                Select Categories
                                             </Modal.Title>
                                         </Modal.Header>
                                         <Modal.Body>
                                             <input
                                                 type="text"
                                                 className="form-control mb-3"
-                                                placeholder="Search support type..."
-                                                value={supportSearch}
-                                                onChange={(e) => setSupportSearch(e.target.value)}
+                                                placeholder="Search category by name or code..."
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
                                             />
 
-                                            <ul className="list-group" style={{ maxHeight: "200px", overflowY: "auto" }}>
-                                                {supportType
-                                                    .filter((opt) =>
-                                                        opt.name.toLowerCase().includes(supportSearch.toLowerCase())
-                                                    )
-                                                    .map((opt, idx) => (
-                                                        <li
-                                                            key={idx}
-                                                            className="list-group-item list-group-item-action"
-                                                            onClick={() => {
-                                                                setFormData((prev) => ({
-                                                                    ...prev,
-                                                                    supportType: opt.name,
-                                                                }));
-                                                                setShowSupportTypeModal(false);
-                                                            }}
-                                                            style={{ cursor: "pointer" }}
-                                                        >
-                                                            {opt.name}
-                                                        </li>
-                                                    ))}
-                                                {supportType.filter((opt) =>
-                                                    opt.name.toLowerCase().includes(supportSearch.toLowerCase())
-                                                ).length === 0 && (
-                                                        <li className="list-group-item text-muted">No support types found</li>
+                                            {loading ? (
+                                                <p>Loading categories...</p>
+                                            ) : (
+                                                <ul className="list-group" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                                    {filteredList.length > 0 ? (
+                                                        filteredList.map((cat) => {
+                                                            const isChecked = formData.categoryCode?.includes(cat.code);
+
+                                                            return (
+                                                                <li
+                                                                    key={cat.id}
+                                                                    className="list-group-item d-flex justify-content-between align-items-center"
+                                                                >
+                                                                    <div className="form-check">
+                                                                        <input
+                                                                            className="form-check-input"
+                                                                            type="checkbox"
+                                                                            id={`cat-check-${cat.id}`}
+                                                                            checked={isChecked}
+                                                                            onChange={(e) => handleCategoryChange(cat, e.target.checked)}
+
+
+                                                                        />
+                                                                        <label className="form-check-label" htmlFor={`cat-check-${cat.id}`}>
+                                                                            <strong>{cat.code}</strong> - {cat.name}
+                                                                        </label>
+                                                                    </div>
+                                                                </li>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <li className="list-group-item text-muted">No categories found</li>
                                                     )}
-                                            </ul>
+                                                </ul>
+                                            )}
                                         </Modal.Body>
                                         <Modal.Footer>
-                                            <Button variant="secondary" onClick={() => setShowSupportTypeModal(false)}>
+                                            <button className="btn btn-secondary" onClick={handleCloseModal}>
+                                                Close
+                                            </button>
+                                        </Modal.Footer>
+                                    </Modal>
+                                </div>
+                                {/* Account Type */}
+                                <div className="col-md-4" style={{ position: "relative" }}>
+                                    <label>
+                                        Account <span style={{ color: "red" }}>*</span>
+                                    </label>
+
+                                    <div
+                                        className="form-control"
+                                        onClick={() => setShowModal_Account(true)}
+                                        style={{ cursor: "pointer" }}
+                                    >
+                                        {formData.accountType.length ? getAccountNames() : "Select Account Type"}
+
+                                        <span
+                                            style={{
+                                                position: "absolute",
+                                                right: "40px",
+                                                top: "60%",
+                                                transform: "translateY(-50%)",
+                                                pointerEvents: "none",
+                                                color: "#555",
+                                                fontSize: "14px",
+                                                userSelect: "none",
+                                            }}
+                                        >
+                                            ▼
+                                        </span>
+
+                                        <span
+                                            style={{
+                                                position: "absolute",
+                                                right: "10px",
+                                                top: "60%",
+                                                transform: "translateY(-50%)",
+                                                pointerEvents: "none",
+                                                color: "#555",
+                                                fontSize: "18px",
+                                                userSelect: "none",
+                                            }}
+                                        >
+                                            🔍
+                                        </span>
+                                    </div>
+
+
+                                    {/* Modal with checkboxes */}
+                                    <Modal
+                                        show={showModal_Account}
+                                        onHide={() => setShowModal_Account(false)}
+                                        centered
+                                        size="lg"  // <-- Add this
+                                    >
+                                        <Modal.Header
+                                            closeButton
+                                            style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                                        >
+                                            <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                                Select Account Type
+                                            </Modal.Title>
+                                        </Modal.Header>
+
+                                        <Modal.Body
+                                            style={{
+                                                maxHeight: "400px",
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                padding: "1rem",
+                                            }}
+                                        >
+                                            {/* Search Bar - fixed height, no scroll */}
+                                            <input
+                                                type="text"
+                                                className="form-control mb-3"
+                                                placeholder="Search account types..."
+                                                value={accountSearchTerm}
+                                                onChange={(e) => setAccountSearchTerm(e.target.value)}
+                                                style={{
+                                                    borderColor: "#007bff",
+                                                    flexShrink: 0,
+                                                }}
+                                            />
+
+                                            {/* Scrollable list container */}
+                                            <div
+                                                style={{
+                                                    overflowY: "auto",
+                                                    flexGrow: 1,
+                                                }}
+                                            >
+                                                {accountTypes
+                                                    .filter((opt) =>
+                                                        opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase())
+                                                    )
+                                                    .map((opt) => (
+                                                        <div
+                                                            key={opt.code}
+                                                            style={{ display: "flex", alignItems: "center", padding: "6px 0" }}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.accountType.includes(opt.code)}
+                                                                onChange={() => toggleAccountType(opt.code)}
+                                                                id={`accountType-${opt.code}`}
+                                                            />
+                                                            <label
+                                                                htmlFor={`accountType-${opt.code}`}
+                                                                style={{ marginLeft: "8px", cursor: "pointer" }}
+                                                            >
+                                                                {opt.name}
+                                                            </label>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        </Modal.Body>
+
+
+                                        <Modal.Footer>
+                                            <Button variant="light" onClick={() => setShowModal_Account(false)}>
                                                 Close
                                             </Button>
                                         </Modal.Footer>
                                     </Modal>
+
+                                    {/* Submit Button */}
                                 </div>
-
-
-                                {/* Visa Type */}
+                                {/* Marketing Type */}
                                 <div className="col-md-4" style={{ position: 'relative' }}>
                                     <label>Marketing Type</label>
                                     <select
@@ -1877,89 +2319,6 @@ const RegularVisaForm = () => {
                                             style={{
                                                 position: 'absolute',
                                                 right: '20px',
-                                                top: '40%',
-                                                transform: 'translateY(-20%)',
-                                                color: 'green',
-                                                fontWeight: 'bold',
-                                                fontSize: '25px',
-                                                pointerEvents: 'none',
-                                                userSelect: 'none',
-                                            }}
-                                        >
-                                            ✓
-                                        </span>
-                                    )}
-                                </div>
-
-
-                                {/* Visa Title */}
-                                {/* <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>Marketing Title</label>
-                                    <input
-                                        type="text"
-                                        name="visaTitle"
-                                        className="form-control"
-                                        value={formData.visaTitle}
-                                        onChange={handleFormChange}
-                                        style={{
-                                            paddingRight: '30px',
-                                            borderColor: formData.visaTitle ? 'green' : '',
-                                            transition: 'border-color 0.3s',
-                                        }}
-                                        onMouseEnter={e => {
-                                            if (formData.visaTitle) e.currentTarget.style.borderColor = 'green';
-                                        }}
-                                        onMouseLeave={e => {
-                                            if (formData.visaTitle) e.currentTarget.style.borderColor = 'green';
-                                            else e.currentTarget.style.borderColor = '';
-                                        }}
-                                    />
-                                    {formData.visaTitle && (
-                                        <span
-                                            style={{
-                                                position: 'absolute',
-                                                right: '20px',
-                                                top: '50%',
-                                                transform: 'translateY(-20%)',
-                                                color: 'green',
-                                                fontWeight: 'bold',
-                                                fontSize: '25px',
-                                                pointerEvents: 'none',
-                                                userSelect: 'none',
-                                            }}
-                                        >
-                                            ✓
-                                        </span>
-                                    )}
-                                </div> */}
-
-                                {/* Objective (textarea) */}
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>Objective</label>
-                                    <textarea
-                                        name="objective"
-                                        className="form-control"
-                                        value={formData.objective}
-                                        onChange={handleFormChange}
-                                        style={{
-                                            paddingRight: '30px',
-                                            borderColor: formData.objective ? 'green' : '',
-                                            transition: 'border-color 0.3s',
-                                            resize: 'vertical',
-                                        }}
-                                        onMouseEnter={e => {
-                                            if (formData.objective) e.currentTarget.style.borderColor = 'green';
-                                        }}
-                                        onMouseLeave={e => {
-                                            if (formData.objective) e.currentTarget.style.borderColor = 'green';
-                                            else e.currentTarget.style.borderColor = '';
-                                        }}
-                                    />
-                                    {formData.objective && (
-                                        <span
-                                            style={{
-                                                position: 'absolute',
-                                                right: '20px',
                                                 top: '50%',
                                                 transform: 'translateY(-20%)',
                                                 color: 'green',
@@ -1974,32 +2333,23 @@ const RegularVisaForm = () => {
                                     )}
                                 </div>
 
-                                {/* Promo Scheme (textarea) */}
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>Promo Scheme</label>
-                                    <textarea
-                                        type="text"
-                                        name="promoScheme"
-                                        className="form-control"
-                                        value={formData.promoScheme}
-                                        onChange={handleFormChange}
-                                        style={{
-                                            paddingRight: '30px',
-                                            borderColor: formData.promoScheme ? 'green' : '',
-                                            transition: 'border-color 0.3s',
-                                            resize: 'vertical',
-                                        }}
-                                        onMouseEnter={e => {
-                                            if (formData.promoScheme) e.currentTarget.style.borderColor = 'green';
-                                        }}
-                                        onMouseLeave={e => {
-                                            if (formData.promoScheme) e.currentTarget.style.borderColor = 'green';
-                                            else e.currentTarget.style.borderColor = '';
-                                        }}
-                                    />
-                                    {formData.promoScheme && (
-                                        <span
-                                            style={{
+                                {/* Amount Budget (conditionally shown or empty placeholder) */}
+                                {formData.activity && settingsMap[formData.activity]?.amount_display ? (
+
+                                    <div className="col-md-4" style={{ position: 'relative' }}>
+                                        <label className="form-label">
+                                            Amount Budget <span style={{ color: 'red' }}>*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            name="amountbadget"
+                                            className="form-control"
+                                            value={rawAmount}
+                                            onChange={handleAmountChange}
+                                            style={{ paddingRight: '30px', position: 'relative', top: '-8px', marginTop: 0 }}
+                                        />
+                                        {formData.amountbadget !== '' && (
+                                            <span style={{
                                                 position: 'absolute',
                                                 right: '20px',
                                                 top: '50%',
@@ -2009,14 +2359,87 @@ const RegularVisaForm = () => {
                                                 fontSize: '25px',
                                                 pointerEvents: 'none',
                                                 userSelect: 'none',
+                                            }}>
+                                                ✓
+                                            </span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    // Placeholder to keep layout stable
+                                    <div className="col-md-4"></div>
+                                )}
+
+                                <div className="row mt-3">
+                                    {/* Objective - Left Side */}
+                                    <div className="col-md-6" style={{ position: 'relative' }}>
+                                        <label>Objective</label>
+                                        <textarea
+                                            name="objective"
+                                            className="form-control"
+                                            value={formData.objective}
+                                            onChange={handleFormChange}
+                                            style={{
+                                                paddingRight: '30px',
+                                                borderColor: formData.objective ? 'green' : '',
+                                                transition: 'border-color 0.3s',
+                                                resize: 'vertical',
                                             }}
-                                        >
-                                            ✓
-                                        </span>
-                                    )}
+                                        />
+                                        {formData.objective && (
+                                            <span
+                                                style={{
+                                                    position: 'absolute',
+                                                    right: '20px',
+                                                    top: '50%',
+                                                    transform: 'translateY(-20%)',
+                                                    color: 'green',
+                                                    fontWeight: 'bold',
+                                                    fontSize: '25px',
+                                                    pointerEvents: 'none',
+                                                    userSelect: 'none',
+                                                }}
+                                            >
+                                                ✓
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Promo Scheme - Right Side */}
+                                    <div className="col-md-6" style={{ position: 'relative' }}>
+                                        <label>Promo Scheme</label>
+                                        <textarea
+                                            name="promoScheme"
+                                            className="form-control"
+                                            value={formData.promoScheme}
+                                            onChange={handleFormChange}
+                                            style={{
+                                                paddingRight: '30px',
+                                                borderColor: formData.promoScheme ? 'green' : '',
+                                                transition: 'border-color 0.3s',
+                                                resize: 'vertical',
+                                            }}
+                                        />
+                                        {formData.promoScheme && (
+                                            <span
+                                                style={{
+                                                    position: 'absolute',
+                                                    right: '20px',
+                                                    top: '50%',
+                                                    transform: 'translateY(-20%)',
+                                                    color: 'green',
+                                                    fontWeight: 'bold',
+                                                    fontSize: '25px',
+                                                    pointerEvents: 'none',
+                                                    userSelect: 'none',
+                                                }}
+                                            >
+                                                ✓
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
+
                             </div>
-
                             <div className="card mt-4 shadow-sm">
                                 <style>{`
                                     .card-header {
@@ -2039,66 +2462,7 @@ const RegularVisaForm = () => {
                                 <div className="card-body">
                                     <div className="row g-3">
 
-                                        {/* <div className="col-md-3" style={{ position: 'relative' }}>
-                                            <label htmlFor="leadTimeFrom" className="form-label">Lead Time From</label>
-                                            <input
-                                                type="date"
-                                                id="leadTimeFrom"
-                                                name="leadTimeFrom"
-                                                className="form-control"
-                                                value={formData.leadTimeFrom}
-                                                onChange={handleFormChange}
-                                                style={{ paddingRight: '35px' }} // add right padding so icon doesn’t overlap text
-                                            />
-                                            {formData.leadTimeFrom && (
-                                                <span
-                                                    style={{
-                                                        position: 'absolute',
-                                                        right: '20px',
-                                                        top: '50%',
-                                                        transform: 'translateY(-20%)',
-                                                        color: 'green',
-                                                        fontWeight: 'bold',
-                                                        fontSize: '25px',
-                                                        pointerEvents: 'none',
-                                                        userSelect: 'none',
-                                                    }}
-                                                >
-                                                    ✓
-                                                </span>
-                                            )}
-                                        </div> */}
 
-                                        {/* Lead Time To */}
-                                        {/* <div className="col-md-3" style={{ position: 'relative' }}>
-                                            <label htmlFor="leadTimeTo" className="form-label">Lead Time To</label>
-                                            <input
-                                                type="date"
-                                                id="leadTimeTo"
-                                                name="leadTimeTo"
-                                                className="form-control"
-                                                value={formData.leadTimeTo}
-                                                onChange={handleFormChange}
-                                                style={{ paddingRight: '35px' }}
-                                            />
-                                            {formData.leadTimeTo && (
-                                                <span
-                                                    style={{
-                                                        position: 'absolute',
-                                                        right: '20px',
-                                                        top: '50%',
-                                                        transform: 'translateY(-20%)',
-                                                        color: 'green',
-                                                        fontWeight: 'bold',
-                                                        fontSize: '25px',
-                                                        pointerEvents: 'none',
-                                                        userSelect: 'none',
-                                                    }}
-                                                >
-                                                    ✓
-                                                </span>
-                                            )}
-                                        </div> */}
 
                                         {/* Activity Duration From */}
                                         <div className="col-md-3" style={{ position: 'relative' }}>
@@ -2117,7 +2481,7 @@ const RegularVisaForm = () => {
                                                     style={{
                                                         position: 'absolute',
                                                         right: '20px',
-                                                        top: '50%',
+                                                        top: '55%',
                                                         transform: 'translateY(-20%)',
                                                         color: 'green',
                                                         fontWeight: 'bold',
@@ -2148,7 +2512,7 @@ const RegularVisaForm = () => {
                                                     style={{
                                                         position: 'absolute',
                                                         right: '20px',
-                                                        top: '50%',
+                                                        top: '55%',
                                                         transform: 'translateY(-20%)',
                                                         color: 'green',
                                                         fontWeight: 'bold',
@@ -2235,19 +2599,18 @@ const RegularVisaForm = () => {
                                 `}</style>
 
                             <div className="card card-3d mt-4">
-                                <div className="card-header">IS PART OF COVER PWP?</div>
+                                <div className="card-header">IS PART OF BUDGET?</div>
 
-                                <div className="toggle-group mb-3" role="group" aria-label="Cover Visa Toggle">
+                                <div className="toggle-group mb-3" role="group" aria-label="Cover PWP Toggle">
                                     <input
                                         type="radio"
                                         id="coverYes"
-                                        name="isPartOfCoverVisa"
+                                        name="isPartOfCoverPwp"
                                         className="toggle-checkbox"
-                                        checked={formData.isPartOfCoverVisa === true}
+                                        checked={formData.isPartOfCoverPwp === true}
                                         onChange={() => {
-                                            handleToggleChange(true);
-                                            setShowCoverVisaCode(false);
-                                            setFormData(prev => ({ ...prev, coverVisaCode: '' }));
+                                            setFormData(prev => ({ ...prev, isPartOfCoverPwp: true, coverPwpCode: '' }));
+                                            setShowCoverModal(false);
                                         }}
                                     />
                                     <label htmlFor="coverYes" className="toggle-label">YES</label>
@@ -2255,54 +2618,35 @@ const RegularVisaForm = () => {
                                     <input
                                         type="radio"
                                         id="coverNo"
-                                        name="isPartOfCoverVisa"
+                                        name="isPartOfCoverPwp"
                                         className="toggle-checkbox"
-                                        checked={formData.isPartOfCoverVisa === false}
+                                        checked={formData.isPartOfCoverPwp === false}
                                         onChange={() => {
-                                            handleToggleChange(false);
-                                            setShowCoverVisaCode(false);
-                                            setFormData(prev => ({ ...prev, coverVisaCode: '' }));
+                                            setFormData(prev => ({ ...prev, isPartOfCoverPwp: false, coverPwpCode: '' }));
+                                            setShowCoverModal(false);
                                         }}
                                     />
                                     <label htmlFor="coverNo" className="toggle-label">NO</label>
                                 </div>
 
-                                {formData.isPartOfCoverVisa && !showCoverVisaCode && (
-                                    <div className="form-group">
-                                        <label htmlFor="coverStep" className="form-label text-uppercase">Select Cover Option</label>
-                                        <select
-                                            id="coverStep"
-                                            className="form-control"
-                                            defaultValue=""
-                                            onChange={(e) => {
-                                                if (e.target.value === "continue") setShowCoverVisaCode(true);
-                                            }}
-                                        >
-                                            <option value="">-- Select to Continue --</option>
-                                            <option value="continue">Yes, Show COVER PWP CODE</option>
-                                        </select>
-                                    </div>
-                                )}
-
-                                {formData.isPartOfCoverVisa && showCoverVisaCode && (
+                                {formData.isPartOfCoverPwp && (
                                     <div className="form-group mt-3" style={{ position: 'relative' }}>
                                         <label className="form-label text-uppercase">Cover PWP Code</label>
                                         <input
                                             type="text"
                                             readOnly
                                             className="form-control"
-                                            value={formData.coverVisaCode || ''}
-                                            placeholder="Select Cover Visa Code"
+                                            value={formData.coverPwpCode || ''}
+                                            placeholder="Select Cover PWP Code"
                                             onClick={() => setShowCoverModal(true)}
                                             style={{
                                                 cursor: 'pointer',
                                                 paddingRight: '40px',
-                                                borderColor: formData.coverVisaCode ? 'green' : '',
+                                                borderColor: formData.coverPwpCode ? 'green' : '',
                                                 transition: 'border-color 0.3s',
                                             }}
                                         />
-                                        {/* Checkmark */}
-                                        {formData.coverVisaCode && (
+                                        {formData.coverPwpCode && (
                                             <span
                                                 style={{
                                                     position: 'absolute',
@@ -2317,7 +2661,6 @@ const RegularVisaForm = () => {
                                                 ✓
                                             </span>
                                         )}
-                                        {/* Magnifying glass */}
                                         <span
                                             style={{
                                                 position: 'absolute',
@@ -2333,41 +2676,38 @@ const RegularVisaForm = () => {
                                     </div>
                                 )}
 
-                                {/* Cover Visa Modal */}
+                                {/* Modal */}
                                 <Modal show={showCoverModal} onHide={() => setShowCoverModal(false)} centered>
                                     <Modal.Header
                                         closeButton
                                         style={{ background: 'linear-gradient(to right, #0d6efd, #6610f2)', color: 'white' }}
                                     >
-                                        <Modal.Title style={{ color: 'white' }} className="w-100 text-center">🎫 Select COVER PWP Code</Modal.Title>
+                                        <Modal.Title style={{ color: 'white' }} className="w-100 text-center">
+                                            🎫 Select COVER PWP Code
+                                        </Modal.Title>
                                     </Modal.Header>
+
                                     <Modal.Body>
                                         <input
                                             type="text"
                                             className="form-control mb-3"
                                             placeholder="Search PWP code..."
-                                            value={coverVisaSearch}
-                                            onChange={(e) => setCoverVisaSearch(e.target.value)}
+                                            value={coverPwpSearch}
+                                            onChange={(e) => setCoverPwpSearch(e.target.value)}
                                         />
 
                                         <ul className="list-group" style={{ maxHeight: "250px", overflowY: "auto" }}>
-                                            {coverVisasWithStatus
-                                                .filter(cv =>
-                                                    cv.coverVisaCode.toLowerCase().includes(coverVisaSearch.toLowerCase())
-                                                )
-                                                .map((cv, idx) => {
-                                                    const isPending = !cv.Approved;
-
+                                            {coverPwpWithStatus
+                                                .filter(cp => cp.pwp_code && typeof cp.pwp_code === 'string' && cp.pwp_code.toLowerCase().includes(coverPwpSearch.toLowerCase()))
+                                                .map((cp, idx) => {
+                                                    const isPending = !cp.Approved;
                                                     return (
                                                         <li
                                                             key={idx}
                                                             onClick={() => {
                                                                 if (isPending) return;
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    coverVisaCode: cv.coverVisaCode,
-                                                                }));
-                                                                setSelectedBalance(cv.remainingBalance);
+                                                                setFormData(prev => ({ ...prev, coverPwpCode: cp.pwp_code }));
+                                                                setSelectedBalance(cp.remainingbalance);
                                                                 setShowCoverModal(false);
                                                             }}
                                                             className={`list-group-item d-flex justify-content-between align-items-center ${isPending ? 'disabled' : 'list-group-item-action'}`}
@@ -2378,764 +2718,523 @@ const RegularVisaForm = () => {
                                                                 cursor: isPending ? 'not-allowed' : 'pointer',
                                                                 fontFamily: 'monospace',
                                                                 opacity: isPending ? 0.8 : 1,
+                                                                pointerEvents: isPending ? 'none' : 'auto',  // Prevent all mouse events if pending
                                                             }}
+                                                            tabIndex={isPending ? -1 : 0}  // Prevent tab focus on disabled items
                                                         >
-                                                            {cv.coverVisaCode.toUpperCase().padEnd(20)}{" "}
+                                                            {cp.pwp_code?.toUpperCase().padEnd(20, ' ')}
                                                             <span className="badge bg-secondary">
-                                                                {cv.remainingBalance !== null
-                                                                    ? cv.remainingBalance.toLocaleString('en-US', {
+                                                                {cp.remainingbalance !== null
+                                                                    ? cp.remainingbalance.toLocaleString('en-US', {
                                                                         minimumFractionDigits: 2,
                                                                         maximumFractionDigits: 2,
                                                                     })
                                                                     : "-"}
                                                             </span>
                                                         </li>
+
                                                     );
                                                 })}
 
-                                            {coverVisasWithStatus.filter(cv =>
-                                                cv.coverVisaCode.toLowerCase().includes(coverVisaSearch.toLowerCase())
-                                            ).length === 0 && (
-                                                    <li className="list-group-item text-muted">No codes found</li>
-                                                )}
+                                            {coverPwpWithStatus.filter(cp => cp.pwp_code && cp.pwp_code.toLowerCase().includes(coverPwpSearch.toLowerCase())).length === 0 && (
+                                                <li className="list-group-item text-muted">No codes found</li>
+                                            )}
                                         </ul>
                                     </Modal.Body>
 
                                     <Modal.Footer style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                            <div style={{
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                border: '2px solid yellow',
-                                                borderRadius: '6px',
-                                                padding: '8px',
-                                                marginRight: '8px',
-                                                width: '40px',
-                                                height: '40px',
-                                                boxSizing: 'border-box',
-                                                backgroundColor: '#222'
-                                            }}>
+                                            <div
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    border: '2px solid yellow',
+                                                    borderRadius: '6px',
+                                                    padding: '8px',
+                                                    marginRight: '8px',
+                                                    width: '40px',
+                                                    height: '40px',
+                                                    boxSizing: 'border-box',
+                                                    backgroundColor: '#222'
+                                                }}
+                                            >
                                                 <FaExclamationTriangle style={{ color: 'yellow', fontSize: '24px' }} />
                                             </div>
-                                            <span style={{ fontWeight: 'bold' }}>Yellow-Pending</span>
+                                            <span style={{ fontWeight: 'bold' }}>Yellow = Pending</span>
                                         </div>
 
                                         <Button variant="secondary" onClick={() => setShowCoverModal(false)}>
                                             Close
                                         </Button>
                                     </Modal.Footer>
-
                                 </Modal>
+
                             </div>
 
 
+                            {formData.isPartOfCoverPwp && formData.coverPwpCode && selectedBalance !== null && (
+                                <div className="d-flex justify-content-between align-items-start" style={{ gap: '1rem', marginTop: '30px' }}>
+                                    {/* Left: File Upload Drag & Drop Box */}
 
+                                    {/* Right: Remaining Budget Card */}
+                                    <div className="card border-success mb-3 shadow" style={{ width: '22rem' }}>
+                                        <div className="card-header bg-success text-white fw-bold text-center">
+                                            🎯 Remaining Budget
+                                        </div>
+                                        <div className="card-body text-center">
+                                            <p
+                                                className="card-text"
+                                                style={{
+                                                    fontSize: '2rem',
+                                                    fontWeight: 'bold',
+                                                    color:
+                                                        selectedBalance - totals.BILLING_AMOUNT - parseFloat(formData.amountbadget || 0) < 0
+                                                            ? '#dc3545'
+                                                            : '#198754',
+                                                }}
+                                            >
+                                                ₱{(
+                                                    selectedBalance -
+                                                    totals.BILLING_AMOUNT -
+                                                    parseFloat(formData.amountbadget || 0)
+                                                ).toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })}
+                                            </p>
+                                            <small className="text-muted d-block">
+                                                Original: ₱{selectedBalance.toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                })}
+                                            </small>
+
+                                            <small className="text-muted d-block">
+                                                Allocated (Form): ₱{parseFloat(formData.amountbadget || 0).toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                })}
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
 
 
                             <div style={{ textAlign: 'right' }}>
+
                                 <button
                                     type="button"
                                     className="btn btn-primary mt-3"
-                                    onClick={() => setStep(1)}
+                                    onClick={() => {
+                                        const setting = settingsMap[formData.activity];
+                                        console.log('Next pressed. formData.activity:', formData.activity, 'setting:', setting);
+
+                                        if (setting && setting.sku) {
+                                            setStep(1);
+                                        } else if (setting && setting.accounts) {
+                                            setStep(2);
+                                        } else {
+                                            setStep(3);;
+                                        }
+                                    }}
+
                                     style={{ width: '85px' }}
+                                    disabled={!formData.activity}
                                 >
                                     Next
                                 </button>
 
+
+
+
                             </div>
+
+
                         </form >
                     </div >
 
                 );
 
+
+
+
             case 1:
                 // Promoted sales table
                 return (
                     <div>
-
-
-                        <h3 style={{ marginBottom: '1rem' }}>Volume Plan | Cost Implication</h3>
-                        {formData.isPartOfCoverVisa &&
-                            showCoverVisaCode &&
-                            formData.coverVisaCode &&
-                            amountBadget !== null && (
-                                <>
-                                    <style>
-                                        {`
-          @media (max-width: 600px) {
-            .card-body {
-              flex-direction: column !important;
-              align-items: flex-start !important;
-              padding: 1rem !important;
-            }
-
-            .card-body > div:first-child {
-              font-size: 1rem !important;
-              margin-bottom: 1rem;
-            }
-
-            .card-body > div:last-child h3 {
-              font-size: 1.5rem !important;
-              white-space: normal !important;
-              margin-bottom: 0.5rem;
-            }
-
-            .card-body > div:last-child > div {
-              min-width: 100% !important;
-              box-sizing: border-box;
-            }
-          }
-        `}
-                                    </style>
-
+                        <Card border="primary" className="shadow">
+                            {formData.isPartOfCoverPwp && formData.coverPwpCode && selectedBalance !== null && (
+                                <div className="d-flex justify-content-between align-items-start" style={{ gap: '1rem' }}>
+                                    {/* Left: File Upload Drag & Drop Box */}
                                     <div
-                                        className="card"
+                                        className="border rounded p-3 mb-3"
                                         style={{
-                                            borderRadius: '8px',
-                                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-                                            marginTop: '1rem',
-                                            overflow: 'hidden',
+                                            borderStyle: 'dashed',
+                                            backgroundColor: '#f9f9f9',
+                                            position: 'relative',
+                                            textAlign: 'center',
+                                            cursor: 'pointer',
+                                            flex: '1',           // take available space
+                                            maxWidth: '80%',     // max width to keep space for right side
+                                            minWidth: '300px',
+                                            height: '165px'   // optional: to avoid being too small on small screens
                                         }}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            const file = e.dataTransfer.files[0];
+                                            handleFileImport(file);
+                                        }}
+                                        onDragOver={(e) => e.preventDefault()}
                                     >
                                         <div
-                                            className="card-header"
                                             style={{
-                                                fontWeight: 'bold',
-                                                textTransform: 'uppercase',
-                                                backgroundColor: '#f8f9fa',
-                                                padding: '1rem 1.5rem',
-                                                fontSize: '1rem',
-                                                borderBottom: '1px solid #dee2e6',
+                                                marginTop: '1rem',
+                                                color: '#888',
+                                                fontSize: '14px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '15px',
+                                                marginTop: '50px',
+                                                fontWeight: '500',
                                             }}
                                         >
-                                            Amount Badget Remaining
+                                            <FaCloudUploadAlt size={20} />
+                                            <span>Or drag and drop your Excel file here</span>
                                         </div>
 
-                                        <div
-                                            className="card-body"
-                                            style={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center',
-                                                padding: '1.5rem 2rem',
-                                                backgroundColor: '#fff',
-                                            }}
-                                        >
-                                            {/* Left side */}
-                                            <div style={{ fontSize: '1.2rem', color: '#333' }}>
-                                                COVER PWP Code:{' '}
-                                                <strong style={{ textTransform: 'uppercase' }}>
-                                                    {formData.coverVisaCode}
-                                                </strong>
-                                            </div>
+                                        <input
+                                            type="file"
+                                            accept=".xlsx, .xls"
+                                            onChange={(e) => handleFileImport(e.target.files[0])}
+                                            ref={(ref) => (window.excelInput = ref)}
+                                            style={{ display: 'none' }}
+                                        />
+                                    </div>
 
-                                            {/* Right side */}
-                                            <div>
-                                                <h3
-                                                    style={{
-                                                        color: '#28a745',
-                                                        fontSize: '2rem',
-                                                        margin: 0,
-                                                        whiteSpace: 'nowrap',
-                                                    }}
-                                                >
-                                                    {Number(amountBadget).toLocaleString('en-PH', {
-                                                        style: 'currency',
-                                                        currency: 'PHP',
-                                                    })}
-                                                </h3>
+                                    {/* Right: Remaining Budget Card */}
+                                    <div className="card border-success mb-3 shadow" style={{ width: '22rem' }}>
+                                        <div className="card-header bg-success text-white fw-bold text-center">
+                                            📦 Remaining SKU Budget
+                                        </div>
 
-                                                <div
-                                                    style={{
-                                                        marginTop: '1rem',
-                                                        padding: '0.75rem 1rem',
-                                                        backgroundColor: '#f8f9fa',
-                                                        border: `2px solid ${remaining < 0 ? '#dc3545' : '#28a745'}`,
-                                                        borderRadius: '8px',
-                                                        display: 'inline-block',
-                                                        minWidth: '220px',
-                                                    }}
-                                                >
-                                                    <p
-                                                        style={{
-                                                            margin: 0,
-                                                            color: remaining < 0 ? '#dc3545' : '#28a745',
-                                                            fontWeight: 'bold',
-                                                            fontSize: '1.2rem',
-                                                            textAlign: 'center',
-                                                        }}
-                                                    >
-                                                        Remaining:{' '}
-                                                        {(remaining < 0 ? '-' : '') +
-                                                            Math.abs(remaining).toLocaleString('en-PH', {
-                                                                style: 'currency',
-                                                                currency: 'PHP',
+                                        <div className="card-body text-center">
+                                            {(() => {
+                                                const billingAmountSKU = rows.reduce((acc, row) => {
+                                                    const val = parseFloat(row.BILLING_AMOUNT);
+                                                    return acc + (isNaN(val) ? 0 : val);
+                                                }, 0);
+
+                                                const selected = parseFloat(selectedBalance || 0);
+                                                const creditBudget = parseFloat(formData?.amountbadget || 0);
+                                                const remainingSkuBudget = selected - billingAmountSKU - creditBudget;
+
+                                                return (
+                                                    <>
+                                                        <p
+                                                            className="card-text"
+                                                            style={{
+                                                                fontSize: '2rem',
+                                                                fontWeight: 'bold',
+                                                                color: remainingSkuBudget < 0 ? '#dc3545' : '#198754',
+                                                            }}
+                                                        >
+                                                            ₱{remainingSkuBudget.toLocaleString('en-PH', {
                                                                 minimumFractionDigits: 2,
                                                                 maximumFractionDigits: 2,
                                                             })}
-                                                    </p>
-                                                </div>
-                                            </div>
+                                                        </p>
+                                                        <small className="text-muted">
+                                                            Total Budget: ₱{selected.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                            − SKU Billing: ₱{billingAmountSKU.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                        </small>
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
-                                </>
-                            )}
+                                </div>
+                            )
+                            }
 
 
-                        <div
-                            className="table-responsive"
 
-                        >
-                            <table style={{
-                                marginTop: '1rem',
-                                maxWidth: '100%',      // or set e.g. '800px' for fixed width
-                                overflowX: 'auto',    // enables horizontal scroll if needed
-                                whiteSpace: 'nowrap', // keeps table cells in one line to prevent wrapping
-                            }} className="table table-bordered">
-                                <thead style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', border: '2px solid #add8e6' }}>
-                                    <tr>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }} >Promoted, SKU/s</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>List Price</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>Non-Promo Average Sales</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>U M</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }} >Non-Promo Average Sales Amount</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }} >Projected Average Sales</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }} >Projected Average Sales Amount</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }} >Increase %</th>
 
-                                        <th></th> {/* For delete icon */}
-                                    </tr>
-                                </thead>
 
-                                <tbody>
-                                    {promoRows.map((row, i) => (
-                                        <tr key={i}>
-                                            <td>
-                                                <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                    <input
-                                                        type="text"
-                                                        readOnly
-                                                        className="form-control"
-                                                        value={row.promotedSKU || ''}
-                                                        onClick={() => formData.principal && handleOpenSkuModal(i)}
-                                                        placeholder="Select SKU"
-                                                        style={{
-                                                            cursor: formData.principal ? 'pointer' : 'not-allowed',
-                                                            borderColor: row.promotedSKU ? 'green' : '',
-                                                            transition: 'border-color 0.3s',
-                                                            paddingRight: '35px'
-                                                        }}
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-outline-secondary ml-2"
-                                                        onClick={() => formData.principal && handleOpenSkuModal(i)}
-                                                        title="Select SKU"
-                                                        disabled={!formData.principal}
-                                                    >
-                                                        🔍
-                                                    </button>
-                                                </div>
-                                            </td>
 
-                                            {showSkuModal && (
-                                                <div
-                                                    className="modal show fade d-block"
-                                                    tabIndex="-1"
-                                                    role="dialog"
-                                                    style={{
-                                                        backgroundColor: "rgba(0, 0, 0, 0.5)",
-                                                        overflowY: "auto",
-                                                        paddingTop: "100px",
-                                                        paddingBottom: "100px",
-                                                    }}
-                                                >
-                                                    <div
-                                                        className="modal-dialog modal-lg modal-dialog-centered"
-                                                        role="document"
-                                                        style={{ maxWidth: "600px" }}
-                                                    >
-                                                        <div className="modal-content shadow-lg rounded">
-                                                            <div className="modal-header border-bottom-0 d-flex justify-content-between align-items-center">
-                                                                <h5
-                                                                    className="modal-title font-weight-bold"
-                                                                    style={{
-                                                                        background: "rgb(70, 137, 166)",
-                                                                        color: "white",
-                                                                        fontWeight: '700',
-                                                                        fontSize: '1.4rem',
-                                                                        marginBottom: '1.25rem',
-                                                                        padding: '10px',
-                                                                        letterSpacing: '0.05em',
-                                                                        textTransform: 'uppercase',
-                                                                        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-                                                                        borderBottom: '3px solid #4689A6', // match border to the same tone
-                                                                        paddingBottom: '0.4rem',
-                                                                        boxShadow: '0 3px 6px rgba(70, 137, 166, 0.3)', // updated to match background
-                                                                    }}
-                                                                >
-                                                                    Select Promoted SKU
-                                                                </h5>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={handleCloseSkuModal}
-                                                                    aria-label="Close"
-                                                                    style={{
-                                                                        background: 'transparent',
-                                                                        border: 'none',
-                                                                        fontSize: '1.8rem',
-                                                                        fontWeight: 'bold',
-                                                                        color: '#555',
-                                                                        cursor: 'pointer',
-                                                                        padding: '0',
-                                                                        lineHeight: '1',
-                                                                        transition: 'color 0.3s ease',
-                                                                    }}
-                                                                    onMouseEnter={e => (e.currentTarget.style.color = '#e74c3c')} // red on hover
-                                                                    onMouseLeave={e => (e.currentTarget.style.color = '#555')}
-                                                                >
-                                                                    ×
-                                                                </button>
+                            <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
+                                <h4 className="mb-0">💼 Regular SKU Listing</h4>
+                                <div className="d-flex gap-2 align-items-center">
 
+
+                                    <Button variant="success" onClick={triggerFileInput} className="d-flex align-items-center">
+                                        <FaFileExcel className="me-2" /> Import Excel
+                                    </Button>
+
+                                    <Button style={{ backgroundColor: 'gray' }} variant="primary" onClick={handleExport} className="d-flex align-items-center">
+                                        <FaDownload className="me-2" /> Export Excel
+                                    </Button>
+                                </div>
+                            </Card.Header>
+                            <Card.Body>
+                                {loading ? (
+                                    <div className="d-flex justify-content-center align-items-center" style={{ height: '150px' }}>
+                                        <Spinner animation="border" variant="primary" />
+                                    </div>
+                                ) : (
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <Table bordered hover responsive className="align-middle text-center">
+                                            <thead className="bg-primary text-white">
+                                                <tr>
+                                                    <th>SKU</th>
+                                                    <th>SRP</th>
+                                                    <th>QTY</th>
+                                                    <th>UOM</th>
+                                                    <th>DISCOUNT</th>
+                                                    <th>BILLING AMOUNT</th>
+                                                    {/* <th>Actions</th> */}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {rows.map((row, idx) => (
+                                                    <tr key={row.SKUITEM || idx}>
+                                                        <td style={{ display: 'flex', alignItems: 'center' }}>
+                                                            <Form.Control
+                                                                value={row.SKUITEM}
+                                                                onChange={e => handleChangesku(idx, 'SKUITEM', e.target.value)}
+                                                            // remove readOnly so user can edit if needed
+                                                            />
+
+
+
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedRowIndex(idx);
+                                                                    setShowSkuModal(true);
+                                                                }}
+
+                                                                style={{
+                                                                    border: "none",
+                                                                    background: "none",
+                                                                    cursor: "pointer",
+                                                                    padding: "8px",
+                                                                    color: "#d32f2f",
+                                                                    transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                                                                    boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                                                                    borderRadius: "8px",
+                                                                    display: "inline-flex",
+                                                                    alignItems: "center",
+                                                                    justifyContent: "center",
+                                                                    marginLeft: "8px",
+                                                                    outline: "none",
+                                                                }}
+                                                                onMouseEnter={(e) => {
+                                                                    e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                                                                    e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                                                                    e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                                                                }}
+                                                                onMouseDown={(e) => {
+                                                                    e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                                                                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                                                                }}
+                                                                onMouseUp={(e) => {
+                                                                    e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                                                                    e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
+                                                                }}
+                                                            >
+                                                                <FaSearch style={{ color: "blue", fontSize: "20px" }} />
+                                                            </button>
+                                                        </td>
+
+
+
+                                                        <td>
+                                                            <Form.Control
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={row.SRP || ''}
+                                                                onChange={e => handleChangesku(idx, 'SRP', e.target.value)}
+                                                            />
+                                                        </td>
+                                                        <td>
+                                                            <Form.Control
+                                                                type="number"
+                                                                value={row.QTY || ''}
+                                                                onChange={e => handleChangesku(idx, 'QTY', e.target.value)}
+                                                            />
+                                                        </td>
+                                                        <td>
+                                                            <Form.Select
+                                                                value={row.UOM || ''}
+                                                                onChange={e => handleChangesku(idx, 'UOM', e.target.value)}
+                                                            >
+                                                                {UOM_OPTIONS.map(opt => (
+                                                                    <option key={opt} value={opt}>{opt}</option>
+                                                                ))}
+                                                            </Form.Select>
+                                                        </td>
+                                                        <td>
+                                                            <Form.Control
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={row.DISCOUNT || ''}
+                                                                onChange={e => handleChangesku(idx, 'DISCOUNT', e.target.value)}
+                                                            />
+                                                        </td>
+                                                        <td>
+                                                            <Form.Control
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={row.BILLING_AMOUNT || ''}
+                                                                onChange={e => handleChangesku(idx, 'BILLING_AMOUNT', e.target.value)}
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+
+
+
+
+                                            {/* Footer with totals */}
+                                            <tfoot>
+                                                <tr>
+                                                    <th>Total</th>
+                                                    <th>{(parseFloat(totals?.SRP || 0)).toFixed(2)}</th>
+                                                    <th>{totals?.QTY || 0}</th>
+                                                    <th>
+                                                        {UOM_OPTIONS.map(opt => (
+                                                            <div key={opt} style={{ fontSize: '0.8rem', lineHeight: '1.2' }}>
+                                                                {opt}: {totals?.UOMCount?.[opt] || 0}
                                                             </div>
-
-                                                            <div className="modal-body">
-                                                                <input
-                                                                    type="text"
-                                                                    className="form-control mb-4"
-                                                                    placeholder="Search SKU..."
-                                                                    value={skuSearch}
-                                                                    onChange={(e) => setSkuSearch(e.target.value)}
-                                                                    style={{ fontSize: "1.1rem", padding: "12px 15px" }}
-                                                                />
-                                                                <ul
-                                                                    className="list-group"
-                                                                    style={{ maxHeight: "350px", overflowY: "auto", cursor: "pointer" }}
-                                                                >
-                                                                    {promotedSKUs.length === 0 && (
-                                                                        <li className="list-group-item text-center text-muted">
-                                                                            No SKUs found
-                                                                        </li>
-                                                                    )}
-                                                                    {promotedSKUs
-                                                                        .filter((sku) =>
-                                                                            sku.name.toLowerCase().includes(skuSearch.toLowerCase()) ||
-                                                                            (sku.ItemCode && sku.ItemCode.toLowerCase().includes(skuSearch.toLowerCase()))
-                                                                        )
-                                                                        .map((sku) => (
-                                                                            <li
-                                                                                key={sku.id}
-                                                                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                                                                                onClick={() => handleSelectSku(sku.name)}
-                                                                                style={{ fontSize: "1rem", cursor: "pointer" }}
-                                                                            >
-                                                                                <span>{sku.name}</span>
-                                                                                <span className="text-muted" style={{ fontSize: "0.9rem" }}>
-                                                                                    {sku.ItemCode}
-                                                                                </span>
-                                                                            </li>
-                                                                        ))}
-
-                                                                </ul>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-
-                                            <td style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                <span style={{ whiteSpace: 'nowrap' }}>PHP</span>
-                                                <input
-                                                    type="number"
-
-                                                    name="listPrice"
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="form-control"
-                                                    value={row.listPrice}
-                                                    onChange={(e) => handlePromoChange(i, e)}
-                                                    style={{ textAlign: 'left', width: '150px' }}
-                                                />
-                                            </td>
-
-
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    name="nonPromoAvgSales"
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="form-control"
-                                                    value={row.nonPromoAvgSales}
-                                                    onChange={(e) => handlePromoChange(i, e)}
-                                                />
-                                            </td>
-                                            <td style={{ position: 'relative' }}>
-                                                <select
-                                                    style={{
-                                                        width: '100px',
-                                                        paddingRight: '25px',
-                                                        appearance: 'none',
-                                                        WebkitAppearance: 'none',
-                                                        MozAppearance: 'none',
-                                                    }}
-                                                    name="UM"
-                                                    className="form-control"
-                                                    value={row.UM}
-                                                    onChange={(e) => handlePromoChange(i, e)}
-                                                >
-                                                    <option value="Cases">Cases</option>
-                                                    <option value="Ibx">Ibx</option>
-                                                    <option value="pc">pc</option>
-                                                </select>
-
-                                                <span
-                                                    style={{
-                                                        position: 'absolute',
-                                                        right: '20px',
-                                                        top: '50%',
-                                                        transform: 'translateY(-50%)',
-                                                        pointerEvents: 'none',
-                                                        color: '#555',
-                                                        fontSize: '14px',
-                                                        userSelect: 'none',
-                                                    }}
-                                                >
-                                                    ▼
-                                                </span>
-                                            </td>
-
-                                            <td style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                <span style={{ whiteSpace: 'nowrap' }}>PHP</span>
-                                                <input
-                                                    type="number"
-                                                    name="nonPromoAvgSalesAmount"
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="form-control"
-                                                    value={row.nonPromoAvgSalesAmount}
-                                                    onChange={(e) => handlePromoChange(i, e)}
-
-                                                />
-                                            </td>
-
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    name="projectedAvgSales"
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="form-control"
-                                                    value={row.projectedAvgSales}
-                                                    onChange={(e) => handlePromoChange(i, e)}
-                                                />
-                                            </td>
-                                            <td style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                <span style={{ whiteSpace: 'nowrap' }}>PHP</span>
-                                                <input
-                                                    type="number"
-                                                    name="projectedAvgSalesAmount"
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="form-control"
-                                                    value={row.projectedAvgSalesAmount}
-                                                    onChange={(e) => handlePromoChange(i, e)}
-                                                />
-                                            </td>
-
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    name="increasePercent"
-                                                    min="0"
-                                                    max="100"
-                                                    step="0.01"
-                                                    className="form-control"
-                                                    value={row.increasePercent}
-                                                    onChange={(e) => handlePromoChange(i, e)}
-                                                />
-                                            </td>
-
-                                            <td className="text-center">
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-link text-danger"
-                                                    onClick={() => handleDeletePromoRow(i)}
-                                                >
-                                                    <i className="fas fa-trash-alt"></i>
-                                                </button>
-                                            </td>
-
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                <tfoot>
-                                    <tr className="fw-bold">
-                                        <td className="text-end">Total:</td>
-                                        <td>
-                                            {formatCurrency(
-                                                promoRows.reduce(
-                                                    (sum, row) => sum + parseFloat(row.listPrice || 0),
-                                                    0
-                                                )
-                                            )}
-                                        </td>
-                                        <td>
-                                            {promoRows
-                                                .reduce(
-                                                    (sum, row) => sum + parseFloat(row.nonPromoAvgSales || 0),
-                                                    0
-                                                )
-                                                .toFixed(2)}
-                                        </td>
-                                        <td></td>
-                                        <td>
-                                            {formatCurrency(
-                                                promoRows.reduce(
-                                                    (sum, row) =>
-                                                        sum + parseFloat(row.nonPromoAvgSalesAmount || 0),
-                                                    0
-                                                )
-                                            )}
-                                        </td>
-                                        <td>
-                                            {promoRows
-                                                .reduce(
-                                                    (sum, row) => sum + parseFloat(row.projectedAvgSales || 0),
-                                                    0
-                                                )
-                                                .toLocaleString(undefined, {
-                                                    minimumFractionDigits: 0,
-                                                    maximumFractionDigits: 0
-                                                })}
-                                        </td>
-                                        <td>
-                                            {formatCurrency(
-                                                promoRows.reduce(
-                                                    (sum, row) =>
-                                                        sum + parseFloat(row.projectedAvgSalesAmount || 0),
-                                                    0
-                                                )
-                                            )}
-                                        </td>
-
-                                        {/* ✅ Total Average Increase % across all rows */}
-                                        <td>
-                                            <input
-                                                type="text"
-                                                className="form-control"
-                                                readOnly
-                                                value={
-                                                    promoRows.filter(
-                                                        (row) => parseFloat(row.projectedAvgSalesAmount || 0) !== 0
-                                                    ).length > 0
-                                                        ? (
-                                                            promoRows.reduce((sum, row) => {
-                                                                const nonPromo = parseFloat(row.nonPromoAvgSalesAmount || 0);
-                                                                const projected = parseFloat(row.projectedAvgSalesAmount || 0);
-                                                                if (projected === 0) return sum;
-                                                                return sum + (nonPromo / projected) * 100;
-                                                            }, 0) /
-                                                            promoRows.filter(
-                                                                (row) => parseFloat(row.projectedAvgSalesAmount || 0) !== 0
-                                                            ).length
-                                                        ).toFixed(2) + '%'
-                                                        : '0.00%'
-                                                }
-                                            />
-                                        </td>
-
-
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
-
-
-                            </table>
-
-
-
-                        </div>
-                        <button
-                            type="button"
-                            className="btn btn-secondary me-2"
-                            onClick={addPromoRow}
-                        >
-                            Add Row
-                        </button>
-
-                        <div className="table-responsive" style={{ marginTop: '50px' }}>
-                            <table className="table table-bordered table-striped table-hover">
-                                <thead className="table-success">
-                                    <tr>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>Cost Details</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>Quantity</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>Unit Cost</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>Discount %</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>Total Cost</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}>ChargeTo</th>
-                                        <th style={{ backgroundColor: 'rgba(173, 216, 230, 0.2)', color: '#ffff', border: '2px solid #add8e6' }}></th> {/* Delete icon column */}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {costRows.map((row, i) => {
-                                        const quantity = parseFloat(row.quantity) || 0;
-                                        const unitCost = parseFloat(row.unitCost) || 0;
-                                        const discount = parseFloat(row.discount) || 0;
-                                        const rowTotalCost = quantity * unitCost * (1 - discount / 100);
-
-                                        return (
-                                            <tr key={i}>
-                                                <select
-                                                    name="costDetails"
-                                                    className="form-control"
-                                                    value={row.costDetails || ''}
-                                                    onChange={(e) => handleCostChange(i, e)}
-                                                    style={{
-                                                        appearance: "none",
-                                                        WebkitAppearance: "none",
-                                                        MozAppearance: "none",
-                                                        paddingRight: "30px"
-                                                    }}
-                                                >
-                                                    <option value="">-- Select Cost Detail --</option>
-                                                    {Costdetails.map((item, index) => (
-                                                        <option key={index} value={item.name}>
-                                                            {item.name}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                                <td>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        name="quantity"
-                                                        className="form-control"
-                                                        value={row.quantity}
-                                                        onChange={(e) => handleCostChange(i, e)}
-                                                    />
-                                                </td>
-
-                                                <td style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-
-                                                    <span style={{ whiteSpace: 'nowrap' }}>PHP</span>
-
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        step="0.01"
-                                                        name="unitCost"
-                                                        className="form-control"
-                                                        value={row.unitCost}
-                                                        onChange={(e) => handleCostChange(i, e)}
-                                                    />
-                                                </td>
-                                                <td>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="100"
-                                                        step="0.01"
-                                                        name="discount"
-                                                        className="form-control"
-                                                        value={row.discount}
-                                                        onChange={(e) => handleCostChange(i, e)}
-                                                    />
-                                                </td>
-                                                <td style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                    <span style={{ whiteSpace: 'nowrap' }}>PHP</span>
-
-                                                    <input
-                                                        type="text"
-                                                        className="form-control"
-                                                        value={`PHP ${rowTotalCost.toFixed(2)}`}
-                                                        disabled
-                                                    />
-                                                </td>
-                                                <td style={{ position: 'relative' }}>
-                                                    <select
-                                                        name="chargeTo"
-                                                        className="form-control"
-                                                        value={formData.chargeTo}
-                                                        onChange={handleFormChange}
-                                                        style={{
-                                                            paddingRight: '30px',
-                                                            appearance: 'none',
-                                                            WebkitAppearance: 'none',
-                                                            MozAppearance: 'none',
-                                                        }}
-                                                    >
-                                                        <option value="">Select Visa Type</option>
-                                                        {chargeTo.map((opt, index) => (
-                                                            <option key={index} value={opt.name || opt}>
-                                                                {opt.name || opt}
-                                                            </option>
                                                         ))}
-                                                    </select>
+                                                    </th>
+                                                    <th>{(parseFloat(totals?.DISCOUNT || 0)).toFixed(2)}</th>
 
-                                                    {/* Custom Arrow */}
-                                                    <span
-                                                        style={{
-                                                            position: 'absolute',
-                                                            right: '20px',
-                                                            top: '50%',
-                                                            transform: 'translateY(-50%)',
-                                                            pointerEvents: 'none',
-                                                            color: '#555',
-                                                            fontSize: '14px',
-                                                            userSelect: 'none',
-                                                        }}
-                                                    >
-                                                        ▼
-                                                    </span>
-                                                </td>
+                                                    {/* Billing SKU Amount */}
+                                                    <th>
+                                                        {(() => {
+                                                            const billingAmountSKU = rows.reduce((acc, row) => {
+                                                                const val = parseFloat(row.BILLING_AMOUNT);
+                                                                return acc + (isNaN(val) ? 0 : val);
+                                                            }, 0);
+                                                            return billingAmountSKU.toFixed(2);
+                                                        })()}
+                                                    </th>
 
-                                                <td className="text-center">
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-link text-danger"
-                                                        onClick={() => handleDeleteRow(i)}
-                                                    >
-                                                        <i className="fas fa-trash-alt"></i>
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                                <tfoot>
-                                    <tr className="fw-bold">
-                                        <td>Total:</td>
-                                        <td>{totalQuantity}</td>
-                                        <td></td>
-                                        <td></td>
-                                        <td>PHP {totalCostSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                        <td>Cost to Sales: {costToSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                                    {/* Remaining SKU Budget */}
+                                                    <th>
+                                                        {(() => {
+                                                            const selected = parseFloat(selectedBalance || 0);
+                                                            const billingSkuAmount = rows.reduce((acc, row) => {
+                                                                const val = parseFloat(row.BILLING_AMOUNT);
+                                                                return acc + (isNaN(val) ? 0 : val);
+                                                            }, 0);
+                                                            const creditBudget = parseFloat(formData?.amountbadget || 0);
 
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
+                                                            const remainingSkuBudget = selected - billingSkuAmount - creditBudget;
 
-                            {/* Add Button (icon only) */}
-                            <div className="mt-2 text-end">
-                                <button
-                                    type="button"
-                                    className="btn btn-link text-success"
-                                    onClick={handleAddRow}
+                                                            return remainingSkuBudget.toLocaleString('en-PH', {
+                                                                minimumFractionDigits: 2,
+                                                                maximumFractionDigits: 2,
+                                                            });
+                                                        })()}
+                                                    </th>
+                                                </tr>
+                                            </tfoot>
+
+
+
+
+                                        </Table>
+                                    </div>
+                                )}
+                            </Card.Body>
+
+                            <Card.Footer className="d-flex justify-content-between align-items-center">
+
+
+                            </Card.Footer>
+                        </Card >
+
+                        <Modal show={showSkuModal} onHide={() => setShowSkuModal(false)} centered>
+
+
+                            <Modal.Header
+                                closeButton
+                                style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                            >
+                                <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                    Select SKU
+                                </Modal.Title>
+                            </Modal.Header>
+                            <Modal.Body
+                                style={{
+                                    maxHeight: '400px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    padding: '1rem',
+                                }}
+                            >
+                                {/* Search Bar - fixed height, no scroll */}
+                                <input
+                                    type="text"
+                                    className="form-control mb-3"
+                                    placeholder="Search SKUs..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    style={{ borderColor: '#007bff', flexShrink: 0 }}
+                                />
+
+                                {/* Scrollable list container */}
+                                <div
+                                    style={{
+                                        overflowY: 'auto',
+                                        flexGrow: 1,
+                                        borderTop: '1px solid #ccc',
+                                        paddingTop: '0.5rem',
+                                    }}
                                 >
-                                    <i className="fas fa-plus-circle fa-lg"></i>
-                                </button>
-                            </div>
-                        </div>
+                                    {categoryListing
+                                        .filter(sku =>
+                                            sku.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            (sku.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            sku.sku_code.toString().includes(searchTerm)
+                                        )
+                                        .map(sku => (
+                                            <div
+                                                key={sku.sku_code}
+                                                style={{
+                                                    padding: '8px',
+                                                    cursor: 'pointer',
+                                                    borderBottom: '1px solid #eee',
+                                                }}
+                                                onClick={() => {
+                                                    handleChangesku(selectedRowIndex, 'SKUITEM', sku.sku_code);
+                                                    setShowSkuModal(false);
+                                                }}
+                                            >
+                                                <div><strong>{sku.sku_code}</strong> - {sku.name}</div>
+                                                <small style={{ color: '#666' }}>{sku.description || 'No description'}</small>
+                                            </div>
 
+                                        ))}
+                                </div>
+                            </Modal.Body>
 
-                        <button type="button" className="btn btn-secondary me-2" onClick={addCostRow}>
-                            Add Row
-                        </button>
+                            <Modal.Footer>
+                                <Button variant="secondary" onClick={() => setShowSkuModal(false)}>
+                                    Close
+                                </Button>
+                            </Modal.Footer>
+                        </Modal>
+
                         <div className="mb-3">
                             <label className="form-label">Remarks</label>
                             <textarea
@@ -3147,20 +3246,22 @@ const RegularVisaForm = () => {
                             />
                         </div>
                         <div className="d-flex justify-content-between">
+
+
                             <button className="btn btn-outline-secondary" onClick={handlePrevious}>
                                 ← Previous
                             </button>                            <div style={{ textAlign: 'right' }}>
                                 <button
                                     type="button"
                                     className="btn btn-primary mt-3"
-                                    onClick={() => setStep(2)}
+                                    onClick={() => setStep(3)}
                                     style={{ width: '85px' }}
                                 >
                                     Next
                                 </button>
 
                             </div>                    </div>
-                    </div>
+                    </div >
 
 
                 );
@@ -3168,190 +3269,457 @@ const RegularVisaForm = () => {
             case 2:
                 // Cost Details table
                 return (
-                    <div className="card shadow-sm p-4">
-                        <div className="col-12 col-md-6">
-                            <div
-                                className="card p-4 animate-fade-slide-up shadow-sm"
-                                style={{
-                                    background: 'linear-gradient(135deg,rgb(11, 48, 168), #d9edf7)', // gentle blue gradient
-                                    borderRadius: '12px',
-                                    border: '1px solid #99cfff',
-                                    color: '#ffff',
-                                    boxShadow: '0 4px 8px rgba(26, 62, 114, 0.15)',
-                                }}
-                            >
-                                <h3
-                                    className="mb-0"
-                                    style={{
-                                        fontWeight: '700',
-                                        letterSpacing: '2px',
-                                        textTransform: 'uppercase',
-                                        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-                                        textShadow: '1px 1px 2px rgba(26, 62, 114, 0.3)',
-                                    }}
-                                >
-                                    Regular PWP
-                                </h3>
-                            </div>
-                        </div>
-                        <h4 className="mb-3">Your Approval </h4>
+                    <div className="d-flex flex-column">
+                        {formData.isPartOfCoverPwp && formData.coverPwpCode && selectedBalance !== null && (() => {
+                            const totalAllocatedFromAccounts = rowsAccounts
+                                .filter(row => formData.accountType.includes(row.account_code))
+                                .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
 
-                        <div className="table-responsive">
-                            {loading ? (
-                                <p>Loading approvals...</p>
-                            ) : (
-                                <table className="table table-bordered table-striped table-hover">
-                                    <thead className="table-success">
-                                        <tr>
-                                            <th>Approver</th>
-                                            <th>Position</th>
-                                            <th>Status</th>
-                                            <th>Type</th>
-                                            <th>Date Created</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {combinedData.length === 0 ? (
-                                            <tr>
-                                                <td colSpan="5" className="text-center">
-                                                    No data found.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            combinedData.map(({ id, approver, position, status, type, created_at }) => (
-                                                <tr key={id}>
-                                                    <td>{approver}</td>
-                                                    <td>{position || '-'}</td>
-                                                    <td>
-                                                        {status ? (
-                                                            <span
-                                                                className={`badge ${status === 'Allowed' ? 'bg-success' : 'bg-warning text-dark'
-                                                                    }`}
-                                                            >
-                                                                {status}
-                                                            </span>
-                                                        ) : (
-                                                            '-'
-                                                        )}
-                                                    </td>
-                                                    <td>{type || '-'}</td>
-                                                    <td>{created_at ? new Date(created_at).toLocaleDateString() : '-'}</td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            )}
+                            // Make sure allocatedBudget is 0 or correct number here
+                            const allocatedBudget = 0;
 
+                            const remainingBudget = selectedBalance - totalAllocatedFromAccounts - allocatedBudget;
 
-                            <h4 className="mt-4">Attachments</h4>
-
-                            <div
-                                onDrop={handleDrop}
-                                onDragOver={handleDragOver}
-                                onClick={() => fileInputRef.current.click()}
-                                className="border border-primary rounded p-4 mb-3"
-                                style={{
-                                    cursor: 'pointer',
-                                    minHeight: '150px',
-                                    display: 'flex',
-                                    flexWrap: 'wrap',
-                                    gap: '10px',
-                                    alignItems: 'center',
-                                    justifyContent: files.length === 0 ? 'center' : 'flex-start',
-                                    backgroundColor: '#f8f9fa',
-                                    position: 'relative',
-                                    transition: 'background-color 0.3s',
-                                }}
-                            >
-                                {files.length === 0 && <p className="text-muted">Drag & Drop files here or click to upload</p>}
-
-                                {files.map((file, index) => (
+                            return (
+                                <div className="d-flex justify-content-between align-items-start gap-4">
+                                    {/* Left: Drag & Drop */}
                                     <div
-                                        key={index}
-                                        className="position-relative"
+                                        className="border rounded p-4 mb-3 flex-grow-1"
                                         style={{
-                                            width: '100px',
-                                            height: '100px',
-                                            border: '1px solid #ddd',
-                                            borderRadius: '6px',
-                                            overflow: 'hidden',
+                                            borderStyle: 'dashed',
+                                            backgroundColor: '#f9f9f9',
+                                            position: 'relative',
                                             textAlign: 'center',
-                                            padding: '5px',
-                                            backgroundColor: 'white',
-                                            boxShadow: '0 0 4px rgba(0,0,0,0.1)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.3s ease',
+                                            maxWidth: '80%',
+                                            height: '162px'
                                         }}
+                                        onDrop={handleFileDrop}
+                                        onDragOver={(e) => e.preventDefault()}
+                                        onClick={triggerFileInputs}
+                                        title="Click or drag and drop Excel file to import"
                                     >
-                                        {file.type.startsWith('image/') ? (
-                                            <img
-                                                src={file.preview}
-                                                alt={file.name}
-                                                style={{ maxWidth: '100%', maxHeight: '80px', objectFit: 'contain' }}
-                                            />
-                                        ) : (
-                                            <div style={{ fontSize: '12px', wordWrap: 'break-word', marginTop: '30px' }}>
-                                                <i className="bi bi-file-earmark" style={{ fontSize: '28px', color: '#0d6efd' }}></i>
-                                                <div>{file.name.length > 15 ? file.name.slice(0, 15) + '...' : file.name}</div>
-                                            </div>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                removeFile(index);
-                                            }}
-                                            className="btn btn-sm btn-danger position-absolute top-0 end-0"
-                                            style={{ borderRadius: '0 0 0 6px' }}
-                                            title="Remove file"
-                                        >
-                                            &times;
-                                        </button>
+                                        <div style={{
+                                            marginTop: '1rem',
+                                            color: '#888',
+                                            fontSize: '14px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px',
+                                            fontWeight: '500',
+                                        }}>
+                                            <FaCloudUploadAlt size={20} />
+                                            <span>Or drag and drop your Excel file here</span>
+                                        </div>
+
+                                        <Form.Control
+                                            type="file"
+                                            accept=".xlsx, .xls"
+                                            onChange={handleFileChange}
+                                            ref={fileInputRefs}
+                                            style={{ display: 'none' }}
+                                        />
                                     </div>
-                                ))}
 
-                                <input
-                                    type="file"
-                                    multiple
-                                    ref={fileInputRef}
-                                    onChange={handleFileInputChange}
-                                    style={{ display: 'none' }}
-                                />
-                            </div>
-                        </div >
+                                    {/* Right: Remaining Budget Card */}
+                                    <div className="card border-success mb-3 shadow" style={{ width: '22rem' }}>
+                                        <div className="card-header bg-success text-white fw-bold text-center">
+                                            🎯 Remaining Budget
+                                        </div>
+                                        <div className="card-body text-center">
+                                            <p
+                                                className="card-text"
+                                                style={{
+                                                    fontSize: '2rem',
+                                                    fontWeight: 'bold',
+                                                    color: remainingBudget < 0 ? '#dc3545' : '#198754',
+                                                }}
+                                            >
+                                                ₱{remainingBudget.toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })}
+                                            </p>
 
-                        <div className="mt-4 d-flex justify-content-between">
-                            <button className="btn btn-outline-secondary" onClick={handlePrevious}>
-                                ← Previous
-                            </button>
+                                            <small className="text-muted d-block">
+                                                Original: ₱{selectedBalance.toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                })}
+                                            </small>
 
-                            <button className="btn btn-success" onClick={handleSubmit}>
-                                Submit To Approvers
-                            </button>                    </div>
-                    </div >
+                                            <small className="text-muted d-block">
+                                                Total from Accounts Table: ₱{totalAllocatedFromAccounts.toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })}
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+
+                        {/* Budget Table */}
+                        <Card border="primary" className="shadow mb-3">
+                            <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
+                                <h4 className="mb-0">💰 Regular Account Budget List</h4>
+                                <div className="d-flex gap-2 align-items-center">
+                                    <Button variant="success" onClick={triggerFileInputs} className="d-flex align-items-center">
+                                        <FaFileExcel className="me-2" /> Import Excel
+                                    </Button>
+                                    <Button
+                                        variant="primary"
+                                        style={{ backgroundColor: 'gray' }}
+                                        onClick={handleExportCSV}
+                                        className="d-flex align-items-center"
+                                    >
+                                        <FaDownload className="me-2" /> Export Excel
+                                    </Button>
+                                </div>
+                            </Card.Header>
+
+                            <Card.Body>
+                                {loadingAccounts ? (
+                                    <div className="d-flex justify-content-center align-items-center" style={{ height: '150px' }}>
+                                        <Spinner animation="border" variant="primary" />
+                                    </div>
+                                ) : (
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <Table bordered hover responsive className="align-middle text-center">
+                                            <thead className="bg-primary text-white">
+                                                <tr>
+                                                    <th>Account Code</th>
+                                                    <th>Account Name</th>
+                                                    <th>Budget</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {accountTypes
+                                                    .filter(account => formData.accountType.includes(account.code))
+                                                    .map((account) => {
+                                                        const existingRow = rowsAccounts.find(r => r.account_code === account.code) || {};
+                                                        const budgetValue = existingRow.budget !== undefined ? existingRow.budget : "";
+
+                                                        return (
+                                                            <tr key={account.id}>
+                                                                <td><Form.Control value={account.code} disabled /></td>
+                                                                <td><Form.Control value={account.name} disabled /></td>
+                                                                <td>
+                                                                    <Form.Control
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        value={budgetValue === "" ? "" : budgetValue}
+                                                                        onChange={e => {
+                                                                            let newBudget = parseFloat(e.target.value);
+                                                                            if (isNaN(newBudget)) newBudget = 0;
+
+                                                                            const updatedRow = {
+                                                                                id: existingRow.id || account.id,
+                                                                                account_code: account.code,
+                                                                                account_name: account.name,
+                                                                                budget: newBudget,
+                                                                                created_at: existingRow.created_at || new Date().toISOString(),
+                                                                            };
+
+                                                                            setRowsAccounts(prevRows => {
+                                                                                const existingIndex = prevRows.findIndex(r => r.account_code === account.code);
+                                                                                let updated;
+
+                                                                                // If exists, update only if the value changed
+                                                                                if (existingIndex !== -1) {
+                                                                                    const existingBudget = parseFloat(prevRows[existingIndex].budget) || 0;
+                                                                                    if (existingBudget !== newBudget) {
+                                                                                        updated = [...prevRows];
+                                                                                        updated[existingIndex] = { ...updated[existingIndex], budget: newBudget };
+
+                                                                                        // Log only if changed
+                                                                                        const now = new Date().toLocaleString();
+                                                                                        console.log(`[${now}] 🔄 Budget updated for "${account.account_name}" (${account.code}): ₱${existingBudget} ➡️ ₱${newBudget}`);
+
+                                                                                        // Log total budget after update
+                                                                                        const totalBudget = updated
+                                                                                            .filter(row => formData.accountType.includes(row.account_code))
+                                                                                            .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+                                                                                            .toFixed(2);
+
+                                                                                        console.log(`[${now}] 📊 Total Budget: ₱${totalBudget}`);
+                                                                                    } else {
+                                                                                        // Skip logging if same value entered again
+                                                                                        updated = [...prevRows];
+                                                                                    }
+                                                                                } else {
+                                                                                    // New row case
+                                                                                    updated = [...prevRows, updatedRow];
+
+                                                                                    const now = new Date().toLocaleString();
+                                                                                    console.log(`[${now}] ➕ New account budget added: "${account.account_name}" (${account.code}) - ₱${newBudget}`);
+
+                                                                                    // Log total budget after update
+                                                                                    const totalBudget = updated
+                                                                                        .filter(row => formData.accountType.includes(row.account_code))
+                                                                                        .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+                                                                                        .toFixed(2);
+
+                                                                                    console.log(`[${now}] 📊 Total Budget: ₱${totalBudget}`);
+                                                                                }
+
+                                                                                return updated;
+                                                                            });
+                                                                        }}
+
+
+
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+
+                                                {/* Total Row */}
+                                                <tr>
+                                                    <td colSpan={2} style={{ fontWeight: 'bold', textAlign: 'right' }}>Total</td>
+                                                    <td style={{ fontWeight: 'bold' }}>
+                                                        {rowsAccounts
+                                                            .filter(row => formData.accountType.includes(row.account_code))
+                                                            .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+                                                            .toFixed(2)}
+
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </Table>
+                                    </div>
+                                )}
+                            </Card.Body>
+
+                            <Card.Footer className="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <Button variant="outline-secondary" onClick={handlePrevious} className="me-2">
+                                        ← Previous
+                                    </Button>
+
+                                    <Button variant="primary" onClick={() => setStep(3)}>
+                                        Next →
+                                    </Button>
+                                </div>
+                            </Card.Footer>
+                        </Card>
+                    </div>
+
+
 
                 );
 
             case 3:
                 // File upload step
                 return (
-                    <div>
-                        <h3>Upload File</h3>
-                        <input type="file" className="form-control" />
-                        <br />
-                        <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={() => alert("Submit your data here")}
-                        >
-                            Submit
-                        </button>
-                    </div>
+                    <div className="card shadow-sm p-4">
+
+
+                        <form onSubmit={submit_all}>
+                            <div className="col-12">
+                                {formData.isPartOfCoverPwp && formData.coverPwpCode && remainingBalance !== null && (
+                                    <div className="row mt-4 gx-4 gy-4">
+                                        {/* Left: Regular PWPs Card */}
+                                        <div className="col-12 col-md-7">
+                                            <div
+                                                className="card p-4 animate-fade-slide-up shadow-sm h-100"
+                                                style={{
+                                                    background: 'linear-gradient(135deg,rgb(11, 48, 168), #d9edf7)',
+                                                    borderRadius: '12px',
+                                                    border: '1px solid #99cfff',
+                                                    color: '#ffff',
+                                                    boxShadow: '0 4px 8px rgba(26, 62, 114, 0.15)',
+                                                }}
+                                            >
+                                                <h3
+                                                    className="mb-0"
+                                                    style={{
+                                                        fontWeight: '700',
+                                                        letterSpacing: '2px',
+                                                        textTransform: 'uppercase',
+                                                        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+                                                        textShadow: '1px 1px 2px rgba(26, 62, 114, 0.3)',
+                                                    }}
+                                                >
+                                                    Regular PWPs
+                                                </h3>
+                                            </div>
+                                        </div>
+
+                                        {/* Right: Remaining Budget Card */}
+                                        <div className="col-12 col-md-5">
+                                            <div className="card border-success shadow h-100">
+                                                <div className="card-header bg-success text-white fw-bold text-center">
+                                                    Total Budget
+                                                </div>
+                                                <div className="card-body text-center d-flex align-items-center justify-content-center">
+                                                    <p
+                                                        className="card-text mb-0"
+                                                        style={{
+                                                            fontSize: '2rem',
+                                                            fontWeight: 'bold',
+                                                            color: remainingBalance < 0 ? '#dc3545' : '#198754',
+                                                        }}
+                                                    >
+                                                        ₱{Number(remainingBalance).toLocaleString('en-PH', {
+                                                            minimumFractionDigits: 2,
+                                                            maximumFractionDigits: 2,
+                                                        })}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <h4 className="mb-3">Your Approval </h4>
+
+                            <div className="table-responsive">
+                                {loading ? (
+                                    <p>Loading approvals...</p>
+                                ) : (
+                                    <table className="table table-bordered table-striped table-hover">
+                                        <thead className="table-success">
+                                            <tr>
+                                                <th>Approver</th>
+                                                <th>Position</th>
+
+                                                <th>Date Created</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {approvalList.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="3" className="text-center">No approval data found.</td>
+                                                </tr>
+                                            ) : (
+                                                approvalList.map(({ id, username, allowed_to_approve, created_at }) => (
+                                                    <tr key={id}>
+                                                        <td>{username}</td>
+                                                        <td>
+                                                            {allowed_to_approve ? (
+                                                                <span className="badge bg-success">Allowed</span>
+                                                            ) : (
+                                                                <span className="badge bg-warning text-dark">Not Allowed</span>
+                                                            )}
+                                                        </td>
+                                                        <td>{created_at ? new Date(created_at).toLocaleDateString() : '-'}</td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+
+                                    </table>
+                                )}
+
+
+                                <h4 className="mt-4">Attachments</h4>
+
+                                <div
+                                    onDrop={handleDrop}
+                                    onDragOver={handleDragOver}
+                                    onClick={() => fileInputRef.current.click()}
+                                    className="border border-primary rounded p-4 mb-3"
+                                    style={{
+                                        cursor: 'pointer',
+                                        minHeight: '150px',
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '10px',
+                                        alignItems: 'center',
+                                        justifyContent: files.length === 0 ? 'center' : 'flex-start',
+                                        backgroundColor: '#f8f9fa',
+                                        position: 'relative',
+                                        transition: 'background-color 0.3s',
+                                    }}
+                                >
+                                    {files.length === 0 && <p className="text-muted">Drag & Drop files here or click to upload</p>}
+
+                                    {files.map((file, index) => (
+                                        <div
+                                            key={index}
+                                            className="position-relative"
+                                            style={{
+                                                width: '100px',
+                                                height: '100px',
+                                                border: '1px solid #ddd',
+                                                borderRadius: '6px',
+                                                overflow: 'hidden',
+                                                textAlign: 'center',
+                                                padding: '5px',
+                                                backgroundColor: 'white',
+                                                boxShadow: '0 0 4px rgba(0,0,0,0.1)',
+                                            }}
+                                        >
+                                            {file.type.startsWith('image/') ? (
+                                                <img
+                                                    src={file.preview}
+                                                    alt={file.name}
+                                                    style={{ maxWidth: '100%', maxHeight: '80px', objectFit: 'contain' }}
+                                                />
+                                            ) : (
+                                                <div style={{ fontSize: '12px', wordWrap: 'break-word', marginTop: '30px' }}>
+                                                    <i className="bi bi-file-earmark" style={{ fontSize: '28px', color: '#0d6efd' }}></i>
+                                                    <div>{file.name.length > 15 ? file.name.slice(0, 15) + '...' : file.name}</div>
+                                                </div>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removeFile(index);
+                                                }}
+                                                className="btn btn-sm btn-danger position-absolute top-0 end-0"
+                                                style={{ borderRadius: '0 0 0 6px' }}
+                                                title="Remove file"
+                                            >
+                                                &times;
+                                            </button>
+                                        </div>
+                                    ))}
+
+                                    <input
+                                        type="file"
+                                        multiple
+                                        ref={fileInputRef}
+                                        onChange={handleFileInputChange}
+                                        style={{ display: 'none' }}
+                                    />
+                                </div>
+                            </div >
+
+                            <div className="mt-4 d-flex justify-content-between">
+                                <button className="btn btn-outline-secondary" onClick={handlePrevious}>
+                                    ← Previous
+                                </button>
+
+                                <Button
+                                    variant="success"
+                                    onClick={submit_all}
+                                    className="d-flex align-items-center"
+                                    style={{ marginTop: '1rem' }}
+                                >
+                                    <FaSave className="me-2" /> Submit All
+                                </Button>
+                            </div>
+                        </form>
+                    </div >
+
                 );
 
             default:
                 return null;
         }
     };
+
+
+
+
+
 
     return <div style={{ padding: '30px', overflowX: 'auto' }} className="containes">{renderStepContent()}</div>;
 };

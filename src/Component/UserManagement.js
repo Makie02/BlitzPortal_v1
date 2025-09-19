@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Row, Col, Button, Container, Badge, Form, Modal, Table } from 'react-bootstrap';
+import { Card, Row, Col, Button, Container, Badge, Form, Modal, FormControl } from 'react-bootstrap';
 import {
   FaEdit,
   FaUserShield,
@@ -14,7 +14,7 @@ import { supabase } from '../supabaseClient';
 import '../App.css'; // or wherever your CSS is defined
 
 import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "../Firebase";
+import { db } from '../Firebase';
 
 const USERS_PER_PAGE = 4;
 
@@ -227,6 +227,7 @@ const UserManagement = ({ setCurrentView }) => {
 
   const startIndex = (currentPage - 1) * USERS_PER_PAGE;
   const currentUsers = filteredUsers.slice(startIndex, startIndex + USERS_PER_PAGE);
+  const [supabaseUsername, setSupabaseUsername] = useState('');
 
   // Handlers for opening modals
   const [supabaseUserId, setSupabaseUserId] = useState(null);
@@ -268,6 +269,7 @@ const UserManagement = ({ setCurrentView }) => {
 
       setSupabaseUserId(userFromSupabase.id);       // local DB ID
       setOriginalSupabaseData(userFromSupabase);
+      setSupabaseUsername(userFromSupabase.name);
 
       console.log('Supabase UserID:', userFromSupabase.UserID);
 
@@ -328,14 +330,12 @@ const UserManagement = ({ setCurrentView }) => {
   };
 
   const [permissionRole, setPermissionRoles] = useState([]);
-  const [allowedToApprove, setAllowedToApprove] = useState(false);
 
-  // ✅ Define fetchPosition OUTSIDE useEffect so it's reusable
+  // Define fetchPosition OUTSIDE useEffect so it's reusable
   const fetchPosition = async () => {
     const { data, error } = await supabase
-      .from("References")
-      .select("*")
-      .eq("reference_type", "Position");
+      .from("user_role")     // changed table from References to user_role
+      .select("*");          // no filter needed here unless you want to filter roles
 
     if (error) {
       console.error('Error loading positions:', error);
@@ -345,78 +345,129 @@ const UserManagement = ({ setCurrentView }) => {
     }
   };
 
-  // ✅ Call fetchPosition from useEffect on mount
+  // Call fetchPosition from useEffect on mount
   useEffect(() => {
     fetchPosition();
   }, []);
 
+
+  const [allowedToApprove, setAllowedToApprove] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState('');
+
+  // load username
+  useEffect(() => {
+    const storedUser = localStorage.getItem('loggedInUser');
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    const username = parsedUser?.name || parsedUser?.email || parsedUser?.user_id || '';
+    setCurrentUsername(username);
+  }, []);
+
+  // fetch existing
+  const fetchApprovals = async () => {
+    const { data, error } = await supabase
+      .from('Single_Approval')
+      .select('*');
+    if (error) {
+      console.error('Error fetching Single_Approval:', error);
+    } else {
+      setSavedApprovals(data);
+    }
+  };
+
+  useEffect(() => {
+    fetchApprovals();
+  }, []);
+
+  // save or update single
+  useEffect(() => {
+    if (selectedUser?.name) {
+      setCurrentUsername(selectedUser.name);
+    }
+  }, [selectedUser]);
+
+
   const handleSaveSingleApproval = async () => {
-    if (!selectedUser || !selectedPosition) {
-      Swal.fire({
-        icon: 'warning',
-        title: 'Missing fields',
-        text: 'Please select a user and a position.',
-      });
+    if (!currentUsername) {
+      Swal.fire('Error', 'Username not found.', 'error');
       return;
     }
 
     setLoading(true);
-    try {
-      const { data, error } = await supabase.from('singleapprovals').insert([
-        {
-          user_id: selectedUser.UserID,
-          position: selectedPosition,
-          allowed_to_approve: allowedToApprove,
-        },
-      ]);
 
-      if (error) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Failed to Save',
-          text: error.message,
-        });
-        return;
-      }
+    const { data: existing, error: selErr } = await supabase
+      .from('Single_Approval')
+      .select('*')
+      .eq('username', currentUsername)
+      .single();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Saved!',
-        text: 'Single Approval has been saved successfully.',
-        timer: 2000,
-        showConfirmButton: false,
-      });
-
-      // Optional: reset form or close view
-      setSelectedPosition('');
-      setAllowedToApprove(false);
-      setApproverViewMode(null);
-    } catch (err) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Unexpected Error',
-        text: err.message || 'An unknown error occurred.',
-      });
-    } finally {
+    if (selErr && selErr.code !== 'PGRST116') {
+      console.error('Error checking existing:', selErr);
       setLoading(false);
+      Swal.fire('Error', 'Failed to check existing approval.', 'error');
+      return;
+    }
+
+    const payload = {
+      username: currentUsername,
+      allowed_to_approve: allowedToApprove,
+    };
+
+    let res, error;
+
+    if (existing) {
+      const { data: updatedData, error: updErr } = await supabase
+        .from('Single_Approval')
+        .update(payload)
+        .eq('id', existing.id)
+        .select()
+        .single();
+      error = updErr;
+      res = updatedData;
+    } else {
+      const { data: insertedData, error: insErr } = await supabase
+        .from('Single_Approval')
+        .insert([payload])
+        .select()
+        .single();
+      error = insErr;
+      res = insertedData;
+    }
+
+    setLoading(false);
+
+    if (error) {
+      console.error('Error saving approval:', error);
+      Swal.fire('Error', 'Failed to save approval.', 'error');
+    } else {
+      Swal.fire('Success', 'Approval saved successfully.', 'success');
+      fetchSavedApprovals();
     }
   };
+
+
+
   const handleDeleteApproval = async (id) => {
-    const confirm = await Swal.fire({
-      icon: 'warning',
+    const result = await Swal.fire({
       title: 'Are you sure?',
-      text: 'This will delete the approval permanently.',
+      text: 'This will permanently delete the approval.',
+      icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel',
     });
 
-    if (confirm.isConfirmed) {
-      const { error } = await supabase.from('singleapprovals').delete().eq('id', id);
+    if (result.isConfirmed) {
+      const { error } = await supabase
+        .from('Single_Approval')
+        .delete()
+        .eq('id', id);
+
       if (error) {
-        Swal.fire('Error', error.message, 'error');
+        console.error('Delete error:', error);
+        Swal.fire('Error', 'Failed to delete approval.', 'error');
       } else {
-        Swal.fire('Deleted!', 'Approval was deleted.', 'success');
-        fetchSavedApprovals();
+        Swal.fire('Deleted!', 'Approval has been deleted.', 'success');
+        fetchApprovals();
       }
     }
   };
@@ -459,17 +510,32 @@ const UserManagement = ({ setCurrentView }) => {
   // Handle new user form input change
   const handleNewUserChange = (e) => {
     const { name, value } = e.target;
-    setNewUserData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'salesGroup') {
+      const selected = salesGroup.find(group => group.code === value);
+      setNewUserData(prev => ({
+        ...prev,
+        salesGroup: selected.code,
+        salesGroupName: selected.name
+      }));
+    } else {
+      setNewUserData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
+
 
   // Handle edit user form change
   const handleEditUserChange = (e) => {
     const { name, value } = e.target;
     setEditUserData(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
+
 
 
   // Handle profile picture upload for new user
@@ -546,7 +612,28 @@ const UserManagement = ({ setCurrentView }) => {
     const keyType = newUserData.keyType;
     if (!keyType || keyType === '-') throw new Error("Invalid role");
 
-    // Step 1: Get max UserID
+    const licenseKey = newUserData.licensekey?.trim();
+
+    // 🔒 Step 0: Check for duplicate license key BEFORE any inserts
+    if (licenseKey) {
+      const { data: existingLicense, error: licenseCheckError } = await supabase
+        .from('license_keys')
+        .select('licensekey')
+        .eq('licensekey', licenseKey)
+        .maybeSingle();
+
+      if (licenseCheckError) {
+        console.error('License key lookup error:', licenseCheckError);
+        throw licenseCheckError;
+      }
+
+      if (existingLicense) {
+        // ⛔ License key already exists — throw error and stop here
+        throw new Error(`License key "${licenseKey}" already exists. Please use a different one.`);
+      }
+    }
+
+    // ✅ Step 1: Get max UserID
     const { data: maxUserIdData, error: maxUserIdError } = await supabase
       .from('Account_Users')
       .select('UserID')
@@ -575,7 +662,7 @@ const UserManagement = ({ setCurrentView }) => {
 
     if (existingUsers.length > 0) newUserID++;
 
-    // Step 3: Insert new user
+    // ✅ Step 3: Insert new user
     const userDataToSave = {
       UserID: newUserID,
       role: keyType,
@@ -589,24 +676,28 @@ const UserManagement = ({ setCurrentView }) => {
       profilePicture: newUserData.profilePicture,
       username: newUserData.username,
       password: newUserData.password,
-      licensekey: newUserData.licensekey,
+      licensekey: licenseKey,
       PermissionRole: newUserData.PermissionRole,
     };
 
-    const { data: insertedUser, error: insertError } = await supabase
+    const { data: insertedUsers, error: insertError } = await supabase
       .from('Account_Users')
       .insert(userDataToSave)
-      .select('id')
-      .single();
+      .select('id');
 
     if (insertError) {
       console.error('Insert error:', insertError);
       throw insertError;
     }
 
-    const userId = insertedUser.id;
+    if (!insertedUsers || insertedUsers.length === 0 || !insertedUsers[0]) {
+      console.error('User insert returned no data or unexpected format:', insertedUsers);
+      throw new Error('User insert returned no data');
+    }
 
-    // Step 4: Add default security settings
+    const userId = insertedUsers[0].id;
+
+    // ✅ Step 4: Add default security settings
     const { data: existingSettings, error: settingsFetchError } = await supabase
       .from('Account_SecuritySettings')
       .select('UserCode')
@@ -638,33 +729,18 @@ const UserManagement = ({ setCurrentView }) => {
       }
     }
 
-    // Step 5: Insert new license key only if not exists
-    // Step 5: Insert new license key only if not exists
-    const licenseKey = newUserData.licensekey?.trim();
-
+    // ✅ Step 5: Insert new license key
     if (licenseKey) {
-      const { data: existingLicense, error: licenseCheckError } = await supabase
-        .from('license_keys')
-        .select('id')
-        .eq('licensekey', licenseKey)
-        .maybeSingle();
-
-      if (licenseCheckError) {
-        console.error('License key lookup error:', licenseCheckError);
-        throw licenseCheckError;
-      }
-
-      if (existingLicense) {
-        throw new Error(`License key "${licenseKey}" already exists. Please use a different one.`);
-      }
-
-      // ✅ Read subscriptionEnd from localStorage
       let validUntil = null;
       const storedUserRaw = localStorage.getItem('selectedLicenseUser');
       if (storedUserRaw) {
-        const storedUser = JSON.parse(storedUserRaw);
-        if (storedUser.subscriptionEnd?.seconds) {
-          validUntil = new Date(storedUser.subscriptionEnd.seconds * 1000).toISOString();
+        try {
+          const storedUser = JSON.parse(storedUserRaw);
+          if (storedUser.subscriptionEnd?.seconds) {
+            validUntil = new Date(storedUser.subscriptionEnd.seconds * 1000).toISOString();
+          }
+        } catch (e) {
+          console.warn('Failed to parse stored license user:', e);
         }
       }
 
@@ -673,8 +749,7 @@ const UserManagement = ({ setCurrentView }) => {
         status: 'Active',
         created_at: new Date().toISOString(),
         UserID: newUserID,
-        UserKey: userId,
-        valid_until: validUntil, // ✅ safe value
+        valid_until: validUntil,
       };
 
       const { error: licenseInsertError } = await supabase
@@ -685,42 +760,33 @@ const UserManagement = ({ setCurrentView }) => {
         console.error('License key insert error:', licenseInsertError);
         throw licenseInsertError;
       }
-      await updateFirestoreUserIsTaken(db, selectedService.id, selectedClientId);
 
-    } else {
-      console.warn('No license key provided — skipping license_keys insert');
-
-
-
+      // ✅ Update Firestore license user to isTaken = true
+      try {
+        const storedUser = JSON.parse(localStorage.getItem('selectedLicenseUser'));
+        if (storedUser?.id) {
+          const licenseDocRef = doc(db, "LicenseUsers", storedUser.id);
+          await updateDoc(licenseDocRef, {
+            isTaken: true,
+          });
+          console.log(`✅ Firestore: Marked license ID ${storedUser.id} as taken`);
+        } else {
+          console.warn("⚠️ Could not find stored license user ID to update in Firestore");
+        }
+      } catch (error) {
+        console.error("❌ Failed to update isTaken in Firestore:", error);
+        throw error;
+      }
     }
+
     return { id: userId, UserID: newUserID };
   };
 
 
 
-  async function updateFirestoreUserIsTaken(db, serviceId, clientId) {
-    try {
-      const storedUserRaw = localStorage.getItem('selectedLicenseUser');
-      if (!storedUserRaw) return;
 
-      const storedUser = JSON.parse(storedUserRaw);
-      const { id: userId } = storedUser;
-      if (!userId || !serviceId || !clientId) return;
 
-      const userDocRef = doc(db, "services", serviceId, "clients", clientId, "users", userId);
-      const userSnapshot = await getDoc(userDocRef);
 
-      if (!userSnapshot.exists()) {
-        console.warn("Firestore document doesn't exist—cannot update isTaken.");
-        return;
-      }
-
-      await updateDoc(userDocRef, { isTaken: true });
-      console.log(`Firestore user ${userId} isTaken updated.`);
-    } catch (error) {
-      console.error("Error updating Firestore user isTaken:", error);
-    }
-  }
 
 
 
@@ -768,22 +834,26 @@ const UserManagement = ({ setCurrentView }) => {
 
   const [positionsList, setPositionsList] = useState([]);
 
+
+
+
+
   useEffect(() => {
-    async function fetchPositions() {
-      const { data, error } = await supabase
-        .from("References")
-        .select("*")
-        .eq("reference_type", "Position");
+    const fetchPositions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('position')
+          .select('*');
 
-      if (error) {
-        console.error('Error fetching Positions:', error);
-        setPositionsList([]);
-        return;
+        if (error) {
+          throw error;
+        }
+
+        setPositionsList(data || []);
+      } catch (error) {
+        console.error('Error fetching sales groups:', error.message);
       }
-
-      // If data is array of objects, map or just set
-      setPositionsList(data || []);
-    }
+    };
 
     fetchPositions();
   }, []);
@@ -813,7 +883,7 @@ const UserManagement = ({ setCurrentView }) => {
     if (!selectedUser || !supabaseUserId || !originalSupabaseData) return;
 
     try {
-      // ✅ 1. Check for duplicate license key if needed
+      // 1. Check duplicate license key if needed
       if (showLicenseUpdate && editUserData.licensekey) {
         const duplicate = await isLicenseKeyDuplicate(editUserData.licensekey, supabaseUserId);
         if (duplicate) {
@@ -823,7 +893,8 @@ const UserManagement = ({ setCurrentView }) => {
         }
       }
 
-      // ✅ 2. Build payload for user update
+      // 2. Build payload for user update
+      // NOTE: Use IDs here from editUserData, assuming they are saved as IDs in the form.
       const updatePayload = {
         role: editUserData.keyType,
         name: editUserData.name || null,
@@ -835,18 +906,20 @@ const UserManagement = ({ setCurrentView }) => {
         profilePicture: editUserData.profilePicture || null,
         username: editUserData.username || null,
         password: editUserData.password || null,
-        PermissionRole: editUserData.PermissionRole || null,
+        PermissionRole: editUserData.permissionRole || null,
       };
+
 
       if (showLicenseUpdate) {
         updatePayload.licensekey = editUserData.licensekey || null;
       }
 
+      // Clean undefined
       Object.keys(updatePayload).forEach(
         (key) => updatePayload[key] === undefined && delete updatePayload[key]
       );
 
-      // ✅ 3. Update main user record
+      // 3. Update main user record
       const { error: userUpdateError } = await supabase
         .from('Account_Users')
         .update(updatePayload)
@@ -854,7 +927,7 @@ const UserManagement = ({ setCurrentView }) => {
 
       if (userUpdateError) throw userUpdateError;
 
-      // ✅ 4. Update license_keys table
+      // 4. Update license_keys table if needed (same as before)
       if (showLicenseUpdate && editUserData.licensekey) {
         const { data: existingLicense, error: licenseFetchError } = await supabase
           .from('license_keys')
@@ -868,7 +941,7 @@ const UserManagement = ({ setCurrentView }) => {
           UserKey: supabaseUserId,
           UserID: originalSupabaseData?.UserID,
           status: 'Active',
-          valid_until: convertToPostgresDate(editUserData.subscriptionEnd), // ✅ Safe now
+          valid_until: convertToPostgresDate(editUserData.subscriptionEnd),
         };
 
         if (existingLicense && existingLicense.length > 0) {
@@ -888,11 +961,11 @@ const UserManagement = ({ setCurrentView }) => {
           if (licenseInsertError) throw licenseInsertError;
         }
       }
-      await updateFirestoreUserIsTakenEdit(db, selectedService.id, selectedClientId);
+
       localStorage.removeItem('selectedLicenseUser');
       localStorage.removeItem('selectedLicenseKey');
 
-      // ✅ 5. Done: Show success and reset
+      // 5. Show success and reset
       Swal.fire('Success', 'User updated successfully!', 'success').then(() => {
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
@@ -906,36 +979,6 @@ const UserManagement = ({ setCurrentView }) => {
     }
   };
 
-  async function updateFirestoreUserIsTakenEdit(db, serviceId, clientId) {
-    try {
-      const storedUserRaw = localStorage.getItem('selectedLicenseUser');
-      if (!storedUserRaw) {
-        console.warn("❌ No selectedLicenseUser found in localStorage.");
-        return;
-      }
-
-      const storedUser = JSON.parse(storedUserRaw);
-      const userId = storedUser?.id;
-
-      if (!userId || !serviceId || !clientId) {
-        console.warn("❌ Missing serviceId, clientId, or userId.");
-        return;
-      }
-
-      const userDocRef = doc(db, "services", serviceId, "clients", clientId, "users", userId);
-      const userSnapshot = await getDoc(userDocRef);
-
-      if (!userSnapshot.exists()) {
-        console.warn(`❌ Firestore document does not exist at path: services/${serviceId}/clients/${clientId}/users/${userId}`);
-        return;
-      }
-
-      await updateDoc(userDocRef, { isTaken: true });
-      console.log(`✅ Firestore user ${userId} marked as isTaken: true`);
-    } catch (error) {
-      console.error("🔥 Error updating Firestore user isTaken:", error);
-    }
-  }
 
 
   const convertToPostgresDate = (input) => {
@@ -1113,37 +1156,9 @@ const UserManagement = ({ setCurrentView }) => {
   const [approverViewMode, setApproverViewMode] = useState(null); // 'manual' or 'plan'
   const [approvalPlans, setApprovalPlans] = useState([]);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedPosition, setSelectedPosition] = useState('');
   const [savedPlan, setSavedPlan] = useState(null); // <- to show saved data
 
-  const fetchApprovalPlans = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('Rev_Approval_Plan') // Supabase table name
-        .select('*');
-
-      if (error) {
-        throw error;
-      }
-
-      if (data && data.length > 0) {
-        setApprovalPlans(data);
-      } else {
-        setApprovalPlans([]);
-        console.log("No approval plans found");
-      }
-    } catch (error) {
-      console.error("Error fetching plans:", error.message || error);
-      setApprovalPlans([]);
-    }
-  };
-
-  useEffect(() => {
-    if (approverViewMode === 'plan') {
-      fetchApprovalPlans();
-    }
-  }, [approverViewMode]);
 
   useEffect(() => {
     if (modalType === 'approvers' && selectedUser?.id) {
@@ -1341,24 +1356,24 @@ const UserManagement = ({ setCurrentView }) => {
 
 
   useEffect(() => {
-    async function fetchSalesGroup() {
-      const { data, error } = await supabase
-        .from("References")
-        .select("*")
-        .eq("reference_type", "SalesGroup");
+    const fetchSalesGroup = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('sales_group')
+          .select('*');
 
-      if (error) {
-        console.error('Error fetching SalesGroup:', error);
-        return;
+        if (error) {
+          throw error;
+        }
+
+        setSalesGroup(data || []);
+      } catch (error) {
+        console.error('Error fetching sales groups:', error.message);
       }
-
-      // Assuming data is an array of objects, map or just set it
-      setSalesGroup(data || []);
-    }
+    };
 
     fetchSalesGroup();
   }, []);
-
 
 
   const [tertiaryApprovers, setTertiaryApprovers] = useState([]);
@@ -1723,41 +1738,40 @@ const UserManagement = ({ setCurrentView }) => {
   const [PermissionRole, setPermissionRole] = useState([]);
 
   useEffect(() => {
-    const fetchGroups = async () => {
+    const fetchDepartments = async () => {
       const { data, error } = await supabase
-        .from("References")
+        .from("department")     // <-- change table here
         .select("*")
-        .eq("reference_type", "Department");
+        .order('code', { ascending: true });  // optional, order by code
 
       if (error) {
-        console.error('Error loading groups:', error);
-        setDepartment([]);
+        console.error('Error loading departments:', error);
+        setDepartment([]);   // make sure your state setter is called setDepartment
       } else {
-        // Keep the full objects, so you can access pos.name and pos.description
         setDepartment(data || []);
       }
     };
 
-    fetchGroups();
+    fetchDepartments();
   }, []);
 
+
   useEffect(() => {
-    const fetchGroups = async () => {
+    const fetchUserRoles = async () => {
       const { data, error } = await supabase
-        .from("References")
+        .from("user_role")   // changed from References to user_role table
         .select("*")
-        .eq("reference_type", "UserRole");
+        .order('code', { ascending: true });  // optional ordering by code
 
       if (error) {
-        console.error('Error loading groups:', error);
-        setPermissionRole([]);
+        console.error('Error loading user roles:', error);
+        setPermissionRole([]);  // make sure this matches your state setter name
       } else {
-        // Keep the full objects, so you can access pos.name and pos.description
         setPermissionRole(data || []);
       }
     };
 
-    fetchGroups();
+    fetchUserRoles();
   }, []);
 
 
@@ -1926,30 +1940,66 @@ const UserManagement = ({ setCurrentView }) => {
     fetchClientAndUsers();
   }, [selectedService]);
 
-  const handleRowClick = (user) => {
-    setSelectedUser(user);
-    setLicenseModalOpen(false);
 
-    // 🧠 Save all user data into localStorage
-    localStorage.setItem('selectedLicenseUser', JSON.stringify(user));
+  const handleRowClick = async (user) => {
+    try {
+      const userRef = doc(
+        db,
+        "services",
+        selectedService.id,
+        "clients",
+        client.id,
+        "users",
+        user.id
+      );
 
-    // Optional: store only the licensekey as a separate item
-    const licenseKey = user.licenseKey || '';
-    localStorage.setItem('selectedLicenseKey', licenseKey);
+      await updateDoc(userRef, { isTaken: true });
 
-    // 🧠 Update the form state
-    setNewUserData(prev => ({
-      ...prev,
-      licensekey: licenseKey,
+      // ✅ Local state update (UI)
+      setUsers(prev =>
+        prev.map(u =>
+          u.id === user.id ? { ...u, isTaken: true } : u
+        )
+      );
 
+      // ✅ Save to localStorage
+      localStorage.setItem("selectedLicenseUser", JSON.stringify(user));
+      const licenseKey = user.licenseKey || '';
+      localStorage.setItem("selectedLicenseKey", licenseKey);
 
+      setNewUserData(prev => ({
+        ...prev,
+        licensekey: licenseKey,
+        userCode: user.userCode || '',
+        subscriptionStart: user.subscriptionStart,
+        subscriptionEnd: user.subscriptionEnd,
+      }));
 
-      // Optionally prefill other fields from user
-      userCode: user.userCode || '',
-      subscriptionStart: user.subscriptionStart,
-      subscriptionEnd: user.subscriptionEnd,
-    }));
+      setSelectedUser(user);
+      setLicenseModalOpen(false);
+
+      // ✅ Show Swal Success
+      await Swal.fire({
+        icon: 'success',
+        title: 'License Assigned!',
+        text: `User ${user.userCode || user.id} marked as taken.`,
+        confirmButtonColor: '#3085d6',
+        confirmButtonText: 'OK'
+      });
+
+    } catch (error) {
+      console.error("❌ Failed to mark license as taken:", error);
+
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: 'Failed to assign the license.',
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Close'
+      });
+    }
   };
+
 
 
   const handleRowClickedit = (user) => {
@@ -2027,9 +2077,155 @@ const UserManagement = ({ setCurrentView }) => {
 
 
 
+  useEffect(() => {
+    if (modalType === 'edit' && originalSupabaseData) {
+      // Show Swal prompt once when modal opens
+      Swal.fire({
+        title: 'Update the License Key?',
+        text: 'Do you want to update the license key for this user?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, update it',
+        cancelButtonText: 'No, keep current',
+        reverseButtons: true,
+      }).then((result) => {
+        if (result.isConfirmed) {
+          setShowLicenseUpdate(true);
+          setEditUserData(originalSupabaseData);
+        } else {
+          setShowLicenseUpdate(false);
+          setEditUserData({
+            ...originalSupabaseData,
+            licensekey: originalSupabaseData.licensekey || '',
+          });
+        }
+      });
+    }
+  }, [modalType, originalSupabaseData]);
 
 
 
+
+  // assuming supabase is initialized
+
+  const fetchSingleApprovals = async () => {
+    const { data, error } = await supabase
+      .from('Single_Approval')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching approvals:', error);
+    } else {
+      setSavedApprovals(data);
+    }
+  };
+
+
+
+  const [distributors, setDistributors] = useState([]);
+  const [selectedDistributors, setSelectedDistributors] = useState([]);
+
+
+  // Fetch distributors from Supabase
+  useEffect(() => {
+    const fetchDistributors = async () => {
+      const { data, error } = await supabase
+        .from('distributors')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching distributors:', error);
+      } else {
+        setDistributors(data);
+      }
+    };
+
+    if (modalType === 'Distributor') {
+      fetchDistributors();
+    }
+  }, [modalType]);
+
+  const handleDistributorToggle = (name) => {
+    setSelectedDistributors((prev) =>
+      prev.includes(name)
+        ? prev.filter((n) => n !== name)
+        : [...prev, name]
+    );
+  };
+
+  const [savedDistributors, setSavedDistributors] = useState([]);
+
+  const fetchSavedDistributors = async (username) => {
+    const { data, error } = await supabase
+      .from('user_distributors')
+      .select('*')
+      .eq('username', username)
+      .order('distributor_name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching saved distributors:', error);
+    } else {
+      setSavedDistributors(data);
+    }
+  };
+
+
+  useEffect(() => {
+    if (modalType === 'Distributor' && selectedUser?.username) {
+      fetchSavedDistributors(selectedUser.username);
+    }
+  }, [modalType, selectedUser]);
+
+  const handleSaveDistributors = async () => {
+    if (!supabaseUsername) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'No Supabase username!',
+        text: 'Unable to find Supabase username. Please reselect the user.',
+      });
+      return;
+    }
+
+    const selected = distributors.filter((d) =>
+      selectedDistributors.includes(d.name)
+    );
+
+    const inserts = selected.map((dist) => ({
+      code: dist.code,
+      distributor_name: dist.name,
+      username: supabaseUsername, // ✅ Use Supabase username here
+    }));
+
+    const { error } = await supabase
+      .from('user_distributors')
+      .insert(inserts);
+
+    if (error) {
+      console.error('Error saving distributors:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Save Failed',
+        text: 'An error occurred while saving. Please try again.',
+      });
+    } else {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Distributors Saved',
+        text: 'The selected distributors were saved successfully!',
+        confirmButtonColor: '#3085d6',
+      });
+
+      setSelectedDistributors([]);
+      fetchSavedDistributors(supabaseUsername); // ✅ Fetch saved distributors using supabaseUsername
+    }
+  };
+
+
+  const filteredDistributors = distributors.filter((dist) =>
+    dist.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
   return (
     <Container>
       <h2 className="my-4">User Management</h2>
@@ -2156,7 +2352,9 @@ const UserManagement = ({ setCurrentView }) => {
                             }
                           >
                             {user.group}
+
                           </Badge>
+
                         </Card.Text>
                       </Col>
                     </Row>
@@ -2183,12 +2381,13 @@ const UserManagement = ({ setCurrentView }) => {
                       <Button
                         variant="outline-warning"
                         size="sm"
-                        onClick={() => openModal(user, 'brands')}
-                        title="Brands"
+                        onClick={() => openModal(user, 'Distributor')}
+                        title="Distributor"
                         className="mb-1"
                       >
                         <FaTags />
                       </Button>
+
                       <Button
                         variant="outline-info"
                         size="sm"
@@ -2702,7 +2901,7 @@ const UserManagement = ({ setCurrentView }) => {
                     name="email"
                     value={newUserData.email}
                     onChange={handleNewUserChange}
-                    required
+
                   />
                 </Form.Group>
                 <Form.Group className="mb-3" controlId="newUserContactNumber">
@@ -2728,9 +2927,12 @@ const UserManagement = ({ setCurrentView }) => {
                   >
                     <option value="" disabled>-- Select Sales Group --</option>
                     {salesGroup.map((group, idx) => (
-                      <option key={idx} value={group.name}>{group.name}</option>
+                      <option key={idx} value={group.code}>
+                        {group.name} {group.description && ` - ${group.description}`}
+                      </option>
                     ))}
                   </Form.Select>
+
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="newUserPosition">
@@ -2748,11 +2950,12 @@ const UserManagement = ({ setCurrentView }) => {
                   >
                     <option value="">-- Select Position --</option>
                     {positionsList.map((pos, idx) => (
-                      <option key={idx} value={pos.name}>
+                      <option key={idx} value={pos.code}>
                         {pos.name} - {pos.description}
                       </option>
                     ))}
                   </Form.Control>
+
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="newUserGroup">
@@ -2766,11 +2969,12 @@ const UserManagement = ({ setCurrentView }) => {
                     <option value="">-- Select Department --</option>
                     <option value="All">All</option>
                     {Department.map((pos, idx) => (
-                      <option key={idx} value={pos.name}>
+                      <option key={idx} value={pos.code}>
                         {pos.name} - {pos.description}
                       </option>
                     ))}
                   </Form.Select>
+
                 </Form.Group>
 
 
@@ -2806,12 +3010,13 @@ const UserManagement = ({ setCurrentView }) => {
                   >
                     <option value="">-- Select Permission --</option>
                     <option value="All">All</option>
-                    {PermissionRole.map((pos, idx) => (
-                      <option key={idx} value={pos.name}>
-                        {pos.name}  {pos.description}
+                    {PermissionRole.map((role, idx) => (
+                      <option key={idx} value={role.code}>
+                        {role.name} {role.description}
                       </option>
                     ))}
                   </Form.Select>
+
                 </Form.Group>
               </Col>
             </Row>
@@ -3359,48 +3564,47 @@ const UserManagement = ({ setCurrentView }) => {
                     required
                   >
                     <option value="" disabled>-- Select Sales Group --</option>
-                    {salesGroup.map((group, idx) => (
-                      <option key={idx} value={group.name}>{group.name}</option>
+                    {salesGroup.map((group) => (
+                      <option key={group.code} value={group.code}>{group.name}</option>
                     ))}
                   </Form.Select>
+
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="editUserPosition">
                   <Form.Label>Position</Form.Label>
-                  <Form.Control
-                    as="select"
+
+
+                  <Form.Select
                     name="position"
                     value={editUserData.position || ''}
-                    onChange={(e) => {
-                      handleEditUserChange(e);
-                      setSelectedApprover?.(e.target.value);
-                    }}
-                    disabled={loading}
+                    onChange={handleEditUserChange}
                     required
                   >
-                    <option value="">-- Select Position --</option>
-                    {positionsList.map((pos, idx) => (
-                      <option key={idx} value={pos.name}>
-                        {pos.name} - {pos.description}
-                      </option>
+                    <option value="" disabled>-- Select Position --</option>
+                    {positionsList.map((pos) => (
+                      <option key={pos.code} value={pos.code}>{pos.name}</option>
                     ))}
-                  </Form.Control>
+                  </Form.Select>
+
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="editUserGroup">
                   <Form.Label>Department</Form.Label>
+
+
                   <Form.Select
                     name="group"
                     value={editUserData.group || ''}
                     onChange={handleEditUserChange}
                     required
                   >
-                    <option value="">-- Select Department --</option>
-                    <option value="All">All</option>
-                    {groups.map((grp) => (
-                      <option key={grp} value={grp}>{grp}</option>
+                    <option value="" disabled>-- Select Department --</option>
+                    {Department.map((dep) => (
+                      <option key={dep.code} value={dep.code}>{dep.name}</option>
                     ))}
                   </Form.Select>
+
                 </Form.Group>
 
 
@@ -3427,21 +3631,30 @@ const UserManagement = ({ setCurrentView }) => {
               <Col md={6}>
                 <Form.Group className="mb-3" controlId="newUserGroup">
                   <Form.Label>Permission Role</Form.Label>
+
                   <Form.Select
-                    name="PermissionRole"
-                    value={editUserData.PermissionRole || ''}
+                    name="permissionRole"
+                    value={editUserData.permissionRole || ''}
                     onChange={handleEditUserChange}
                     required
                   >
-                    <option value="">-- Select Permission --</option>
-                    <option value="All">All</option>
-                    {PermissionRole.map((pos, idx) => (
-                      <option key={idx} value={pos.name}>
-                        {pos.name}  {pos.description}
+                    <option value="" disabled>-- Select Permission Role --</option>
+                    {PermissionRole.map((role) => (
+                      <option key={role.code} value={role.code}>
+                        {role.name} {role.description}
                       </option>
+                    ))}
+
+                    {PermissionRole.map((role, idx) => (
+                      <option key={role.code} value={role.code}>
+                        {role.name} {role.description}
+                      </option>
+
+
                     ))}
                   </Form.Select>
                 </Form.Group>
+
               </Col>
             </Row>
           </Modal.Body>
@@ -3481,15 +3694,7 @@ const UserManagement = ({ setCurrentView }) => {
               <Button variant="primary" onClick={() => setApproverViewMode('manual')}>
                 Option 1: Manual Approver Selection
               </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  fetchApprovalPlans(); // Function to fetch plans
-                  setApproverViewMode('plan');
-                }}
-              >
-                Option 2: Choose from Brand Approval Plan
-              </Button>
+
               <Button
                 variant="info"
                 onClick={() => {
@@ -3498,7 +3703,7 @@ const UserManagement = ({ setCurrentView }) => {
                   fetchSavedApprovals();
                 }}
               >
-                Option 3: Single Approval
+                Option 2: Single Approval
               </Button>
 
 
@@ -3614,23 +3819,84 @@ const UserManagement = ({ setCurrentView }) => {
 
             </>
           )}
-          {approverViewMode === 'single' && (
+
+
+
+
+
+          {approverViewMode === 'Distributor' && (
             <>
-              {/* Your existing form */}
-              <Form.Group controlId="positionSelect">
-                <Form.Label>Select Position</Form.Label>
+              <Form.Group>
+                <Form.Label>Choose Plan</Form.Label>
                 <Form.Select
-                  value={selectedPosition}
-                  onChange={(e) => setSelectedPosition(e.target.value)}
-                  disabled={loading}
+                  value={selectedPlan}
+                  onChange={(e) => setSelectedPlan(e.target.value)}
                 >
-                  <option value="">-- Select Position --</option>
-                  {permissionRole.map((pos) => (
-                    <option key={pos.id} value={pos.name}>
-                      {pos.name} - {pos.description}
+                  <option value="">-- Select Plan --</option>
+                  {approvalPlans.map((plan) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.department} - {plan.position}
                     </option>
                   ))}
                 </Form.Select>
+              </Form.Group>
+
+              <Button
+                className="mt-3"
+                variant="success"
+                onClick={assignPlanToUser}
+                disabled={!selectedPlan}
+              >
+                Save to User
+              </Button>
+
+              {savedPlans.length > 0 && (
+                <div className="mt-4">
+                  <h5>Assigned Plans:</h5>
+                  <div
+                    style={{
+                      maxHeight: '250px',
+                      overflowY: 'auto',
+                      paddingRight: '8px',
+                      border: '1px solid #dee2e6',
+                      borderRadius: '0.25rem',
+                    }}
+                  >
+                    {savedPlans.map((plan, idx) => (
+                      <div key={idx} className="border p-3 mb-3 rounded position-relative">
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => deletePlan(plan.id)}
+                          className="position-absolute top-0 end-0 m-2"
+                        >
+                          Remove
+                        </Button>
+
+                        <p><strong>Department:</strong> {plan.department}</p>
+                        <p><strong>Position:</strong> {plan.position}</p>
+                        <p><strong>Principal:</strong> {plan.principal}</p>
+                        <p><strong>Visa Type:</strong> {plan.visaType}</p>
+                        <p><strong>Charged To:</strong> {plan.chargedTo}</p>
+                        <p><strong>Approver Level:</strong> {plan.approverLevel || '-'}</p>
+                        <p><strong>Plan ID:</strong> {plan.id}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </>
+          )}
+          {approverViewMode === 'single' && (
+            <>
+              <Form.Group controlId="usernameDisplay">
+                <Form.Label>Username</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={selectedUser?.name || ''}
+                  readOnly
+                />
               </Form.Group>
 
               <Form.Group
@@ -3650,114 +3916,63 @@ const UserManagement = ({ setCurrentView }) => {
                 variant="success"
                 className="mt-3"
                 onClick={handleSaveSingleApproval}
-                disabled={!selectedPosition || loading}
+                disabled={loading}
               >
                 {loading ? 'Saving...' : 'Save'}
               </Button>
 
-              {/* Display saved approvals as a list with edit & delete */}
               <hr className="my-4" />
               <h5>Saved Single Approvals</h5>
+
               {savedApprovals.length === 0 ? (
                 <p>No approvals found.</p>
               ) : (
-                <div className="d-flex flex-column gap-3">
-                  {savedApprovals.map((approval) => (
-                    <div
-                      key={approval.id}
-                      className="p-3 border rounded shadow-sm"
-                      style={{ backgroundColor: '#f8f9fa' }}
-                    >
-                      {editId === approval.id ? (
-                        <>
-                          <Form.Group controlId={`editPosition-${approval.id}`}>
-                            <Form.Label>Position</Form.Label>
-                            <Form.Select
-                              value={editPosition}
-                              onChange={(e) => setEditPosition(e.target.value)}
-                              disabled={loading}
-                            >
-                              <option value="">-- Select Position --</option>
-                              {permissionRole.map((pos) => (
-                                <option key={pos.id} value={pos.name}>
-                                  {pos.name} - {pos.description}
-                                </option>
-                              ))}
-                            </Form.Select>
-                          </Form.Group>
-
-                          <Form.Group
-                            controlId={`editAllowed-${approval.id}`}
-                            className="mt-3 d-flex align-items-center justify-content-between"
+                <table striped bordered hover responsive>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Username</th>
+                      <th>Allowed</th>
+                      <th>Created At</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savedApprovals.map((approval) => (
+                      <tr key={approval.id}>
+                        <td>{approval.id}</td>
+                        <td>{approval.username}</td>
+                        <td>{approval.allowed_to_approve ? 'Yes' : 'No'}</td>
+                        <td>{new Date(approval.created_at).toLocaleString()}</td>
+                        <td>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            className="me-2"
+                            onClick={() => {
+                              setEditId(approval.id);
+                              setCurrentUsername(approval.username);
+                              setAllowedToApprove(approval.allowed_to_approve);
+                            }}
                           >
-                            <Form.Label className="mb-0">Allowed to Approve</Form.Label>
-                            <Form.Check
-                              type="switch"
-                              id={`editAllowedSwitch-${approval.id}`}
-                              checked={editAllowed}
-                              onChange={() => setEditAllowed(!editAllowed)}
-                            />
-                          </Form.Group>
-
-                          <div className="mt-3">
-                            <Button
-                              variant="success"
-                              className="me-2"
-                              onClick={() =>
-                                handleUpdateApproval(editId, editPosition, editAllowed).then(() =>
-                                  setEditId(null)
-                                )
-                              }
-                              disabled={!editPosition || loading}
-                            >
-                              Save
-                            </Button>
-                            <Button variant="secondary" onClick={() => setEditId(null)}>
-                              Cancel
-                            </Button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <p>
-                            <strong>User ID:</strong> {approval.user_id}
-                          </p>
-                          <p>
-                            <strong>Position:</strong> {approval.position}
-                          </p>
-                          <p>
-                            <strong>Allowed to Approve:</strong>{' '}
-                            {approval.allowed_to_approve ? 'Yes' : 'No'}
-                          </p>
-
-                          <div className="d-flex gap-2">
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setEditId(approval.id);
-                                setEditPosition(approval.position);
-                                setEditAllowed(approval.allowed_to_approve);
-                              }}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => handleDeleteApproval(approval.id)}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                            Edit
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDeleteApproval(approval.id)}
+                          >
+                            Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </>
           )}
+
 
 
 
@@ -3777,121 +3992,78 @@ const UserManagement = ({ setCurrentView }) => {
 
 
 
-      <Modal show={modalType === 'brands'} onHide={() => setModalType(null)} centered>
+
+
+
+
+
+
+      <Modal show={modalType === 'Distributor'} onHide={() => setModalType(null)} centered>
         <Modal.Header closeButton>
-          <Modal.Title>Manage Brands for {selectedUser?.name}</Modal.Title>
+          <Modal.Title>Manage Distributor for {supabaseUsername}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {brands.length === 0 ? (
-            <p>Loading brands...</p>
+          {distributors.length === 0 ? (
+            <p>No Sales Distributor found.</p>
           ) : (
             <>
-              <p>Select up to {maxBrandsAllowed} brands:</p>
-              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                {brands.map((brand, idx) => (
-                  <div key={idx} className="form-check">
-                    <input
-                      type="checkbox"
-                      className="form-check-input"
-                      id={`brand-${idx}`}
-                      checked={selectedBrands.includes(brand)}
-                      onChange={() => handleBrandToggle(brand)}
-                      disabled={
-                        !selectedBrands.includes(brand) &&
-                        selectedBrands.length >= maxBrandsAllowed
-                      }
-                    />
-                    <label className="form-check-label" htmlFor={`brand-${idx}`}>
-                      {brand}
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setModalType(null)}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={handleSaveBrands} disabled={selectedBrands.length === 0}>
-            Save
-          </Button>
-        </Modal.Footer>
-      </Modal>
+              <p>Select one or more Distributors:</p>
 
+              {/* Search Bar */}
+              <FormControl
+                type="text"
+                placeholder="Search Distributors..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ marginBottom: '12px' }}
+              />
 
-      <Modal show={modalType === 'connection'} onHide={() => setModalType(null)} centered>
-        <Modal.Header closeButton>
-          <Modal.Title>Manage Connection for {selectedUser?.name}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {salesDivisions.length === 0 ? (
-            <p>No Sales Divisions found.</p>
-          ) : (
-            <>
-              <p>Select one or more Sales Divisions:</p>
-              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                {salesDivisions.map((div, idx) => (
-                  <div key={idx} className="form-check">
-                    <input
-                      type="checkbox"
-                      className="form-check-input"
-                      id={`division-${idx}`}
-                      checked={selectedDivisions.includes(div.name)}
-                      onChange={() => handleDivisionToggle(div.name)}
-                    />
-                    <label className="form-check-label" htmlFor={`division-${idx}`}>
-                      {div.name}
-                    </label>
-                  </div>
-                ))}
+              {/* Scrollable List */}
+              <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '6px' }}>
+                {filteredDistributors.length === 0 ? (
+                  <p>No matching distributors found.</p>
+                ) : (
+                  filteredDistributors.map((dist, idx) => (
+                    <div key={idx} className="form-check">
+                      <input
+                        type="checkbox"
+                        className="form-check-input"
+                        id={`distributor-${idx}`}
+                        checked={selectedDistributors.includes(dist.name)}
+                        onChange={() => handleDistributorToggle(dist.name)}
+                      />
+                      <label className="form-check-label" htmlFor={`distributor-${idx}`}>
+                        {dist.name}
+                      </label>
+                    </div>
+                  ))
+                )}
               </div>
 
-              {/* Display selected divisions */}
-              {selectedDivisions.length > 0 && (
+
+              {selectedDistributors.length > 0 && (
                 <div style={{ marginTop: 16 }}>
-                  <strong>Selected Divisions:</strong>
+                  <strong>Selected Distributors:</strong>
                   <ul>
-                    {selectedDivisions.map((div, idx) => (
-                      <li key={idx}>{div}</li>
+                    {selectedDistributors.map((name, idx) => (
+                      <li key={idx}>{name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {savedDistributors.length > 0 && (
+                <div style={{ marginTop: 20 }}>
+                  <h6 style={{ fontWeight: '600' }}>Saved Distributors for {selectedUser?.name}:</h6>
+                  <ul>
+                    {savedDistributors.map((dist, idx) => (
+                      <li key={idx}>
+                        {dist.distributor_name} <span style={{ color: '#999' }}>({dist.code})</span>
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              <div style={{ marginTop: 20, borderBottom: '2px solid #1976d2', paddingBottom: '6px', marginBottom: '12px' }}>
-                <h5 style={{ color: '#1976d2', fontWeight: '600', margin: 0 }}>
-                  For Sales Department Only
-                </h5>
-              </div>
-
-
-              <div className="form-check" style={{ marginTop: 8 }}>
-                <input
-                  type="checkbox"
-                  className="form-check-input"
-                  id="include-bu-head"
-                  checked={includeBUHead}
-                  onChange={() => setIncludeBUHead(!includeBUHead)}
-                />
-                <label className="form-check-label" htmlFor="include-bu-head">
-                  Include BU Head in Approval List
-                </label>
-              </div>
-
-              <div className="form-check" style={{ marginTop: 8 }}>
-                <input
-                  type="checkbox"
-                  className="form-check-input"
-                  id="include-vp-sales"
-                  checked={includeVPSales}
-                  onChange={() => setIncludeVPSales(!includeVPSales)}
-                />
-                <label className="form-check-label" htmlFor="include-vp-sales">
-                  Include VP Sales in Approval List
-                </label>
-              </div>
             </>
           )}
         </Modal.Body>
@@ -3901,14 +4073,13 @@ const UserManagement = ({ setCurrentView }) => {
           </Button>
           <Button
             variant="primary"
-            onClick={handleSaveDivisions}
-            disabled={selectedDivisions.length === 0}
+            onClick={handleSaveDistributors}
+            disabled={selectedDistributors.length === 0}
           >
             Save
           </Button>
         </Modal.Footer>
       </Modal>
-
 
       <Modal show={modalType === "deactivate" ? true : undefined} onHide={() => setModalType(null)} centered>
         <Modal.Header closeButton>

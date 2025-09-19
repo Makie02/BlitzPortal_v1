@@ -5,7 +5,7 @@ import 'tippy.js/dist/tippy.css';
 import { supabase } from "../supabaseClient";
 import logo from '../Assets/sssss.png';
 
-function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLoggedIn, user ,loggedIn }) {
+function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLoggedIn, user, loggedIn }) {
     const [activeDropdown, setActiveDropdown] = useState(null);
     const [IsOpen, setIsOpen] = useState(null);
 
@@ -99,27 +99,27 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
     );
 
     function handleLinkClick(view, title) {
-    setCurrentView(view);
-    setActiveDropdown(null);
+        setCurrentView(view);
+        setActiveDropdown(null);
 
-    // Close sidebar on mobile:
-    if (window.innerWidth <= 768) {
-        setSidebarExpanded(false);
+        // Close sidebar on mobile:
+        if (window.innerWidth <= 768) {
+            setSidebarExpanded(false);
+        }
     }
-}
 
     const toggleDropdown = (key) => {
         setActiveDropdown((prev) => (prev === key ? null : key));
     };
 
-   function handleViewChange(view) {
-    setCurrentView(view);
+    function handleViewChange(view) {
+        setCurrentView(view);
 
-    // Close sidebar on mobile:
-    if (window.innerWidth <= 768) {
-        setSidebarExpanded(false);
+        // Close sidebar on mobile:
+        if (window.innerWidth <= 768) {
+            setSidebarExpanded(false);
+        }
     }
-}
     const [localUser, setLocalUser] = useState({});
     const [avatar, setAvatar] = useState(null);  // local avatar state
     useEffect(() => {
@@ -206,28 +206,45 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
             if (!localUser?.PermissionRole) return;
 
             try {
-                const { data, error } = await supabase
+                // Step 1: Get the role name from user_role table
+                const { data: roleData, error: roleError } = await supabase
+                    .from('user_role')
+                    .select('role')
+                    .eq('code', localUser.PermissionRole)
+                    .single();
+
+                if (roleError) throw roleError;
+
+                const roleName = roleData?.role;
+                if (!roleName) {
+                    console.warn("⚠️ No role name found for code:", localUser.PermissionRole);
+                    setRolePermissions({});
+                    return;
+                }
+
+                // Step 2: Get permissions based on role name
+                const { data: permissionsData, error: permissionsError } = await supabase
                     .from('RolePermissions')
                     .select('permission, allowed')
-                    .eq('role_name', localUser.PermissionRole);
+                    .eq('role_name', roleName);
 
-                if (error) throw error;
+                if (permissionsError) throw permissionsError;
 
                 const permissionsObj = {};
-                data.forEach(({ permission, allowed }) => {
+                permissionsData.forEach(({ permission, allowed }) => {
                     permissionsObj[permission] = allowed === true;
                 });
 
-                // console.log("✅ Permissions for role:", localUser.PermissionRole, permissionsObj);
                 setRolePermissions(permissionsObj);
             } catch (error) {
-                console.error("❌ Error fetching role permissions from Supabase:", error);
+                console.error("❌ Error fetching role or permissions:", error);
                 setRolePermissions({});
             }
         };
 
         fetchRolePermissions();
     }, [localUser?.PermissionRole]);
+
     const hasPermissionForView = (view) => {
         const allowed = !!rolePermissions[view];
         // console.log(`🔍 Checking permission for view "${view}":`, allowed);
@@ -340,9 +357,9 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
             submenu: [
                 { title: "References", view: "References" },
                 { title: "User Management", view: "UserManagement" },
-                { title: "Brands", view: "BrandSelector" },
-                { label: "Brand Approval Plan", view: "BrandApprovalForm" },
-                { title: "Cost Details", view: "Activities" },
+                { title: "Category", view: "BrandSelector" },
+                // { label: "Brand Approval Plan", view: "BrandApprovalForm" },
+                // { title: "Cost Details", view: "Activities" },
             ],
         },
         {

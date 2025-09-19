@@ -1,0 +1,364 @@
+.user-role-container {
+  padding: 20px;
+  max-width: 1500px;
+  margin: 0 auto;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #222;
+  background-color: #e8f0fe;
+}
+@media (max-width: 480px) {
+  .user-role-container {
+    padding: 15px 10px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box; /* ensure padding doesn't overflow */
+  }
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 24px;
+  font-weight: 700;
+  color: #0b3d91;
+}
+
+.btn-new {
+  background-color: #4a90e2;
+  color: #fff;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-block; /* change from block */
+  max-width: unset; /* remove max-width */
+  margin: 0 0 20px 0; /* align left with bottom margin */
+  transition: background-color 0.3s ease;
+  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+}
+
+.btn-new:hover,
+.btn-new:focus {
+  background-color: #357abd;
+  outline: none;
+}
+
+.table-wrapper {
+  width: 100%;
+
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  box-shadow: inset 0 -1px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+.roles-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 15px rgba(74, 144, 226, 0.15);
+  font-size: 14px;
+  min-width: 600px; /* keep for desktop/tablet horizontal scroll */
+}
+
+.roles-table thead {
+  background-color: #e8f0fe;
+  color: #0b3d91;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.roles-table th,
+.roles-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+  vertical-align: middle;
+  word-break: break-word;
+}
+
+.roles-table tbody tr:hover {
+  background-color: #f1f6ff;
+  cursor: pointer;
+}
+
+.btn-edit,
+.btn-delete {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.3s ease;
+  font-size: 13px;
+  min-width: 64px;
+  box-sizing: border-box;
+}
+
+.btn-edit {
+  background-color: #4a90e2;
+  color: white;
+}
+.btn-edit:hover,
+.btn-edit:focus {
+  background-color: #357abd;
+  outline: none;
+}
+
+.btn-delete {
+  background-color: #e14c4c;
+  color: white;
+}
+.btn-delete:hover,
+.btn-delete:focus {
+  background-color: #b93636;
+  outline: none;
+}
+
+/* Modal styling */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px;
+  z-index: 9999;
+}
+
+.modal-content {
+  background-color: white;
+  padding: 28px 24px 24px;
+  border-radius: 10px;
+  width: 80%;
+  max-width: 480px; /* increase max width for desktop */
+  box-shadow: 0 12px 28px rgba(74,144,226,0.4);
+  animation: fadeInUp 0.3s ease forwards;
+}
+
+/* On small devices, keep modal small/full width */
+@media (max-width: 480px) {
+  .modal-content {
+    max-width: 90vw; /* keep small and responsive */
+    padding: 20px 18px 20px;
+  }
+}
+
+
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-content h2 {
+  margin-bottom: 18px;
+  color: #0b3d91;
+  font-weight: 700;
+  font-size: 22px;
+  text-align: center;
+}
+
+.modal-content form div {
+  margin-bottom: 18px;
+}
+
+.modal-content label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: #0b3d91;
+  font-size: 14px;
+}
+
+.modal-content input[type="text"],
+.modal-content textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid #4a90e2;
+  border-radius: 6px;
+  font-size: 15px;
+  color: #222;
+  transition: border-color 0.3s ease;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.modal-content input[type="text"]:focus,
+.modal-content textarea:focus {
+  border-color: #357abd;
+  outline: none;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.modal-buttons button {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 15px;
+  transition: background-color 0.3s ease;
+  min-width: 96px;
+  box-sizing: border-box;
+}
+
+.modal-buttons button[type="submit"] {
+  background-color: #4a90e2;
+  color: white;
+}
+.modal-buttons button[type="submit"]:hover,
+.modal-buttons button[type="submit"]:focus {
+  background-color: #357abd;
+  outline: none;
+}
+
+.modal-buttons button[type="button"] {
+  background-color: #ccc;
+  color: #333;
+}
+.modal-buttons button[type="button"]:hover,
+.modal-buttons button[type="button"]:focus {
+  background-color: #aaa;
+  outline: none;
+}
+
+.error {
+  color: #e14c4c;
+  margin-bottom: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .user-role-container {
+    padding: 20px 15px;
+  }
+
+  .btn-new {
+    max-width: 100%;
+    font-size: 18px;
+    padding: 14px;
+  }
+
+  .roles-table th, .roles-table td {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .btn-edit, .btn-delete {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .modal-content {
+    max-width: 90vw;
+    padding: 20px 18px 20px;
+  }
+
+  .modal-buttons {
+    justify-content: center;
+  }
+}
+
+/* Mobile phones and small devices */
+@media (max-width: 480px) {
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: inset 0 -1px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+  }
+
+  .roles-table {
+    display: block;
+    width: 100%;
+    min-width: unset; /* Remove fixed min-width to allow better wrapping */
+    white-space: nowrap;
+    border: none;
+    box-shadow: none;
+  }
+
+  .roles-table thead {
+    display: none;
+  }
+
+  .roles-table tbody tr {
+    display: block;
+    background-color: #fafafa;
+    margin-bottom: 16px;
+    padding: 16px 12px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 6px rgba(74, 144, 226, 0.1);
+  }
+
+  .roles-table tbody tr:hover {
+    background-color: #f1f6ff;
+  }
+
+  .roles-table tbody td {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 14px;
+    border: none;
+    word-break: break-word;
+  }
+
+  .roles-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #0b3d91;
+    flex-basis: 45%;
+    white-space: normal;
+    padding-right: 8px;
+  }
+
+  /* Buttons responsive adjustments */
+  .btn-edit,
+  .btn-delete {
+    min-width: 48%;
+    margin: 6px 1% 0 0;
+    font-size: 14px; /* Good tap size */
+    padding: 10px 0;
+    box-sizing: border-box;
+  }
+
+  /* Put edit and delete side by side */
+  .btn-edit {
+    margin-right: 4%;
+  }
+  .btn-delete {
+    margin-right: 0;
+  }
+
+  .modal-buttons {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .modal-buttons button {
+    width: 100%;
+    min-width: unset;
+  }
+}

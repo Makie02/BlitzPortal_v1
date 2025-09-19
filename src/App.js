@@ -20,7 +20,6 @@ import RentalSummaryTables from "./Component/RentalSummaryTables.js";
 import UserManagement from "./Component/UserManagement.js";
 import BrandSelector from "./Component/BrandSelector.jsx";
 import Activities from "./Component/Activities.jsx";
-import References from "./Component/References.jsx";
 import RecordsPage from "./Component/RecordsPage.jsx";
 import LoginPage from "./Login/LoginPage.jsx";
 import Calendar from "./Component/Calendar.jsx";
@@ -42,6 +41,7 @@ import ClaimsStatusUpload from "./Create/ClaimsStatusUpload.jsx";
 import Liecense from "./Component/liecense.js";
 import RegularPwpUploadForm from "./Create/RegularPwpUploadForm.jsx";
 import { supabase } from "./supabaseClient.js";
+import References from "./Component/References.jsx";
 
 function App() {
 
@@ -305,7 +305,7 @@ const setCurrentView = (view) => {
       case "UserManagement": return <UserManagement setCurrentView={setCurrentView} />;
       case "BrandSelector": return <BrandSelector setCurrentView={setCurrentView} />;
       case "Activities": return <Activities setCurrentView={setCurrentView} />;
-      case "References": return <References setCurrentView={setCurrentView} />;
+      // case "References": return <References setCurrentView={setCurrentView} />;
       case "RecordsPage": return <RecordsPage setCurrentView={setCurrentView} />;
       case "Calendar": return <Calendar setCurrentView={setCurrentView} />;
       case "ApprovalHistoryTable": return <ApprovalHistoryTable setCurrentView={setCurrentView} />;
@@ -320,6 +320,7 @@ const setCurrentView = (view) => {
 
 
       case "RegularPwpUploadForm": return <RegularPwpUploadForm setCurrentView={setCurrentView} />;
+      case "References": return <References setCurrentView={setCurrentView} />;
 
       
       case "SettingProfileUpdate": return <SettingProfileUpdate setCurrentView={setCurrentView} />;

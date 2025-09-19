@@ -17,7 +17,6 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
         console.clear();
 
         try {
-
             // Step 1: Fetch user from Supabase
             const { data: users, error: supaError } = await supabase
                 .from('Account_Users')
@@ -27,8 +26,15 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 .limit(1);
 
             if (supaError) throw new Error(`Supabase error: ${supaError.message}`);
+
             if (!users || users.length === 0) {
                 setError('Invalid username or password');
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Login Failed',
+                    text: 'Invalid username or password',
+                    confirmButtonText: 'OK',
+                });
                 return;
             }
 
@@ -41,13 +47,14 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 .eq('UserID', matchedUser.UserID)
                 .single();
 
-            if (statusError && statusError.code !== 'PGRST116') // ignore not found error if needed
+            if (statusError && statusError.code !== 'PGRST116')
                 throw new Error(`User status error: ${statusError.message}`);
 
             if (statusData) {
                 if (!statusData.isActive) {
                     const nowMs = Date.now();
                     if (!statusData.disableUntil || nowMs < statusData.disableUntil) {
+                        setError('Your account is disabled. Please contact support.');
                         await Swal.fire({
                             icon: 'error',
                             title: 'Account Disabled',
@@ -56,7 +63,6 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                         });
                         return;
                     }
-
                 }
             }
 
@@ -65,6 +71,7 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
             const userLicense = savedKeys.find((key) => key.UserID === matchedUser.UserID);
 
             if (!userLicense) {
+                setError('No active subscription found for this user.');
                 await Swal.fire({
                     icon: 'error',
                     title: 'Subscription Required',
@@ -74,9 +81,8 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 return;
             }
 
-
-
             if (userLicense.status === 'Expired') {
+                setError('Your license key is expired. Please renew your license.');
                 await Swal.fire({
                     icon: 'error',
                     title: 'License Expired',
@@ -127,12 +133,12 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
             await Swal.fire({
                 title: 'Login Successful',
                 html: `
-        Welcome, <strong>${enrichedUser.name || enrichedUser.username}</strong>!
-        ${showExpiryWarning
+                    Welcome, <strong>${enrichedUser.name || enrichedUser.username}</strong>!
+                    ${showExpiryWarning
                         ? `<br /><br /><span style="color:#e74c3c; font-weight:bold;">⚠️ Your license will expire in ${daysLeft} day(s)</span>`
                         : ''
                     }
-      `,
+                `,
                 icon: 'success',
                 timer: 3000,
                 showConfirmButton: false,
@@ -145,10 +151,15 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
         } catch (err) {
             console.error('🚨 Login error:', err);
             setError(err.message || 'Unexpected error during login.');
+
+            await Swal.fire({
+                icon: 'error',
+                title: 'Login Failed',
+                text: err.message || 'Unexpected error during login.',
+                confirmButtonText: 'OK',
+            });
         }
     };
-
-
 
     const saveAuditLog = async (log) => {
         try {
@@ -196,7 +207,6 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
         }
     };
 
-
     function AnimatedText({ text }) {
         return (
             <p className="lightning-text">
@@ -226,7 +236,7 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
 
                     <form onSubmit={handleSubmit} className="login-form">
                         <div className="input-group fade-slide">
-                            <label >Username</label>
+                            <label>Username</label>
                             <div className="input-icon-wrapper">
                                 <input
                                     type="text"

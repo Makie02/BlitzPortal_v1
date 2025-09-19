@@ -1,0 +1,40 @@
+/* Container for the grid of cards */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 24px;
+  padding: 60px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Each card styled as a button */
+.card-button {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(200, 200, 200, 0.5);
+  border-radius: 16px;
+
+  font-size: 18px;
+  font-weight: 600;
+  height: 160px;
+  color: #333;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+/* Hover effect */
+.card-button:hover {
+  transform: translateY(-8px);
+  background: rgba(240, 248, 255, 0.9);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+  border-color: #a3d2ff;
+  color: #0a58ca;
+}

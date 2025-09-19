@@ -8,10 +8,8 @@ import getDay from "date-fns/getDay";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 import { FaCheckCircle, FaHourglassHalf, FaTimesCircle, FaExclamationTriangle } from "react-icons/fa";
-import { ref, get, update } from "firebase/database";
-import { rtdb } from "../Firebase"; // Make sure you have your Firebase setup correctly
-import "./CalendarStyles.css"; // Optional custom styles
 import { supabase } from "../supabaseClient"; // adjust path as needed
+import "./CalendarStyles.css"; // Optional custom styles
 
 const locales = { "en-US": require("date-fns/locale/en-US") };
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
@@ -20,15 +18,13 @@ const DnDCalendar = withDragAndDrop(Calendar);
 export default function VisaCalendar() {
   const [events, setEvents] = useState([]);
   const [showUnscheduled, setShowUnscheduled] = useState(false);
-
-  const visaPaths = ["Corporate_Visa", "Corver_Visa", "Regular_Visa"];
+  const [showOnlyApproved, setShowOnlyApproved] = useState(false);
 
   const fetchAllVisaEvents = async () => {
     try {
-      const visaTables = ["Corporate_Visa", "Cover_Visa", "Regular_Visa"];
+      const visaTables = ["cover_pwp", "regular_pwp"];
       let allVisaItems = [];
 
-      // Step 1: Fetch all visas from all tables
       await Promise.all(
         visaTables.map(async (table) => {
           const { data, error } = await supabase.from(table).select("*");
@@ -48,22 +44,25 @@ export default function VisaCalendar() {
         })
       );
 
-      // Step 2: Extract all visaCodes
-      const visaCodes = allVisaItems.map((item) => item.visaCode);
+      // Collect all possible codes for approval lookup from allVisaItems
+      // Since Approval_History.PwpCode matches cover_code or regularpwpcode,
+      // gather those codes to fetch approval responses
+      const approvalCodes = Array.from(
+        new Set(
+          allVisaItems.flatMap(item => [item.cover_code, item.regularpwpcode]).filter(Boolean)
+        )
+      );
 
-      if (visaCodes.length === 0) {
+      if (approvalCodes.length === 0) {
         setEvents([]);
         return;
       }
 
-      // Step 3: Fetch latest approval status for each visaCode from Approval_History
-      // We fetch records for all visaCodes, ordered by BabyVisaId and DateResponded DESC
-      // We'll keep only the latest per visaCode in a Map
-
+      // Fetch approval history for these codes
       const { data: approvalData, error: approvalError } = await supabase
         .from("Approval_History")
-        .select(`"BabyVisaId", "Response", "DateResponded"`)
-        .in("BabyVisaId", visaCodes)
+        .select(`"PwpCode", "Response", "DateResponded"`)
+        .in("PwpCode", approvalCodes)
         .order("DateResponded", { ascending: false });
 
       if (approvalError) {
@@ -71,22 +70,22 @@ export default function VisaCalendar() {
         return;
       }
 
-      // Create a Map of BabyVisaId => latest Response
+      // Map latest approval response by PwpCode
       const latestApprovals = new Map();
       if (approvalData) {
         for (const approval of approvalData) {
-          if (!latestApprovals.has(approval.BabyVisaId)) {
-            latestApprovals.set(approval.BabyVisaId, approval.Response);
+          if (!latestApprovals.has(approval.PwpCode)) {
+            latestApprovals.set(approval.PwpCode, approval.Response);
           }
         }
       }
 
-      // Step 4: Build events array with merged status from Approval_History
+      // Map events with approval statuses and proper keys
       const newEvents = allVisaItems.map((item) => {
         let startDate = null;
         let endDate = null;
 
-        if (item.sourcePath === "Regular_Visa") {
+        if (item.sourcePath === "regular_pwp") {
           startDate = item.activityDurationFrom ? new Date(item.activityDurationFrom) : null;
           endDate = item.activityDurationTo ? new Date(item.activityDurationTo) : null;
         } else {
@@ -94,18 +93,46 @@ export default function VisaCalendar() {
           endDate = item.end ? new Date(item.end) : null;
         }
 
-        // Use latest approval response if available; fallback to item.status / item.approved / "Pending"
-        const approvalStatus = latestApprovals.get(item.visaCode) || item.status || item.approved || "Pending";
+        // Use cover_code or regularpwpcode as the key for approval lookup
+        const approvalKey = item.cover_code || item.regularpwpcode;
+        const approvalResponse = approvalKey ? latestApprovals.get(approvalKey) : null;
+
+        // Log the approvalResponse with the proper code key
+        const codeForLog = approvalKey || "unknown_code";
+        console.log(`Approval response for ${codeForLog}:`, approvalResponse);
+
+        let approvalStatus;
+        if (approvalResponse) {
+          if (approvalResponse.toLowerCase() === "approved" || approvalResponse.toLowerCase() === "approve") {
+            console.log("fuckk"); // Display if approved or approve
+            approvalStatus = "approved"; // lowercase for color logic
+          } else {
+            approvalStatus = approvalResponse.toLowerCase();
+          }
+        } else {
+          approvalStatus = (item.status || item.approved || "pending").toLowerCase();
+        }
 
         return {
-          id: item.id || item.visaCode,
-          title: `Visa ${item.visaCode} ${approvalStatus}`.trim(),
+          id: approvalKey || item.visaCode || "unknown_id",
+          title: `${approvalKey || item.visaCode} (${approvalStatus})`,
           start: startDate,
           end: endDate,
           status: approvalStatus,
           sourcePath: item.sourcePath,
           visaCode: item.visaCode,
           DateCreated: item.DateCreated,
+
+          regularpwpcode: item.regularpwpcode,
+          cover_code: item.cover_code,
+          distributor_code: item.distributor_code,
+          amount_badget: item.amount_badget,
+          created_at: item.created_at,
+          createForm: item.createForm,
+          isPartOfCoverPwp: item.isPartOfCoverPwp,
+          coverPwpCode: item.coverPwpCode,
+          remaining_balance: item.remaining_balance,
+          credit_budget: item.credit_budget,
         };
       });
 
@@ -116,8 +143,6 @@ export default function VisaCalendar() {
   };
 
 
-
-
   useEffect(() => {
     fetchAllVisaEvents();
   }, []);
@@ -126,16 +151,14 @@ export default function VisaCalendar() {
     const { sourcePath, id } = event;
 
     try {
-      // Update calendar UI immediately
       setEvents((prev) =>
         prev.map((ev) =>
           ev.id === id && ev.sourcePath === sourcePath ? { ...ev, start, end } : ev
         )
       );
 
-      // Prepare update payload depending on source table
       let updatePayload = {};
-      if (sourcePath === "Regular_Visa") {
+      if (sourcePath === "regular_pwp") {
         updatePayload = {
           activityDurationFrom: start.toISOString(),
           activityDurationTo: end.toISOString(),
@@ -147,7 +170,6 @@ export default function VisaCalendar() {
         };
       }
 
-      // Update Supabase record by id
       const { error } = await supabase
         .from(sourcePath)
         .update(updatePayload)
@@ -155,38 +177,38 @@ export default function VisaCalendar() {
 
       if (error) {
         console.error("Error updating event in Supabase:", error);
-        // Optionally revert UI update or notify user
       }
     } catch (error) {
       console.error("Error moving event:", error);
     }
   };
 
+const getIconByStatus = (status) => {
+  status = typeof status === "boolean" ? (status ? "approved" : "false") : (status || "").toLowerCase();
 
-
-  const getIconByStatus = (status) => {
-    status = typeof status === "boolean" ? (status ? "approved" : "false") : (status || "").toLowerCase();
-
-    switch (status) {
-      case "approved":
-      case "true":
-        return <FaCheckCircle style={{ marginRight: 5, color: "#28a745" }} />;
-      case "false":
-      case "declined":
-        return <FaTimesCircle style={{ marginRight: 5, color: "#dc3545" }} />;
-      case "revision":
-        return <FaExclamationTriangle style={{ marginRight: 5, color: "#fd7e14" }} />;
-      default:
-        return <FaHourglassHalf style={{ marginRight: 5, color: "#ffc107" }} />;
-    }
-  };
+  switch (status) {
+    case "approved":
+    case "true":
+      return <FaCheckCircle style={{ marginRight: 5, color: "#28a745" }} />;
+    case "false":
+    case "declined":
+      return <FaTimesCircle style={{ marginRight: 5, color: "#f3f3f3ff" }} />;
+    case "revision":
+    case "sent back for revision":
+      return <FaExclamationTriangle style={{ marginRight: 5, color: "#ff0000ff" }} />;
+    case "cancel":
+    case "cancelled":
+      return <FaTimesCircle style={{ marginRight: 5, color: "#ffffffff" }} />;
+    default:
+      return <FaHourglassHalf style={{ marginRight: 5, color: "#7700ffff" }} />;
+  }
+};
 
   const handleDropFromOutside = async ({ start, end }) => {
     try {
       const data = JSON.parse(window.draggedVisaData);
       const { sourcePath, id } = data;
 
-      // Update Supabase
       const { error } = await supabase
         .from(sourcePath)
         .update({
@@ -200,7 +222,6 @@ export default function VisaCalendar() {
         return;
       }
 
-      // Update UI
       setEvents((prev) =>
         prev.map((ev) =>
           ev.id === id && ev.sourcePath === sourcePath ? { ...ev, start, end } : ev
@@ -211,12 +232,151 @@ export default function VisaCalendar() {
     }
   };
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+const onSelectEvent = (event) => {
+  console.log("Event clicked:", event);  // <-- add this
+  const codeKey = event.cover_code || event.regularpwpcode || event.visaCode || null;
+
+  const fullEvent = events.find(
+    (ev) => ev.cover_code === codeKey || ev.regularpwpcode === codeKey || ev.visaCode === codeKey
+  ) || event;
+
+  setSelectedEvent(fullEvent);
+  setModalOpen(true);
+};
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setSelectedEvent(null);
+  };
+const renderModalContent = () => {
+  if (!selectedEvent) return null;
+
+  const e = selectedEvent;
+
+  const containerStyle = {
+    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    color: "#333",
+    lineHeight: 1.5,
+  };
+
+  const headerStyle = {
+    marginBottom: "16px",
+    fontSize: "1.5rem",
+    borderBottom: "2px solid #007bff",
+    paddingBottom: "6px",
+    color: "#007bff",
+  };
+
+  const labelStyle = {
+    fontWeight: "600",
+    marginRight: "8px",
+    color: "#555",
+  };
+
+  const valueStyle = {
+    color: "#222",
+  };
+
+  const itemStyle = {
+    marginBottom: "12px",
+    display: "flex",
+    flexWrap: "wrap",
+  };
+
+  if (e.sourcePath === "cover_pwp") {
+    return (
+      <div style={containerStyle}>
+        <h3 style={headerStyle}>Cover PWP Details</h3>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Cover Code:</span>
+          <span style={valueStyle}>{e.cover_code || e.visaCode || "N/A"}</span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Distributor Code:</span>
+          <span style={valueStyle}>{e.distributor_code || "N/A"}</span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Amount Budget:</span>
+          <span style={valueStyle}>{e.amount_badget || "N/A"}</span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Created At:</span>
+          <span style={valueStyle}>
+            {e.created_at
+              ? new Date(e.created_at).toLocaleString()
+              : e.DateCreated
+              ? new Date(e.DateCreated).toLocaleString()
+              : "N/A"}
+          </span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Create Form:</span>
+          <span style={valueStyle}>{e.createForm || "N/A"}</span>
+        </div>
+      </div>
+    );
+  } else if (e.sourcePath === "regular_pwp") {
+    return (
+      <div style={containerStyle}>
+        <h3 style={headerStyle}>Regular PWP Details</h3>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Regular PWP Code:</span>
+          <span style={valueStyle}>{e.regularpwpcode || e.visaCode || "N/A"}</span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Is Part Of Cover PWP:</span>
+          <span style={valueStyle}>{e.isPartOfCoverPwp ? "Yes" : "No"}</span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Cover PWP Code:</span>
+          <span style={valueStyle}>{e.coverPwpCode || "N/A"}</span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Remaining Balance:</span>
+          <span style={valueStyle}>{e.remaining_balance || "N/A"}</span>
+        </div>
+        <div style={itemStyle}>
+          <span style={labelStyle}>Credit Budget:</span>
+          <span style={valueStyle}>{e.credit_budget || "N/A"}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={containerStyle}>
+      <p>No additional details available.</p>
+    </div>
+  );
+};
 
 
   return (
     <div style={{ display: "flex", height: "90vh", padding: '20px' }}>
-      {/* Calendar Section */}
       <div style={{ flex: 3, position: "relative" }}>
+        {/* Toggle button for showing only approved */}
+        <button
+          onClick={() => setShowOnlyApproved((prev) => !prev)}
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 500,
+            zIndex: 1002,
+            padding: "8px 12px",
+            backgroundColor: "#28a745",
+            color: "#fff",
+            border: "none",
+            borderRadius: 4,
+            cursor: "pointer",
+            marginRight: 10,
+          }}
+        >
+          {showOnlyApproved ? "Show All " : "Show Approved"}
+        </button>
+
+        {/* Existing showUnscheduled toggle */}
         <button
           onClick={() => setShowUnscheduled((prev) => !prev)}
           style={{
@@ -232,29 +392,34 @@ export default function VisaCalendar() {
             cursor: "pointer",
           }}
         >
-          {showUnscheduled ? "Hide Unscheduled" : "Add Unscheduled"}
+          {showUnscheduled ? "Hide Unscheduled" : " Unscheduled"}
         </button>
 
         <DnDCalendar
           defaultView="month"
           views={["month", "week", "day", "agenda"]}
           localizer={localizer}
-          events={events.filter((e) => e.start && e.end)}
+          events={events.filter((e) =>
+            e.start &&
+            e.end &&
+            (!showOnlyApproved || (e.status?.toLowerCase() === "approved" || e.status === true))
+          )}
           onEventDrop={moveEvent}
           onEventResize={moveEvent}
+          onSelectEvent={onSelectEvent}
           onDropFromOutside={handleDropFromOutside}
-          dragFromOutsideItem={() => window.draggedVisaData ? JSON.parse(window.draggedVisaData) : null}
-          onDragStart={() => { }}
+          dragFromOutsideItem={() => (window.draggedVisaData ? JSON.parse(window.draggedVisaData) : null)}
           resizable
           style={{ height: "100%" }}
           popup
           eventPropGetter={(event) => {
-            let status = event.status?.toLowerCase?.();
-            let backgroundColor = "#ffc107";
+            let status = event.status?.toLowerCase();
+            let backgroundColor = "#ffc107"; // default yellow (Pending)
 
             if (status === "approved" || status === "true") backgroundColor = "green";
             else if (status === "false" || status === "declined") backgroundColor = "#dc3545";
-            else if (status === "revision") backgroundColor = "#fd7e14";
+            else if (status === "revision" || status === "sent back for revision") backgroundColor = "#6c757d"; // gray
+            else if (status === "cancel" || status === "cancelled") backgroundColor = "#ff0000"; // bright red
 
             return {
               style: {
@@ -266,6 +431,8 @@ export default function VisaCalendar() {
               },
             };
           }}
+
+
           components={{
             event: ({ event }) => (
               <span>
@@ -276,7 +443,50 @@ export default function VisaCalendar() {
           }}
         />
       </div>
-
+   {modalOpen && (
+            <div
+              onClick={closeModal}
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.5)",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                zIndex: 2000,
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  backgroundColor: "white",
+                  borderRadius: 8,
+                  padding: 24,
+                  width: 400,
+                  maxHeight: "80vh",
+                  overflowY: "auto",
+                  boxShadow: "0 5px 15px rgba(0,0,0,.3)",
+                }}
+              >
+                <button
+                  onClick={closeModal}
+                  style={{
+                    float: "right",
+                    border: "none",
+                    background: "none",
+                    fontSize: 18,
+                    cursor: "pointer",
+                  }}
+                >
+                  &times;
+                </button>
+                {renderModalContent()}
+              </div>
+            </div>
+          )}
       {/* Unscheduled List */}
       {showUnscheduled && (
         <div
@@ -305,7 +515,7 @@ export default function VisaCalendar() {
                   if (type.startsWith("corporate")) {
                     bgColor = "#f8d7da"; // light red
                     icon = "🏢"; // building icon for Corporate
-                  } else if (type.startsWith("corver")) {
+                  } else if (type.startsWith("cover")) {
                     bgColor = "#d1ecf1"; // light blue
                     icon = "📄"; // document icon for Cover
                   } else if (type.startsWith("regular")) {
@@ -352,9 +562,10 @@ export default function VisaCalendar() {
                 );
               })
           )}
+
+       
         </div>
       )}
-
-    </div >
+    </div>
   );
 }

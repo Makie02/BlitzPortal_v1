@@ -96,7 +96,7 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
 
   const fetchNotifications = async () => {
     try {
-      const tables = ["Corporate_Visa", "Cover_Visa", "Regular_Visa"];
+      const tables = ["cover_pwp", "regular_pwp"];
       const allNotifications = [];
 
       for (const table of tables) {
@@ -127,33 +127,66 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
 
   const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
   const userId = currentUser?.UserID || "unknown";
-  const names = currentUser?.name || "";  // Make sure to use the correct key for the user's name
+  const names = currentUser?.name || "";
 
   const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchApprovalNotifications = async () => {
+    console.log("User name:", names);  // <--- console log here
+
     try {
       const { data, error } = await supabase
-        .from('Approval_History')
-        .select('*')
-        .eq('Notication', false)       // Only unread
-        .neq('ApproverId', userId)     // Exclude your own approvals
-        .eq('CreatedForm', names)       // Only notifications for forms created by the current user's name
-        .order('DateResponded', { ascending: false });
+        .from("Approval_History")
+        .select("*")
+        .neq("ApproverId", userId)
+        .eq("CreatedForm", names)
+        .order("DateResponded", { ascending: false });
 
       if (error) {
-        console.error('Error fetching Approval_History:', error.message);
+        console.error("Error fetching Approval_History:", error.message);
         return;
       }
 
-      const list = data.map(item => ({ ...item, _key: item.id }));
+      const list = data.map((item) => ({ ...item, _key: item.id }));
       setApprovalNotifications(list);
-      setUnreadCount(list.length); // Update badge count
+
+      // Count all notifications where Notification is false
+      const unreadCount = data.filter((item) => item.Notification === false).length;
+      setUnreadCount(unreadCount);
     } catch (err) {
-      console.error('Unexpected error fetching Approval_History:', err);
+      console.error("Unexpected error fetching Approval_History:", err);
     }
   };
 
+  const markApprovalAsRead = async (approvalId) => {
+    if (!approvalId) return;
+
+    try {
+      const { error } = await supabase
+        .from('Approval_History')
+        .update({ Notication: true })
+        .eq('id', approvalId);
+
+      if (error) {
+        console.error('Error marking approval as read:', error.message);
+        return;
+      }
+
+      await fetchApprovalNotifications();
+    } catch (err) {
+      console.error('Unexpected error in markApprovalAsRead:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchApprovalNotifications();
+
+    const interval = setInterval(() => {
+      fetchApprovalNotifications();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
 
 
@@ -163,7 +196,7 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
       const updatesByTable = {};
 
       notifications.forEach(n => {
-        if (!n.Notification) {
+        if (!n.notification) {
           if (!updatesByTable[n._path]) updatesByTable[n._path] = [];
           updatesByTable[n._path].push(n._key);
         }
@@ -172,7 +205,7 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
       for (const [table, ids] of Object.entries(updatesByTable)) {
         const { error } = await supabase
           .from(table)
-          .update({ Notification: true })
+          .update({ notification: true })
           .in('id', ids);
 
         if (error) {
@@ -186,25 +219,6 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
     }
   };
 
-  const markApprovalAsRead = async (approvalId) => {
-    if (!approvalId) return;
-
-    try {
-      const { error } = await supabase
-        .from("Approval_History")
-        .update({ Notication: true })  // Match your DB column
-        .eq("id", approvalId);
-
-      if (error) {
-        console.error("Error marking approval as read:", error.message);
-        return;
-      }
-
-      await fetchApprovalNotifications(); // Refresh list
-    } catch (err) {
-      console.error("Unexpected error in markApprovalAsRead:", err);
-    }
-  };
 
 
 
@@ -460,7 +474,7 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
                   >
 
                     <span style={{ fontWeight: "bold" }}>
-                      M-ID: {n.BabyVisaId}
+                      M-ID: {n.PwpCode || n.regularpwpcode}
                     </span>
                     <span
                       style={{
@@ -488,37 +502,38 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
 
 
         {/* Notification Bell Icon — RIGHT */}
-        {showNotificationIcon && (
-          <div
-            onClick={async () => {
-              setShowNotifications(!showNotifications);
-              if (!showNotifications) {
-                await markAllRead();
-              }
-            }}
-            className="notification-bell"
-            style={{ cursor: "pointer", position: "relative", color: "#fff", fontSize: 22 }}
-          >
-            <img src={FaBells} alt="Notifications" style={{ width: 30, height: 30 }} />
-            {notifications.filter((n) => !n.Notification).length > 0 && (
-              <span
-                style={{
-                  position: "absolute",
-                  top: "-6px",
-                  right: "-8px",
-                  backgroundColor: "red",
-                  color: "#fff",
-                  borderRadius: "50%",
-                  fontSize: "10px",
-                  padding: "2px 5px",
-                  fontWeight: "bold",
-                }}
-              >
-                {notifications.filter((n) => !n.Notification).length}
-              </span>
-            )}
-          </div>
-        )}
+    {showNotificationIcon && (
+  <div
+    onClick={async () => {
+      setShowNotifications(!showNotifications);
+      if (!showNotifications) {
+        await markAllRead();
+      }
+    }}
+    className="notification-bell"
+    style={{ cursor: "pointer", position: "relative", color: "#fff", fontSize: 22 }}
+  >
+    <img src={FaBells} alt="Notifications" style={{ width: 30, height: 30 }} />
+    {unreadCount > 0 && (
+      <span
+        style={{
+          position: "absolute",
+          top: "-6px",
+          right: "-8px",
+          backgroundColor: "red",
+          color: "#fff",
+          borderRadius: "50%",
+          fontSize: "10px",
+          padding: "2px 5px",
+          fontWeight: "bold",
+        }}
+      >
+        {unreadCount}
+      </span>
+    )}
+  </div>
+)}
+
 
 
 
@@ -566,7 +581,7 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
                   new Date(a.DateCreated).getTime()
               )
               .map((n, i) => {
-                const isRead = !!n.Notification;
+                const isRead = !!n.notification;
                 return (
                   <div
                     key={i}
@@ -582,11 +597,11 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
                     }}
                   >
                     <span style={{ fontWeight: "bold" }}>
-                      {n.visaCode} – {n.visaType}
+                      {n.regularpwpcode || n.cover_code} – {n.pwp_type || n.pwptype}
                     </span>
                     <span style={{ fontSize: 12, color: "#555" }}>
-                      {n.brand} •{" "}
-                      {new Date(n.DateCreated).toLocaleString()}
+                      {n.createForm} •{" "}
+                      {new Date(n.created_at).toLocaleString()}
                     </span>
                   </div>
                 );
@@ -646,10 +661,13 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
               }}>
                 Notification Details
               </h3>
-              <p><strong>M-Code:</strong> {selectedNotification.visaCode}</p>
-              <p><strong>M-Type:</strong> {selectedNotification.visaType}</p>
-              <p><strong>Brand:</strong> {selectedNotification.brand}</p>
-              <p><strong>Date:</strong> {new Date(selectedNotification.DateCreated).toLocaleString()}</p>
+              <p><strong>M-Code:</strong> {selectedNotification.regularpwpcode || selectedNotification.cover_code}</p>
+              <p><strong>M-Type:</strong> {selectedNotification.pwp_type || selectedNotification.pwptype}</p>
+              <p>
+                <strong>badget:</strong>
+                ₱{(selectedNotification.credit_budget || selectedNotification.amount_badget)?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '0'}
+              </p>
+              <p><strong>Date:</strong> {new Date(selectedNotification.created_at).toLocaleString()}</p>
 
               <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
                 <button

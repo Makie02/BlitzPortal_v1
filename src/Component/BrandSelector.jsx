@@ -1,386 +1,449 @@
 import React, { useState, useEffect } from "react";
 import { FaEdit, FaTrash } from "react-icons/fa";
-import "./BrandSelector.css";
-import { rtdb } from "../Firebase";
-import { ref, set, onValue, remove, update, get } from "firebase/database";
 import { supabase } from "../supabaseClient";
+import Swal from "sweetalert2";
+import "./BrandSelector.css"; // Keep your styles
 
-function BrandSelector() {
-  const [selectedBrand, setSelectedBrand] = useState(null);
-  const [brandDetails, setBrandDetails] = useState([]);
+function CategorySelector() {
+  const [selectedDistributor, setSelectedDistributor] = useState(null);
+  const [selectedDistributorId, setSelectedDistributorId] = useState(null);
+  const [categoryDetails, setCategoryDetails] = useState([]);
   const [showFormModal, setShowFormModal] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "", id: null });
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [brandNames, setBrandNames] = useState([]);
+  const [distributorNames, setDistributorNames] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // Load brand names from Firebase
- useEffect(() => {
-  let isMounted = true;
+  // Load distributor names and IDs from Supabase
+  useEffect(() => {
+    let isMounted = true;
 
-  const fetchBrandNames = async () => {
+    const fetchDistributorNames = async () => {
+      const { data, error } = await supabase
+        .from("distributors")
+        .select("id, name")
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching distributors:", error);
+        if (isMounted) setDistributorNames([]);
+      } else if (isMounted) {
+        setDistributorNames(data);
+      }
+    };
+
+    fetchDistributorNames();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Filter distributors based on search term
+  const filteredDistributors = distributorNames.filter(({ name }) =>
+    name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // When clicking a distributor, set name + id and fetch categories by id
+  const handleClick = async (distributor) => {
+    setSelectedDistributor(distributor.name);
+    setSelectedDistributorId(distributor.id);
+    setShowFormModal(false);
+
     const { data, error } = await supabase
-      .from("References")
-      .select("name")
-      .eq("reference_type", "Distributor");
+      .from("categorydetails")
+      .select("id, name, description")
+      .eq("principal_id", distributor.id);
 
     if (error) {
-      console.error("Error fetching Distributor:", error);
-      setBrandNames([]);
-    } else if (isMounted) {
-      const names = data.map((item) => item.name || item); // if `item` is just a string
-      setBrandNames(names);
+      console.error("Error fetching category details:", error);
+      setCategoryDetails([]);
+    } else {
+      const formatted = data.map((item) => ({
+        id: item.id.toString(),
+        name: item.name,
+        description: item.description || "",
+      }));
+      setCategoryDetails(formatted);
     }
   };
 
-  fetchBrandNames();
-
-  return () => {
-    isMounted = false;
-  };
-}, []);
-
-
-  // When a brand is clicked, load details from Supabase
-const handleClick = async (brand) => {
-  setSelectedBrand(brand);
-  setShowFormModal(false);
-
-  const { data, error } = await supabase
-    .from("Branddetails")
-    .select("id, name, description")
-    .eq("principal_name", brand);
-
-  if (error) {
-    console.error("Error fetching brand details from Supabase:", error);
-    setBrandDetails([]);
-  } else {
-    const formatted = data.map((item) => ({
-      id: item.id.toString(),
-      name: item.name,
-      description: item.description || "",
-    }));
-    setBrandDetails(formatted);
-  }
-};
-
-
-  const closeModal = () => {
-    setSelectedBrand(null);
-    setShowFormModal(false);
-  };
-
-const openFormModal = (existing = null) => {
-  if (existing) {
-    // For edit
-    setFormData({ ...existing }); // includes id, name, description
-  } else {
-    // For create: make name and description blank
-    setFormData({ name: "", description: "", id: null });
-  }
-  setShowFormModal(true);
-};
-
-  async function fetchBrandDetailsFromSupabase(principalName) {
+  // Fetch categories (helper for after save)
+  const fetchCategoryDetailsFromSupabase = async (distributorId) => {
     try {
       const { data, error } = await supabase
-        .from("Branddetails")    // Make sure table name matches your DB exactly (case-sensitive)
-        .select("*")
-        .eq("principal_name", principalName);
+        .from("categorydetails")
+        .select("id, name, description")
+        .eq("principal_id", distributorId);
 
       if (error) throw error;
 
-      // Return array of brand detail objects
-      return data.map(item => ({
+      return data.map((item) => ({
         id: item.id.toString(),
         name: item.name,
         description: item.description,
       }));
     } catch (error) {
-      console.error("Failed to fetch brand info from Supabase:", error);
-      return [];  // Return empty array on failure
+      console.error("Failed to fetch categories:", error);
+      return [];
     }
-  }
-  async function updateBrandDetailInSupabase(id, updatedData) {
-    try {
-      const { data, error } = await supabase
-        .from("Branddetails") // make sure table name matches exactly
-        .update(updatedData)   // updatedData is an object like { name: "...", description: "..." }
-        .eq("id", id)
-        .select()
-        .single();
+  };
 
-      if (error) throw error;
-
-      return data; // updated record
-    } catch (error) {
-      console.error("Failed to update brand info in Supabase:", error);
-      throw error;
-    }
-  }
-
+  // Handle form input change
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Save category (add or update)
 const handleSave = async (e) => {
   e.preventDefault();
 
   if (!formData.name.trim()) {
-    alert("Name is required");
+    Swal.fire({
+      icon: "warning",
+      title: "Validation Error",
+      text: "Name is required",
+    });
+    return;
+  }
+
+  if (!selectedDistributorId) {
+    Swal.fire({
+      icon: "warning",
+      title: "No Distributor Selected",
+      text: "Please select a distributor first.",
+    });
     return;
   }
 
   try {
     if (formData.id) {
-      // ✅ UPDATE existing brand
+      // === UPDATE ===
       const { error } = await supabase
-        .from("Branddetails")
+        .from("categorydetails")
         .update({
           name: formData.name,
-          description: formData.description,
+          description: formData.description || null,
         })
         .eq("id", formData.id);
 
       if (error) throw error;
     } else {
-      // ✅ INSERT new brand with auto-incremented ItemCode
-      const { data: maxCodeData, error: codeError } = await supabase
-        .from("Branddetails")
-        .select("ItemCode")
-        .order("ItemCode", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // === INSERT ===
+      // 🔢 Generate smart sequential code
+      const { data: existingCodes, error: fetchError } = await supabase
+        .from("categorydetails")
+        .select("code")
+        .like("code", "A%")
+        .order("code", { ascending: false })
+        .limit(1);
 
-      if (codeError) throw codeError;
+      if (fetchError) throw fetchError;
 
-      let nextItemCode = 10001; // Default starting point
-      if (maxCodeData && maxCodeData.ItemCode) {
-        const currentMax = parseInt(maxCodeData.ItemCode, 10);
-        if (!isNaN(currentMax)) {
-          nextItemCode = currentMax + 1;
-        }
+      let nextCode = "A00001";
+      if (existingCodes.length > 0) {
+        const lastCode = existingCodes[0].code; // e.g., A00057
+        const numericPart = parseInt(lastCode.slice(1)) + 1; // 58
+        nextCode = `A${numericPart.toString().padStart(5, "0")}`; // A00058
       }
 
-      const { error: insertError } = await supabase
-        .from("Branddetails")
+      const { error } = await supabase
+        .from("categorydetails")
         .insert({
+          code: nextCode,
           name: formData.name,
-          description: formData.description,
-          principal_name: selectedBrand,
-          parentname: selectedBrand,
-          ItemCode: nextItemCode.toString(), // Ensure string type for consistency
+          description: formData.description || null,
+          principal_id: selectedDistributorId,
+          parentname: selectedDistributor,
         });
 
-      if (insertError) throw insertError;
+      if (error) throw error;
     }
 
-    // ✅ Refresh and reset
+    // Refresh UI
     setShowFormModal(false);
     setFormData({ id: null, name: "", description: "" });
-    handleClick(selectedBrand); // Reload list
+
+    const newDetails = await fetchCategoryDetailsFromSupabase(selectedDistributorId);
+    setCategoryDetails(newDetails);
+
+    Swal.fire({
+      icon: "success",
+      title: "Success",
+      text: "Category saved successfully!",
+      timer: 1500,
+      showConfirmButton: false,
+    });
   } catch (error) {
-    console.error("Failed to save brand to Supabase:", error);
-    alert("Save failed.");
+    console.error("Save failed:", error);
+    Swal.fire({
+      icon: "error",
+      title: "Save Failed",
+      text: error.message || "Unknown error",
+    });
   }
 };
 
 
+  // Delete category with Swal confirmation
+  const handleDelete = async (id) => {
+    const result = await Swal.fire({
+      title: "Are you sure?",
+      text: "Do you really want to delete this category?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!",
+    });
 
+    if (result.isConfirmed) {
+      try {
+        const { error } = await supabase
+          .from("categorydetails")
+          .delete()
+          .eq("id", id);
 
+        if (error) throw error;
 
+        setCategoryDetails((prev) => prev.filter((item) => item.id !== id));
 
+        Swal.fire({
+          icon: "success",
+          title: "Deleted!",
+          text: "Category has been deleted.",
+          timer: 1500,
+          showConfirmButton: false,
+        });
+      } catch (error) {
+        console.error("Delete failed:", error);
+        Swal.fire({
+          icon: "error",
+          title: "Delete Failed",
+          text: error.message || "Unknown error",
+        });
+      }
+    }
+  };
 
-const handleDelete = async (id) => {
-  if (!window.confirm("Are you sure you want to delete this brand?")) return;
+  // Open modal with existing data or empty for add
+  const openFormModal = (existing = null) => {
+    if (existing) {
+      setFormData({ ...existing });
+    } else {
+      setFormData({ name: "", description: "", id: null });
+    }
+    setShowFormModal(true);
+  };
 
-  try {
-    const { error } = await supabase
-      .from("Branddetails") // ✅ Correct table
-      .delete()
-      .eq("id", id);
+  // Close modal and clear selection
+  const closeModal = () => {
+    setSelectedDistributor(null);
+    setSelectedDistributorId(null);
+    setShowFormModal(false);
+    setCategoryDetails([]);
+  };
 
-    if (error) throw error;
+  return (
+    <div className="brand-selector-wrapper">
+      <div className="brand-grid-container">
+        <h1 className="brand-header">Accounts</h1>
 
-    // ✅ Remove deleted item from UI state
-    setBrandDetails((prev) => prev.filter((item) => item.id !== id));
-  } catch (error) {
-    console.error("Failed to delete brand from Supabase:", error);
-    alert("Delete failed.");
-  }
-};
+        {/* Search bar */}
+        <input
+          type="text"
+          placeholder="Search distributors..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "10px",
+            marginBottom: "15px",
+            fontSize: "16px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+          }}
+          aria-label="Search distributors"
+        />
 
+        <div className="brand-grid">
+          {filteredDistributors.length === 0 ? (
+            <p>No distributors found</p>
+          ) : (
+            filteredDistributors.map(({ id, name }) => (
+              <button
+                key={id}
+                className={`brand-card ${selectedDistributor === name ? "selected" : ""}`}
+                onClick={() => handleClick({ id, name })}
+              >
+                {name}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
 
-
-return (
-  <div className="brand-selector-wrapper">
-    <div className="brand-grid-container">
-      <h1 className="brand-header">Brands</h1>
-      <div className="brand-grid">
-        {brandNames.map((brand) => (
-          <button
-            key={brand}
-            className={`brand-card ${selectedBrand === brand ? "selected" : ""}`}
-            onClick={() => handleClick(brand)}
-          >
-            {brand}
+      {selectedDistributor ? (
+        <div className="brand-modal rotate-in">
+          <button className="close-btn" onClick={closeModal}>
+            &times;
           </button>
-        ))}
-      </div>
-    </div>
+          <h2>Accounts: {selectedDistributor}</h2>
 
-    {selectedBrand ? (
-      <div className="brand-modal rotate-in" style={{ padding: "20px", width: "100%" }}>
-        <button className="close-btn" onClick={closeModal}>
-          &times;
-        </button>
-        <h2>{selectedBrand}</h2>
+          <button className="btn-add-new" onClick={() => openFormModal()}>
+            Add Category
+          </button>
 
-        <button className="btn-add-new" onClick={() => openFormModal()}>
-          Add Info
-        </button>
-
-        <div className="brand-table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th >Name</th>
-                <th>Description</th>
-                <th >Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {brandDetails.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>{item.description}</td>
-                  <td>
-
-                    <button
-                      onClick={() => openFormModal(item)}
-                      aria-label={`Edit ${item.name}`}
-                      title="Edit"
-                      style={{
-                        border: "none",
-                        background: "none",
-                        cursor: "pointer",
-                        padding: "8px",
-                        color: "#d32f2f",
-                        transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                        boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                        borderRadius: "8px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginLeft: "8px",
-                        outline: "none",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                        e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                        e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                      }}
-                      onMouseDown={(e) => {
-                        e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                        e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                      }}
-                      onMouseUp={(e) => {
-                        e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                        e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
-                      }}
-                    >
-                      <FaEdit style={{ color: 'orange', fontSize: '20px' }} />
-                    </button>
-
-
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      aria-label={`Delete ${item.name}`}
-                      title="Delete"
-                      style={{
-                        border: "none",
-                        background: "none",
-                        cursor: "pointer",
-                        padding: "8px",
-                        color: "#d32f2f",
-                        transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                        boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                        borderRadius: "8px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginLeft: "8px",
-                        outline: "none",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                        e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                        e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                      }}
-                      onMouseDown={(e) => {
-                        e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                        e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                      }}
-                      onMouseUp={(e) => {
-                        e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                        e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                      }}
-                    >
-                      <FaTrash style={{ fontSize: '20px' }} />
-                    </button>
-                  </td>
+          <div className="brand-table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    ) : (
-      <div className="activities-modal no-selection">
-        <h2>No brand selected</h2>
-        <p>Please select a brand from the list.</p>
-      </div>
-    )}
+              </thead>
+              <tbody>
+                {categoryDetails.length === 0 ? (
+                  <tr>
+                    <td colSpan={3}>No categories found</td>
+                  </tr>
+                ) : (
+                  categoryDetails.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.name}</td>
+                      <td>{item.description}</td>
+                      <td>
+                        <button
+                          onClick={() => openFormModal(item)}
+                          aria-label={`Edit ${item.name}`}
+                          title="Edit"
+                          style={{
+                            border: "none",
+                            background: "none",
+                            cursor: "pointer",
+                            padding: "8px",
+                            color: "#d32f2f",
+                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                            borderRadius: "8px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginLeft: "8px",
+                            outline: "none",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                            e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                          }}
+                          onMouseDown={(e) => {
+                            e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                          }}
+                          onMouseUp={(e) => {
+                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
+                          }}
+                        >
+                          <FaEdit style={{ color: "orange", fontSize: "20px" }} />
+                        </button>
 
-    {showFormModal && (
-      <div className="form-modal-overlay">
-        <div className="form-modal-content">
-          <h3>{formData.id ? "Edit Brand Info" : "Add Brand Info"}</h3>
-          <form onSubmit={handleSave}>
-            <div className="form-group">
-              <label>Name</label>
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                required
-              />
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          aria-label={`Delete ${item.name}`}
+                          title="Delete"
+                          style={{
+                            border: "none",
+                            background: "none",
+                            cursor: "pointer",
+                            padding: "8px",
+                            color: "#d32f2f",
+                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                            borderRadius: "8px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginLeft: "8px",
+                            outline: "none",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                            e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                          }}
+                          onMouseDown={(e) => {
+                            e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                          }}
+                          onMouseUp={(e) => {
+                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
+                          }}
+                        >
+                          <FaTrash style={{ color: "red", fontSize: "20px" }} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {showFormModal && (
+            <div className="DistriModal-overlay">
+              <form className="DistriModal-content" onSubmit={handleSave}>
+                <h3>{formData.id ? "Edit Category" : "Add Category"}</h3>
+
+                <label htmlFor="name">Name</label>
+                <input
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                />
+
+                <label htmlFor="description">Description</label>
+                <textarea
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={3}
+                />
+
+                <div className="form-buttons">
+                  <button type="submit" className="btn-save">
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={() => setShowFormModal(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
-            <div className="form-group">
-              <label>Description</label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-              />
-            </div>
-            <div className="form-buttons">
-              <button type="submit" className="btn-save">Save</button>
-              <button type="button" className="btn-cancel" onClick={() => setShowFormModal(false)}>Cancel</button>
-            </div>
-          </form>
+          )}
+
         </div>
-      </div>
-    )}
-  </div>
-);
+      ) : (
+        <p>Please select a distributor to view categories.</p>
+      )}
+    </div>
+  );
 }
 
-export default BrandSelector;
+export default CategorySelector;

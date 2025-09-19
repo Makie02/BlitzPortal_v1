@@ -1,921 +1,1168 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { ref, get, remove } from "firebase/database";
-import { rtdb } from "../Firebase";
-import "./ManageVisa.css";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faTrash } from "@fortawesome/free-solid-svg-icons";
-import View from "./View_Cover";
-import View_Regular from "./View_Regular";
-import ViewCorporate from "./View_Corporate";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../supabaseClient";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../Firebase";
-import Swal from "sweetalert2";
+import EditModal from "./EditModal";
+import { FaEdit, FaTrash } from 'react-icons/fa'
 
-const statusOptions = ["All", "Drafts", "Regular", "Cover", "Corporate"];
-
-const statusToCollection = {
-  Regular: "Regular_Visa",
-  Cover: "Cover_Visa",
-  Corporate: "Corporate_Visa",
-};
-
-function formatDate(dateStr) {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  return date.toLocaleString("en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+function EnhancedDatabaseInterface() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [columns, setColumns] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editingData, setEditingData] = useState({});
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [updating, setUpdating] = useState(false);
+  const [filter, setFilter] = useState("all"); // all | cover | regular
+  const [statusFilter, setStatusFilter] = useState("all"); // all | approved | declined | sent_back | cancelled
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selectedRow, setSelectedRow] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
 
-function isToday(dateStr) {
-  if (!dateStr) return false;
-  // Parse the date string using Date constructor — it can handle "MM/DD/YYYY, hh:mm AM/PM" format
-  const date = new Date(dateStr);
-  if (isNaN(date)) return false; // Invalid date guard
-
-  const now = new Date();
-
-  return (
-    date.getDate() === now.getDate() &&
-    date.getMonth() === now.getMonth() &&
-    date.getFullYear() === now.getFullYear()
-  );
-}
-
-function ManageMarketing() {
-  // Use both getter and setter for selectedStatus
-  const [selectedStatus, setSelectedStatus] = useState("All");
-  const [visaData, setVisaData] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterToday, setFilterToday] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  // Define the specific columns to show for each table (moved outside component or use useMemo)
+  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code', 'account_type', 'pwp_type', 'created_at', 'createForm'], []);
+  const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'accountType', 'pwptype', 'created_at', 'createForm'], []);
 
 
-  useEffect(() => {
-    const fetchVisaData = async () => {
-      if (selectedStatus === "Drafts") {
-        setVisaData([]);
-        return;
+  // Function to filter object keys based on allowed columns
+  const filterColumns = (obj, allowedColumns) => {
+    const filtered = {};
+    allowedColumns.forEach(col => {
+      if (obj.hasOwnProperty(col)) {
+        filtered[col] = obj[col];
+      }
+    });
+    return filtered;
+  };
+  // Function to get approval status for PWP codes
+  const getApprovalStatus = async (pwpCodes) => {
+    try {
+      const { data: approvalData, error } = await supabase
+        .from("Approval_History")
+        .select("PwpCode, Response, DateResponded, created_at")
+        .in("PwpCode", pwpCodes);
+
+      if (error) {
+        console.error("Error fetching approval status:", error);
+        return {};
       }
 
-      try {
-        let visas = [];
-
-        if (selectedStatus === "All") {
-          // Fetch all visas from all tables
-          const promises = Object.values(statusToCollection).map(async (table) => {
-            const { data, error } = await supabase.from(table).select("*");
-            if (error) {
-              console.error(`Error fetching from ${table}:`, error.message);
-              return [];
-            }
-            return data || [];
-          });
-
-          const results = await Promise.all(promises);
-          visas = results.flat();
-        } else {
-          // Fetch visas from selected table
-          const table = statusToCollection[selectedStatus];
-          if (!table) {
-            setVisaData([]);
-            return;
-          }
-          const { data, error } = await supabase.from(table).select("*");
-          if (error) {
-            console.error(`Error fetching from ${table}:`, error.message);
-            setVisaData([]);
-            return;
-          }
-          visas = data || [];
-        }
-
-        // 🔽 Load attachments for visas (assuming you have this function)
-        await loadAttachmentsForVisas(visas);
-
-      } catch (err) {
-        console.error("Error fetching visa data:", err);
-        setVisaData([]);
-      }
-    };
-
-    fetchVisaData();
-  }, [selectedStatus]);
-
-
-  const filteredData = useMemo(() => {
-    return visaData
-      .filter((item) => {
-        if (!filterToday) return true;
-        return isToday(item.DateCreated || item.dateCreated);
-      })
-      .filter((item) => {
-        const term = searchTerm.toLowerCase();
-        return (
-          item.visaCode?.toLowerCase().includes(term) ||
-          item.visaTitle?.toLowerCase().includes(term) ||
-          item.visaType?.toLowerCase().includes(term)
-        );
+      // Create a map of PWPCode to approval status
+      const approvalMap = {};
+      approvalData?.forEach(approval => {
+        approvalMap[approval.PwpCode] = {
+          status: approval.Response || 'Pending',
+          date_responded: approval.DateResponded,
+          approval_created: approval.created_at
+        };
       });
-  }, [searchTerm, filterToday, visaData]);
 
-
-  const rowsPerPage = 10;
-  const viewAll = selectedStatus === "All";
-
-  const totalPages = viewAll ? Math.ceil(filteredData.length / rowsPerPage) : 1;
-
-  const displayedData = viewAll
-    ? filteredData.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
-    : filteredData;
-
-
-
-  const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
+      return approvalMap;
+    } catch (err) {
+      console.error("Unexpected error fetching approval status:", err);
+      return {};
     }
   };
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
-const statusToCollection = {
-  Regular: "Regular_Visa",
-  Corporate: "Corporate_Visa",
-  Cover: "Cover_Visa",
-};
+  const totalPages = Math.ceil(data.length / rowsPerPage);
 
-const deleteVisaFromSupabase = async (visaCode, setVisaData) => {
-  if (!visaCode) return;
-
-  let table = null;
-
-  if (visaCode.startsWith("R")) {
-    table = statusToCollection.Regular;
-
-    // Delete related Regular Visa data
+  const paginatedData = data.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
+  // Modified fetchData function - replace your existing fetchData with this
+  const fetchData = useCallback(async () => {
     try {
-      const { error: attachmentsError } = await supabase
-        .from("Regular_Visa_Attachments")
-        .delete()
-        .eq("visaCode", visaCode);
+      setLoading(false);
+      setError(null);
 
-      if (attachmentsError) {
-        console.warn("Failed to delete from Regular_Visa_Attachments:", attachmentsError.message);
+      let coverData = [];
+      let regularData = [];
+      let allColumns = [];
+
+      if (filter === "all" || filter === "cover") {
+        const { data: cData, error: cError } = await supabase
+          .from("cover_pwp")
+          .select(COVER_COLUMNS.join(','))
+          .order("id", { ascending: false })
+          .limit(50);
+
+        if (cError) throw cError;
+        coverData = (cData || []).map((item) => ({
+          ...filterColumns(item, COVER_COLUMNS),
+          source: "cover_pwp",
+          pwp_code: item.cover_code // Use this to match with Approval_History
+        }));
       }
 
-      const { error: costDetailsError } = await supabase
-        .from("Regular_Visa_CostDetails")
-        .delete()
-        .eq("visaCode", visaCode);
+      if (filter === "all" || filter === "regular") {
+        const { data: rData, error: rError } = await supabase
+          .from("regular_pwp")
+          .select(REGULAR_COLUMNS.join(','))
+          .order("id", { ascending: false })
+          .limit(50);
 
-      if (costDetailsError) {
-        console.warn("Failed to delete from Regular_Visa_CostDetails:", costDetailsError.message);
+        if (rError) throw rError;
+        regularData = (rData || []).map((item) => ({
+          ...filterColumns(item, REGULAR_COLUMNS),
+          source: "regular_pwp",
+          pwp_code: item.regularpwpcode // Use this to match with Approval_History
+        }));
       }
 
-      const { error: volumePlanError } = await supabase
-        .from("Regular_Visa_VolumePlan")
-        .delete()
-        .eq("visaCode", visaCode);
+      const mergedData = [...coverData, ...regularData];
 
-      if (volumePlanError) {
-        console.warn("Failed to delete from Regular_Visa_VolumePlan:", volumePlanError.message);
+      // Get all PWP codes to fetch approval status
+      const allPwpCodes = mergedData
+        .map(item => item.pwp_code)
+        .filter(code => code); // Remove null/undefined codes
+
+      // Fetch approval status for all PWP codes
+      const approvalStatusMap = await getApprovalStatus(allPwpCodes);
+
+      // Add approval status to each item
+      const dataWithApprovalStatus = mergedData.map(item => ({
+        ...item,
+        approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
+        date_responded: approvalStatusMap[item.pwp_code]?.date_responded,
+        approval_created: approvalStatusMap[item.pwp_code]?.approval_created
+      }));
+
+      // Apply filters
+      let filteredData = dataWithApprovalStatus;
+
+
+      // Apply search filter
+      if (searchQuery) {
+        filteredData = filteredData.filter(item => {
+          const searchFields = [
+            item.code,                   // for "all" filter
+            item.cover_code,             // for cover records
+            item.regularpwpcode,        // for regular records
+            item.id,
+            item.account_type,
+            item.accountType,
+            item.pwp_type,
+            item.pwptype,
+            item.createForm
+          ];
+
+          return searchFields.some(field =>
+            field && field.toString().toLowerCase().includes(searchQuery.toLowerCase())
+          );
+        });
       }
-    } catch (relatedDeleteError) {
-      console.warn("Error deleting related regular visa data:", relatedDeleteError.message);
+
+
+      // Apply status filter based on approval status
+      if (statusFilter !== "all") {
+        filteredData = filteredData.filter(item => {
+          const itemStatus = item.approval_status ? item.approval_status.toLowerCase() : 'pending';
+          if (statusFilter === "sent_back") {
+            return itemStatus === "sent back for revision" || itemStatus === "sent back";
+          }
+          if (statusFilter === "cancelled") {
+            return itemStatus === "cancelled";
+          }
+          if (statusFilter === "pending") {
+            return itemStatus === "pending" || !item.approval_status;
+          }
+          if (statusFilter === "approved") {
+            return itemStatus === "approved";
+          }
+          if (statusFilter === "declined") {
+            return itemStatus === "declined";
+          }
+          return itemStatus === statusFilter;
+        });
+      }
+
+      // Apply date filters
+      if (dateFrom) {
+        filteredData = filteredData.filter(item => {
+          if (!item.created_at) return false;
+          const itemDate = new Date(item.created_at);
+          const fromDate = new Date(dateFrom);
+          return itemDate >= fromDate;
+        });
+      }
+
+      if (dateTo) {
+        filteredData = filteredData.filter(item => {
+          if (!item.created_at) return false;
+          const itemDate = new Date(item.created_at);
+          const toDate = new Date(dateTo);
+          toDate.setHours(23, 59, 59, 999);
+          return itemDate <= toDate;
+        });
+      }
+
+      if (filteredData.length > 0) {
+        // Create unified column set
+        const regularCols = REGULAR_COLUMNS.filter(col => col !== 'regularpwpcode');
+        const coverCols = COVER_COLUMNS.filter(col => col !== 'cover_code');
+
+        // Create unified columns with code column as the second column
+        if (filter === "all") {
+          allColumns = ['id', 'code', ...regularCols.slice(1)]; // Skip id since it's already first
+        } else if (filter === "cover") {
+          allColumns = ['id', 'cover_code', ...coverCols.slice(1)];
+        } else if (filter === "regular") {
+          allColumns = ['id', 'regularpwpcode', ...regularCols.slice(1)];
+        }
+
+        // Normalize the data to have a unified 'code' column when showing all
+        const normalizedData = filteredData.map(item => {
+          if (filter === "all") {
+            return {
+              ...item,
+              code: item.regularpwpcode || item.cover_code || '-',
+              accountType: item.accountType || item.account_type || '-',
+              pwptype: item.pwptype || item.pwp_type || '-'
+            };
+          }
+          return item;
+        });
+
+        setColumns(allColumns);
+        setData(normalizedData);
+      } else {
+        setData([]);
+        setColumns([]);
+      }
+    } catch (err) {
+      setError(`Unexpected error: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-  } else if (visaCode.startsWith("C")) {
-    table = statusToCollection.Corporate;
+  }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo]);
 
-    // Delete related Corporate Visa Details and Attachments
-    try {
-      const { error: detailsError } = await supabase
-        .from("Corporate_Visa_Details")
-        .delete()
-        .eq("visaCode", visaCode);
+  const handleEdit = async (row) => {
+    let tableName = "regular_pwp";
 
-      if (detailsError) {
-        console.warn("Failed to delete from Corporate_Visa_Details:", detailsError.message);
-      }
-
-      const { error: attachmentsError } = await supabase
-        .from("Corporate_Visa_Attachments")
-        .delete()
-        .eq("visaCode", visaCode);
-
-      if (attachmentsError) {
-        console.warn("Failed to delete from Corporate_Visa_Attachments:", attachmentsError.message);
-      }
-    } catch (relatedDeleteError) {
-      console.warn("Error deleting related corporate visa data:", relatedDeleteError.message);
+    // check kung galing sa cover o regular
+    if (row.source === "cover_pwp" || row.source === "cover") {
+      tableName = "cover_pwp";
+    } else if (row.source === "regular_pwp" || row.source === "regular") {
+      tableName = "regular_pwp";
     }
-  } else if (visaCode.startsWith("V")) {
-    table = statusToCollection.Cover;
 
-    // Delete related Cover Visa data
-    try {
-      const { error: attachmentsError } = await supabase
-        .from("Cover_Visa_Attachments")
-        .delete()
-        .eq("visaCode", visaCode);
-
-      if (attachmentsError) {
-        console.warn("Failed to delete from Cover_Visa_Attachments:", attachmentsError.message);
-      }
-
-      const { error: costDetailsError } = await supabase
-        .from("Cover_Visa_CostDetails")
-        .delete()
-        .eq("visaCode", visaCode);
-
-      if (costDetailsError) {
-        console.warn("Failed to delete from Cover_Visa_CostDetails:", costDetailsError.message);
-      }
-
-      const { error: volumePlanError } = await supabase
-        .from("Cover_Visa_VolumePlan")
-        .delete()
-        .eq("visaCode", visaCode);
-
-      if (volumePlanError) {
-        console.warn("Failed to delete from Cover_Visa_VolumePlan:", volumePlanError.message);
-      }
-    } catch (relatedDeleteError) {
-      console.warn("Error deleting related cover visa data:", relatedDeleteError.message);
-    }
-  } else {
-    await Swal.fire("Error", "Unrecognized visa code format.", "error");
-    return;
-  }
-
-  try {
-    // Delete main visa record
-    const { error } = await supabase
-      .from(table)
-      .delete()
-      .eq("visaCode", visaCode);
+    // Fetch full record with all fields
+    const { data, error } = await supabase
+      .from(tableName)
+      .select("*") // lahat ng columns
+      .eq("id", row.id)
+      .single();
 
     if (error) {
-      console.error("Supabase delete error:", error);
-      await Swal.fire("Error", "Failed to delete visa from Supabase.", "error");
+      console.error("Error fetching full record:", error);
       return;
     }
 
-    // ===== Handle amount_badget history and deletion =====
-    // 1. Fetch amount_badget records for visaCode
-    const { data: amountBadgetRecords, error: fetchError } = await supabase
-      .from("amount_badget")
-      .select("*")
-      .eq("visacode", visaCode);
-
-    if (fetchError) {
-      console.error("Failed to fetch amount_badget records:", fetchError);
-    } else if (amountBadgetRecords && amountBadgetRecords.length > 0) {
-      for (const record of amountBadgetRecords) {
-        const historyEntry = {
-          original_id: record.id,
-          visacode: record.visacode,
-          amountbadget: record.amountbadget,
-          createduser: record.createduser,
-          createdate: record.createdate,
-          remainingbalance: record.remainingbalance,
-          RegularID: null, // Adjust if you have related RegularID
-          action_type: "DELETE",
-          action_user: JSON.parse(localStorage.getItem("loggedInUser"))?.UserID || "unknown",
-          action_date: new Date().toISOString(),
-          TotalCost: null, // Add if applicable
-        };
-
-        const { error: historyError } = await supabase
-          .from("amount_badget_history")
-          .insert(historyEntry);
-
-        if (historyError) {
-          console.warn("Failed to insert into amount_badget_history:", historyError.message);
-        }
-      }
-
-      // 2. Delete from amount_badget after history insert
-      const { error: deleteBadgetError } = await supabase
-        .from("amount_badget")
-        .delete()
-        .eq("visacode", visaCode);
-
-      if (deleteBadgetError) {
-        console.error("Failed to delete from amount_badget:", deleteBadgetError);
-      } else {
-        console.log(`✅ Deleted amount_badget records for visaCode: ${visaCode}`);
-      }
-    }
-
-    await Swal.fire("Deleted", `Visa ${visaCode} deleted successfully.`, "success");
-
-    if (typeof setVisaData === "function") {
-      setVisaData((prev) => prev.filter((item) => item.visaCode !== visaCode));
-    }
-
-    // Log RecentActivity
-    try {
-      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-      const userId = currentUser?.UserID || "unknown";
-
-      const ipRes = await fetch("https://api.ipify.org?format=json");
-      const { ip } = await ipRes.json();
-
-      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-      const geo = await geoRes.json();
-
-      const activityLog = {
-        userId: userId,
-        device: navigator.userAgent || "Unknown Device",
-        location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
-        ip,
-        time: new Date().toISOString(),
-        action: `Deleted visa with code: ${visaCode}`,
-      };
-
-      const { error: activityError } = await supabase
-        .from("RecentActivity")
-        .insert(activityLog);
-
-      if (activityError) {
-        console.warn("Failed to log visa deletion activity:", activityError.message);
-      }
-    } catch (logError) {
-      console.warn("Error logging visa deletion activity:", logError.message);
-    }
-  } catch (err) {
-    console.error("Unexpected Supabase error:", err);
-    await Swal.fire("Error", "Unexpected error deleting from Supabase.", "error");
-  }
-};
-
-
-
-  const handleDeleteVisa = async (visa) => {
-    if (!visa || !visa.visaCode) return;
-
-    const result = await Swal.fire({
-      title: `Delete ${visa.visaCode}?`,
-      text: "This action cannot be undone.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#d33",
-      cancelButtonColor: "#3085d6",
-      confirmButtonText: "Yes, delete it!",
+    // Pass full record to modal
+    setSelectedRow({
+      ...data,
+      source: row.source, // keep track kung cover or regular
     });
 
-    if (result.isConfirmed) {
-      await deleteVisaFromSupabase(visa.visaCode);
-    }
+    setIsModalOpen(true);
   };
 
-  // const getVisaAttachmentsFromFirestore = async (visaCode, collection) => {
-  //   try {
-  //     const visaDocRef = doc(db, collection, visaCode);
-  //     const docSnap = await getDoc(visaDocRef);
+  const handleSave = async (updatedData) => {
+    setUpdating(true);
+    try {
+      const table = updatedData.source;
+      const updateData = { ...updatedData };
+      delete updateData.source;
 
-  //     if (docSnap.exists()) {
-  //       const data = docSnap.data();
-  //       return data.attachments || [];
-  //     }
-  //     return [];
-  //   } catch (error) {
-  //     console.error("Error fetching attachments:", error);
-  //     return [];
-  //   }
-  // };
-  const loadAttachmentsForVisas = async (visas) => {
-    const prefixToTable = {
-      R: "Regular_Visa_Attachments",
-      V: "Cover_Visa_Attachments",
-      C: "Corporate_Visa_Attachments",
-    };
-
-    const updated = await Promise.all(
-      visas.map(async (visa) => {
-        const prefix = visa.visaCode?.substring(0, 1);
-        const table = prefixToTable[prefix];
-
-        if (!table || !visa.visaCode) return visa;
-
-        const { data: attachments, error } = await supabase
-          .from(table)
-          .select("id, name, type, size, content, uploadedAt")
-          .eq("visaCode", visa.visaCode);
-
-        if (error) {
-          console.error(`Error fetching attachments from ${table} for visaCode ${visa.visaCode}:`, error.message);
-          return visa;
+      // Handle code mapping
+      if (filter === "all" && updateData.code) {
+        if (table === "regular_pwp") {
+          updateData.regularpwpcode = updateData.code;
+        } else if (table === "cover_pwp") {
+          updateData.cover_code = updateData.code;
         }
+        delete updateData.code;
+      }
 
-        return {
-          ...visa,
-          attachments: attachments || [],
-        };
-      })
-    );
+      const { error: updateError } = await supabase
+        .from(table)
+        .update(updateData)
+        .eq("id", updatedData.id);
 
-    setVisaData(updated);
+      if (updateError) {
+        setError(`Update Error: ${updateError.message}`);
+      } else {
+
+        await fetchData();
+      }
+    } catch (err) {
+      setError(`Unexpected error: ${err.message}`);
+    } finally {
+      setUpdating(false);
+    }
   };
 
 
-  const getContentURL = (file) => {
-    if (!file?.content || !file?.type) {
-      console.warn("Missing content or type", file);
-      return null;
-    }
-
-    // If already data URI, return as-is
-    if (file.content.startsWith("data:")) return file.content;
-
-    // Basic validation
-    const cleanedContent = file.content.trim();
-    if (cleanedContent.length < 50) {
-      console.warn("Content too short to preview", file);
-      return null;
-    }
-
-    return `data:${file.type};base64,${cleanedContent}`;
+  const handleCancel = () => {
+    setEditingId(null);
+    setEditingData({});
   };
 
-  const [approvalHistory, setApprovalHistory] = useState([]);
+
+  const handleDelete = async (rowId) => {
+    setUpdating(true);
+    try {
+      // Find the main row by ID
+      const row = data.find(r => r.id === rowId);
+      if (!row) {
+        setError("Row not found.");
+        return;
+      }
+
+      // Main codes to match related rows
+      const regularCode = row.regularpwpcode || row.regularcode || row.regular_code;
+
+      if (!regularCode) {
+        setError("Related code missing for deletion.");
+        return;
+      }
+
+      // 1. Delete related entries first (children before parent)
+
+      // Delete from regular_accountlis_badget
+      const { error: budgetError } = await supabase
+        .from("regular_accountlis_badget")
+        .delete()
+        .eq("regularcode", regularCode);
+
+      if (budgetError) {
+        throw new Error(`Failed to delete budget rows: ${budgetError.message}`);
+      }
+
+      // Delete from regular_attachments
+      const { error: attachmentError } = await supabase
+        .from("regular_attachments")
+        .delete()
+        .eq("regularpwpcode", regularCode);
+
+      if (attachmentError) {
+        throw new Error(`Failed to delete attachments: ${attachmentError.message}`);
+      }
+
+      const { error: ApprovalHistory } = await supabase
+        .from("Approval_History")
+        .delete()
+        .eq("PwpCode", regularCode);
+      if (ApprovalHistory) throw new Error(`Failed to delete budget rows: ${ApprovalHistory.message}`);
+
+
+      // Delete from regular_sku_listing
+      const { error: skuError } = await supabase
+        .from("regular_sku_listing")
+        .delete()
+        .eq("regular_code", regularCode);
+
+      if (skuError) {
+        throw new Error(`Failed to delete SKUs: ${skuError.message}`);
+      }
+
+      // 2. Now delete from the main table (e.g., regular_pwp)
+      const { error: mainDeleteError } = await supabase
+        .from("regular_pwp")
+        .delete()
+        .eq("id", rowId);
+
+      if (mainDeleteError) {
+        throw new Error(`Failed to delete main record: ${mainDeleteError.message}`);
+      }
+
+      // Refresh and close modal
+      setDeleteConfirm(null);
+      await fetchData();
+    } catch (err) {
+      setError(`Delete failed: ${err.message}`);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const storedUser = localStorage.getItem('loggedInUser');
+  const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+  const loggedInUsername = parsedUser?.name || 'Unknown';
+  const createdBy = parsedUser?.name || 'Unknown';
+
+  const [userDistributors, setUserDistributors] = useState([]);
+  const [filteredDistributors, setFilteredDistributors] = useState([]);
+  const [distributors, setDistributors] = useState([]);
 
   useEffect(() => {
-    const fetchApprovalHistory = async () => {
+    const fetchUserDistributors = async () => {
       const { data, error } = await supabase
-        .from("Approval_History")
-        .select("*");
+        .from('user_distributors')
+        .select('distributor_name')
+        .eq('username', loggedInUsername);
 
       if (error) {
-        console.error("Error fetching approval history:", error);
-        setApprovalHistory([]);
+        console.error('[ERROR] Fetching user_distributors:', error);
       } else {
-        setApprovalHistory(data);
+        const names = data.map((d) => d.distributor_name);
+        console.log('[DEBUG] Distributors assigned to user:', names);
+        setUserDistributors(names);
       }
     };
 
-    fetchApprovalHistory();
-  }, []);
-  const [currentView, setCurrentView] = useState("list");
-  const [selectedVisa, setSelectedVisa] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalFile, setModalFile] = useState(null);
+    fetchUserDistributors();
+  }, [loggedInUsername]);
 
-  const handleViewDetails = (visa) => {
-    if (visa?.visaCode?.startsWith("V2025")) {
-      setSelectedVisa(visa);
-      setCurrentView("details");
-    } else if (visa?.visaCode?.startsWith("R2025")) {
-      setSelectedVisa(visa);
-      setCurrentView("regularDetails");
-    } else if (visa?.visaCode?.startsWith("C2025")) {
-      setSelectedVisa(visa);
-      setCurrentView("corporateDetails");
-    } else {
-      alert("Visa ID must start with V2025, R2025, or C2025");
+  useEffect(() => {
+    const fetchDistributors = async () => {
+      const { data, error } = await supabase
+        .from('distributors')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('[ERROR] Fetching distributors:', error);
+      } else {
+        console.log('[DEBUG] All distributors from DB:', data);
+        setDistributors(data);
+
+        const allowed = data.filter((dist) =>
+          userDistributors.includes(dist.name)
+        );
+        console.log('[DEBUG] Filtered distributors for dropdown:', allowed);
+        setFilteredDistributors(allowed);
+      }
+    };
+
+    if (userDistributors.length > 0) {
+      fetchDistributors();
     }
+  }, [userDistributors]);
+
+  // Updated getStatusBadge function - replace your existing one
+  const getStatusBadge = (status) => {
+    const statusLower = status ? status.toLowerCase() : 'pending';
+    let bgColor, textColor, borderColor;
+
+    switch (statusLower) {
+      case 'approved':
+        bgColor = '#e8f5e8';
+        textColor = '#2e7d32';
+        borderColor = '#c8e6c9';
+        break;
+      case 'declined':
+        bgColor = '#ffebee';
+        textColor = '#c62828';
+        borderColor = '#ffcdd2';
+        break;
+      case 'sent back for revision':
+      case 'sent back':
+        bgColor = '#fff3e0';
+        textColor = '#e65100';
+        borderColor = '#ffcc02';
+        break;
+      case 'cancelled':
+        bgColor = '#f3e5f5';
+        textColor = '#7b1fa2';
+        borderColor = '#e1bee7';
+        break;
+      case 'pending':
+      default:
+        bgColor = '#fff3cd';
+        textColor = '#8a6d3b';
+        borderColor = '#ffeaa7';
+    }
+
+    return (
+      <span
+        style={{
+          padding: '4px 12px',
+          borderRadius: '16px',
+          fontSize: '12px',
+          fontWeight: '600',
+          backgroundColor: bgColor,
+          color: textColor,
+          border: `1px solid ${borderColor}`,
+          textTransform: 'capitalize',
+          letterSpacing: '0.5px',
+        }}
+      >
+        {status || 'Pending'}
+      </span>
+    );
   };
 
-  // Conditional rendering
-  if (currentView === "details" && selectedVisa?.visaCode?.startsWith("V2025")) {
-    return <View selectedVisa={selectedVisa} setCurrentView={setCurrentView} />;
+  const formatColumnName = (colName) => {
+    return colName
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, l => l.toUpperCase())
+      .replace('Pwp', 'PWP')
+      .replace('Id', 'ID');
+  };
+  const formatCellValue = (value, colName) => {
+    if (!value && value !== 0) return '-';
+
+    if (colName === 'created_at' && value) {
+      try {
+        return new Date(value).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        }); // e.g., Sep 17, 2025
+      } catch {
+        return value;
+      }
+    }
+
+    return String(value);
+  };
+
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  if (loading) {
+    return (
+      <div style={{
+        padding: '40px',
+        textAlign: 'center',
+        backgroundColor: '#f8f9fa',
+        minHeight: '100vh'
+      }}>
+        <div style={{
+          display: 'inline-block',
+          padding: '20px 40px',
+          backgroundColor: 'white',
+          borderRadius: '12px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #e3f2fd',
+            borderTop: '4px solid #1976d2',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 20px'
+          }}></div>
+          <h2 style={{ margin: 0, color: '#333' }}>Loading Database...</h2>
+        </div>
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `
+        }} />
+      </div>
+    );
   }
 
-  if (currentView === "regularDetails" && selectedVisa?.visaCode?.startsWith("R2025")) {
-    return <View_Regular selectedVisa={selectedVisa} setCurrentView={setCurrentView} />;
-  }
+  if (error) {
+    return (
+      <div style={{
+        padding: '40px',
+        backgroundColor: '#f8f9fa',
+        minHeight: '100vh'
+      }}>
+        <div style={{
+          maxWidth: '600px',
+          margin: '0 auto',
+          backgroundColor: 'white',
+          padding: '30px',
+          borderRadius: '12px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{
+            backgroundColor: '#ffebee',
+            border: '1px solid #ef5350',
+            borderRadius: '8px',
+            padding: '20px',
+            marginBottom: '20px'
+          }}>
+            <p style={{ margin: 0, color: '#d32f2f' }}>{error}</p>
+          </div>
 
-  if (currentView === "corporateDetails" && selectedVisa?.visaCode?.startsWith("C2025")) {
-    return <ViewCorporate selectedVisa={selectedVisa} setCurrentView={setCurrentView} />;
-  }
-
-
-  // Render detail views conditionally
-  if (currentView === "details" && selectedVisa?.visaCode?.startsWith("V2025")) {
-    return <View selectedVisa={selectedVisa} setCurrentView={setCurrentView} />;
-  }
-
-  if (currentView === "regularDetails" && selectedVisa?.visaCode?.startsWith("R2025")) {
-    return <View_Regular selectedVisa={selectedVisa} setCurrentView={setCurrentView} />;
-  }
-
-  if (currentView === "corporateDetails" && selectedVisa?.visaCode?.startsWith("C2025")) {
-    return <ViewCorporate selectedVisa={selectedVisa} setCurrentView={setCurrentView} />;
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "90vh", padding: "15px" }}>
-
-      <div
-        className="filters"
-        style={{
-          display: "flex",
-          gap: "10px",
-          marginBottom: "15px",
-          flexWrap: "wrap",
-        }}
-      >
-        <select
-          value={selectedStatus}
-          onChange={(e) => {
-            setSelectedStatus(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          {statusOptions.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-
-        <input
-          type="search"
-          placeholder="Search  Code, Title, Type..."
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1);
-          }}
-        />
-
-        <label>
-          <input
-            type="checkbox"
-            checked={filterToday}
-            onChange={() => {
-              setFilterToday(!filterToday);
-              setCurrentPage(1);
-            }}
-          />
-          Today
-        </label>
-      </div>
-
-      <div
-        style={{
-          flex: 1,
-          overflowX: "auto", // allow horizontal scroll on small screens
-          border: "1px solid #ccc",
-          borderRadius: "4px",
-          backgroundColor: "#fff",
-          fontSize: "0.85rem", // smaller text globally in table container
-        }}
-      >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            minWidth: "700px",
-          }}
-        >
-          <thead
-            style={{
-              backgroundColor: "#f4f4f4",
-              position: "sticky",
-              top: 0,
-              zIndex: 1,
-            }}
-          >
-            <tr>
-              <th style={{ padding: "8px" }}>Code</th>
-              <th style={{ padding: "8px" }}>Type</th>
-              <th style={{ padding: "8px" }}>Company</th>
-              <th style={{ padding: "8px" }}>Distributor</th>
-              <th style={{ padding: "8px" }}>Brand</th>
-              <th style={{ padding: "8px" }}>Date Created</th>
-              <th style={{ padding: "8px" }}>Attachment</th>
-              <th style={{ padding: "8px" }}>Status</th>
-              <th style={{ padding: "8px" }}> </th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayedData.length === 0 ? (
-              <tr>
-                <td colSpan="10" style={{ textAlign: "center", padding: "15px" }}>
-                  No data found.
-                </td>
-              </tr>
-            ) : (
-              [...displayedData]
-                .sort((a, b) => {
-                  const dateA = new Date(a.DateCreated || a.created_at);
-                  const dateB = new Date(b.DateCreated || b.created_at);
-                  return dateB - dateA;
-                })
-                .map((item, index) => (
-                  <tr key={`${item.visaCode || "code"}-${index}`}>
-                    <td style={{ padding: "6px" }}>{item.visaCode || "-"}</td>
-                    <td style={{ padding: "6px" }}>{item.visaType || "-"}</td>
-                    <td style={{ padding: "6px" }}>{item.company || "-"}</td>
-                    <td style={{ padding: "6px" }}>{item.principal || "-"}</td>
-                    <td style={{ padding: "6px" }}>{item.brand || "-"}</td>
-                    <td style={{ padding: "6px" }}>{formatDate(item.DateCreated || item.created_at)}</td>
-                    <td style={{ padding: "6px" }}>
-                      {item.attachments?.length > 0 ? (
-                        item.attachments.map((file, i) => (
-                          <div key={file.id || i} style={{ marginBottom: "6px" }}>
-                            <button
-                              style={{
-                                background: "none",
-                                border: "none",
-                                color: "#1976d2",
-                                cursor: "pointer",
-                                textDecoration: "underline",
-                                padding: 0,
-                                fontSize: "0.85rem",
-                              }}
-                              onClick={() => {
-                                setModalFile(file);
-                                setModalVisible(true);
-                              }}
-                            >
-                              {file.name || `Attachment ${i + 1}`}
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td style={{ padding: "6px" }}>
-                      {(() => {
-                        const latestApproval = approvalHistory
-                          .filter((h) => h.BabyVisaId === item.visaCode)
-                          .sort((a, b) => new Date(b.DateResponded) - new Date(a.DateResponded))[0];
-
-                        if (!latestApproval) return "-";
-
-                        const date = new Date(latestApproval.DateResponded);
-                        const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${String(date.getFullYear()).slice(-2)}`;
-                        const formattedTime = date.toLocaleTimeString("en-US", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: true,
-                        });
-
-                        let color = "black";
-                        switch (latestApproval.Response.toLowerCase()) {
-                          case "approved":
-                            color = "green";
-                            break;
-                          case "declined":
-                            color = "red";
-                            break;
-                          case "sent back for revision":
-                            color = "orange";
-                            break;
-                          default:
-                            color = "black";
-                        }
-
-                        return (
-                          <span style={{ color }}>
-                            {`${latestApproval.Response} (${formattedDate} ${formattedTime})`}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td style={{ padding: "6px", whiteSpace: "nowrap" }}>
-                      <button
-                        onClick={() => handleViewDetails(item)}
-                        title="View Details"
-                        style={{
-                          border: "none",
-                          background: "none",
-                          cursor: "pointer",
-                          padding: "6px 8px",
-                          color: "#1976d2",
-                          transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                          boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                          borderRadius: "8px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          outline: "none",
-                          fontSize: "1rem",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                          e.currentTarget.style.boxShadow = "0 8px 15px rgba(25, 118, 210, 0.5)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                          e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                        }}
-                        onMouseDown={(e) => {
-                          e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                        }}
-                        onMouseUp={(e) => {
-                          e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                          e.currentTarget.style.boxShadow = "0 8px 15px rgba(25, 118, 210, 0.5)";
-                        }}
-                      >
-                        <FontAwesomeIcon icon={faSearch} size="lg" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteVisa(item)}
-                        title="Delete Visa"
-                        style={{
-                          border: "none",
-                          background: "none",
-                          cursor: "pointer",
-                          padding: "6px 8px",
-                          color: "#d32f2f",
-                          transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                          boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                          borderRadius: "8px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          marginLeft: "8px",
-                          outline: "none",
-                          fontSize: "1rem",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                          e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                          e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                        }}
-                        onMouseDown={(e) => {
-                          e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                        }}
-                        onMouseUp={(e) => {
-                          e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                          e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.5)";
-                        }}
-                      >
-                        <FontAwesomeIcon icon={faTrash} size="lg" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-            )}
-          </tbody>
-        </table>
+    <div style={{
+      padding: '20px',
 
 
-        {/* Modal preview */}
-        {modalVisible && modalFile && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: "100vw",
-              height: "100vh",
-              backgroundColor: "rgba(0, 0, 0, 0.7)",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 999,
-            }}
-            onClick={() => {
-              setModalVisible(false);
-              setModalFile(null);
-            }}
-          >
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '12px',
+        overflow: 'hidden'
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '24px 30px',
+
+          color: 'white'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              padding: '10px 0',
+              maxWidth: '100%',
+            }}>
+              <h1 style={{
+                margin: 0,
+                fontSize: '28px',
+                fontWeight: '700',
+                color: '#000000ff',
+                letterSpacing: '0.5px',
+                lineHeight: '1.2'
+              }}>
+                📊 PWP Database Management
+              </h1>
+
+              <p style={{
+                margin: 0,
+                fontSize: '15px',
+                color: '#555',
+                opacity: 0.85,
+                lineHeight: '1.4',
+                fontStyle: 'italic'
+              }}>
+                {data.length} records found {filter !== 'all' && (
+                  <span style={{ color: '#0d47a1' }}>({filter.replaceAll("_", " ")} only)</span>
+                )}
+              </p>
+            </div>
+
+
+            {/* Controls */}
             <div
               style={{
-                backgroundColor: "#fff",
-                padding: "20px",
-                borderRadius: "10px",
-                maxWidth: "100%",
-                maxHeight: "90%",
-                overflow: "auto",
-                position: "relative",
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '12px',
+                alignItems: 'center',
               }}
-              onClick={(e) => e.stopPropagation()}
             >
-              <h3>{modalFile.name || "Attachment Preview"}</h3>
-
-              <div style={{ marginTop: "10px", textAlign: "center" }}>
-                {modalFile.type?.startsWith("image/") ? (
-                  <img
-                    src={getContentURL(modalFile)}
-                    alt={modalFile.name}
-                    style={{ maxWidth: "100%", maxHeight: "600px", borderRadius: "6px" }}
-                  />
-                ) : modalFile.type?.includes("pdf") ? (
-                  <img
-                    src="https://img.icons8.com/color/96/pdf.png"
-                    alt="PDF Icon"
-                    style={{ height: "100px" }}
-                  />
-                ) : modalFile.name?.endsWith(".xlsx") || modalFile.name?.endsWith(".xls") ? (
-                  <img
-                    src="https://img.icons8.com/color/96/microsoft-excel-2019--v1.png"
-                    alt="Excel Icon"
-                    style={{ height: "100px" }}
-                  />
-                ) : (
-                  <div>No preview available</div>
-                )}
+              {/* Each input wrapper gets a responsive width */}
+              {/* Search */}
+              <div className="filter-item">
+                <input
+                  type="text"
+                  placeholder="🔍 Search by Code, AccountType...."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    border: '2px solid #e1e8ed',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    transition: 'border-color 0.3s ease',
+                    outline: 'none'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#2575fc'}
+                  onBlur={(e) => e.target.style.borderColor = '#e1e8ed'}
+                />
               </div>
 
-              <button
-                onClick={() => {
-                  const link = document.createElement("a");
-                  link.href = getContentURL(modalFile);
-                  link.download = modalFile.name || "attachment";
-                  link.click();
-                }}
-                style={{
-                  marginTop: "10px",
-                  backgroundColor: "#1976d2",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "5px",
-                  padding: "6px 12px",
-                  cursor: "pointer",
-                }}
-              >
-                Download
-              </button>
+              <div className="filter-item">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    width: '100%',
+                    minWidth: '0',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">All Status</option>
+                  <option value="approved">Approved</option>
+                  <option value="declined">Declined</option>
+                  <option value="sent_back">Sent Back</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
 
-              <button
-                onClick={() => setModalVisible(false)}
-                style={{
-                  position: "absolute",
-                  top: 10,
-                  right: 10,
-                  background: "#d32f2f",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "5px",
-                  padding: "5px 10px",
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
+
+              {/* Date Range */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                backgroundColor: 'white',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid #e1e8ed'
+              }}>
+                <span style={{ fontSize: '14px', color: '#666', fontWeight: '500' }}>📅 Date:</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  style={{
+                    padding: '6px 8px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '13px'
+                  }}
+                />
+                <span style={{ color: '#666' }}>to</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  style={{
+                    padding: '6px 8px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '13px'
+                  }}
+                />
+              </div>
+
+
+              <div className="filter-item">
+                <select
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    width: '100%',
+                    minWidth: '0',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">All Records</option>
+                  <option value="cover">Cover PWP Only</option>
+                  <option value="regular">Regular PWP Only</option>
+                </select>
+              </div>
+
+              <div className="filter-item">
+                <button
+                  onClick={fetchData}
+                  disabled={updating}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    cursor: updating ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    backgroundColor: '#2575fc',
+                    color: '#fff',
+                    fontWeight: '500',
+                    width: '100%',
+                    opacity: updating ? 0.7 : 1,
+                  }}
+                >
+                  {updating ? 'Updating...' : 'Refresh'}
+                </button>
+              </div>
             </div>
           </div>
-        )}
+        </div>
+
+        {/* Table */}
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            padding: '5px'
+          }}>
+            <thead>
+              <tr style={{ backgroundColor: '#2575fc', color: '#ffff' }}>
+                {columns.map(col => (
+                  <th key={col} style={{
+                    padding: '16px 20px',
+                    textAlign: 'left',
+                    fontWeight: '600',
+                    color: '#eeeeeeff',
+                    fontSize: '14px',
+                    borderBottom: '2px solid #e0e0e0',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {formatColumnName(col)}
+                  </th>
+                ))}
+                <th style={{
+                  padding: '16px 20px',
+                  textAlign: 'center',
+                  fontWeight: '600',
+                  color: '#fcfcfcff',
+                  fontSize: '14px',
+                  borderBottom: '2px solid #e0e0e0',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  width: '200px'
+                }}>
+                  Status
+                </th>
+                <th style={{
+                  padding: '16px 20px',
+                  textAlign: 'center',
+                  fontWeight: '600',
+                  color: '#ffffffff',
+                  fontSize: '14px',
+                  borderBottom: '2px solid #e0e0e0',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  width: '250px'
+                }}>
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedData.map((row, index) => (
+                <tr key={row.id || index} style={{
+                  backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
+                  transition: 'background-color 0.2s ease'
+                }}>
+                  {columns.map(col => (
+                    <td key={col} style={{
+                      padding: '16px 20px',
+                      borderBottom: '1px solid #e0e0e0',
+                      fontSize: '14px',
+                      color: '#000000ff'
+                    }}>
+                      {editingId === row.id && col !== 'id' && col !== 'createdat' ? (
+                        <input
+                          type="text"
+                          value={editingData[col] || ''}
+                          onChange={(e) => setEditingData({ ...editingData, [col]: e.target.value })}
+                          style={{
+                            padding: '6px 10px',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            width: '100%',
+                            minWidth: '120px'
+                          }}
+                        />
+                      ) : (
+                        <span style={{
+                          maxWidth: col === 'createdat' ? '150px' : '200px',
+                          display: 'inline-block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {formatCellValue(row[col], col)}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                  <td style={{
+                    padding: '16px 20px',
+                    borderBottom: '1px solid #e0e0e0',
+                    textAlign: 'center'
+                  }}>
+                    {getStatusBadge(row.approval_status)}
+                  </td>
+                  <td style={{
+                    padding: '16px 20px',
+                    borderBottom: '1px solid #e0e0e0',
+                    textAlign: 'center'
+                  }}>
+                    {editingId === row.id ? (
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                        <button
+                          onClick={handleSave}
+                          disabled={updating}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#4caf50',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: updating ? 'not-allowed' : 'pointer',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            opacity: updating ? 0.7 : 1
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancel}
+                          disabled={updating}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#757575',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: updating ? 'not-allowed' : 'pointer',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            opacity: updating ? 0.7 : 1
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        {/* Edit Button */}
+                        <button
+                          onClick={() => handleEdit(row)}
+                          disabled={updating || row.approval_status === 'Approved'}
+                          aria-label={`Edit ${row.name}`}
+                          title="Edit"
+                          style={{
+                            border: "none",
+                            background: "none",
+                            cursor: (updating || row.approval_status === 'Approved') ? "not-allowed" : "pointer",
+                            padding: "8px",
+                            color: "#d32f2f",
+                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                            boxShadow: row.approval_status === 'Approved'
+                              ? "0 4px 6px rgba(108, 117, 125, 0.5)" // grayish for disabled
+                              : "0 4px 6px rgba(0,0,0,0.2)",
+                            borderRadius: "8px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginLeft: "8px",
+                            outline: "none",
+                            opacity: (updating || row.approval_status === 'Approved') ? 0.5 : 1,
+                            pointerEvents: (updating || row.approval_status === 'Approved') ? 'none' : 'auto'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (row.approval_status !== 'Approved') {
+                              e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                            e.currentTarget.style.boxShadow = row.approval_status === 'Approved'
+                              ? "0 4px 6px rgba(108, 117, 125, 0.5)"
+                              : "0 4px 6px rgba(0,0,0,0.2)";
+                          }}
+                          onMouseDown={(e) => {
+                            if (row.approval_status !== 'Approved') {
+                              e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                              e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                            }
+                          }}
+                          onMouseUp={(e) => {
+                            if (row.approval_status !== 'Approved') {
+                              e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
+                            }
+                          }}
+                        >
+                          <FaEdit style={{ color: row.approval_status === 'Approved' ? "#6c757d" : "orange", fontSize: "20px" }} />
+                        </button>
+
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => setDeleteConfirm(row.id)}
+                          disabled={updating}
+                          aria-label={`Delete ${row.name}`}
+                          title="Delete"
+                          style={{
+                            border: "none",
+                            background: "none",
+                            cursor: updating ? "not-allowed" : "pointer",
+                            padding: "8px",
+                            color: "#d32f2f",
+                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                            borderRadius: "8px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginLeft: "8px",
+                            outline: "none",
+                            opacity: updating ? 0.5 : 1,
+                            pointerEvents: updating ? 'none' : 'auto'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                            e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                          }}
+                          onMouseDown={(e) => {
+                            e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                          }}
+                          onMouseUp={(e) => {
+                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
+                          }}
+                        >
+                          <FaTrash style={{ color: "red", fontSize: "20px" }} />
+                        </button>
+                      </div>
+
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+
+        </div>
+
       </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', alignItems: 'center', gap: '12px' }}>
+        {/* Rows per page selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '14px' }}>Rows per page:</span>
+          <select
+            value={rowsPerPage}
+            onChange={(e) => {
+              setRowsPerPage(Number(e.target.value));
+              setCurrentPage(1); // reset to page 1 when rows per page changes
+            }}
+            style={{
+              padding: '4px 8px',
+              fontSize: '14px',
+              borderRadius: '4px',
+              border: '1px solid #ccc'
+            }}
+          >
+            {[5, 10, 20, 50].map((size) => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </div>
 
-
-      {viewAll && totalPages > 1 && (
-        <footer
-          style={{
-            padding: "0.5rem 1rem",
-            display: "flex",
-            gap: "10px",
-            justifyContent: "flex-end",
-            alignItems: "center",
-            marginTop: "10px",
-            borderTop: "1px solid #ccc",
-          }}
-        >
+        {/* Pagination Buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
-            onClick={() => handlePageChange(currentPage - 1)}
+            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
             disabled={currentPage === 1}
             style={{
-              padding: "6px 12px",
-              marginRight: "10px",
-              backgroundColor: currentPage === 1 ? "#ccc" : "#1976d2",
-              color: "#fff",
-              border: "none",
-              borderRadius: "4px",
-              cursor: currentPage === 1 ? "not-allowed" : "pointer",
+              padding: '6px 12px',
+              backgroundColor: currentPage === 1 ? '#e0e0e0' : '#1976d2',
+              color: currentPage === 1 ? '#555' : 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
             }}
           >
             Prev
           </button>
-          <span style={{ marginRight: "10px" }}>
-            Page {currentPage} of {totalPages || 1}
+          <span style={{ fontSize: '14px' }}>
+            Page {currentPage} of {totalPages}
           </span>
           <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages || totalPages === 0}
+            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
             style={{
-              padding: "6px 12px",
-              backgroundColor:
-                currentPage === totalPages || totalPages === 0 ? "#ccc" : "#1976d2",
-              color: "#fff",
-              border: "none",
-              borderRadius: "4px",
-              cursor:
-                currentPage === totalPages || totalPages === 0 ? "not-allowed" : "pointer",
+              padding: '6px 12px',
+              backgroundColor: currentPage === totalPages ? '#e0e0e0' : '#1976d2',
+              color: currentPage === totalPages ? '#555' : 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
             }}
           >
             Next
           </button>
-        </footer>
-      )}
+        </div>
+      </div>
+      <EditModal
+        isOpen={isModalOpen}
+        rowData={selectedRow}
+        onClose={() => setIsModalOpen(false)}
 
+        filter="all"
+        filteredDistributors={filteredDistributors} // <-- pass this down
+      />
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+            maxWidth: '400px',
+            width: '90%'
+          }}>
+            <h3 style={{ margin: '0 0 15px', color: '#333' }}>Confirm Delete</h3>
+            <p style={{ margin: '0 0 20px', color: '#666' }}>
+              Are you sure you want to delete this record? This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={updating}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#757575',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: updating ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(deleteConfirm)}
+                disabled={updating}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: updating ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  opacity: updating ? 0.7 : 1
+                }}
+              >
+                {updating ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export default ManageMarketing;
+export default EnhancedDatabaseInterface;

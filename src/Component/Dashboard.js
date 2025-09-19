@@ -6,7 +6,7 @@ import {
 } from "recharts";
 
 import { ref, get } from "firebase/database";
-import { rtdb } from "../firestore";
+
 import { supabase } from "../supabaseClient"; // import your supabase client
 
 const initialStatuses = [
