@@ -80,12 +80,6 @@ const handleViewRecord = (record) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage] = useState(10);
 
-  const totalPages = Math.ceil(data.length / rowsPerPage);
-
-  const paginatedData = data.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
-  );
 
 
 
@@ -257,6 +251,23 @@ const handleViewRecord = (record) => {
     }
   }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, categoryMap]);
 
+
+  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+  const role = currentUser?.role || "";
+  
+  const filteredData = useMemo(() => {
+    if (role === 'admin') return data;
+    return data.filter(row => row.createForm?.toLowerCase().trim() === currentUserName);
+  }, [data, currentUserName, role]);
+  
+  // Pagination using filteredData
+  const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
+  
   // Updated getStatusBadge function - replace your existing one
   const getStatusBadge = (status) => {
     const statusLower = status ? status.toLowerCase() : 'pending';
