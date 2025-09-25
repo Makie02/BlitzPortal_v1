@@ -381,7 +381,7 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
             submenu: [
                 { title: "References" }, // No view
                 { title: "View Records", view: "RecordsPage" },
-                { title: "Approved  List", view: "ApprovalList" },
+                // { title: "Approved  List", view: "ApprovalList" },
 
                 { title: "Claims Records List", view: "ClaimsRecords" },
 
