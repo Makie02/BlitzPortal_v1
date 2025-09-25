@@ -649,56 +649,66 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
 
 
 
-  const handleSubmit = async () => {
-    setUpdating(true);
-    setError(null);
+const handleSubmit = async () => {
+  setUpdating(true);
+  setError(null);
 
-    try {
-      if (formData.cover_code) {
-        await submitCoverPWP();
+  try {
+    const pwpCodeToDelete = formData.cover_code || formData.regularpwpcode;
 
-        await Swal.fire({
-          icon: 'success',
-          title: 'Success',
-          text: 'Success Update all data',
-        }).then(() => {
-          window.location.reload();
-        });
+    if (pwpCodeToDelete) {
+      // Delete existing Approval_History for the same PwpCode
+      const { error: deleteError } = await supabase
+        .from('Approval_History')
+        .delete()
+        .eq('PwpCode', pwpCodeToDelete);
 
-        return;
+      if (deleteError) {
+        console.error('❌ Error deleting existing Approval_History:', deleteError);
+        throw deleteError;
       }
+      console.log(`✅ Deleted existing Approval_History for PwpCode: ${pwpCodeToDelete}`);
+    }
 
+    // Submit new PWP data
+    if (formData.cover_code) {
+      await submitCoverPWP();
+    } else {
       const accountsUpdated = await handleSaveAccountstable(); // get success flag
       await submitSkuTable();
       await submitRegularPWP();
-
       await submitAccountToRegular(accountsUpdated);  // pass flag here
-
       await submitSkuTotalToRegular(
         formData.regularpwpcode,
         adjustedRemainingBalance,
         currentTotalBilling,
         formValues.amountbadget
       );
-
-      await Swal.fire({
-        icon: 'success',
-        title: 'Success',
-        text: 'Success Update all data',
-      });
-
-    } catch (err) {
-      console.error('❌ Submit error:', err);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Submission Failed',
-        text: err.message || 'Something went wrong during submission.',
-      });
-      setError(`Submit Error: ${err.message}`);
-    } finally {
-      setUpdating(false);
     }
-  };
+
+    // Show success message and reload page
+    await Swal.fire({
+      icon: 'success',
+      title: 'Success',
+      text: 'Success Update all data',
+    }).then(() => {
+      window.location.reload();
+    });
+
+  } catch (err) {
+    console.error('❌ Submit error:', err);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Submission Failed',
+      text: err.message || 'Something went wrong during submission.',
+    });
+    setError(`Submit Error: ${err.message}`);
+  } finally {
+    setUpdating(false);
+  }
+};
+
+
 
   const submitAccountToRegular = async (accountsUpdated) => {
     try {
@@ -1243,8 +1253,8 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
           backgroundColor: "#fff",
           borderRadius: "16px",
           padding: "30px",
-          width: "90%",
-          maxWidth: "1000px",
+          width: "98%",
+          maxWidth: "1300px",
           maxHeight: "90vh",
           overflowY: "auto",
           boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
@@ -1468,7 +1478,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                       style={{
                         position: 'absolute',
                         right: '20px',
-                        top: '45%',
+                        top: '65%',
                         transform: 'translateY(-50%)',
                         pointerEvents: 'none',
                         color: '#555',
