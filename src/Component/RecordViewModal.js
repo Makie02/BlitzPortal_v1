@@ -437,7 +437,7 @@ const RecordViewModal = ({ record, onClose }) => {
                 cursor: "pointer",
                 border: "none",
                 borderBottom: activeTab === tab ? "3px solid #1e58a3ff" : "3px solid transparent",
-                backgroundColor: activeTab === tab ? "#1e58a3ff" : "#f5f5f5",
+                backgroundColor: activeTab === tab ? "#007bacff" : "#f5f5f5",
                 color: activeTab === tab ? "white" : "#1976d2",
                 fontWeight: "500",
                 position: "relative",
