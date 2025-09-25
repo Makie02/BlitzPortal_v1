@@ -502,38 +502,68 @@ const CoverVisa = () => {
         .join(', ');
 
 
-    const [allCoverCodes, setAllCoverCodes] = useState([]);
-    const [loadingCoverCode, setLoadingCoverCode] = useState(true);
+  const [allCoverCodes, setAllCoverCodes] = useState([]);
+  const [loadingCoverCode, setLoadingCoverCode] = useState(true);
 
-    useEffect(() => {
-        async function fetchCoverCodes() {
-            const { data, error } = await supabase
-                .from('cover_pwp')
-                .select('cover_code');
+  // ---------------- Generate cover code ----------------
+  const generateCoverCode = (existingCodes = []) => {
+    const year = new Date().getFullYear();
+    const prefix = `C${year}-`;
 
-            if (error) {
-                console.error('Error fetching cover codes:', error);
-                setLoadingCoverCode(false);
-            } else {
-                const codes = data
-                    .map(row => row.cover_code)
-                    .filter(Boolean);
+    const codesForYear = existingCodes
+      .filter(code => code?.startsWith(prefix))
+      .map(code => parseInt(code.replace(prefix, ""), 10))
+      .filter(num => !isNaN(num));
 
-                setAllCoverCodes(codes);
+    const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
+    const newCode = `${prefix}${newNumber}`;
 
-                // Generate cover code if not already set
-                if (!formData.coverCode) {
-                    const newCode = generateCoverCode(codes);
-                    setFormData(prev => ({ ...prev, coverCode: newCode }));
-                }
+    console.log("🔹 Existing cover codes:", existingCodes);
+    console.log("🔹 Cover codes for this year:", codesForYear);
+    console.log("🔹 Generated new cover code:", newCode);
 
-                setLoadingCoverCode(false);
-            }
-        }
+    return newCode;
+  };
 
-        fetchCoverCodes();
-    }, []);
+  // ---------------- Fetch cover codes ----------------
+  const fetchCoverCodes = async () => {
+    try {
+      console.log("⏳ Fetching cover codes...");
+      const { data, error } = await supabase
+        .from("cover_pwp")
+        .select("cover_code");
 
+      if (error) throw error;
+
+      const codes = data.map(row => row.cover_code).filter(Boolean);
+      console.log("✅ Fetched cover codes:", codes);
+
+      setAllCoverCodes(codes);
+
+      // Generate new code if empty or already used
+      if (!formData.coverCode || codes.includes(formData.coverCode)) {
+        const newCode = generateCoverCode(codes);
+        console.log("✏️ Updating formData with new cover code:", newCode);
+        setFormData(prev => ({ ...prev, coverCode: newCode }));
+      }
+
+      setLoadingCoverCode(false);
+    } catch (err) {
+      console.error("❌ Error fetching cover codes:", err);
+      setLoadingCoverCode(false);
+    }
+  };
+
+  // ---------------- Real-time polling ----------------
+  useEffect(() => {
+    fetchCoverCodes(); // Initial fetch
+
+    const intervalId = setInterval(() => {
+      fetchCoverCodes();
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(intervalId); // Cleanup
+  }, [formData.coverCode]);
 
     useEffect(() => {
         if (!formData.coverCode && allCoverCodes.length > 0) {
@@ -541,20 +571,6 @@ const CoverVisa = () => {
             setFormData(prev => ({ ...prev, coverCode: newCode }));
         }
     }, [allCoverCodes]);
-
-    const generateCoverCode = (existingCodes = []) => {
-        const year = new Date().getFullYear();
-        const prefix = `C${year}-`;
-
-        const codesForYear = existingCodes
-            .filter(code => code?.startsWith(prefix))
-            .map(code => parseInt(code.replace(prefix, ''), 10))
-            .filter(num => !isNaN(num));
-
-        const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
-
-        return `${prefix}${newNumber}`;
-    };
 
 
 
