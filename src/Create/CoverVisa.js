@@ -41,16 +41,16 @@ const CoverVisa = () => {
 
 
 
-const handleFormChange = async (e) => {
-  const { name, value } = e.target;
+    const handleFormChange = async (e) => {
+        const { name, value } = e.target;
 
-  // Update formData with the new field value
-  setFormData((prev) => {
-    const updatedFormData = { ...prev, [name]: value };
-    return updatedFormData;
-  });
+        // Update formData with the new field value
+        setFormData((prev) => {
+            const updatedFormData = { ...prev, [name]: value };
+            return updatedFormData;
+        });
 
- if (name === "distributor") {
+        if (name === "distributor") {
             try {
                 const selectedDistributor = distributors.find((d) => d.code === Number(value));
 
@@ -137,8 +137,8 @@ const handleFormChange = async (e) => {
                 console.error("❌ Failed to fetch category details:", error.message);
                 setAccountTypes([]);
             }
-  }
-};
+        }
+    };
 
 
 
@@ -767,7 +767,25 @@ const handleFormChange = async (e) => {
         }
     }, [userDistributors]);
 
+    const [approvalList, setApprovalList] = useState([]);
 
+    useEffect(() => {
+        const fetchApprovalData = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('Single_Approval')
+                    .select('*');
+
+                if (error) throw error;
+                setApprovalList(data);
+            } catch (err) {
+                console.error("❌ Error fetching approval list:", err.message);
+                setApprovalList([]);
+            }
+        };
+
+        fetchApprovalData();
+    }, []);
 
 
     return (
@@ -974,94 +992,94 @@ const handleFormChange = async (e) => {
                             </div>
 
                             {/* Modal with checkboxes */}
-                               <Modal
-                                                                   show={showModal_Account}
-                                                                   onHide={() => setShowModal_Account(false)}
-                                                                   centered
-                                                                   size="lg"  // <-- Add this
-                                                               >
-                                                                   <Modal.Header
-                                                                       closeButton
-                                                                       style={{ background: "rgb(70, 137, 166)", color: "white" }}
-                                                                   >
-                                                                       <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                                                                           Select Account Type
-                                                                       </Modal.Title>
-                                                                   </Modal.Header>
-                           
-                                                                   <Modal.Body
-                                                                       style={{
-                                                                           maxHeight: "400px",
-                                                                           display: "flex",
-                                                                           flexDirection: "column",
-                                                                           padding: "1rem",
-                                                                       }}
-                                                                   >   <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
-                                                                           Debug: accountTypes.length = {accountTypes.length}
-                                                                           {accountTypes.length > 0 && (
-                                                                               <div>Sample: {accountTypes[0]?.code} - {accountTypes[0]?.name}</div>
-                                                                           )}
-                                                                       </div>
-                                                                       {/* Search Bar - fixed height, no scroll */}
-                                                                       <input
-                                                                           type="text"
-                                                                           className="form-control mb-3"
-                                                                           placeholder="Search account types..."
-                                                                           value={accountSearchTerm}
-                                                                           onChange={(e) => setAccountSearchTerm(e.target.value)}
-                                                                           style={{
-                                                                               borderColor: "#007bff",
-                                                                               flexShrink: 0,
-                                                                           }}
-                                                                       />
-                           
-                                                                       {/* Scrollable list container */}
-                                                                       <div
-                                                                           style={{
-                                                                               overflowY: "auto",
-                                                                               flexGrow: 1,
-                                                                           }}
-                                                                       >
-                                                                           {accountTypes
-                                                                               .filter((opt) =>
-                                                                                   opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase())
-                                                                               )
-                                                                               .map((opt) => (
-                                                                                   <div
-                                                                                       key={opt.code}
-                                                                                       style={{ display: "flex", alignItems: "center", padding: "6px 0", marginLeft: '10px' }}
-                                                                                   >
-                                                                                       <input
-                                                                                           type="checkbox"
-                                                                                           checked={formData.accountType.includes(opt.code)}
-                                                                                           onChange={() => toggleAccountType(opt.code)}
-                                                                                           id={`accountType-${opt.code}`}
-                                                                                           style={{
-                                                                                               width: "20px",   // default is ~16px, increase this
-                                                                                               height: "20px",
-                                                                                               transform: "scale(1.3)", // alternative way to make it bigger
-                                                                                               cursor: "pointer",
-                                                                                           }}
-                                                                                       />
-                           
-                                                                                       <label
-                                                                                           htmlFor={`accountType-${opt.code}`}
-                                                                                           style={{ marginLeft: "8px", cursor: "pointer" }}
-                                                                                       >
-                                                                                           {opt.name}
-                                                                                       </label>
-                                                                                   </div>
-                                                                               ))}
-                                                                       </div>
-                                                                   </Modal.Body>
-                           
-                           
-                                                                   <Modal.Footer>
-                                                                       <Button variant="light" onClick={() => setShowModal_Account(false)}>
-                                                                           Close
-                                                                       </Button>
-                                                                   </Modal.Footer>
-                                                               </Modal>
+                            <Modal
+                                show={showModal_Account}
+                                onHide={() => setShowModal_Account(false)}
+                                centered
+                                size="lg"  // <-- Add this
+                            >
+                                <Modal.Header
+                                    closeButton
+                                    style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                                >
+                                    <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                        Select Account Type
+                                    </Modal.Title>
+                                </Modal.Header>
+
+                                <Modal.Body
+                                    style={{
+                                        maxHeight: "400px",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        padding: "1rem",
+                                    }}
+                                >   <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                                        Debug: accountTypes.length = {accountTypes.length}
+                                        {accountTypes.length > 0 && (
+                                            <div>Sample: {accountTypes[0]?.code} - {accountTypes[0]?.name}</div>
+                                        )}
+                                    </div>
+                                    {/* Search Bar - fixed height, no scroll */}
+                                    <input
+                                        type="text"
+                                        className="form-control mb-3"
+                                        placeholder="Search account types..."
+                                        value={accountSearchTerm}
+                                        onChange={(e) => setAccountSearchTerm(e.target.value)}
+                                        style={{
+                                            borderColor: "#007bff",
+                                            flexShrink: 0,
+                                        }}
+                                    />
+
+                                    {/* Scrollable list container */}
+                                    <div
+                                        style={{
+                                            overflowY: "auto",
+                                            flexGrow: 1,
+                                        }}
+                                    >
+                                        {accountTypes
+                                            .filter((opt) =>
+                                                opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase())
+                                            )
+                                            .map((opt) => (
+                                                <div
+                                                    key={opt.code}
+                                                    style={{ display: "flex", alignItems: "center", padding: "6px 0", marginLeft: '10px' }}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.accountType.includes(opt.code)}
+                                                        onChange={() => toggleAccountType(opt.code)}
+                                                        id={`accountType-${opt.code}`}
+                                                        style={{
+                                                            width: "20px",   // default is ~16px, increase this
+                                                            height: "20px",
+                                                            transform: "scale(1.3)", // alternative way to make it bigger
+                                                            cursor: "pointer",
+                                                        }}
+                                                    />
+
+                                                    <label
+                                                        htmlFor={`accountType-${opt.code}`}
+                                                        style={{ marginLeft: "8px", cursor: "pointer" }}
+                                                    >
+                                                        {opt.name}
+                                                    </label>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </Modal.Body>
+
+
+                                <Modal.Footer>
+                                    <Button variant="light" onClick={() => setShowModal_Account(false)}>
+                                        Close
+                                    </Button>
+                                </Modal.Footer>
+                            </Modal>
 
                             {/* Submit Button */}
                         </div>
@@ -1235,56 +1253,47 @@ const handleFormChange = async (e) => {
                     </h5>
                 </div>
 
-                    <div className="card shadow-sm p-4">
-                        <h4 className="mb-3">Approval List</h4>
+                    <h4 className="mb-3">Your Approval </h4>
 
-                        <div className="table-responsive">
-                            {loading ? (
-                                <p>Loading approvals...</p>
-                            ) : (
-                                <table className="table table-bordered table-striped table-hover">
-                                    <thead className="table-success">
+                    <div className="table-responsive">
+                        {loading ? (
+                            <p>Loading approvals...</p>
+                        ) : (
+                            <table className="table table-bordered table-striped table-hover">
+                                <thead className="table-success">
+                                    <tr>
+                                        <th>Approver</th>
+                                        <th>Position</th>
+
+                                        <th>Date Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {approvalList.length === 0 ? (
                                         <tr>
-                                            <th>Approver</th>
-                                            <th>Position</th>
-                                            <th>Status</th>
-                                            <th>Type</th>
-                                            <th>Date Created</th>
+                                            <td colSpan="3" className="text-center">No approval data found.</td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        {combinedData.length === 0 ? (
-                                            <tr>
-                                                <td colSpan="5" className="text-center">
-                                                    No data found.
+                                    ) : (
+                                        approvalList.map(({ id, username, allowed_to_approve, created_at }) => (
+                                            <tr key={id}>
+                                                <td>{username}</td>
+                                                <td>
+                                                    {allowed_to_approve ? (
+                                                        <span className="badge bg-success">Allowed</span>
+                                                    ) : (
+                                                        <span className="badge bg-warning text-dark">Not Allowed</span>
+                                                    )}
                                                 </td>
+                                                <td>{created_at ? new Date(created_at).toLocaleDateString() : '-'}</td>
                                             </tr>
-                                        ) : (
-                                            combinedData.map(({ id, approver, position, status, type, created_at }) => (
-                                                <tr key={id}>
-                                                    <td>{approver}</td>
-                                                    <td>{position || '-'}</td>
-                                                    <td>
-                                                        {status ? (
-                                                            <span
-                                                                className={`badge ${status === 'Approved' ? 'bg-success' : 'bg-warning text-dark'
-                                                                    }`}
-                                                            >
-                                                                {status}
-                                                            </span>
-                                                        ) : (
-                                                            '-'
-                                                        )}
-                                                    </td>
-                                                    <td>{type || '-'}</td>
-                                                    <td>{created_at ? new Date(created_at).toLocaleDateString() : '-'}</td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
+                                        ))
+                                    )}
+                                </tbody>
+
+                            </table>
+                        )}
+
+
                         <h4 className="mt-4">Attachments</h4>
 
                         <div
