@@ -22,8 +22,8 @@ function EnhancedDatabaseInterface() {
 
 
   // Define the specific columns to show for each table (moved outside component or use useMemo)
-  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code', 'account_type', 'pwp_type', 'created_at', 'createForm'], []);
-  const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'accountType', 'pwptype', 'created_at', 'createForm'], []);
+  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code',  'pwp_type', 'created_at', 'createForm'], []);
+  const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'pwptype', 'created_at', 'createForm'], []);
 
 
   // Function to filter object keys based on allowed columns
@@ -241,36 +241,61 @@ function EnhancedDatabaseInterface() {
     }
   }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo]);
 
-  const handleEdit = async (row) => {
-    let tableName = "regular_pwp";
+ const handleEdit = async (row) => {
+  let tableName = "regular_pwp";
 
-    // check kung galing sa cover o regular
-    if (row.source === "cover_pwp" || row.source === "cover") {
-      tableName = "cover_pwp";
-    } else if (row.source === "regular_pwp" || row.source === "regular") {
-      tableName = "regular_pwp";
-    }
+  if (row.source === "cover_pwp" || row.source === "cover") {
+    tableName = "cover_pwp";
+  } else if (row.source === "regular_pwp" || row.source === "regular") {
+    tableName = "regular_pwp";
+  }
 
-    // Fetch full record with all fields
-    const { data, error } = await supabase
+  try {
+    // Fetch the full record
+    const { data: record, error: recordError } = await supabase
       .from(tableName)
-      .select("*") // lahat ng columns
+      .select("*")
       .eq("id", row.id)
       .single();
 
-    if (error) {
-      console.error("Error fetching full record:", error);
+    if (recordError) {
+      console.error("Error fetching full record:", recordError);
       return;
     }
 
-    // Pass full record to modal
+    console.log("Full Record:", record);
+
+    // Convert activity code to name
+    let activityName = null;
+    if (record.activity) {
+      const { data: activityData, error: activityError } = await supabase
+        .from("activity")
+        .select("name")
+        .eq("code", record.activity)
+        .single();
+
+      if (activityError) {
+        console.error("Error fetching activity name:", activityError);
+      } else {
+        activityName = activityData?.name || record.activity; // fallback to code if name not found
+      }
+    }
+
+    console.log("Activity Name:", activityName);
+
+    // Pass full record and activity name to modal
     setSelectedRow({
-      ...data,
-      source: row.source, // keep track kung cover or regular
+      ...record,
+      activityName, // add human-readable activity name
+      source: row.source,
     });
 
     setIsModalOpen(true);
-  };
+  } catch (err) {
+    console.error("Unexpected error fetching record:", err);
+  }
+};
+
 
   const handleSave = async (updatedData) => {
     setUpdating(true);
@@ -390,6 +415,7 @@ function EnhancedDatabaseInterface() {
       setUpdating(false);
     }
   };
+  const [modalTitle, setModalTitle] = useState("");
 
   const storedUser = localStorage.getItem('loggedInUser');
   const parsedUser = storedUser ? JSON.parse(storedUser) : null;
@@ -832,199 +858,221 @@ function EnhancedDatabaseInterface() {
               </tr>
             </thead>
             <tbody>
-              {paginatedData.map((row, index) => (
-                <tr key={row.id || index} style={{
-                  backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
-                  transition: 'background-color 0.2s ease'
-                }}>
-                  {columns.map(col => (
-                    <td key={col} style={{
-                      padding: '16px 20px',
-                      borderBottom: '1px solid #e0e0e0',
-                      fontSize: '14px',
-                      color: '#000000ff'
-                    }}>
-                      {editingId === row.id && col !== 'id' && col !== 'createdat' ? (
-                        <input
-                          type="text"
-                          value={editingData[col] || ''}
-                          onChange={(e) => setEditingData({ ...editingData, [col]: e.target.value })}
-                          style={{
-                            padding: '6px 10px',
-                            border: '1px solid #ddd',
-                            borderRadius: '4px',
-                            fontSize: '14px',
-                            width: '100%',
-                            minWidth: '120px'
-                          }}
-                        />
-                      ) : (
-                        <span style={{
-                          maxWidth: col === 'createdat' ? '150px' : '200px',
-                          display: 'inline-block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          {formatCellValue(row[col], col)}
-                        </span>
-                      )}
-                    </td>
-                  ))}
-                  <td style={{
-                    padding: '16px 20px',
-                    borderBottom: '1px solid #e0e0e0',
-                    textAlign: 'center'
-                  }}>
-                    {getStatusBadge(row.approval_status)}
-                  </td>
-                  <td style={{
-                    padding: '16px 20px',
-                    borderBottom: '1px solid #e0e0e0',
-                    textAlign: 'center'
-                  }}>
-                    {editingId === row.id ? (
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                        <button
-                          onClick={handleSave}
-                          disabled={updating}
-                          style={{
-                            padding: '6px 12px',
-                            backgroundColor: '#4caf50',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: updating ? 'not-allowed' : 'pointer',
-                            fontSize: '12px',
-                            fontWeight: '500',
-                            opacity: updating ? 0.7 : 1
-                          }}
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={handleCancel}
-                          disabled={updating}
-                          style={{
-                            padding: '6px 12px',
-                            backgroundColor: '#757575',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: updating ? 'not-allowed' : 'pointer',
-                            fontSize: '12px',
-                            fontWeight: '500',
-                            opacity: updating ? 0.7 : 1
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
+              {paginatedData
+                .slice()
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)) // Sort by newest first
+                .filter(row => {
+                  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+                  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+                  const role = currentUser?.role || "";
 
-                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                        {/* Edit Button */}
-                        <button
-                          onClick={() => handleEdit(row)}
-                          disabled={updating || row.approval_status === 'Approved'}
-                          aria-label={`Edit ${row.name}`}
-                          title="Edit"
-                          style={{
-                            border: "none",
-                            background: "none",
-                            cursor: (updating || row.approval_status === 'Approved') ? "not-allowed" : "pointer",
-                            padding: "8px",
-                            color: "#d32f2f",
-                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                            boxShadow: row.approval_status === 'Approved'
-                              ? "0 4px 6px rgba(108, 117, 125, 0.5)" // grayish for disabled
-                              : "0 4px 6px rgba(0,0,0,0.2)",
-                            borderRadius: "8px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            marginLeft: "8px",
-                            outline: "none",
-                            opacity: (updating || row.approval_status === 'Approved') ? 0.5 : 1,
-                            pointerEvents: (updating || row.approval_status === 'Approved') ? 'none' : 'auto'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (row.approval_status !== 'Approved') {
+                  if (role === 'admin') return true;
+                  return row.createForm?.toLowerCase().trim() === currentUserName;
+                })
+                .map((row, index) => (
+                  <tr
+                    key={row.id || index}
+                    style={{
+                      backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
+                      transition: 'background-color 0.2s ease'
+                    }}
+                  >
+                    {columns.map(col => (
+                      <td
+                        key={col}
+                        style={{
+                          padding: '16px 20px',
+                          borderBottom: '1px solid #e0e0e0',
+                          fontSize: '14px',
+                          color: '#000000ff'
+                        }}
+                      >
+                        {editingId === row.id && col !== 'id' && col !== 'createdat' ? (
+                          <input
+                            type="text"
+                            value={editingData[col] || ''}
+                            onChange={(e) => setEditingData({ ...editingData, [col]: e.target.value })}
+                            style={{
+                              padding: '6px 10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '4px',
+                              fontSize: '14px',
+                              width: '100%',
+                              minWidth: '120px'
+                            }}
+                          />
+                        ) : (
+                          <span
+                            style={{
+                              maxWidth: col === 'createdat' ? '150px' : '200px',
+                              display: 'inline-block',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {formatCellValue(row[col], col)}
+                          </span>
+                        )}
+                      </td>
+                    ))}
+                    <td
+                      style={{
+                        padding: '16px 20px',
+                        borderBottom: '1px solid #e0e0e0',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {getStatusBadge(row.approval_status)}
+                    </td>
+                    <td
+                      style={{
+                        padding: '16px 20px',
+                        borderBottom: '1px solid #e0e0e0',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {editingId === row.id ? (
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                          <button
+                            onClick={handleSave}
+                            disabled={updating}
+                            style={{
+                              padding: '6px 12px',
+                              backgroundColor: '#4caf50',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: updating ? 'not-allowed' : 'pointer',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              opacity: updating ? 0.7 : 1
+                            }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={handleCancel}
+                            disabled={updating}
+                            style={{
+                              padding: '6px 12px',
+                              backgroundColor: '#757575',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: updating ? 'not-allowed' : 'pointer',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              opacity: updating ? 0.7 : 1
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                          {/* Edit Button */}
+                          <button
+                            onClick={() => handleEdit(row)}
+                            disabled={updating || row.approval_status === 'Approved'}
+                            aria-label={`Edit ${row.name}`}
+                            title="Edit"
+                            style={{
+                              border: "none",
+                              background: "none",
+                              cursor: (updating || row.approval_status === 'Approved') ? "not-allowed" : "pointer",
+                              padding: "8px",
+                              color: "#d32f2f",
+                              transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                              boxShadow: row.approval_status === 'Approved'
+                                ? "0 4px 6px rgba(108, 117, 125, 0.5)"
+                                : "0 4px 6px rgba(0,0,0,0.2)",
+                              borderRadius: "8px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              marginLeft: "8px",
+                              outline: "none",
+                              opacity: (updating || row.approval_status === 'Approved') ? 0.5 : 1,
+                              pointerEvents: (updating || row.approval_status === 'Approved') ? 'none' : 'auto'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (row.approval_status !== 'Approved') {
+                                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                                e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                              e.currentTarget.style.boxShadow = row.approval_status === 'Approved'
+                                ? "0 4px 6px rgba(108, 117, 125, 0.5)"
+                                : "0 4px 6px rgba(0,0,0,0.2)";
+                            }}
+                            onMouseDown={(e) => {
+                              if (row.approval_status !== 'Approved') {
+                                e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                                e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                              }
+                            }}
+                            onMouseUp={(e) => {
+                              if (row.approval_status !== 'Approved') {
+                                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                                e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
+                              }
+                            }}
+                          >
+                            <FaEdit style={{ color: row.approval_status === 'Approved' ? "#6c757d" : "orange", fontSize: "20px" }} />
+                          </button>
+
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => setDeleteConfirm(row.id)}
+                            disabled={updating}
+                            aria-label={`Delete ${row.name}`}
+                            title="Delete"
+                            style={{
+                              border: "none",
+                              background: "none",
+                              cursor: updating ? "not-allowed" : "pointer",
+                              padding: "8px",
+                              color: "#d32f2f",
+                              transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                              boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                              borderRadius: "8px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              marginLeft: "8px",
+                              outline: "none",
+                              opacity: updating ? 0.5 : 1,
+                              pointerEvents: updating ? 'none' : 'auto'
+                            }}
+                            onMouseEnter={(e) => {
                               e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                            e.currentTarget.style.boxShadow = row.approval_status === 'Approved'
-                              ? "0 4px 6px rgba(108, 117, 125, 0.5)"
-                              : "0 4px 6px rgba(0,0,0,0.2)";
-                          }}
-                          onMouseDown={(e) => {
-                            if (row.approval_status !== 'Approved') {
+                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
+                              e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                            }}
+                            onMouseDown={(e) => {
                               e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
                               e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                            }
-                          }}
-                          onMouseUp={(e) => {
-                            if (row.approval_status !== 'Approved') {
+                            }}
+                            onMouseUp={(e) => {
                               e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
-                            }
-                          }}
-                        >
-                          <FaEdit style={{ color: row.approval_status === 'Approved' ? "#6c757d" : "orange", fontSize: "20px" }} />
-                        </button>
-
-                        {/* Delete Button */}
-                        <button
-                          onClick={() => setDeleteConfirm(row.id)}
-                          disabled={updating}
-                          aria-label={`Delete ${row.name}`}
-                          title="Delete"
-                          style={{
-                            border: "none",
-                            background: "none",
-                            cursor: updating ? "not-allowed" : "pointer",
-                            padding: "8px",
-                            color: "#d32f2f",
-                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                            borderRadius: "8px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            marginLeft: "8px",
-                            outline: "none",
-                            opacity: updating ? 0.5 : 1,
-                            pointerEvents: updating ? 'none' : 'auto'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                            e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                          }}
-                          onMouseDown={(e) => {
-                            e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                          }}
-                          onMouseUp={(e) => {
-                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
-                          }}
-                        >
-                          <FaTrash style={{ color: "red", fontSize: "20px" }} />
-                        </button>
-                      </div>
-
-                    )}
-                  </td>
-                </tr>
-              ))}
+                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
+                            }}
+                          >
+                            <FaTrash style={{ color: "red", fontSize: "20px" }} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
+
           </table>
 
 
@@ -1091,12 +1139,15 @@ function EnhancedDatabaseInterface() {
       </div>
       <EditModal
         isOpen={isModalOpen}
+        title={modalTitle}
         rowData={selectedRow}
         onClose={() => setIsModalOpen(false)}
-
+        onSave={handleSave}
+        updating={updating}
         filter="all"
-        filteredDistributors={filteredDistributors} // <-- pass this down
+        filteredDistributors={filteredDistributors}
       />
+
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div style={{

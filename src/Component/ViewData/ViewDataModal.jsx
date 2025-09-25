@@ -62,8 +62,24 @@ const ViewDataModal = ({ visaCode, onClose }) => {
         amount_display: 'Amount Display',
     };
 
+    const claimsFieldNameMap = {
+        code_pwp: 'PWP Code',
+        distributor: 'Distributor',
+        activity: 'Activity',
+        account_types: 'Account Types',
+        category_codes: 'Category Codes',
+        category_names: 'Category Names',
+        amount_budget: 'Amount Budget',
+        remaining_budget: 'Remaining Budget',
+        createForm: 'Created By',
+        notification: 'Notification',
+        created_at: 'Created At',
+    };
     const formatFieldName = (key) => {
-        const map = type === 'Cover PWP' ? coverFieldNameMap : regularFieldNameMap;
+        const map =
+            type === 'Cover PWP' ? coverFieldNameMap :
+                type === 'Regular PWP' ? regularFieldNameMap :
+                    claimsFieldNameMap;
 
         return (
             map[key] ||
@@ -73,7 +89,6 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                 .replace(/\b\w/g, (c) => c.toUpperCase())
         );
     };
-
 
     const numberFormatWithCommas = (num) => {
         if (typeof num !== 'number') {
@@ -326,13 +341,36 @@ const ViewDataModal = ({ visaCode, onClose }) => {
         }
     };
 
+    const [badOrderList, setBadOrderList] = useState([]);
     useEffect(() => {
         const fetchData = async () => {
             try {
                 let result = null;
 
-                if (visaCode.startsWith('C')) {
+                if (visaCode.startsWith('CL')) {
+                    setType('Claims PWP');
+
+                    const { data, error } = await supabase
+                        .from('Claims_pwp')
+                        .select('*')
+                        .eq('code_pwp', visaCode)
+                        .single();
+                    if (error) throw error;
+                    result = data;
+
+                    // Fetch Claims_Badorder
+                    const { data: badOrderData, error: badOrderError } = await supabase
+                        .from('Claims_Badorder')
+                        .select('*')
+                        .eq('code_pwp', visaCode)
+                        .order('id', { ascending: true });
+
+                    if (badOrderError) throw badOrderError;
+                    setBadOrderList(badOrderData || []);
+
+                } else if (visaCode.startsWith('C')) {
                     setType('Cover PWP');
+
                     const { data, error } = await supabase
                         .from('cover_pwp')
                         .select('*')
@@ -340,8 +378,10 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                         .single();
                     if (error) throw error;
                     result = data;
+
                 } else if (visaCode.startsWith('R')) {
                     setType('Regular PWP');
+
                     const { data, error } = await supabase
                         .from('regular_pwp')
                         .select('*')
@@ -349,57 +389,84 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                         .single();
                     if (error) throw error;
                     result = data;
+
+                    // Fetch associated SKU Listing from regular_sku
+                    const { data: skuData, error: skuError } = await supabase
+                        .from('regular_sku')
+                        .select('*')
+                        .eq('regular_code', visaCode)
+                        .order('id', { ascending: true });
+
+                    if (skuError) throw skuError;
+                    setSkuListing(skuData || []);
+
+                    // Fetch associated Account Budget from regular_accountlis_badget
+                    const { data: accountsData, error: accountsError } = await supabase
+                        .from('regular_accountlis_badget')
+                        .select('*')
+                        .eq('regularcode', visaCode)
+                        .order('id', { ascending: true });
+
+                    if (accountsError) throw accountsError;
+                    setAccountsBudgetList(accountsData || []);
+
+                    // ------------------------
+                    // Fetch associated Regular Badorder
+                    const { data: regularBadorderData, error: regularBadorderError } = await supabase
+                        .from('regular_badorder')
+                        .select('*')
+                        .eq('code_pwp', visaCode)
+                        .order('id', { ascending: true });
+
+                    if (regularBadorderError) throw regularBadorderError;
+                    setBadOrderList(regularBadorderData || []); // update BadOrderList with regular_badorder
                 }
 
                 setData(result);
 
-                if (result) {
-                    // Fetch related tables if Regular PWP with code
-                    if (result.regularpwpcode) {
-                        const [accBudget, skuList] = await Promise.all([
-                            fetchAccountsBudget(result.regularpwpcode),
-                            fetchSkuListing(result.regularpwpcode),
-                        ]);
-                        setAccountsBudgetList(accBudget);
-                        setSkuListing(skuList);
-                    } else {
-                        setAccountsBudgetList([]);
-                        setSkuListing([]);
-                    }
-
-                    // Fetch and set Account Type names (async)
-                    if (result.account_type || result.accountType) {
-                        await fetchAccountTypeNames(result.account_type || result.accountType);
-                    } else {
-                        setAccountTypeNames(null);
-                    }
-
-                    if (result.distributor_code || result.distributor) {
-                        await fetchDistributorName(result.distributor_code || result.distributor);
-                    } else {
-                        setDistributorName(null);
-                    }
-                    if (type === 'Regular PWP') {
-                        await resolveRegularNames(result);
-                    }
-
-                }
             } catch (error) {
                 console.error('Error fetching data:', error.message);
-
-                // Reset states on error
                 setAccountTypeNames(null);
                 setDistributorName(null);
-                setAccountsBudgetList([]);
+                setBadOrderList([]); // clear bad order table on error
                 setSkuListing([]);
+                setAccountsBudgetList([]); // clear account table on error
             }
         };
 
-        if (visaCode) {
-            fetchData();
-        }
+        if (visaCode) fetchData();
     }, [visaCode]);
 
+
+
+
+
+    const [categoryMap, setCategoryMap] = useState({});
+
+
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('category_listing')
+                    .select('sku_code, name');
+
+                if (error) throw error;
+
+                // Map sku_code to name
+                const map = {};
+                data.forEach(item => {
+                    map[item.sku_code] = item.name;
+                });
+
+                setCategoryMap(map);
+            } catch (err) {
+                console.error('Error fetching categories:', err.message);
+            }
+        };
+
+        fetchCategories();
+    }, []);
 
     if (!data) return null;
 
@@ -419,7 +486,14 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                         {/* ✅ Rest of the Form Fields */}
                         {Object.entries(data)
                             .filter(([key, value]) => {
-                                if (['objective', 'promo_scheme', 'remarks', 'notification', 'amount_badget'].includes(key)) return false;
+                                // Hide these fields specifically for Claims PWP
+                                if (
+                                    type === 'Claims PWP' &&
+                                    ['objective', 'promo_scheme', 'remarks'].includes(key)
+                                ) return false;
+
+                                // Hide these general fields for all types
+                                if (['notification', 'amount_badget'].includes(key)) return false;
 
                                 if (
                                     type === 'Regular PWP' &&
@@ -460,55 +534,58 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                                     </div>
                                 </div>
                             ))}
+
+
                     </div>
 
                     {/* 🎯 FOOTER SECTION */}
-                    <div className="modal-footer">
-                        {type === 'Cover PWP' ? (
-                            // 👉 If Cover PWP — show only main budget
-                            <div className="footer-card red">
-                                <span className="footer-label">💸 Budget</span>
-                                <span className="footer-value">
-                                    ₱ {Number(data.amount_badget || 0).toLocaleString()}
-                                </span>
-                            </div>
-                        ) : (
-                            // 👉 If Regular or others — show remaining & used
-                            <>
-                                <div className="footer-card green">
-                                    <span className="footer-label">💼 Remaining Budget</span>
-                                    <span className="footer-value">
-                                        ₱ {Number(data.remaining_balance || 0).toLocaleString()}
-                                    </span>
-                                </div>
+                    {type !== 'Claims PWP' && (
+                        <div className="modal-footer">
+                            {type === 'Cover PWP' ? (
                                 <div className="footer-card red">
-                                    <span className="footer-label">💸 Used Budget</span>
+                                    <span className="footer-label">💸 Budget</span>
                                     <span className="footer-value">
-                                        ₱ {Number(data.credit_budget || 0).toLocaleString()}
+                                        ₱ {Number(data.amount_badget || 0).toLocaleString()}
                                     </span>
                                 </div>
-                            </>
-                        )}
-                    </div>
-
-
-
-
-                    <div className="bottom-text-section">
-                        <div className="text-block">
-                            <label>{formatFieldName('objective')}</label>
-                            <div className="big-text-box">{data.objective || '-'}</div>
+                            ) : (
+                                <>
+                                    <div className="footer-card green">
+                                        <span className="footer-label">💼 Remaining Budget</span>
+                                        <span className="footer-value">
+                                            ₱ {Number(data.remaining_balance || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <div className="footer-card red">
+                                        <span className="footer-label">💸 Used Budget</span>
+                                        <span className="footer-value">
+                                            ₱ {Number(data.credit_budget || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                </>
+                            )}
                         </div>
-                        <div className="text-block">
-                            <label>{formatFieldName('promo_scheme')}</label>
-                            <div className="big-text-box">{data.promo_scheme || '-'}</div>
-                        </div>
-                        <div className="text-block" style={{ width: '100%' }}>
-                            <label>{formatFieldName('remarks')}</label>
-                            <div className="big-text-box">{data.remarks || '-'}</div>
-                        </div>
+                    )}
 
-                    </div>
+
+
+                    {type !== 'Claims PWP' && (
+                        <div className="bottom-text-section">
+                            <div className="text-block">
+                                <label>{formatFieldName('objective')}</label>
+                                <div className="big-text-box">{data.objective || '-'}</div>
+                            </div>
+                            <div className="text-block">
+                                <label>{formatFieldName('promo_scheme')}</label>
+                                <div className="big-text-box">{data.promo_scheme || '-'}</div>
+                            </div>
+                            <div className="text-block" style={{ width: '100%' }}>
+                                <label>{formatFieldName('remarks')}</label>
+                                <div className="big-text-box">{data.remarks || '-'}</div>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
                 {skuListing.length === 0 && accountsBudgetList.length > 0 && (
                     <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
@@ -553,7 +630,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
 
                 )}
 
-                {skuListing.length > 0 && (
+                {type === 'Regular PWP' && skuListing.length > 0 && (
                     <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
                         <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>SKU Listing</h4>
 
@@ -562,7 +639,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                                 width: '100%',
                                 borderCollapse: 'collapse',
                                 fontSize: '14px',
-                                minWidth: '600px', // for responsiveness with horizontal scroll
+                                minWidth: '600px',
                                 boxShadow: '0 0 5px rgba(0, 0, 0, 0.1)',
                             }}
                         >
@@ -578,10 +655,12 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                             </thead>
                             <tbody>
                                 {skuListing
-                                    .filter(row => row.sku !== 'Total:' && row.sku !== 'Total')
+                                    .filter(row => row.sku_code !== 'Total:' && row.sku_code !== 'Total')
                                     .map((row) => (
                                         <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
-                                            <td style={{ padding: '8px' }}>{row.sku || '-'}</td>
+                                            <td style={{ padding: '8px' }}>
+                                                {categoryMap[row.sku_code] || row.sku_code || '-'}
+                                            </td>
                                             <td style={{ padding: '8px' }}>
                                                 {row.srp != null ? Number(row.srp).toLocaleString() : '-'}
                                             </td>
@@ -602,7 +681,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                                     <td style={{ padding: '10px' }} colSpan="5">Total</td>
                                     <td style={{ padding: '10px' }}>
                                         {skuListing
-                                            .filter(row => row.sku !== 'Total:' && row.sku !== 'Total')
+                                            .filter(row => row.sku_code !== 'Total:' && row.sku_code !== 'Total')
                                             .reduce((acc, row) => acc + (parseFloat(row.billing_amount) || 0), 0)
                                             .toLocaleString()}
                                     </td>
@@ -610,9 +689,116 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                             </tbody>
                         </table>
                     </div>
-
                 )}
 
+
+                {type === 'Claims PWP' && badOrderList.length > 0 && (
+                    <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
+                        <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>Bad Order</h4>
+                        <table
+                            style={{
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                fontSize: '14px',
+                                minWidth: '500px',
+                                boxShadow: '0 0 5px rgba(0, 0, 0, 0.1)',
+                            }}
+                        >
+                            <thead>
+                                <tr style={{ backgroundColor: '#2575fc', color: '#fff', textAlign: 'left' }}>
+                                    <th style={{ padding: '10px' }}>Category</th>
+                                    <th style={{ padding: '10px' }}>Amount</th>
+                                    <th style={{ padding: '10px' }}>Created At</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {badOrderList.map((row) => (
+                                    <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                        <td style={{ padding: '8px' }}>{row.category}</td>
+                                        <td style={{ padding: '8px' }}>{Number(row.amount).toLocaleString()}</td>
+                                        <td style={{ padding: '8px' }}>
+                                            {row.created_at ? new Date(row.created_at).toLocaleString() : '-'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr style={{ fontWeight: 'bold', backgroundColor: '#f1f5fb' }}>
+                                    <td style={{ padding: '10px' }}>Total</td>
+                                    <td style={{ padding: '10px' }}>
+                                        {badOrderList
+                                            .reduce((sum, row) => sum + parseFloat(row.amount || 0), 0)
+                                            .toLocaleString()}
+                                    </td>
+                                    <td style={{ padding: '10px' }}></td>
+
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                )}
+
+
+                {type === 'Regular PWP' && badOrderList.length > 0 && (
+                    <div
+                        style={{
+                            marginTop: '30px',
+                            padding: '20px',
+                            borderRadius: '12px',
+                            backgroundColor: '#e6f0ff', // soft blue background
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                            overflowX: 'auto',
+                        }}
+                    >
+                        <h4 style={{ marginBottom: '20px', fontWeight: 'bold', color: '#0d6efd', textAlign: 'left' }}>
+                            Regular Bad Order List
+                        </h4>
+
+                        <table
+                            style={{
+                                width: '100%',
+                                borderCollapse: 'separate',
+                                borderSpacing: '0',
+                                minWidth: '700px',
+                                fontFamily: 'Arial, sans-serif',
+                            }}
+                        >
+                            <thead>
+                                <tr style={{ backgroundColor: '#0d6efd', color: 'white', fontWeight: 'bold', textAlign: 'center' }}>
+                                    <th style={{ padding: '12px', borderTopLeftRadius: '10px' }}>Category</th>
+                                    <th style={{ padding: '12px' }}>Amount</th>
+                                    <th style={{ padding: '12px' }}>Created At</th>
+                                    <th style={{ padding: '12px' }}>Total</th>
+                                    <th style={{ padding: '12px', borderTopRightRadius: '10px' }}>Remaining Budget</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                {badOrderList.map(({ id, category, amount, remarks, created_at, total, remaining_budget }, idx) => (
+                                    <tr
+                                        key={id}
+                                        style={{
+                                            textAlign: 'center',
+                                            fontSize: '14px',
+                                            backgroundColor: idx % 2 === 0 ? 'white' : '#f0f8ff',
+                                            transition: 'background-color 0.3s',
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#cce0ff')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = idx % 2 === 0 ? 'white' : '#f0f8ff')}
+                                    >
+                                        <td style={{ padding: '10px' }}>{category}</td>
+                                        <td style={{ padding: '10px' }}>₱{amount.toFixed(2)}</td>
+                                        <td style={{ padding: '10px' }}>{new Date(created_at).toLocaleString('en-PH')}</td>
+                                        <td style={{ padding: '10px' }}>₱{total.toFixed(2)}</td>
+                                        <td style={{ padding: '10px' }}>₱{remaining_budget.toFixed(2)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+
+
+                        </table>
+                    </div>
+                )}
 
 
 

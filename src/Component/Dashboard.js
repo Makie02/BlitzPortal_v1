@@ -17,11 +17,13 @@ const initialStatuses = [
 ];
 
 
-{initialStatuses.map(({ label, color, fontSize }) => (
+{
+  initialStatuses.map(({ label, color, fontSize }) => (
   <div key={label} style={{ color, fontSize, fontWeight: 600 }}>
     {label}
   </div>
-))}
+))
+}
 const ppeTrend = [
   { month: "Jan", Cancelled: 1 },
   { month: "Feb", Cancelled: 2 },
@@ -80,7 +82,7 @@ export default function Dashboard() {
   );
 
   async function fetchVisaData(tableName) {
-    const { data: records, error } = await supabase.from(tableName).select("Notification");
+    const { data: records, error } = await supabase.from(tableName).select("notification");
 
     if (error) {
       console.error(`Error fetching data from ${tableName}:`, error);
@@ -88,65 +90,80 @@ export default function Dashboard() {
     }
     return records || [];
   }
-  useEffect(() => {
-    async function fetchVisaAndApprovalData() {
-      try {
-        // Fetch visa records (same as before)
-        const corporateVisa = await fetchVisaData("Corporate_Visa");
-        const coverVisa = await fetchVisaData("Cover_Visa");
-        const regularVisa = await fetchVisaData("Regular_Visa");
+useEffect(() => {
+  async function fetchVisaAndApprovalData() {
+    try {
+      const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+      const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+      const role = currentUser?.role || "";
 
-        const allVisaRecords = [...corporateVisa, ...coverVisa, ...regularVisa];
-        const totalVisaCount = allVisaRecords.length;
+      // Fetch visa records
+      const coverVisa = await fetchVisaData("cover_pwp");
+      const regularVisa = await fetchVisaData("regular_pwp");
 
-        // Fetch approval history with Response including Cancelled
-        const { data: approvalRecords, error } = await supabase
-          .from("Approval_History")
-          .select("Response");
-
-        if (error) {
-          console.error("Error fetching Approval_History:", error);
-          return;
-        }
-
-        let approvedCount = 0;
-        let disapprovedCount = 0;
-        let cancelledCount = 0;
-
-        approvalRecords.forEach((record) => {
-          const response = record.Response;
-          if (response === "Approved") {
-            approvedCount++;
-          } else if (response === "Declined" || response === "Disapproved") {
-            disapprovedCount++;
-          } else if (response === "Cancelled") {
-            cancelledCount++;
-          }
-        });
-
-        const forApprovalCount = totalVisaCount - approvedCount - disapprovedCount - cancelledCount;
-
-        const statusCounts = {
-          "For Approval": forApprovalCount > 0 ? forApprovalCount : 0,
-          Approved: approvedCount,
-          Disapproved: disapprovedCount,
-          Cancelled: cancelledCount,
-        };
-
-        const updatedData = initialStatuses.map(({ label, color }) => ({
-          label,
-          value: statusCounts[label] || 0,
-          color,
-        }));
-
-        setData(updatedData);
-      } catch (error) {
-        console.error("Error fetching visa and approval data:", error);
+      // Combine visa records and filter by CreatedForm if not admin
+      let allVisaRecords = [...coverVisa, ...regularVisa];
+      if (role !== 'admin') {
+        allVisaRecords = allVisaRecords.filter(record =>
+          record.CreatedForm?.toLowerCase().trim() === currentUserName
+        );
       }
-    }
+      const totalVisaCount = allVisaRecords.length;
 
-    fetchVisaAndApprovalData();
-  }, []);
+      // Fetch approval history with Response and CreatedForm
+      const { data: approvalRecords, error } = await supabase
+        .from("Approval_History")
+        .select("Response, CreatedForm");
+
+      if (error) {
+        console.error("Error fetching Approval_History:", error);
+        return;
+      }
+
+      // Filter approval records by CreatedForm if not admin
+      const filteredApprovalRecords = role === 'admin'
+        ? approvalRecords
+        : approvalRecords.filter(record => record.CreatedForm?.toLowerCase().trim() === currentUserName);
+
+      // Count status occurrences
+      let approvedCount = 0;
+      let disapprovedCount = 0;
+      let cancelledCount = 0;
+
+      filteredApprovalRecords.forEach(record => {
+        const response = record.Response;
+        if (response === "Approved") {
+          approvedCount++;
+        } else if (response === "Declined" || response === "Disapproved") {
+          disapprovedCount++;
+        } else if (response === "Cancelled") {
+          cancelledCount++;
+        }
+      });
+
+      const forApprovalCount = totalVisaCount - approvedCount - disapprovedCount - cancelledCount;
+
+      const statusCounts = {
+        "For Approval": forApprovalCount > 0 ? forApprovalCount : 0,
+        Approved: approvedCount,
+        Disapproved: disapprovedCount,
+        Cancelled: cancelledCount,
+      };
+
+      const updatedData = initialStatuses.map(({ label, color }) => ({
+        label,
+        value: statusCounts[label] || 0,
+        color,
+      }));
+
+      setData(updatedData);
+    } catch (error) {
+      console.error("Error fetching visa and approval data:", error);
+    }
+  }
+
+  fetchVisaAndApprovalData();
+}, []);
 
   const [monthlyTrend, setMonthlyTrend] = useState([]);  // Line data for Approved + Disapproved
   const [ppeTrend, setPpeTrend] = useState([]);      // Line data for Cancelled
@@ -269,6 +286,9 @@ export default function Dashboard() {
       supabase.removeChannel(subscription);
     };
   }, [fetchRemainingBalance]);
+
+
+
 
 
   return (

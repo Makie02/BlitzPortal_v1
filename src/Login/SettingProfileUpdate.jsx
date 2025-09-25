@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import Swal from 'sweetalert2';
 
 const SettingProfileUpdate = ({ setCurrentView }) => {
   const storedUser = JSON.parse(localStorage.getItem('loggedInUser')) || {};
-  const userId = storedUser.id;
-  const Role = storedUser.Role; // 'admin' or 'user'
+  const userId = storedUser.id || storedUser.UserID;
+  const Role = storedUser.Role;
 
   const [tab, setTab] = useState('info');
   const [loading, setLoading] = useState(true);
@@ -25,390 +27,333 @@ const SettingProfileUpdate = ({ setCurrentView }) => {
     confirmPassword: '',
   });
 
+  const [showPassword, setShowPassword] = useState(false);
+
+  const toggleShowPassword = () => setShowPassword(prev => !prev);
+
   const fetchUserProfile = async () => {
     setLoading(true);
     try {
-      const userIdNum = Number(userId);
-      if (isNaN(userIdNum)) {
-        throw new Error("User ID is not a valid number");
-      }
+      const uid = Number(userId);
+      if (isNaN(uid)) throw new Error("Invalid user ID");
 
-      // Try to get by UserID first
       let { data, error } = await supabase
         .from('Account_Users')
         .select('*')
-        .eq('UserID', userIdNum)
-        .maybeSingle();  // <-- Use maybeSingle to avoid throwing if no rows
+        .or(`UserID.eq.${uid},id.eq.${uid}`)
+        .maybeSingle();
 
       if (error) throw error;
-
-      // If no data found by UserID, try fallback by email if email exists
       if (!data && storedUser.email) {
-        const { data: fallbackData, error: fallbackError } = await supabase
+        const { data: fallback, error: fallbackError } = await supabase
           .from('Account_Users')
           .select('*')
           .eq('email', storedUser.email)
           .maybeSingle();
 
         if (fallbackError) throw fallbackError;
-        data = fallbackData;
+        data = fallback;
       }
 
       if (data) {
-        setFormData((prev) => ({
+        setFormData(prev => ({
           ...prev,
-          name: data.name || prev.name,
-          username: data.username || prev.username,
-          bio: data.bio || prev.bio,
-          email: data.email || prev.email,
-          contactNumber: data.contactNumber || prev.contactNumber,
-          position: data.position || prev.position,
-          group: data.group || prev.group,
-          isActive: data.isActive ?? true,
-          profilePicture: data.profilePicture || '',
-        }));
-
-        const updatedUser = {
-          ...storedUser,
           ...data,
-          profilePicture: data.profilePicture || '',
-        };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-        // setAvatar(updatedUser.profilePicture); // if you have avatar state
-      } else {
-        console.warn('No user data found in Supabase for given UserID or email.');
+        }));
+        localStorage.setItem('user', JSON.stringify({ ...storedUser, ...data }));
       }
     } catch (err) {
-      console.error("Error fetching user data from Supabase:", err);
-      alert('Failed to fetch user data');
+      console.error("Error fetching user:", err);
+      alert("Failed to load user data.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (userId) {
-      fetchUserProfile();
-    } else {
-      setLoading(false); // no userId, so stop loading spinner
-    }
+    if (userId) fetchUserProfile();
+    else setLoading(false);
   }, [userId]);
-
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
   };
 
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
-    setPasswords((prev) => ({ ...prev, [name]: value }));
+    setPasswords(prev => ({ ...prev, [name]: value }));
   };
 
   const handleInfoSubmit = async (e) => {
     e.preventDefault();
     const uid = Number(userId);
-    if (isNaN(uid)) return alert('Invalid user ID');
-
-    console.log('Updating Account_Users for id or UserID =', uid);
-
-    let resp = await supabase
-      .from('Account_Users')
-      .select('UserID,id')  // make sure to select both for matchField check
-      .or(`UserID.eq.${uid},id.eq.${uid}`)
-      .limit(1);
-
-    if (resp.error) throw resp.error;
-    if (!resp.data.length) {
-      alert(`No user found with UserID or id = ${uid}`);
-      return;
+    if (isNaN(uid)) {
+      return Swal.fire({
+        icon: 'error',
+        title: 'Invalid User ID',
+        text: 'Your User ID is not valid.',
+      });
     }
 
-    const matchField = resp.data[0].UserID === uid ? 'UserID' : 'id';
+    const { data: match, error: matchError } = await supabase
+      .from('Account_Users')
+      .select('UserID,id')
+      .or(`UserID.eq.${uid},id.eq.${uid}`)
+      .maybeSingle();
+
+    if (matchError || !match) {
+      return Swal.fire({
+        icon: 'error',
+        title: 'User Not Found',
+        text: 'We could not find a matching user.',
+      });
+    }
+
+    const matchField = match?.UserID === uid ? 'UserID' : 'id';
 
     const { data, error } = await supabase
       .from('Account_Users')
-      .update({
-        name: formData.name,
-        username: formData.username,
-        bio: formData.bio,
-        email: formData.email,
-        contactNumber: formData.contactNumber,
-        position: formData.position,
-        group: formData.group,
-        isActive: formData.isActive,
-      })
+      .update(formData)
       .eq(matchField, uid)
       .select();
 
-    console.log('Update response:', { data, error });
-
-    if (error) throw error;
-    if (!data.length) {
-      alert('Update didn’t apply, unexpected mismatch.');
-      return;
+    if (error || !data?.length) {
+      return Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: 'Something went wrong while saving your profile.',
+      });
     }
 
-    alert('Profile updated');
-    setCurrentView('ProfileDashboard');
-
-    // --- Log RecentActivity ---
-    try {
-      const ipRes = await fetch('https://api.ipify.org?format=json');
-      const { ip } = await ipRes.json();
-
-      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-      const geo = await geoRes.json();
-      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-      const userId = currentUser?.UserID || "unknown";
-      const activityLog = {
-        userId: userId, // or just userId,
-        device: navigator.userAgent || 'Unknown Device',
-        location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
-        ip,
-        time: new Date().toISOString(),
-        action: `Updated profile information for UserID: ${uid}`,
-      };
-
-      const { error: activityError } = await supabase
-        .from('RecentActivity')
-        .insert(activityLog);
-
-      if (activityError) {
-        console.warn('Failed to log profile update:', activityError.message);
+    // ✅ Success - prompt and reload on confirm
+    Swal.fire({
+      icon: 'success',
+      title: 'Profile Updated!',
+      text: 'Your changes have been saved.',
+      confirmButtonText: 'OK',
+    }).then((result) => {
+      if (result.isConfirmed) {
+        window.location.reload(); // 🔄 refresh the page
       }
-    } catch (logError) {
-      console.warn('Error logging profile update:', logError.message);
-    }
+    });
   };
-
-
-
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-
     const { newPassword, confirmPassword } = passwords;
 
     if (!newPassword || !confirmPassword) {
-      alert('Please fill in both password fields.');
-      return;
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Missing Fields',
+        text: 'Please fill in both password fields.',
+      });
     }
+
     if (newPassword !== confirmPassword) {
-      alert('Passwords do not match.');
-      return;
+      return Swal.fire({
+        icon: 'error',
+        title: 'Password Mismatch',
+        text: 'The new passwords do not match.',
+      });
     }
 
     const uid = Number(userId);
     if (isNaN(uid)) {
-      alert('Invalid UserID');
-      return;
+      return Swal.fire({
+        icon: 'error',
+        title: 'Invalid User ID',
+        text: 'User ID is not a valid number.',
+      });
     }
 
     try {
-      // 🔹 Attempt password update
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('Account_Users')
         .update({ password: newPassword })
-        .eq('UserID', uid)
+        .or(`UserID.eq.${uid},id.eq.${uid}`)
         .select();
 
-      console.log('Update via UserID:', { data, error });
-
-      // 🔄 Fallback: try 'id' column if 'UserID' fails
-      if ((!data || data.length === 0) && !error) {
-        ({ data, error } = await supabase
-          .from('Account_Users')
-          .update({ password: newPassword })
-          .eq('id', uid)
-          .select());
-        console.log('Update via id:', { data, error });
+      if (error || !data?.length) {
+        return Swal.fire({
+          icon: 'error',
+          title: 'Update Failed',
+          text: 'Could not update password. Please try again later.',
+        });
       }
 
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error('No rows were updated. Check your equality column and value.');
-      }
-
-      // ✅ Password updated
-      alert('Password updated successfully!');
+      // Clear password fields
       setPasswords({ newPassword: '', confirmPassword: '' });
-      setTab('info');
 
-      // 🔹 Log into RecentActivity
-      try {
-        const ipRes = await fetch('https://api.ipify.org?format=json');
-        const { ip } = await ipRes.json();
+      // Prompt user with success and options
+      const result = await Swal.fire({
+        icon: 'success',
+        title: 'Password Changed!',
+        text: 'Your password has been updated.',
+        showCancelButton: true,
+        confirmButtonText: 'Log out',
+        cancelButtonText: 'Stay here',
+        reverseButtons: true,
+      });
 
-        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-        const geo = await geoRes.json();
-        const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-        const userId = currentUser?.UserID || "unknown";
-        const activityLog = {
-          userId: userId, // or just userId,
-          device: navigator.userAgent || "Unknown Device",
-          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
-          ip,
-          time: new Date().toISOString(),
-          action: `Changed password for UserID: ${uid}`,
-        };
-
-        const { error: activityError } = await supabase
-          .from("RecentActivity")
-          .insert(activityLog);
-
-        if (activityError) {
-          console.warn("Failed to log password change:", activityError.message);
-        }
-      } catch (logError) {
-        console.warn("Logging error:", logError.message);
+      if (result.isConfirmed) {
+        // 🔐 Log out user
+        localStorage.removeItem('loggedInUser');
+        localStorage.removeItem('user');
+        window.location.href = '/login'; // or your login route
+      } else {
+        // 🔄 Stay on page — you can also refetch user data if needed
+        setTab('info');
+        fetchUserProfile(); // optional: refresh user info
       }
 
     } catch (err) {
       console.error(err);
-      alert('Failed to update password:\n' + err.message);
+      Swal.fire({
+        icon: 'error',
+        title: 'Unexpected Error',
+        text: err.message || 'Something went wrong.',
+      });
     }
   };
 
   const handleDrop = async (e) => {
-  e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (file) await uploadProfilePicToTable(file);
-};
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) await uploadProfilePicToTable(file);
+  };
 
-const handleProfilePicUpload = async (e) => {
-  const file = e.target.files[0];
-  if (file) await uploadProfilePicToTable(file);
-};
+  const handleProfilePicUpload = async (e) => {
+    const file = e.target.files[0];
+    if (file) await uploadProfilePicToTable(file);
+  };
 
-const uploadProfilePicToTable = async (file) => {
-  if (!userId) {
-    alert("User ID missing!");
-    return;
-  }
+  const toBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+    });
 
-  // Convert file to base64
-  const base64 = await toBase64(file);
+  const uploadProfilePicToTable = async (file) => {
+    const base64 = await toBase64(file);
+    setFormData(prev => ({ ...prev, profilePicture: base64 }));
 
-  if (!base64) {
-    alert("Failed to convert image.");
-    return;
-  }
-
-  // Set in form for preview
-  setFormData((prev) => ({
-    ...prev,
-    profilePicture: base64,
-  }));
-
-  // Save to Supabase table
-  await updateProfilePictureInDatabase(base64);
-};
-
-// Helper to convert file to base64
-const toBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-  });
-
-const updateProfilePictureInDatabase = async (base64Image) => {
-  try {
     const { error } = await supabase
-      .from("Account_Users")
-      .update({ profilePicture: base64Image })
-      .eq("id", userId); // Change to 'UserID' if needed
+      .from('Account_Users')
+      .update({ profilePicture: base64 })
+      .or(`UserID.eq.${userId},id.eq.${userId}`);
 
-    if (error) {
-      console.error("DB update error:", error);
-      alert("Failed to save image to database.");
-    } else {
-      console.log("Profile picture saved in DB.");
-    }
-  } catch (err) {
-    console.error("Unexpected error:", err);
-    alert("Unexpected error while saving image.");
-  }
-};
-
+    if (error) alert('Failed to save image');
+  };
 
   if (loading) return <div>Loading...</div>;
 
   return (
-    <div style={styles.page}>
+    <div
+      style={{
+        maxWidth: 1200,
+        margin: '40px auto',
+        padding: 20,
+        fontFamily: 'Segoe UI, sans-serif',
+        backgroundColor: '#fff',
+        borderRadius: 10,
+        boxShadow: '0 8px 30px rgba(0,0,0,0.1)',
+      }}
+    >
       <h2>Settings</h2>
 
-      {/* Tab Buttons */}
-      <div style={styles.tabs}>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         <button
           onClick={() => setTab('info')}
-          style={tab === 'info' ? styles.activeTab : styles.tab}
+          style={{
+            padding: '10px 20px',
+            borderRadius: 6,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: tab === 'info' ? '#1877f2' : '#eee',
+            color: tab === 'info' ? '#fff' : '#000',
+          }}
         >
           Edit Info
         </button>
         <button
           onClick={() => setTab('password')}
-          style={tab === 'password' ? styles.activeTab : styles.tab}
+          style={{
+            padding: '10px 20px',
+            borderRadius: 6,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: tab === 'password' ? '#1877f2' : '#eee',
+            color: tab === 'password' ? '#fff' : '#000',
+          }}
         >
           Change Password
         </button>
       </div>
 
-      {/* Tab Content */}
-      {tab === 'info' ? (
-        <form onSubmit={handleInfoSubmit} style={styles.form}>
-          <div style={styles.profilePicWrapper}>
+      {/* Profile Picture Upload */}
+      {tab === 'info' && (
+        <form onSubmit={handleInfoSubmit}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 30 }}>
             <label
-              htmlFor="profile-upload"
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
               style={{
-                ...styles.dropZone,
+                height: 160,
+                width: 160,
+                borderRadius: '50%',
+                border: '2px dashed #aaa',
+                backgroundColor: '#f5f5f5',
                 backgroundImage: formData.profilePicture
                   ? `url(${formData.profilePicture})`
                   : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
               }}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
             >
               {!formData.profilePicture && (
-                <div style={styles.uploadText}>
+                <div style={{ textAlign: 'center', color: '#555' }}>
                   <strong>Upload Profile Picture</strong>
                   <p>Click or drag image here</p>
                 </div>
               )}
               <input
-                id="profile-upload"
                 type="file"
                 accept="image/*"
                 onChange={handleProfilePicUpload}
-                style={styles.fileInput}
+                style={{
+                  position: 'absolute',
+                  width: '100%',
+                  height: '100%',
+                  opacity: 0,
+                  cursor: 'pointer',
+                }}
               />
             </label>
           </div>
 
-
-
+          {/* Info Fields Grid */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '20px 40px',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 20,
             }}
           >
-            {[
-              'name',
-              'username',
-              'bio',
-              'email',
-              'contactNumber',
-              'position',
-              'group',
-            ].map((field) => (
-              <label
-                key={field}
-                style={{ display: 'flex', flexDirection: 'column', fontWeight: '500' }}
-              >
+            {['name', 'username', 'email', 'contactNumber', 'bio'].map((field) => (
+              <label key={field} style={{ display: 'flex', flexDirection: 'column', fontWeight: 500 }}>
                 {field.charAt(0).toUpperCase() + field.slice(1)}:
                 {field === 'bio' ? (
                   <textarea
@@ -416,12 +361,11 @@ const updateProfilePictureInDatabase = async (base64Image) => {
                     value={formData[field]}
                     onChange={handleChange}
                     style={{
-                      width: '100%',
                       padding: 10,
                       fontSize: 16,
                       borderRadius: 6,
                       border: '1px solid #ccc',
-                      height: 80,
+                      minHeight: 80,
                     }}
                   />
                 ) : (
@@ -431,7 +375,6 @@ const updateProfilePictureInDatabase = async (base64Image) => {
                     value={formData[field]}
                     onChange={handleChange}
                     style={{
-                      width: '100%',
                       padding: 10,
                       fontSize: 16,
                       borderRadius: 6,
@@ -443,168 +386,115 @@ const updateProfilePictureInDatabase = async (base64Image) => {
             ))}
           </div>
 
-          <label style={styles.checkboxLabel}>
+          <label style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
             <input
               type="checkbox"
               name="isActive"
               checked={formData.isActive}
               onChange={handleChange}
             />
-            {' '}Active User
+            Active User
           </label>
 
-          <div style={{ marginTop: 20 }}>
-            <button type="submit" style={styles.saveButton}>Save</button>
-            <button
-              type="button"
-              style={styles.cancelButton}
-              onClick={() => setCurrentView('ProfileDashboard')}
-            >
+          <div style={{ marginTop: 20, display: 'flex', gap: 10 }}>
+            <button type="submit" style={{
+              backgroundColor: '#1877f2',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 16px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 16,
+            }}>
+              Save
+            </button>
+            <button type="button" onClick={() => setCurrentView('ProfileDashboard')} style={{
+              backgroundColor: '#aaa',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 16px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 16,
+            }}>
               Cancel
             </button>
           </div>
         </form>
-      ) : (
-        <form onSubmit={handlePasswordSubmit} style={styles.form}>
+      )}
+
+      {tab === 'password' && (
+        <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <label>
             New Password:
-            <input
-              name="newPassword"
-              type="password"
-              value={passwords.newPassword}
-              onChange={handlePasswordChange}
-              style={styles.input}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                name="newPassword"
+                type={showPassword ? 'text' : 'password'}
+                value={passwords.newPassword}
+                onChange={handlePasswordChange}
+                required
+                style={{
+                  width: '100%',
+                  padding: 10,
+                  fontSize: 16,
+                  borderRadius: 6,
+                  border: '1px solid #ccc',
+                }}
+              />
+            </div>
           </label>
+
           <label>
             Confirm Password:
-            <input
-              name="confirmPassword"
-              type="password"
-              value={passwords.confirmPassword}
-              onChange={handlePasswordChange}
-              style={styles.input}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                name="confirmPassword"
+                type={showPassword ? 'text' : 'password'}
+                value={passwords.confirmPassword}
+                onChange={handlePasswordChange}
+                required
+                style={{
+                  width: '100%',
+                  padding: 10,
+                  fontSize: 16,
+                  borderRadius: 6,
+                  border: '1px solid #ccc',
+                }}
+              />
+              <span
+                onClick={toggleShowPassword}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  cursor: 'pointer',
+                  color: '#1877f2',
+                  fontSize: 14,
+                  marginTop: 10,
+                }}
+              >
+                {showPassword ? <FaEyeSlash /> : <FaEye />} Show Password
+              </span>
+            </div>
           </label>
-          <div style={{ marginTop: 20 }}>
-            <button type="submit" style={styles.saveButton}>
-              Change Password
-            </button>
-          </div>
+
+          <button type="submit" style={{
+            backgroundColor: '#1877f2',
+            color: '#fff',
+            border: 'none',
+            padding: '10px 16px',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 16,
+            marginTop: 20,
+          }}>
+            Change Password
+          </button>
         </form>
       )}
     </div>
   );
-};
-
-const styles = {
-  page: {
-    maxWidth: 600,
-    margin: '40px auto',
-    padding: 20,
-    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-    color: '#222',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    boxShadow: '0 8px 30px rgba(0,0,0,0.1)',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 15,
-  },
-  input: {
-    width: '100%',
-    padding: 10,
-    fontSize: 16,
-    borderRadius: 6,
-    border: '1px solid #ccc',
-  },
-  saveButton: {
-    backgroundColor: '#1877f2',
-    color: 'white',
-    border: 'none',
-    padding: '10px 16px',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 16,
-    marginRight: 10,
-  },
-  cancelButton: {
-    backgroundColor: '#aaa',
-    color: 'white',
-    border: 'none',
-    padding: '10px 16px',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 16,
-  },
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    fontWeight: '500',
-  },
-  tabs: {
-    display: 'flex',
-    gap: 10,
-    marginBottom: 20,
-  },
-  tab: {
-    padding: '10px 20px',
-    backgroundColor: '#eee',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-  },
-  activeTab: {
-    padding: '10px 20px',
-    backgroundColor: '#1877f2',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-  },
-  profilePicWrapper: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginBottom: 30,
-  },
-
-  dropZone: {
-    height: 160,
-    width: 160,
-    borderRadius: '50%',
-    border: '2px dashed #aaa',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    backgroundColor: '#f5f5f5',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    position: 'relative',
-    transition: 'border-color 0.3s ease-in-out',
-  },
-
-  uploadText: {
-    textAlign: 'center',
-    fontSize: 14,
-    color: '#555',
-    padding: 10,
-  },
-
-  fileInput: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    height: '100%',
-    width: '100%',
-    opacity: 0,
-    cursor: 'pointer',
-  },
-
 };
 
 export default SettingProfileUpdate;

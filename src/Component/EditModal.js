@@ -1,9 +1,35 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
+import { FaSearch } from "react-icons/fa";  // Import FaSearch
+import { Modal, } from "react-bootstrap"; // Import Modal and Button from react-bootstrap
+import Swal from 'sweetalert2';
 
-function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistributors = [] }) {
+import { Dropdown, DropdownButton, ButtonGroup } from 'react-bootstrap'
+function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
+
+
+  const [filteredDistributors, setFilteredDistributors] = useState([]);
+
+  useEffect(() => {
+    async function fetchDistributors() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("distributors")
+        .select("id, name, code, description")
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching distributors:", error);
+      } else {
+        setFilteredDistributors(data);
+      }
+      setLoading(false);
+    }
+
+    fetchDistributors();
+  }, []);
 
   useEffect(() => {
     if (isOpen && rowData) {
@@ -34,11 +60,12 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
 
 
   const [showModal_Account, setShowModal_Account] = useState(false);
+  const [originalTotalBudget, setOriginalTotalBudget] = useState(0);
 
   const [showModalCategory, setShowModalCategory] = useState({ accountType: false, account_type: false });
   const [categorySearchTerm, setCategorySearchTerm] = useState("");
   const [categoryDetails, setCategoryDetails] = useState([]);
-
+  const [originalTotalBilling, setOriginalTotalBilling] = useState(0);
   // Fetch all categories initially
   useEffect(() => {
     const fetchCategories = async () => {
@@ -66,16 +93,18 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
   };
 
   const toggleCategoryType = (name, code) => {
-    let updatedAccountTypes = [...formData.accountType];
+    // Ensure that the accountType or account_type field is always an array
+    let updatedAccountTypes = Array.isArray(formData[name]) ? [...formData[name]] : [];
+
     if (updatedAccountTypes.includes(code)) {
-      // Remove
+      // If the code is already in the array, remove it
       updatedAccountTypes = updatedAccountTypes.filter((c) => c !== code);
       // Also remove from budgetList
       setBudgetList((prev) => prev.filter((item) => item.account_code !== code));
     } else {
-      // Add
+      // If the code is not in the array, add it
       updatedAccountTypes.push(code);
-      // Add new account to budgetList with default budget 0
+      // Add the new account to the budgetList with a default budget of 0
       const newAccount = categoryDetails.find((cat) => cat.code === code);
       if (newAccount) {
         setBudgetList((prev) => [
@@ -91,17 +120,20 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
       }
     }
 
+    // Update formData with the modified accountType or account_type
     setFormData((prev) => ({
       ...prev,
-      accountType: updatedAccountTypes,
+      [name]: updatedAccountTypes,  // Dynamically update based on 'name'
     }));
   };
 
 
 
+
+
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerms, setSearchTerms] = useState("");
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   useEffect(() => {
     const fetchCategories = async () => {
@@ -122,8 +154,8 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
   }, []);
   const filteredCategories = categories.filter(
     (cat) =>
-      cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cat.code.toLowerCase().includes(searchTerm.toLowerCase())
+      cat.name.toLowerCase().includes(searchTerms.toLowerCase()) ||
+      cat.code.toLowerCase().includes(searchTerms.toLowerCase())
   );
   const handleOpenCategoryModal = () => {
     setShowCategoryModal(true);
@@ -135,7 +167,8 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
   };
   const handleCategoryChange = (category, isChecked) => {
     setFormData((prev) => {
-      let newCategoryNames = prev.categoryName ? [...prev.categoryName] : [];
+      // Fix categoryName to be proper array
+      let newCategoryNames = fixCategoryNameInput(prev.categoryName);
       let newCategoryCodes = prev.categoryCode ? [...prev.categoryCode] : [];
 
       if (isChecked) {
@@ -153,22 +186,39 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
       };
     });
   };
+
   // Helper function to safely parse categoryName string to array
-  const parseCategoryName = (value) => {
-    if (Array.isArray(value)) return value; // already array
-    if (typeof value === "string") {
+  const fixCategoryNameInput = (value) => {
+    if (Array.isArray(value)) {
+      // Check if it's an array of single characters forming a JSON string
+      if (value.every((char) => typeof char === "string" && char.length === 1)) {
+        try {
+          const str = value.join(''); // join chars to string
+          const parsed = JSON.parse(str);
+          if (Array.isArray(parsed)) return parsed;
+          if (typeof parsed === "string") return [parsed];
+          return [];
+        } catch {
+          // failed parsing, fallback to original array (probably incorrect format)
+          return value;
+        }
+      } else {
+        // It's already an array of category names
+        return value;
+      }
+    } else if (typeof value === "string") {
       try {
         const parsed = JSON.parse(value);
         if (Array.isArray(parsed)) return parsed;
-        // If parsed is not array, return as single element array
-        return [parsed];
-      } catch (e) {
-        // If JSON.parse fails, return string in an array to display
+        if (typeof parsed === "string") return [parsed];
+        return [];
+      } catch {
         return [value];
       }
     }
     return [];
   };
+
 
 
 
@@ -266,7 +316,9 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
   const [budgetList, setBudgetList] = useState([]);
   const [budgetLoading, setBudgetLoading] = useState(false);
   // Assume you have these in your component's state:
-
+  const currentTotalBudget = budgetList.reduce((sum, item) => sum + Number(item.budget || 0), 0);
+  const budgetDifference = currentTotalBudget - originalTotalBudget;
+  const adjustedRemainingBalanceForBudget = Number(formData?.initial_remaining_balance || 0) - budgetDifference;
   // Handler for editing budget value
 
   // Assuming you get current remaining_balance value from formData or somewhere else:
@@ -319,6 +371,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
   useEffect(() => {
     if (!formData?.regularpwpcode) {
       setBudgetList([]);
+      setOriginalTotalBudget(0); // Reset when no code
       return;
     }
 
@@ -332,8 +385,14 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
       if (error) {
         console.error("Error fetching budget list:", error.message);
         setBudgetList([]);
+        setOriginalTotalBudget(0);
       } else {
         setBudgetList(data);
+
+        // Calculate and store original total budget
+        const originalBudgetTotal = data.reduce((sum, item) => sum + Number(item.budget || 0), 0);
+        setOriginalTotalBudget(originalBudgetTotal);
+        console.log("Original Total Budget:", originalBudgetTotal);
       }
       setBudgetLoading(false);
     };
@@ -343,206 +402,805 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", filteredDistribut
 
   const showBudgetTable = formData.accounts === true; // or any logic you want
 
-const handleSubmit = async () => {
-  setUpdating(true);
-  setError(null);
+  //  const handleSubmit = async () => {
+  //     setUpdating(true);
+  //     setError(null);
 
-  try {
-    // 1. Upsert budgets in regular_accountlis_badget (same as before)
-    for (const budgetItem of budgetList) {
-      const { account_code, account_name } = budgetItem;
-      const budget = Number(budgetItem.budget) || 0;
+  //     try {
+  //       const table = formData.source;
+  //       const updatedData = { ...formData };
+  //       delete updatedData.source;
 
-      const { data: existingRows, error: selectError } = await supabase
-        .from('regular_accountlis_badget')
+  //       // Code mapping
+  //       if (filter === "all" && updatedData.code) {
+  //         if (table === "regular_pwp") {
+  //           updatedData.regularpwpcode = updatedData.code;
+  //         } else if (table === "cover_pwp") {
+  //           updatedData.cover_code = updatedData.code;
+  //         }
+  //         delete updatedData.code;
+  //       }
+
+  //       // Remove fields that don't exist in table schema:
+  //       if (table === "cover_pwp") {
+  //         // cover_pwp has distributor_code, NOT distributor
+  //         delete updatedData.distributor;
+  //       } else if (table === "regular_pwp") {
+  //         // regular_pwp has distributor, NOT distributor_code
+  //         delete updatedData.distributor_code;
+  //       }
+
+  //       const { error: updateError } = await supabase
+  //         .from(table)
+  //         .update(updatedData)
+  //         .eq("id", formData.id);
+
+  //       if (updateError) {
+  //         setError(`Update Error: ${updateError.message}`);
+  //       } else {
+  //         alert("Record updated successfully!");
+  //         onClose(); // close modal
+  //       }
+  //     } catch (err) {
+  //       setError(`Unexpected error: ${err.message}`);
+  //     } finally {
+  //       setUpdating(false);
+  //     }
+  //   };
+  const submitRegularPWP = async () => {
+    try {
+      // Create the regular PWP data from the form
+      const regularPwpData = {
+        regularpwpcode: formData.regularpwpcode,
+        pwptype: formData.pwptype,
+        distributor: formData.distributor,
+        accountType: formData.accountType,
+        categoryName: formData.categoryName,
+        activity: formData.activity,
+        objective: formData.objective,
+        promoScheme: formData.promoScheme,
+        activityDurationFrom: formData.activityDurationFrom,
+        activityDurationTo: formData.activityDurationTo,
+        isPartOfCoverPwp: formData.isPartOfCoverPwp,
+        coverPwpCode: formData.coverPwpCode,
+        amountbadget: formData.amountbadget,
+        remaining_balance: formData.remaining_balance,
+        credit_budget: formData.credit_budget,
+        sku: formData.sku,
+        accounts: formData.accounts,
+        amount_display: formData.amount_display,
+        remarks: formData.remarks,
+        created_at: new Date().toISOString(),
+      };
+
+      // Ensure that required fields are valid
+      if (!formData.regularpwpcode) {
+        throw new Error("Regular PWP Code is required but missing.");
+      }
+
+      // Check if the regular_pwp record already exists
+      const { data: existingRegularPwp, error: selectRegularError } = await supabase
+        .from('regular_pwp')
         .select('id')
-        .eq('regularcode', formData.regularpwpcode)
-        .eq('account_code', account_code);
+        .eq('regularpwpcode', formData.regularpwpcode);
 
-      if (selectError) throw new Error(`Error checking budget: ${selectError.message}`);
+      if (selectRegularError) {
+        throw new Error(`Error checking regular_pwp: ${selectRegularError.message}`);
+      }
 
-      if (existingRows.length > 0) {
-        const budgetId = existingRows[0].id;
-        const { error: updateError } = await supabase
-          .from('regular_accountlis_badget')
-          .update({ budget })
-          .eq('id', budgetId);
+      if (existingRegularPwp.length > 0) {
+        // Update the existing record if it exists
+        const regularPwpId = existingRegularPwp[0].id;
+        const { error: updateRegularError } = await supabase
+          .from('regular_pwp')
+          .update(regularPwpData)
+          .eq('id', regularPwpId);
 
-        if (updateError) throw new Error(`Error updating budget for ${account_code}: ${updateError.message}`);
+        if (updateRegularError) {
+          throw new Error(`Error updating regular_pwp: ${updateRegularError.message}`);
+        }
+
       } else {
-        const { error: insertError } = await supabase
-          .from('regular_accountlis_badget')
-          .insert([{
-            regularcode: formData.regularpwpcode,
-            account_code,
-            account_name,
-            budget,
-          }]);
+        // Insert a new record if it doesn't exist
+        const { error: insertRegularError } = await supabase
+          .from('regular_pwp')
+          .insert([regularPwpData]);
 
-        if (insertError) throw new Error(`Error inserting budget for ${account_code}: ${insertError.message}`);
+        if (insertRegularError) {
+          throw new Error(`Error inserting regular_pwp: ${insertRegularError.message}`);
+        }
+
+        alert('Regular PWP record created successfully!');
       }
+
+      // Close the modal after successful operation
+      onClose(); // Call onClose here to close the modal
+
+    } catch (err) {
+      alert(`Error: ${err.message}`); // Handle the error and show an alert
+      console.error("Error in submitRegularPWP:", err); // Log error for debugging
     }
+  };
 
-    // 2. Calculate total account budget
-    const accountBudget = budgetList.reduce((sum, item) => sum + (Number(item.budget) || 0), 0);
 
-    // 3. Process SKU list and calculate skuBudget
-    let skuBudget = 0;
-    for (const skuItem of skuList) {
-      if (skuItem.row_type === 'total') continue;
+  const submitCoverPWP = async () => {
+    try {
+      const coverPwpData = {
+        cover_code: formData.cover_code,
+        distributor_code: formData.distributor_code,
+        account_type: formData.account_type,
+        amount_badget: formData.amount_badget,
+        pwp_type: formData.pwp_type,
+        objective: formData.objective,
+        details: formData.details,
+        remarks: formData.remarks,
+        created_at: new Date().toISOString(), // Current date
+      };
 
-      const { id, sku, srp, qty, uom, discount } = skuItem;
-      const srpNum = Number(srp) || 0;
-      const qtyNum = Number(qty) || 0;
-      const discountNum = Number(discount) || 0;
+      // Ensure cover_code and other required fields are valid
+      if (!formData.cover_code) {
+        throw new Error("Cover code is required but missing.");
+      }
 
-      const billing_amount = (srpNum * qtyNum) - discountNum;
-      skuBudget += billing_amount;
+      // Check if the cover_pwp record already exists for the cover_code
+      const { data: existingCoverPwp, error: selectCoverError } = await supabase
+        .from('cover_pwp')
+        .select('id')
+        .eq('cover_code', formData.cover_code);
 
-      if (id) {
-        const { error: skuUpdateError } = await supabase
-          .from('regular_sku_listing')
-          .update({ sku, srp: srpNum, qty: qtyNum, uom, discount: discountNum, billing_amount })
-          .eq('id', id);
+      if (selectCoverError) {
+        throw new Error(`Error checking cover_pwp: ${selectCoverError.message}`);
+      }
 
-        if (skuUpdateError) throw new Error(`Error updating SKU ID ${id}: ${skuUpdateError.message}`);
+      if (existingCoverPwp.length > 0) {
+        // Update the existing record if it exists
+        const coverPwpId = existingCoverPwp[0].id;
+        const { error: updateCoverError } = await supabase
+          .from('cover_pwp')
+          .update(coverPwpData)
+          .eq('id', coverPwpId);
+
+        if (updateCoverError) {
+          throw new Error(`Error updating cover_pwp: ${updateCoverError.message}`);
+        }
+
+        alert('Cover PWP record updated successfully!');
       } else {
-        const { error: skuInsertError } = await supabase
-          .from('regular_sku_listing')
-          .insert([{
-            sku,
-            srp: srpNum,
-            qty: qtyNum,
-            uom,
-            discount: discountNum,
-            billing_amount,
-            regular_code: formData.regularpwpcode,
-            row_type: 'regular',
-          }]);
+        // Insert a new record if it doesn't exist
+        const { error: insertCoverError } = await supabase
+          .from('cover_pwp')
+          .insert([coverPwpData]);
 
-        if (skuInsertError) throw new Error(`Error inserting new SKU (${sku}): ${skuInsertError.message}`);
+        if (insertCoverError) {
+          throw new Error(`Error inserting cover_pwp: ${insertCoverError.message}`);
+        }
+
+        alert('Cover PWP record created successfully!');
       }
+
+      // Close the modal after successful insertion or update
+      onClose(); // Call onClose here to close the modal
+
+    } catch (err) {
+      // Handle any errors during submission
+      alert(`Error: ${err.message}`); // Optionally, you can show an alert for errors
+      console.error("Error in submitCoverPWP:", err); // Log error for debugging purposes
     }
+  };
 
-    // 4. Calculate total credit budget
-    const creditBudget = accountBudget + skuBudget;
-
-    // Use initial_remaining_balance if available, otherwise remaining_balance
-    const initialRemainingBalance = Number(formData.initial_remaining_balance ?? formData.remaining_balance) || 0;
-
-    // Calculate updated remaining balance
-    const updatedRemainingBalance = initialRemainingBalance - creditBudget;
-
-    // 5. Determine table and update data based on formData.source
-    const table = formData.source || 'regular_pwp'; // fallback to regular_pwp
-
-    // Prepare data to update
-    const updatedData = {
-      remaining_balance: updatedRemainingBalance,
-      credit_budget: creditBudget,
-    };
-
-    // Handle code mapping (like in your old handleSave)
-    if (filter === "all" && formData.code) {
-      if (table === "regular_pwp") {
-        updatedData.regularpwpcode = formData.code;
-      } else if (table === "cover_pwp") {
-        updatedData.cover_code = formData.code;
+  const handleSaveAccountstable = async () => {
+    try {
+      if (!formData.regularpwpcode) {
+        throw new Error('Regular PWP Code is required but missing.');
       }
+
+      const accountData = budgetList.map((item) => ({
+        id: item.id,
+        account_code: item.account_code,
+        account_name: item.account_name,
+        budget: item.budget,
+        total_budget: item.budget,
+      }));
+
+      let accountsUpdated = true;
+
+      for (const account of accountData) {
+        const { data: existingAccounts, error: selectAccountError } = await supabase
+          .from('regular_accountlis_badget')
+          .select('id, account_code, regularcode, total_budget')
+          .eq('account_code', account.account_code)
+          .eq('regularcode', formData.regularpwpcode);
+
+        if (selectAccountError) {
+          throw new Error(`Error checking account budget: ${selectAccountError.message}`);
+        }
+
+        if (existingAccounts && existingAccounts.length > 0) {
+          const { error: updateError } = await supabase
+            .from('regular_accountlis_badget')
+            .update({
+              account_code: account.account_code,
+              account_name: account.account_name,
+              budget: account.budget,
+              total_budget: account.total_budget,
+            })
+            .eq('id', existingAccounts[0].id);
+
+          if (updateError) {
+            accountsUpdated = false;
+            console.error(`Error updating account with account_code ${account.account_code}: ${updateError.message}`);
+          } else {
+            console.log(`Account with account_code ${account.account_code} updated successfully`);
+          }
+        } else {
+          console.log(`No matching account found for account_code ${account.account_code}, skipping update.`);
+        }
+      }
+
+      return accountsUpdated; // <-- Return whether all accounts updated successfully
+
+    } catch (err) {
+      setError(`Error saving accounts: ${err.message}`);
+      console.error('Error in handleSaveAccountstable:', err);
+      return false;  // Return false on error
     }
+  };
 
-    // Remove fields that don't exist in table schema
-    if (table === "cover_pwp") {
-      // cover_pwp has distributor_code, NOT distributor
-      delete updatedData.distributor;
-    } else if (table === "regular_pwp") {
-      // regular_pwp has distributor, NOT distributor_code
-      delete updatedData.distributor_code;
+
+
+
+  const handleSubmit = async () => {
+    setUpdating(true);
+    setError(null);
+
+    try {
+      if (formData.cover_code) {
+        await submitCoverPWP();
+
+        await Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: 'Success Update all data',
+        }).then(() => {
+          window.location.reload();
+        });
+
+        return;
+      }
+
+      const accountsUpdated = await handleSaveAccountstable(); // get success flag
+      await submitSkuTable();
+      await submitRegularPWP();
+
+      await submitAccountToRegular(accountsUpdated);  // pass flag here
+
+      await submitSkuTotalToRegular(
+        formData.regularpwpcode,
+        adjustedRemainingBalance,
+        currentTotalBilling,
+        formValues.amountbadget
+      );
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: 'Success Update all data',
+      });
+
+    } catch (err) {
+      console.error('❌ Submit error:', err);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Submission Failed',
+        text: err.message || 'Something went wrong during submission.',
+      });
+      setError(`Submit Error: ${err.message}`);
+    } finally {
+      setUpdating(false);
     }
+  };
 
-    if (!formData.id) throw new Error("No ID found for updating");
+  const submitAccountToRegular = async (accountsUpdated) => {
+    try {
+      if (!formData.regularpwpcode) {
+        throw new Error('Regular PWP Code is required but missing.');
+      }
 
-    const { error: updateParentError } = await supabase
-      .from(table)
-      .update(updatedData)
-      .eq('id', formData.id);
+      if (!accountsUpdated) {
+        throw new Error('One or more account updates failed, cannot update regular PWP.');
+      }
 
-    if (updateParentError) throw new Error(`Error updating ${table}: ${updateParentError.message}`);
+      console.log('🟦 remaining_balance:', adjustedRemainingBalanceForBudget);
+      console.log('🟦 currentTotalBudget:', currentTotalBudget);
 
-    alert('All data saved successfully!');
-    onClose();
+      const { data: pwpData, error: pwpSelectError } = await supabase
+        .from('regular_pwp')
+        .select('id')
+        .eq('regularpwpcode', formData.regularpwpcode);
 
-  } catch (err) {
-    setError(`Submit Error: ${err.message}`);
-  } finally {
-    setUpdating(false);
-  }
-};
+      if (pwpSelectError) {
+        throw new Error(`Error checking regular PWP: ${pwpSelectError.message}`);
+      }
 
+      if (pwpData && pwpData.length > 0) {
+        const { error: updatePwpError } = await supabase
+          .from('regular_pwp')
+          .update({
+            remaining_balance: adjustedRemainingBalanceForBudget,
+            credit_budget: currentTotalBudget,    // ✅ force match with currentTotalBudget
+            amountbadget: currentTotalBudget      // ✅ same here
+          })
+          .eq('regularpwpcode', formData.regularpwpcode);
+
+        if (updatePwpError) {
+          throw new Error(`Error updating regular PWP: ${updatePwpError.message}`);
+        }
+
+        console.log(`✅ regular_pwp updated successfully:`);
+        console.log('remaining_balance:', adjustedRemainingBalanceForBudget);
+        console.log('credit_budget:', currentTotalBudget);
+        console.log('amountbadget:', currentTotalBudget);
+
+
+      } else {
+        console.log(`❌ No matching PWP found for: ${formData.regularpwpcode}`);
+        alert('No matching PWP found. Update skipped.');
+      }
+    } catch (error) {
+      console.error('❌ Error in submitAccountToRegular:', error.message);
+      alert(`Failed to update regular PWP: ${error.message}`);
+    }
+  };
+
+
+
+  const submitSkuTotalToRegular = async (regularpwpcode, remaining_balance, _credit_budget, amountbadget) => {
+    try {
+      console.log("🔄 Attempting to update regular_pwp with values:");
+      console.log("regularpwpcode:", regularpwpcode);
+      console.log("remaining_balance:", remaining_balance);
+      console.log("credit_budget (will use amountbadget):", amountbadget);
+      console.log("amountbadget:", amountbadget);
+      console.log("🔍 Debugging <tfoot> Data:");
+      console.log("formValues.remaining_balance:", formValues.remaining_balance);
+      console.log("originalTotalBilling:", originalTotalBilling);
+      console.log("currentTotalBilling:", currentTotalBilling);
+      console.log("billingDifference:", billingDifference);
+      console.log("adjustedRemainingBalance:", adjustedRemainingBalance);
+
+      const resolvedAmountBudget = (amountbadget && amountbadget > 0) ? amountbadget : currentTotalBilling;
+
+      const { data: pwpUpdateResult, error: updatePwpError } = await supabase
+        .from('regular_pwp')
+        .update({
+          remaining_balance,
+          credit_budget: resolvedAmountBudget,
+          amountbadget: resolvedAmountBudget,
+        })
+        .eq('regularpwpcode', regularpwpcode)
+        .select();
+
+      if (updatePwpError) {
+        console.error('❌ Failed to update regular_pwp:', updatePwpError.message);
+        alert('❌ Error updating regular PWP data.');
+        return false;
+      } else {
+        console.log('✅ regular_pwp updated successfully:', pwpUpdateResult);
+        return true;
+      }
+
+    } catch (err) {
+      console.error('❌ Exception during regular_pwp update:', err.message);
+      return false;
+    }
+  };
+
+
+
+
+
+  const submitSkuTable = async () => {
+    try {
+      if (!formData.regularpwpcode) {
+        throw new Error('Regular PWP Code is required but missing.');
+      }
+
+      const regular_code = formData.regularpwpcode;
+      let allSuccess = true;
+
+      // Filter normal SKUs only
+      const normalSkuRows = skuList.filter(row => row.sku_code !== 'Total:');
+
+      for (const row of normalSkuRows) {
+        const computedBilling = Number(row.srp || 0) * Number(row.qty || 0) * (1 - Number(row.discount || 0) / 100);
+
+        const payload = {
+          srp: row.srp || 0,
+          qty: row.qty || 0,
+          uom: row.uom || 'pc',
+          discount: row.discount || 0,
+          billing_amount: computedBilling,
+          total_amount: computedBilling,
+          created_at: new Date().toISOString(),
+        };
+
+        // Update only if SKU exists
+        const { data: existingSku, error: checkError } = await supabase
+          .from('regular_sku')
+          .select('id')
+          .eq('regular_code', regular_code)
+          .eq('sku_code', row.sku_code)
+          .limit(1)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error(`Error checking SKU ${row.sku_code}:`, checkError.message);
+          allSuccess = false;
+          continue;
+        }
+
+        if (existingSku) {
+          const { error: updateError } = await supabase
+            .from('regular_sku')
+            .update(payload)
+            .eq('id', existingSku.id);
+
+          if (updateError) {
+            console.error(`Error updating SKU ${row.sku_code}:`, updateError.message);
+            allSuccess = false;
+          } else {
+            console.log(`SKU ${row.sku_code} updated successfully`);
+          }
+        } else {
+          console.log(`SKU ${row.sku_code} does not exist. Skipping insert.`);
+        }
+      }
+
+      // Update Total row dynamically
+      const totalBilling = normalSkuRows.reduce((sum, r) => sum + Number(r.srp || 0) * Number(r.qty || 0) * (1 - Number(r.discount || 0) / 100), 0);
+      const { data: existingTotal, error: checkTotalError } = await supabase
+        .from('regular_sku')
+        .select('id')
+        .eq('regular_code', regular_code)
+        .eq('sku_code', 'Total:')
+        .limit(1)
+        .maybeSingle();
+
+      if (checkTotalError) {
+        console.error('Error checking Total row:', checkTotalError.message);
+        allSuccess = false;
+      } else if (existingTotal) {
+        const { error: updateTotalError } = await supabase
+          .from('regular_sku')
+          .update({ billing_amount: totalBilling, total_amount: totalBilling, updated_at: new Date().toISOString() })
+          .eq('id', existingTotal.id);
+
+        if (updateTotalError) {
+          console.error('Error updating Total row:', updateTotalError.message);
+          allSuccess = false;
+        } else {
+          console.log('Total row updated successfully');
+        }
+      }
+
+      if (allSuccess) {
+        console.log('All SKUs updated successfully!');
+      } else {
+        alert('Some SKUs failed to update. Check console.');
+      }
+
+    } catch (err) {
+      console.error('Error updating SKU table:', err);
+      setError(`Error updating SKU table: ${err.message}`);
+    }
+  };
 
 
 
 
   useEffect(() => {
+    console.log("Remaining Balance:", Number(formValues.remaining_balance).toFixed(2));
+  }, [formValues.remaining_balance]);
+
+
+
+
+
+
+
+  // State initialization
+  const [skuList, setSkuList] = useState([]); // Holds the SKU data list
+  const [skuLoading, setSkuLoading] = useState(false); // Tracks loading state for SKU fetch
+
+  // Update the useEffect that fetches SKU list to store original total billing
+  useEffect(() => {
     if (!formData?.regularpwpcode) {
       setSkuList([]);
+      setOriginalTotalBilling(0); // Reset when no code
       return;
     }
 
     const fetchSkuList = async () => {
       setSkuLoading(true);
-      const { data, error } = await supabase
-        .from("regular_sku_listing")
-        .select("*")
-        .eq("regular_code", formData.regularpwpcode);
+      try {
+        const { data, error } = await supabase
+          .from("regular_sku")
+          .select("*")
+          .eq("regular_code", formData.regularpwpcode);
 
-      if (error) {
-        console.error("Error fetching SKU list:", error.message);
+        if (error) {
+          console.error("Error fetching SKU list:", error.message);
+          setSkuList([]);
+          setOriginalTotalBilling(0);
+        } else {
+          setSkuList(data);
+
+          // Calculate and store original total billing (excluding "Total:" row)
+          const originalTotal = data
+            .filter((item) => item.sku !== "Total:")
+            .reduce((acc, { billing_amount }) => acc + (Number(billing_amount) || 0), 0);
+
+          setOriginalTotalBilling(originalTotal);
+          console.log("Original Total Billing:", originalTotal);
+          console.log("Fetched SKU List:", data);
+        }
+      } catch (error) {
+        console.error("Unexpected error fetching SKU list:", error);
         setSkuList([]);
-      } else {
-        setSkuList(data);
+        setOriginalTotalBilling(0);
       }
       setSkuLoading(false);
     };
 
     fetchSkuList();
   }, [formData?.regularpwpcode]);
-  const handleSkuChange = (id, field, value) => {
-    setSkuList((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, [field]: field === "qty" ? parseInt(value) || 0 : parseFloat(value) || value } : item
-      )
-    );
-  };
-  const [skuList, setSkuList] = useState([]);      // Holds the SKU data list
-  const [skuLoading, setSkuLoading] = useState(false); // Tracks loading state for SKU fetch
-  const [hasChanges, setHasChanges] = useState(false);
 
+  // Log SKU List whenever it updates
+  useEffect(() => {
+    console.log("Updated SKU List after fetch or change:", skuList);
+  }, [skuList]); // Logs whenever skuList changes
+  const [formEdited, setFormEdited] = useState(false);
+
+
+
+  // Handle changes to a specific SKU item
+  const handleSkuChange = (id, field, value) => {
+    setFormEdited(true); // ✅ Safe here
+
+    const updatedSkuList = skuList.map((item) => {
+      if (item.id === id) {
+        const updatedItem = { ...item, [field]: value };
+
+        if (field === "srp" || field === "qty" || field === "discount") {
+          updatedItem.billing_amount = calculateBillingAmount(
+            updatedItem.srp,
+            updatedItem.qty,
+            updatedItem.discount
+          );
+        }
+
+        return updatedItem;
+      }
+      return item;
+    });
+
+
+    setSkuList(updatedSkuList); // Update the state with the new sku list
+    console.log("Updated SKU List after handleSkuChange:", updatedSkuList);
+  };
+
+  // Calculate Billing Amount based on SRP, Quantity, and Discount
+  const calculateBillingAmount = (srp, qty, discount) => {
+    const quantity = parseFloat(qty) || 0;
+    const price = parseFloat(srp) || 0;
+    const disc = parseFloat(discount) || 0;
+    return (price * quantity) - disc;
+  };
+
+  const [prevRemainingBalance, setPrevRemainingBalance] = useState(0);
+
+  const [isCreditBudgetEditable, setIsCreditBudgetEditable] = useState(false);
+
+  // Function to handle changes to the form data
+  const handleChanges = (e) => {
+    const { name, value } = e.target;
+
+    setFormData((prevData) => {
+      if (name === "credit_budget") {
+        const newCreditBudget = parseFloat(value) || 0;
+        const oldCreditBudget = parseFloat(prevData.credit_budget) || 0;
+        const currentAmountBudget = parseFloat(prevData.amountbadget) || 0;
+
+        // Calculate difference between old and new credit budget
+        const creditBudgetDifference = newCreditBudget - oldCreditBudget;
+
+        // Update amount budget by adding the difference
+        const newAmountBudget = currentAmountBudget + creditBudgetDifference;
+
+        // Update remaining balance by subtracting the difference  
+        const newRemainingBalance = prevData.remaining_balance - creditBudgetDifference;
+
+        return {
+          ...prevData,
+          credit_budget: newCreditBudget,
+          amountbadget: newAmountBudget,
+          remaining_balance: newRemainingBalance
+        };
+      }
+
+      // For other fields, just update normally
+      return {
+        ...prevData,
+        [name]: value
+      };
+    });
+  };
+
+  // Function to handle the "Change?" button click
+  const handleChangeCreditBudget = () => {
+    setFormData((prevData) => {
+      // Reset both credit budget and amount budget, restore remaining balance
+      const creditBudgetToRestore = parseFloat(prevData.credit_budget) || 0;
+      const amountBudgetToRestore = parseFloat(prevData.amountbadget) || 0;
+
+      // Calculate original amount budget (before any credit budget was added)
+      const originalAmountBudget = amountBudgetToRestore - creditBudgetToRestore;
+
+      // Restore remaining balance by adding back the credit budget amount
+      const newRemainingBalance = prevData.remaining_balance + creditBudgetToRestore;
+
+      return {
+        ...prevData,
+        credit_budget: 0,
+        amountbadget: originalAmountBudget, // Reset to original amount
+        remaining_balance: newRemainingBalance
+      };
+    });
+
+    setIsCreditBudgetEditable(true);
+  };
+
+  const [categoryListing, setCategoryListing] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedRowIndex, setSelectedRowIndex] = useState(null);
+  const [showSkuModal, setShowSkuModal] = useState(false);
+
+  // Fetch category listing (SKUs) from the database
+  useEffect(() => {
+    const fetchCategoryListing = async () => {
+      const { data, error } = await supabase
+        .from('category_listing')
+        .select('*')
+        .order('sku_code', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching category listing:', error.message);
+      } else {
+        setCategoryListing(data);
+      }
+    };
+
+    fetchCategoryListing();
+  }, []);
+
+  // Handle SKU change in the table row
+  // const handleSkuChange = (id, field, value) => {
+  //   const updatedSkuList = [...skuList];
+  //   const index = updatedSkuList.findIndex(item => item.id === id);
+  //   if (index !== -1) {
+  //     updatedSkuList[index][field] = value;
+  //     setSkuList(updatedSkuList);
+  //   }
+  // };
+
+  // Handle SKU selection from the modal
+  const handleChangesku = (index, field, value) => {
+    const updatedSkuList = [...skuList];
+    updatedSkuList[index][field] = value;
+    setSkuList(updatedSkuList);
+  };
+
+  // Calculate current total billing amount (excluding "Total:" row)
+  const currentTotalBilling = skuList
+    .filter((item) => item.sku !== "Total:")
+    .reduce((acc, { billing_amount }) => acc + (Number(billing_amount) || 0), 0);
+
+  // Calculate the difference between current and original billing
+  const billingDifference = currentTotalBilling - originalTotalBilling;
+
+  // Calculate the adjusted remaining balance
+  const adjustedRemainingBalance = Number(formValues.remaining_balance) - billingDifference;
+
+  // Calculate the total billing amount and remaining excluding the "Total:" row
+  const [categoryMap, setCategoryMap] = useState({}); // key = sku_code, value = name
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('category_listing')
+          .select('sku_code, name');
+
+        if (error) throw error;
+
+        const map = {};
+        data.forEach((cat) => {
+          map[cat.sku_code] = cat.name;
+        });
+
+        setCategoryMap(map);
+      } catch (err) {
+        console.error('Error fetching categories:', err.message);
+      }
+    };
+
+    fetchCategories();
+  }, []);
+
+
+  const [badorderList, setBadorderList] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+
+  // Fetch badorder data when formData.regularpwpcode changes
+  useEffect(() => {
+    if (!formData?.regularpwpcode) {
+      setBadorderList([]);
+      return;
+    }
+
+    const fetchBadorder = async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("regular_badorder")
+          .select("*")
+          .eq("code_pwp", formData.regularpwpcode)
+          .order("id", { ascending: true });
+
+        if (error) throw error;
+        setBadorderList(data || []);
+      } catch (err) {
+        console.error("Error fetching badorder:", err.message);
+        setBadorderList([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBadorder();
+  }, [formData?.regularpwpcode]);
+
+  // Handle input changes
+
+
+
+
+  // Delete row
 
   if (!isOpen || !formData) return null;
 
+
   const isCoverPwp = !!formData.cover_code;
+
 
   const coverPwpFields = [
     { name: "cover_code", label: "COVER CODE", disabled: true },
     { name: "distributor_code", label: "Distributor Code", type: "select" },  // dropdown here
-    { name: "account_type", label: "Account Type" },
+    { name: "account_type", label: "Account Type", },
     { name: "amount_badget", label: "Amount Badget" },
-    { name: "pwp_type", label: "PWP Type" },
+    { name: "pwp_type", label: "PWP TYPE", disabled: true },
     { name: "objective", label: "Objective Promo Scheme" },
     { name: "details", label: "Details" },
     { name: "remarks", label: "Remarks" },
-    { name: "created_at", label: "Created At" },
+    { name: "created_at", label: "Created At", disabled: true },
   ];
 
   const regularPwpFields = [
     { name: "regularpwpcode", label: "REGULAR CODE", disabled: true },
-    { name: "pwptype", label: "PWP Type" },
-
+    { name: "pwptype", label: "PWP TYPE", disabled: true },
     { name: "distributor", label: "Distributor", type: "select" }, // dropdown here
     { name: "accountType", label: "Account Type" },
     { name: "categoryName", label: "Category" },
-
     { name: "activity", label: "Activity" },
     { name: "objective", label: "Objective" },
     { name: "promoScheme", label: "Promo Scheme" },
@@ -550,8 +1208,8 @@ const handleSubmit = async () => {
     { name: "activityDurationTo", label: "Activity Duration To" },
     { name: "isPartOfCoverPwp", label: "Is Part Of Cover PWP", type: "checkbox" },
     { name: "coverPwpCode", label: "Cover PWP Code" },
-    { name: "amountbadget", label: "Amount Badget" },
-    { name: "remaining_balance", label: "Remaining Balance" },
+    { name: "amountbadget", label: "Amount Badget", disabled: true },
+    { name: "remaining_balance", label: "Remaining Balance", disabled: true },
     { name: "credit_budget", label: "Credit Budget" },
     { name: "sku", label: "SKU", disabled: true },
     { name: "accounts", label: "Accounts", disabled: true },
@@ -559,7 +1217,11 @@ const handleSubmit = async () => {
     { name: "remarks", label: "Remarks" },
   ];
 
-  const fieldsToRender = isCoverPwp ? coverPwpFields : regularPwpFields;
+  // Dynamically exclude the fields if it's a cover PWP
+  const fieldsToRender = isCoverPwp
+    ? coverPwpFields
+    : regularPwpFields.filter(field => !['sku', 'accounts', 'amount_display'].includes(field.name));  // Exclude specific fields in regular PWP
+
 
   return (
     <div
@@ -642,149 +1304,59 @@ const handleSubmit = async () => {
                         borderRadius: "8px",
                         border: "1px solid #ccc",
                         background: disabled ? "#f9f9f9" : "#fff",
+                        cursor: disabled ? "not-allowed" : "pointer",
                       }}
                     >
                       <option value="">-- Select --</option>
                       {filteredDistributors.map((dist) => (
-                        <option key={dist.id} value={dist.code /* use code here */}>
+                        <option key={dist.id} value={dist.code}>
                           {dist.name}
                         </option>
                       ))}
                     </select>
-
                   </div>
                 );
               }
+
               // inside fieldsToRender.map(...)
-
-
-              if (name === "activity") {
+              // For credit budget, handle change to adjust remaining balance
+              if (name === "credit_budget") {
                 return (
-                  <div key={name} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                    <label style={{ marginBottom: '6px', fontWeight: '600', fontSize: '14px' }}>
-                      Activity <span style={{ color: 'red' }}>*</span>
-                    </label>
-                    <select
-                      name="activity"
-                      value={formData.activity || ""}
-                      onChange={(e) => {
-                        handleChange(e);
-                        const selectedCode = e.target.value;
-                        const setting = settingsMap[selectedCode] || {};
-                        setFormData((prev) => ({
-                          ...prev,
-                          sku: setting.sku || false,
-                          accounts: setting.accounts || false,
-                          amount_display: setting.amount_display || false,
-                        }));
-                      }}
-                      disabled={updating}
+                  <div key={name} style={{ display: "flex", flexDirection: "column" }}>
+                    <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
+                    <input
+                      type="number"
+                      name={name}
+                      value={formData[name] || ""}
+                      onChange={handleChanges}
+                      disabled={!isCreditBudgetEditable || disabled || updating} // Disable input unless it's editable
                       style={{
-                        padding: '10px',
-                        borderRadius: '8px',
-                        border: '1px solid #ccc',
-                        background: '#fff',
-                        appearance: 'none',
-                        paddingRight: '40px',
+                        padding: "10px",
+                        borderRadius: "8px",
+                        border: "1px solid #ccc",
+                        background: !isCreditBudgetEditable ? "#f9f9f9" : "#fff", // Change background color based on editable state
+                      }}
+                    />
+                    {/* Change button */}
+                    <button
+                      type="button"
+                      onClick={handleChangeCreditBudget}
+                      disabled={disabled || updating}
+                      style={{
+                        marginTop: "10px",
+                        padding: "8px 16px",
+                        borderRadius: "8px",
+                        border: "1px solid #ccc",
+                        background: "#ff5f5f",
+                        color: "#fff",
+                        cursor: "pointer",
                       }}
                     >
-                      <option value="">Select Activity</option>
-                      {activities.map((opt, index) => (
-                        <option key={index} value={opt.code}>
-                          {opt.name}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* Dropdown arrow */}
-                    <span
-                      style={{
-                        position: 'absolute',
-                        right: '20px',
-                        top: '45%',
-                        transform: 'translateY(-50%)',
-                        pointerEvents: 'none',
-                        color: '#555',
-                        fontSize: '14px',
-                        userSelect: 'none',
-                      }}
-                    >
-                      ▼
-                    </span>
-
-                    {/* Checkmark */}
-
+                      Change?
+                    </button>
                   </div>
                 );
               }
-              <div
-                style={{
-                  display: "flex",
-                  gap: "30px",
-                  marginBottom: "20px",
-                }}
-              >
-                {["sku", "accounts", "amount_display"].map((name) => {
-                  const field = regularPwpFields.find((f) => f.name === name);
-                  if (!field) return null;
-                  const { label } = field;
-                  return (
-                    <div key={name} style={{ flex: 1 }}>
-                      <label
-                        style={{
-                          fontWeight: "600",
-                          fontSize: "14px",
-                          display: "block",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        {label}
-                      </label>
-
-                      <div style={{ display: "flex", gap: "10px" }}>
-                        {["true", "false"].map((val) => {
-                          const boolVal = val === "true";
-                          const isSelected = formData[name] === boolVal;
-                          return (
-                            <button
-                              key={val}
-                              type="button"
-                              onClick={() =>
-                                setFormData((prev) => ({ ...prev, [name]: boolVal }))
-                              }
-                              style={{
-                                padding: "8px 20px",
-                                borderRadius: "20px",
-                                border: isSelected
-                                  ? `2px solid ${boolVal ? "#4CAF50" : "#f44336"}`
-                                  : "1px solid #ccc",
-                                backgroundColor: isSelected
-                                  ? boolVal
-                                    ? "#E8F5E9"
-                                    : "#FFEBEE"
-                                  : "#f9f9f9",
-                                color: isSelected
-                                  ? boolVal
-                                    ? "#2e7d32"
-                                    : "#c62828"
-                                  : "#555",
-                                fontWeight: isSelected ? "bold" : "normal",
-                                cursor: "pointer",
-                                transition: "all 0.3s ease",
-                                minWidth: "80px",
-                              }}
-                            >
-                              {val.charAt(0).toUpperCase() + val.slice(1)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Render toggles using regularPwpFields config */ }
               {
                 regularPwpFields
                   .filter(({ name }) => ["sku", "accounts", "amount_display"].includes(name))
@@ -853,6 +1425,69 @@ const handleSubmit = async () => {
                   })
               }
 
+              if (name === "activity") {
+                return (
+                  <div key={name} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                    <label style={{ marginBottom: '6px', fontWeight: '600', fontSize: '14px' }}>
+                      Activity <span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <select
+                      name="activity"
+                      value={formData.activity || ""}
+                      onChange={(e) => {
+                        handleChange(e);
+                        const selectedCode = e.target.value;
+                        const setting = settingsMap[selectedCode] || {};
+                        setFormData((prev) => ({
+                          ...prev,
+                          sku: setting.sku || false,
+                          accounts: setting.accounts || false,
+                          amount_display: setting.amount_display || false,
+                        }));
+                      }}
+                      disabled={updating}
+                      style={{
+                        padding: '10px',
+                        borderRadius: '8px',
+                        border: '1px solid #ccc',
+                        background: '#fff',
+                        appearance: 'none',
+                        paddingRight: '40px',
+                      }}
+                    >
+                      <option value="">Select Activity</option>
+                      {activities.map((opt, index) => (
+                        <option key={index} value={opt.code}>
+                          {opt.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Dropdown arrow */}
+                    <span
+                      style={{
+                        position: 'absolute',
+                        right: '20px',
+                        top: '45%',
+                        transform: 'translateY(-50%)',
+                        pointerEvents: 'none',
+                        color: '#555',
+                        fontSize: '14px',
+                        userSelect: 'none',
+                      }}
+                    >
+                      ▼
+                    </span>
+
+                    {/* Checkmark */}
+
+                  </div>
+                );
+              }
+
+              {/* Render toggles using regularPwpFields config */ }
+
+
               if (name === "categoryName") {
                 return (
                   <div key={name} style={{ position: "relative", display: "flex", flexDirection: "column" }}>
@@ -862,7 +1497,7 @@ const handleSubmit = async () => {
                       <input
                         type="text"
                         readOnly
-                        value={parseCategoryName(formData.categoryName).join(", ")}
+                        value={fixCategoryNameInput(formData.categoryName).join(", ")}
                         onClick={handleOpenCategoryModal}
                         placeholder="Select Categories"
                         style={{
@@ -870,7 +1505,7 @@ const handleSubmit = async () => {
                           paddingRight: "35px", // space for icon
                           borderRadius: "8px",
                           border: "1px solid",
-                          borderColor: parseCategoryName(formData.categoryName).length > 0 ? "green" : "#ccc",
+                          borderColor: fixCategoryNameInput(formData.categoryName).length > 0 ? "green" : "#ccc",
                           cursor: "pointer",
                           transition: "border-color 0.3s",
                           width: "100%",
@@ -1040,7 +1675,8 @@ const handleSubmit = async () => {
               }
 
               if (name === "accountType" || name === "account_type") {
-                const selectedValues = formData[name] || [];
+                // Ensure that formData[name] is always an array (default to an empty array if undefined or not an array)
+                const selectedValues = Array.isArray(formData[name]) ? formData[name] : (formData[name] ? [formData[name]] : []);
 
                 return (
                   <div key={name} style={{ position: "relative", cursor: "pointer", minHeight: 60 }}>
@@ -1182,10 +1818,10 @@ const handleSubmit = async () => {
                         </div>
                       </div>
                     )}
-
                   </div>
                 );
               }
+
 
               // Text input default
               return (
@@ -1222,7 +1858,6 @@ const handleSubmit = async () => {
                   overflowY: "auto",
                 }}
               >
-                <h3 style={{ marginBottom: "12px", color: "#1e40af" }}>Account Budget List</h3>
 
                 {budgetLoading ? (
                   <p>Loading budgets...</p>
@@ -1253,24 +1888,60 @@ const handleSubmit = async () => {
                             </td>
                           </tr>
                         ))}
-
-                        {/* Total Budget */}
+                      </tbody>
+                      <tfoot>
+                        {/* Original Remaining Balance */}
                         <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                           <td colSpan={2} style={{ padding: "8px", border: "1px solid #ddd" }}>
-                            Total Budget
+                            Original Remaining Balance
                           </td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>
-                            {totalBudget.toFixed(2)}
+                            {Number(formData?.initial_remaining_balance || 0).toFixed(2)}
                           </td>
                         </tr>
 
-                        {/* Remaining Balance */}
+                        {/* Original Total Budget */}
                         <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                           <td colSpan={2} style={{ padding: "8px", border: "1px solid #ddd" }}>
-                            Remaining Balance
+                            Original Total Budget
                           </td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>
-                            {Number(formValues.remaining_balance).toFixed(2)}
+                            {originalTotalBudget.toFixed(2)}
+                          </td>
+                        </tr>
+
+                        {/* Current Total Budget */}
+                        <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                          <td colSpan={2} style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            Current Total Budget
+                          </td>
+                          <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            {currentTotalBudget.toFixed(2)}
+                          </td>
+                        </tr>
+
+                        {/* Budget Difference */}
+                        <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                          <td colSpan={2} style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            Budget Difference
+                          </td>
+                          <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            {budgetDifference.toFixed(2)}
+                          </td>
+                        </tr>
+
+                        {/* Adjusted Remaining Balance */}
+                        <tr style={{
+                          fontWeight: "bold",
+                          backgroundColor: "#e3f2fd",
+                          color: "#1565c0",
+                          fontSize: "16px"
+                        }}>
+                          <td colSpan={2} style={{ padding: "12px", border: "2px solid #1976d2" }}>
+                            Remaining Balance
+                          </td>
+                          <td style={{ padding: "12px", border: "2px solid #1976d2" }}>
+                            {adjustedRemainingBalanceForBudget.toFixed(2)}
                           </td>
                         </tr>
 
@@ -1280,17 +1951,17 @@ const handleSubmit = async () => {
                             Credit Budget
                           </td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>
-                            {Number(formValues.credit_budget).toFixed(2)}
+                            {currentTotalBudget.toFixed(2)}
                           </td>
                         </tr>
-                      </tbody>
+                      </tfoot>
                     </table>
                   </>
                 )}
               </div>
             ) : (
               // Toggle buttons UI when showBudgetTable is false
-              <div style={{ marginTop: "20px" }}>
+              <div style={{ marginTop: "20px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px" }}>
                 {regularPwpFields
                   .filter(({ name }) => ["sku", "accounts", "amount_display"].includes(name))
                   .map(({ name, label, disabled }) => {
@@ -1360,240 +2031,250 @@ const handleSubmit = async () => {
             )
           }
 
-       <div
-      style={{
-        marginTop: "30px",
-        borderTop: "1px solid #ddd",
-        paddingTop: "20px",
-        maxHeight: "500px",
-        overflowY: "auto",
-      }}
-    >
-      <h3 style={{ marginBottom: "12px", color: "#1e40af" }}>SKU Listing</h3>
 
-      {skuLoading ? (
-        <p>Loading SKU list...</p>
-      ) : skuList.length === 0 ? (
-        <p>No SKUs found for selected regular code.</p>
-      ) : (
-        (() => {
-          // Calculate billing_amount dynamically per row (SRP * Qty - Discount)
-          const updatedSkuList = skuList.map((item, idx) => {
-            if (idx === skuList.length - 1) {
-              // Total row will be updated after summing
-              return item;
-            }
-            const srp = Number(item.srp || 0);
-            const qty = Number(item.qty || 0);
-            const discount = Number(item.discount || 0);
-            const billing_amount = srp * qty - discount;
-            return {
-              ...item,
-              billing_amount,
-            };
-          });
+          <div
+            style={{
+              marginTop: "30px",
+              borderTop: "1px solid #ddd",
+              paddingTop: "20px",
+              maxHeight: "800px",
+              overflowY: "auto",
+            }}
+          >
+            {skuLoading ? (
+              <p style={{ textAlign: "center", color: "#888" }}>Loading SKU list...</p>
+            ) : skuList.length === 0 ? (
+              <p style={{ textAlign: "center", color: "#888" }}>
+              </p>
+            ) : (
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  backgroundColor: "#f9f9f9",
+                  boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      backgroundColor: "#3b82f6",
+                      color: "white",
+                      fontWeight: "bold",
+                      textAlign: "center",
+                      fontSize: "14px",
+                    }}
+                  >
+                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SKU</th>
+                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SRP</th>
+                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Qty</th>
+                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>UOM</th>
+                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Discount</th>
+                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Billing Amount</th>
+                  </tr>
+                </thead>
 
-          // Sum billing_amount except last row
-          const totalBilling = updatedSkuList
-            .slice(0, updatedSkuList.length - 1)
-            .reduce((sum, item) => sum + Number(item.billing_amount || 0), 0);
+                <tbody>
+                  {skuList.map(({ id, sku_code, srp, qty, uom, discount, billing_amount }, idx) => {
+                    // Skip Total row, we'll compute it dynamically in footer
+                    if (sku_code === "Total:") return null;
 
-          // Update last row billing_amount with totalBilling
-          updatedSkuList[updatedSkuList.length - 1] = {
-            ...updatedSkuList[updatedSkuList.length - 1],
-            billing_amount: totalBilling,
-          };
+                    const computedBilling = Number(srp || 0) * Number(qty || 0) * (1 - Number(discount || 0) / 100);
 
-          // Credit Budget = total billing amount
-          const creditBudget = totalBilling;
-
-          // Remaining Balance from formValues
-          const originalRemainingBalance = Number(formValues.remaining_balance ?? 0);
-
-          // Only subtract creditBudget if user has made changes
-          const updatedRemainingBalance = hasChanges
-            ? originalRemainingBalance - creditBudget
-            : originalRemainingBalance;
-
-          // Handle input changes except for total row's billing_amount
-          const handleInputChange = (id, name, value) => {
-            const isTotalRow = id === skuList[skuList.length - 1]?.id;
-            if (isTotalRow) return;
-
-            if (!hasChanges) setHasChanges(true);
-
-            handleSkuChange(id, name, value);
-          };
-
-          return (
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                borderRadius: "8px",
-                overflow: "hidden",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-              }}
-            >
-              <thead>
-                <tr
-                  style={{
-                    backgroundColor: "#3b82f6",
-                    color: "white",
-                    textAlign: "left",
-                    fontWeight: "600",
-                  }}
-                >
-                  {["SKU", "SRP", "Qty", "UOM", "Discount", "Billing Amount"].map(
-                    (header) => (
-                      <th
-                        key={header}
+                    return (
+                      <tr
+                        key={id}
                         style={{
-                          padding: "12px 10px",
-                          borderBottom: "2px solid #2c6cd1",
+                          borderBottom: "1px solid #ddd",
+                          textAlign: "center",
+                          fontSize: "14px",
+                          transition: "background-color 0.3s ease",
                         }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0f8ff")}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
                       >
-                        {header}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {updatedSkuList.map(
-                  (
-                    { id, sku, srp, qty, uom, discount, billing_amount },
-                    idx
-                  ) => (
-                    <tr
-                      key={id}
+                        <td style={{ width: '300px', padding: "10px", border: "1px solid #ddd" }}>
+                          <input
+                            type="text"
+                            value={categoryMap[sku_code] || sku_code || ""}
+                            onChange={(e) => handleSkuChange(id, "sku_code", e.target.value)}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              padding: "8px",
+                              borderRadius: "5px",
+                              border: "1px solid #ddd",
+                              fontSize: "14px",
+                            }}
+                            disabled
+                          />
+                        </td>
+
+
+                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
+                          <input
+                            type="number"
+                            value={srp || 0}
+                            step="0.01"
+                            onChange={(e) => handleSkuChange(id, "srp", e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "8px",
+                              borderRadius: "5px",
+                              border: "1px solid #ddd",
+                            }}
+                          />
+                        </td>
+
+                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
+                          <input
+                            type="number"
+                            value={qty || 0}
+                            onChange={(e) => handleSkuChange(id, "qty", e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "8px",
+                              borderRadius: "5px",
+                              border: "1px solid #ddd",
+                            }}
+                          />
+                        </td>
+
+                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
+                          <select
+                            value={uom || "pc"}
+                            onChange={(e) => handleSkuChange(id, "uom", e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "8px",
+                              borderRadius: "5px",
+                              border: "1px solid #ddd",
+                            }}
+                          >
+                            <option value="pc">PC</option>
+                            <option value="case">Case</option>
+                            <option value="ibx">IBX</option>
+                          </select>
+                        </td>
+
+                        <td style={{ width: '50px', padding: "10px", border: "1px solid #ddd" }}>
+                          <input
+                            type="number"
+                            value={discount || 0}
+                            step="0.01"
+                            onChange={(e) => handleSkuChange(id, "discount", e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "8px",
+                              borderRadius: "5px",
+                              border: "1px solid #ddd",
+                            }}
+                          />
+                        </td>
+
+                        <td style={{ width: '50px', padding: "10px", border: "1px solid #ddd" }}>
+                          <span>{computedBilling.toFixed(2)}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+
+                <tfoot>
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      Original Remaining Balance:
+                    </td>
+                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      {Number(formValues.remaining_balance).toFixed(2)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      Original Total Billing:
+                    </td>
+                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      {originalTotalBilling.toFixed(2)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      Current Total Billing:
+                    </td>
+                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      {currentTotalBilling.toFixed(2)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      Billing Difference:
+                    </td>
+                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
+                      {billingDifference.toFixed(2)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td
+                      colSpan="6"
                       style={{
-                        borderBottom: "1px solid #eee",
-                        fontWeight: idx === skuList.length - 1 ? "bold" : "normal",
-                        backgroundColor:
-                          idx === skuList.length - 1 ? "#f0f0f0" : "transparent",
+                        textAlign: "right",
+                        padding: "12px",
+                        border: "1px solid #ddd",
+                        fontWeight: "bold",
+                        fontSize: "16px",
+                        paddingTop: "20px",
+                        backgroundColor: "#f0f8ff",
                       }}
                     >
-                      {[
-                        { value: sku, name: "sku", type: "text" },
-                        { value: srp, name: "srp", type: "number", step: "0.01" },
-                        { value: qty, name: "qty", type: "number" },
-                        {
-                          value: uom,
-                          name: "uom",
-                          type: "select", // flag to render <select>
-                        },
-                        { value: discount, name: "discount", type: "number", step: "0.01" },
-                        {
-                          value: billing_amount.toFixed(2),
-                          name: "billing_amount",
-                          type: "number",
-                          step: "0.01",
-                        },
-                      ].map(({ value, name, type, step }) => (
-                        <td key={name} style={{ padding: "8px 10px" }}>
-                          {type === "select" ? (
-                            <select
-                              value={value || ""}
-                              onChange={(e) =>
-                                handleInputChange(id, name, e.target.value)
-                              }
-                              style={{
-                                width: "100%",
-                                boxSizing: "border-box",
-                                padding: "6px 8px",
-                                borderRadius: "6px",
-                                border: "1px solid #ccc",
-                                fontSize: "14px",
-                                backgroundColor: "white",
-                                cursor: "pointer",
-                                transition: "border-color 0.2s",
-                              }}
-                              onFocus={(e) => (e.target.style.borderColor = "#3b82f6")}
-                              onBlur={(e) => (e.target.style.borderColor = "#ccc")}
-                              disabled={idx === skuList.length - 1} // disable total row UOM as well
-                            >
-                              <option value="">Select</option>
-                              <option value="CASE">CASE</option>
-                              <option value="PC">PC</option>
-                              <option value="IBX">IBX</option>
-                            </select>
-                          ) : (
-                            <input
-                              type={type}
-                              value={value || ""}
-                              step={step}
-                              onChange={(e) =>
-                                handleInputChange(id, name, e.target.value)
-                              }
-                              disabled={idx === skuList.length - 1 && name === "billing_amount"}
-                              style={{
-                                width: "100%",
-                                boxSizing: "border-box",
-                                padding: "6px 8px",
-                                borderRadius: "6px",
-                                border: "1px solid #ccc",
-                                fontSize: "14px",
-                                transition: "border-color 0.2s",
-                                backgroundColor:
-                                  idx === skuList.length - 1 && name === "billing_amount"
-                                    ? "#e0e0e0"
-                                    : "white",
-                                cursor:
-                                  idx === skuList.length - 1 && name === "billing_amount"
-                                    ? "not-allowed"
-                                    : "text",
-                              }}
-                              onFocus={(e) => (e.target.style.borderColor = "#3b82f6")}
-                              onBlur={(e) => (e.target.style.borderColor = "#ccc")}
-                            />
-                          )}
-                        </td>
-                      ))}
+                      Remaining Balance: {adjustedRemainingBalance.toFixed(2)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+          {formData?.activityName === "BAD ORDER" && badorderList.length > 0 && (
+            <div>
+              <h2 style={{textAlign:'left'}}>BAD ORDER  </h2>
+
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#1976d2", color: "#fff" }}>
+                    <th style={{ padding: "8px" }}>Category</th>
+                    <th style={{ padding: "8px" }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {badorderList.map((row) => (
+                    <tr key={row.id} style={{ borderBottom: "1px solid #ccc" }}>
+                      <td style={{ padding: "8px" }}>{row.category}</td>
+                      <td style={{ padding: "8px" }}>{row.amount}</td>
                     </tr>
-                  )
-                )}
-
-                {/* Remaining Balance */}
-                <tr
-                  style={{
-                    fontWeight: "bold",
-                    backgroundColor: "#f0f0f0",
-                    borderTop: "2px solid #ddd",
-                  }}
-                >
-                  <td colSpan={5} style={{ padding: "12px 10px" }}>
-                    Remaining Balance
-                  </td>
-                  <td style={{ padding: "12px 10px" }}>
-                    {updatedRemainingBalance.toFixed(2)}
-                  </td>
-                </tr>
-
-                {/* Credit Budget */}
-                <tr
-                  style={{
-                    fontWeight: "bold",
-                    backgroundColor: "#f0f0f0",
-                    borderTop: "1px solid #ddd",
-                  }}
-                >
-                  <td colSpan={5} style={{ padding: "12px 10px" }}>
-                    Credit Budget
-                  </td>
-                  <td style={{ padding: "12px 10px", color: "#1e40af" }}>
-                    {creditBudget.toFixed(2)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          );
-        })()
-      )}
-    </div>
-
-
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ backgroundColor: "#f0f0f0", fontWeight: "bold" }}>
+                    <td style={{ padding: "8px" }}>Total</td>
+                    <td style={{ padding: "8px" }}>
+                      {badorderList[badorderList.length - 1]?.total || 0}
+                    </td>
+                  </tr>
+                  <tr style={{ backgroundColor: "#f0f0f0", fontWeight: "bold" }}>
+                    <td style={{ padding: "8px" }}>Remaining Budget</td>
+                    <td style={{ padding: "8px" }}>
+                      {badorderList[badorderList.length - 1]?.remaining_budget || 0}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
 
 
           {/* Buttons */}
@@ -1636,3 +2317,4 @@ const handleSubmit = async () => {
 }
 
 export default EditModal;
+

@@ -2,41 +2,105 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../supabaseClient";
 import RecordViewModal from "./RecordViewModal";
 
-function RecordsPage() {
+function ClaimsRecords() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [columns, setColumns] = useState([]);
   const [updating] = useState(false);
-  const [filter, setFilter] = useState("all"); // all | cover | regular
-  const [statusFilter, setStatusFilter] = useState("all"); // all | approved | declined | sent_back | cancelled
+  const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
-  const [setRowsPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage] = useState(10);
 
-  // Define the specific columns to show for each table (moved outside component or use useMemo)
-  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code', 'account_type', 'pwp_type', 'created_at', 'createForm'], []);
-  const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'accountType', 'pwptype', 'created_at', 'createForm'], []);
+  const CLAIMS_COLUMNS = useMemo(() => [
+    'id', 
+    'code_pwp',      
+    'distributor',
+    'account_types',    
+    'created_at', 
+    'createForm'       
+  ], []);
 
-const handleViewRecord = (record) => {
-  console.log("Selected record:", record);
+  const totalPages = Math.ceil(data.length / rowsPerPage);
+  const paginatedData = data.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
 
-  if (record.source === "cover_pwp") {
-    console.log("Cover code:", record.cover_code);
-  } else {
-    console.log("Regular PWP code:", record.regularpwpcode);
+  // Helper function to convert codes to readable text
+const convertCodeToText = useCallback((code, type, accountTypesMap, distributorsMap) => {
+  if (!code) return '-';
+  
+  // 🔁 ACCOUNT TYPES LOGIC
+  if (type === 'account_types') {
+    let codes = [];
+
+    // ✅ JSON array (e.g. "['A123', 'B456']")
+    if (typeof code === 'string' && code.includes('[')) {
+      try {
+        codes = JSON.parse(code.replace(/'/g, '"'));
+      } catch {
+        // fallback kung hindi valid JSON
+        const matches = code.match(/[A-Z0-9]+/g);
+        if (matches) codes = matches;
+      }
+    } else {
+      // ✅ Single code
+      codes = [code];
+    }
+
+    // ✅ Convert each code to text name
+    return codes
+      .map(singleCode => {
+        const cleanCode = singleCode.toString().trim().toUpperCase();
+        return accountTypesMap.get(cleanCode) || `Unknown (${cleanCode})`;
+      })
+      .join(', ');
   }
 
-  setSelectedRecord(record);
-  setShowModal(true);
-};
+  // 🔁 DISTRIBUTOR LOGIC
+  if (type === 'distributor') {
+    const cleanCode = code.toString().trim();
+    return distributorsMap.get(cleanCode) || `Unknown Distributor (${cleanCode})`;
+  }
 
+  return code;
+}, []);
+
+  // Helper function to format cell values
+  const formatCellValue = useCallback((value, colName, accountTypesMap, distributorsMap) => {
+    if (!value && value !== 0) return '-';
+
+    if (colName === 'distributor') {
+      return convertCodeToText(value, 'distributor', accountTypesMap, distributorsMap);
+    }
+
+    if (colName === 'account_types') {
+      return convertCodeToText(value, 'account_types', accountTypesMap, distributorsMap);
+    }
+
+    if (colName === 'created_at' && value) {
+      try {
+        return new Date(value).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+      } catch {
+        return value;
+      }
+    }
+
+    return String(value);
+  }, [convertCodeToText]);
 
   // Function to filter object keys based on allowed columns
-  const filterColumns = (obj, allowedColumns) => {
+  const filterColumns = useCallback((obj, allowedColumns) => {
     const filtered = {};
     allowedColumns.forEach(col => {
       if (obj.hasOwnProperty(col)) {
@@ -44,10 +108,10 @@ const handleViewRecord = (record) => {
       }
     });
     return filtered;
-  };
+  }, []);
 
   // Function to get approval status for PWP codes
-  const getApprovalStatus = async (pwpCodes) => {
+  const getApprovalStatus = useCallback(async (pwpCodes) => {
     try {
       const { data: approvalData, error } = await supabase
         .from("Approval_History")
@@ -59,7 +123,6 @@ const handleViewRecord = (record) => {
         return {};
       }
 
-      // Create a map of PWPCode to approval status
       const approvalMap = {};
       approvalData?.forEach(approval => {
         approvalMap[approval.PwpCode] = {
@@ -74,190 +137,115 @@ const handleViewRecord = (record) => {
       console.error("Unexpected error fetching approval status:", err);
       return {};
     }
-  };
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage] = useState(10);
-
-  const totalPages = Math.ceil(data.length / rowsPerPage);
-
-  const paginatedData = data.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
-  );
-
-
-
-  const [categoryMap, setCategoryMap] = useState({});
-
-  useEffect(() => {
-    const fetchCategoryMap = async () => {
-      const { data, error } = await supabase
-        .from("categorydetails")
-        .select("code, name");
-
-      if (error) {
-        console.error("Error fetching categories:", error);
-        return;
-      }
-
-      const map = {};
-      data.forEach(cat => {
-        map[cat.code] = cat.name;
-      });
-
-      setCategoryMap(map);
-    };
-
-    fetchCategoryMap();
   }, []);
 
-  // 2️⃣ Fetch PWP data and normalize
-  const fetchData = useCallback(async () => {
-    // Wait until categoryMap is loaded
-    if (!Object.keys(categoryMap).length) return;
+  // Main fetch function
 
-    try {
-      setLoading(true);
-      setError(null);
+const fetchData = useCallback(async () => {
+  try {
+    setLoading(true);
+    setError(null);
 
-      let coverData = [];
-      let regularData = [];
-      let allColumns = [];
+    const [distributorsResult, claimsResult] = await Promise.all([
+      supabase.from("distributors").select("code, name"),
+      supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }).limit(100)
+    ]);
 
-      // Fetch cover data
-      if (filter === "all" || filter === "cover") {
-        const { data: cData, error: cError } = await supabase
-          .from("cover_pwp")
-          .select(COVER_COLUMNS.join(','))
-          .order("id", { ascending: false })
-          .limit(50);
+    if (distributorsResult.error) throw distributorsResult.error;
+    if (claimsResult.error) throw claimsResult.error;
 
-        if (cError) throw cError;
-
-        coverData = (cData || []).map(item => ({
-          ...filterColumns(item, COVER_COLUMNS),
-          source: "cover_pwp",
-          pwp_code: item.cover_code
-        }));
+    // Step 1 — Kunin ang lahat ng needed account_types codes mula sa claims
+    const neededAccountTypeCodes = new Set();
+    (claimsResult.data || []).forEach(item => {
+      if (item.account_types) {
+        if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+          try {
+            const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+            codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
+          } catch (innerErr) {
+            console.error("Error parsing account_types:", innerErr);
+            const matches = item.account_types.match(/[A-Z0-9]+/g);
+            if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
+          }
+        } else {
+          neededAccountTypeCodes.add(item.account_types.trim());
+        }
       }
+    });
 
-      // Fetch regular data
-      if (filter === "all" || filter === "regular") {
-        const { data: rData, error: rError } = await supabase
-          .from("regular_pwp")
-          .select(REGULAR_COLUMNS.join(','))
-          .order("id", { ascending: false })
-          .limit(50);
+    // Step 2 — Fetch only those account_types from categorydetails
+    const { data: accountTypesData, error: accountTypesError } = await supabase
+      .from("categorydetails")
+      .select("code, name")
+      .in("code", Array.from(neededAccountTypeCodes));
 
-        if (rError) throw rError;
+    if (accountTypesError) throw accountTypesError;
 
-        regularData = (rData || []).map(item => ({
-          ...filterColumns(item, REGULAR_COLUMNS),
-          source: "regular_pwp",
-          pwp_code: item.regularpwpcode
-        }));
-      }
+    // Step 3 — Build maps
+    const distributorsMap = new Map();
+    const accountTypesMap = new Map();
 
-      const mergedData = [...coverData, ...regularData];
+    distributorsResult.data?.forEach(distributor => {
+      distributorsMap.set(distributor.code.toString(), distributor.name);
+    });
 
-      // Fetch approval status
-      const allPwpCodes = mergedData.map(item => item.pwp_code).filter(Boolean);
-      const approvalStatusMap = await getApprovalStatus(allPwpCodes);
+    accountTypesData?.forEach(accountType => {
+      accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
+    });
 
-      const dataWithApprovalStatus = mergedData.map(item => ({
-        ...item,
-        approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
-        date_responded: approvalStatusMap[item.pwp_code]?.date_responded,
-        approval_created: approvalStatusMap[item.pwp_code]?.approval_created
-      }));
+    console.log("✅ Account Types Map:", Array.from(accountTypesMap.entries()));
 
-      // Apply search filter
-      let filteredData = dataWithApprovalStatus;
-      if (searchQuery) {
-        filteredData = filteredData.filter(item => {
-          const searchFields = [
-            item.code,
-            item.cover_code,
-            item.regularpwpcode,
-            item.id,
-            item.account_type,
-            item.accountType,
-            item.pwp_type,
-            item.pwptype,
-            item.createForm
-          ];
+    // Step 4 — Process claims
+    const processedData = (claimsResult.data || []).map((item) => ({
+      ...filterColumns(item, CLAIMS_COLUMNS),
+      source: "Claims_pwp",
+      code_pwp: item.code_pwp || item.code || item.claim_code,
+      distributor_text: convertCodeToText(item.distributor, 'distributor', accountTypesMap, distributorsMap),
+      account_types_text: (() => {
+        let codes = [];
+        if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+          try {
+            codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+          } catch (innerErr) {
+            console.error("Error parsing account_types in map:", innerErr);
+            const matches = item.account_types.match(/[A-Z0-9]+/g);
+            if (matches) codes = matches;
+          }
+        } else {
+          codes = [item.account_types];
+        }
+        return codes
+          .map(code => accountTypesMap.get(code?.toString().trim()) || `Unknown (${code})`)
+          .join(", ");
+      })()
+    }));
 
-          return searchFields.some(field =>
-            field && field.toString().toLowerCase().includes(searchQuery.toLowerCase())
-          );
-        });
-      }
+    setColumns(CLAIMS_COLUMNS);
+    setData(processedData);
+    setCurrentPage(1);
 
-      // Apply status filter
-      if (statusFilter !== "all") {
-        filteredData = filteredData.filter(item => {
-          const itemStatus = item.approval_status?.toLowerCase() || 'pending';
-          if (statusFilter === "sent_back") return itemStatus === "sent back for revision" || itemStatus === "sent back";
-          if (statusFilter === "cancelled") return itemStatus === "cancelled";
-          if (statusFilter === "pending") return itemStatus === "pending" || !item.approval_status;
-          if (statusFilter === "approved") return itemStatus === "approved";
-          if (statusFilter === "declined") return itemStatus === "declined";
-          return itemStatus === statusFilter;
-        });
-      }
-
-      // Apply date filters
-      if (dateFrom) {
-        filteredData = filteredData.filter(item => item.created_at && new Date(item.created_at) >= new Date(dateFrom));
-      }
-      if (dateTo) {
-        const toDate = new Date(dateTo);
-        toDate.setHours(23, 59, 59, 999);
-        filteredData = filteredData.filter(item => item.created_at && new Date(item.created_at) <= toDate);
-      }
-
-      if (filteredData.length > 0) {
-        // Columns setup
-        const regularCols = REGULAR_COLUMNS.filter(c => c !== 'regularpwpcode');
-        const coverCols = COVER_COLUMNS.filter(c => c !== 'cover_code');
-
-        if (filter === "all") allColumns = ['id', 'code', ...regularCols.slice(1)];
-        else if (filter === "cover") allColumns = ['id', 'cover_code', ...coverCols.slice(1)];
-        else if (filter === "regular") allColumns = ['id', 'regularpwpcode', ...regularCols.slice(1)];
-
-        // Normalize data and convert accountType code → name
-        // Normalize data and convert accountType / account_type code → name
-        const normalizedData = filteredData.map(item => {
-          const accountCode = item.accountType || item.account_type || '-';
-          const accountName = categoryMap[accountCode] || accountCode;
-
-          return {
-            ...item,
-            code: item.regularpwpcode || item.cover_code || '-',
-            accountType: accountName,   // ensures your table shows name
-            account_type: accountName,  // for cover PWP column
-            pwptype: item.pwptype || item.pwp_type || '-'
-          };
-        });
+  } catch (err) {
+    console.error("❌ fetchData error:", err);
+    setError(`Unexpected error: ${err?.message || err}`);
+  } finally {
+    setLoading(false);
+  }
+}, [CLAIMS_COLUMNS, filterColumns, convertCodeToText]);
 
 
-        setColumns(allColumns);
-        setData(normalizedData);
-      } else {
-        setColumns([]);
-        setData([]);
-      }
+  // Event handlers
+  const handleViewRecord = useCallback((record) => {
+    setSelectedRecord(record);
+    setShowModal(true);
+  }, []);
 
-    } catch (err) {
-      setError(`Unexpected error: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, categoryMap]);
+  const handleCloseModal = useCallback(() => {
+    setShowModal(false);
+    setSelectedRecord(null);
+  }, []);
 
-  // Updated getStatusBadge function - replace your existing one
-  const getStatusBadge = (status) => {
+  // Status badge component
+  const getStatusBadge = useCallback((status) => {
     const statusLower = status ? status.toLowerCase() : 'pending';
     let bgColor, textColor, borderColor;
 
@@ -307,35 +295,45 @@ const handleViewRecord = (record) => {
         {status || 'Pending'}
       </span>
     );
-  };
+  }, []);
 
-  const formatColumnName = (colName) => {
+  // Format column names
+  const formatColumnName = useCallback((colName) => {
     return colName
       .replace(/_/g, ' ')
       .replace(/\b\w/g, l => l.toUpperCase())
       .replace('Pwp', 'PWP')
       .replace('Id', 'ID');
-  };
+  }, []);
 
-  const formatCellValue = (value, colName) => {
-    if (!value && value !== 0) return '-';
-
-    if (colName === 'created_at' && value) {
+  // Render cell value
+  const renderCellValue = useCallback((row, col) => {
+    if (col === 'distributor') {
+      return row.distributor_text || '-';
+    }
+    if (col === 'account_types') {
+      return row.account_types_text || '-';
+    }
+    if (col === 'created_at' && row[col]) {
       try {
-        return new Date(value).toLocaleDateString("en-US", {
+        return new Date(row[col]).toLocaleDateString("en-US", {
           year: "numeric",
           month: "short",
           day: "numeric"
-        }); // e.g., Sep 17, 2025
+        });
       } catch {
-        return value;
+        return row[col];
       }
     }
+    return row[col] || '-';
+  }, []);
 
-    return String(value);
-  };
+  // Load data on component mount
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
-  // Define styles object
+  // Styles
   const styles = {
     td: {
       padding: '16px 20px',
@@ -344,14 +342,6 @@ const handleViewRecord = (record) => {
       color: '#000000ff'
     }
   };
-  useEffect(() => {
-    if (Object.keys(categoryMap).length > 0) {
-      fetchData();
-    }
-  }, [categoryMap, filter, searchQuery, statusFilter, dateFrom, dateTo]);
-  useEffect(() => {
-    fetchData();
-  }, [fetchData, rowsPerPage]);
 
   if (loading) {
     return (
@@ -377,7 +367,7 @@ const handleViewRecord = (record) => {
             animation: 'spin 1s linear infinite',
             margin: '0 auto 20px'
           }}></div>
-          <h2 style={{ margin: 0, color: '#333' }}>Loading Database...</h2>
+          <h2 style={{ margin: 0, color: '#333' }}>Loading Claims Database...</h2>
         </div>
         <style dangerouslySetInnerHTML={{
           __html: `
@@ -415,26 +405,40 @@ const handleViewRecord = (record) => {
           }}>
             <p style={{ margin: 0, color: '#d32f2f' }}>{error}</p>
           </div>
+          <button
+            onClick={fetchData}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#1976d2',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      padding: '20px',
-    }}>
+    <div style={{ padding: '20px' }}>
       <div style={{
         backgroundColor: 'white',
         borderRadius: '12px',
         overflow: 'hidden'
       }}>
         {/* Header */}
-        <div style={{
-          padding: '24px 30px',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ padding: '24px 30px', color: 'white' }}>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            gap: '12px', 
+            flexWrap: 'wrap' 
+          }}>
             <div style={{
               display: 'flex',
               flexDirection: 'column',
@@ -450,9 +454,8 @@ const handleViewRecord = (record) => {
                 letterSpacing: '0.5px',
                 lineHeight: '1.2'
               }}>
-                📊 RECORDS
+                📊 CLAIMS RECORDS
               </h1>
-
               <p style={{
                 margin: 0,
                 fontSize: '15px',
@@ -461,26 +464,22 @@ const handleViewRecord = (record) => {
                 lineHeight: '1.4',
                 fontStyle: 'italic'
               }}>
-                {data.length} records found {filter !== 'all' && (
-                  <span style={{ color: '#0d47a1' }}>({filter.replaceAll("_", " ")} only)</span>
-                )}
+                {data.length} claims records found
               </p>
             </div>
 
             {/* Controls */}
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '12px',
-                alignItems: 'center',
-              }}
-            >
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '12px',
+              alignItems: 'center',
+            }}>
               {/* Search */}
               <div className="filter-item">
                 <input
                   type="text"
-                  placeholder="🔍 Search by Code, AccountType...."
+                  placeholder="🔍 Search by PWP Code, Account Type...."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
@@ -520,9 +519,9 @@ const handleViewRecord = (record) => {
               </div>
 
               {/* Date Range */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
                 gap: '8px',
                 backgroundColor: 'white',
                 padding: '8px 12px',
@@ -553,25 +552,6 @@ const handleViewRecord = (record) => {
                     fontSize: '13px'
                   }}
                 />
-              </div>
-
-              <div className="filter-item">
-                <select
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    width: '100%',
-                    minWidth: '0',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <option value="all">All Records</option>
-                  <option value="cover">Cover PWP Only</option>
-                  <option value="regular">Regular PWP Only</option>
-                </select>
               </div>
 
               <div className="filter-item">
@@ -656,30 +636,30 @@ const handleViewRecord = (record) => {
                 }}>
                   {columns.map(col => (
                     <td key={col} style={styles.td}>
-                      <span style={{
+                      <span style={{ 
                         maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
                         display: 'inline-block',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
                       }}>
-                        {formatCellValue(row[col], col)}
+                        {renderCellValue(row, col)}
                       </span>
                     </td>
                   ))}
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
+                  <td style={{...styles.td, textAlign: 'center'}}>
                     {getStatusBadge(row.approval_status)}
                   </td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <button
-                      onClick={() => handleViewRecord(row)}
+                  <td style={{...styles.td, textAlign: 'center'}}>
+                    <button 
+                      onClick={() => handleViewRecord(row)} 
                       style={{
                         padding: '8px 16px',
-                        backgroundColor: '#2196f3',
-                        color: 'white',
-                        border: 'none',
+                        backgroundColor: '#2196f3', 
+                        color: 'white', 
+                        border: 'none', 
                         borderRadius: '6px',
-                        cursor: 'pointer',
+                        cursor: 'pointer', 
                         fontSize: '12px',
                         fontWeight: '500',
                         display: 'flex',
@@ -699,20 +679,22 @@ const handleViewRecord = (record) => {
             </tbody>
           </table>
         </div>
-
-
-
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', alignItems: 'center', gap: '12px' }}>
-        {/* Rows per page selector */}
+
+      {/* Pagination */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'flex-end', 
+        marginTop: '16px', 
+        alignItems: 'center', 
+        gap: '12px' 
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '14px' }}>Rows per page:</span>
           <select
             value={rowsPerPage}
             onChange={(e) => {
-              const newRowsPerPage = Number(e.target.value);
-              setRowsPerPage(newRowsPerPage);
-              setCurrentPage(1); // reset to page 1 when rows per page changes
+              setCurrentPage(1);
             }}
             style={{
               padding: '4px 8px',
@@ -727,7 +709,6 @@ const handleViewRecord = (record) => {
           </select>
         </div>
 
-        {/* Pagination Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
             onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
@@ -762,18 +743,16 @@ const handleViewRecord = (record) => {
           </button>
         </div>
       </div>
+
       {/* Record View Modal */}
       {showModal && (
         <RecordViewModal
           record={selectedRecord}
-          onClose={() => {
-            setShowModal(false);
-            setSelectedRecord(null);
-          }}
+          onClose={handleCloseModal}
         />
       )}
     </div>
   );
 }
 
-export default RecordsPage;
+export default ClaimsRecords;

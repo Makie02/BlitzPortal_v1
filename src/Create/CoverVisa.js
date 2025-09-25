@@ -41,29 +41,86 @@ const CoverVisa = () => {
 
 
 
-    const handleFormChange = async (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+const handleFormChange = async (e) => {
+  const { name, value } = e.target;
 
+  // Update formData with the new field value
+  setFormData((prev) => {
+    const updatedFormData = { ...prev, [name]: value };
+    return updatedFormData;
+  });
 
-        if (name === "distributor") {
+ if (name === "distributor") {
             try {
-                const selectedDistributor = distributors.find((d) => d.code === value);
+                const selectedDistributor = distributors.find((d) => d.code === Number(value));
 
                 if (!selectedDistributor) {
-                    console.warn("Distributor not found.");
+                    console.warn("⚠️ Distributor not found for code:", value);
+                    setAccountTypes([]);
                     return;
                 }
 
-                const { data, error } = await supabase
-                    .from("categorydetails")
-                    .select("id, code, name, description")
-                    .eq("principal_id", selectedDistributor.id);
+                console.log("📦 Selected distributor:", selectedDistributor);
 
-                if (error) throw error;
+                const isBadOrder = selectedDistributor.name === "BAD ORDER";
 
-                const formatted = data.map((item) => ({
-                    id: item.id,
+                setFormData((prev) => ({
+                    ...prev,
+                    distributor: value,
+                    distributorName: selectedDistributor.name || "",
+                    categoryName: isBadOrder ? [] : prev.categoryName,
+                    accountType: isBadOrder ? [] : prev.accountType,
+                }));
+
+                if (isBadOrder) {
+                    console.log("⛔ BAD ORDER selected → skipping categories");
+                    setAccountTypes([]);
+                    return;
+                }
+
+                // Fetch all categorydetails in batches
+                const batchSize = 1000;
+                let allData = [];
+                let hasMore = true;
+                let offset = 0;
+
+                console.log(`🔍 Starting to fetch all categories for distributor ID: ${selectedDistributor.id}`);
+
+                while (hasMore) {
+                    console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1}... (offset: ${offset})`);
+
+                    const { data, error } = await supabase
+                        .from("categorydetails")
+                        .select("code, name, description")
+                        .eq("principal_id", selectedDistributor.id)
+                        .order("name", { ascending: true })
+                        .range(offset, offset + batchSize - 1);
+
+                    if (error) {
+                        console.error("❌ Batch fetch error:", error);
+                        throw error;
+                    }
+
+                    console.log(`✅ Batch ${Math.floor(offset / batchSize) + 1} fetched: ${data?.length || 0} records`);
+
+                    if (data && data.length > 0) {
+                        allData = [...allData, ...data];
+                        offset += batchSize;
+                        hasMore = data.length === batchSize;
+                        console.log(`📊 Total records so far: ${allData.length}`);
+                    } else {
+                        hasMore = false;
+                        console.log("🏁 No more records to fetch");
+                    }
+                }
+
+                if (allData.length === 0) {
+                    console.log("⚠️ No categories found for this distributor");
+                    setAccountTypes([]);
+                    return;
+                }
+
+                const formatted = allData.map((item) => ({
                     code: item.code,
                     name: item.name,
                     description: item.description,
@@ -71,16 +128,19 @@ const CoverVisa = () => {
 
                 setAccountTypes(formatted);
                 setAccountSearchTerm("");
-                // Reset selected accounts when distributor changes
                 setFormData((prev) => ({ ...prev, accountType: [] }));
 
-                console.log("✅ Fetched categories for distributor:", formatted);
+                console.log("✅ All formatted accountTypes set:", formatted.length, "records");
+                console.log("🧹 Reset formData.accountType after distributor change");
+
             } catch (error) {
                 console.error("❌ Failed to fetch category details:", error.message);
                 setAccountTypes([]);
             }
-        }
-    };
+  }
+};
+
+
 
     const prevStep = () => {
         if (currentStep > 1) setCurrentStep(currentStep - 1);
@@ -415,6 +475,7 @@ const CoverVisa = () => {
 
         return selectedNames.join(", ");
     };
+
     // toggle checkbox
     const toggleAccountType = (code) => {
         setFormData((prev) => {
@@ -875,7 +936,7 @@ const CoverVisa = () => {
                                     color: formData.distributor ? "inherit" : "#aaa",
                                     backgroundColor: formData.distributor ? "inherit" : "#f5f5f5",
                                     userSelect: formData.distributor ? "auto" : "none",
-                                    background:'#ffff'
+                                    background: '#ffff'
                                 }}
                                 aria-disabled={!formData.distributor}
                             >
@@ -913,89 +974,96 @@ const CoverVisa = () => {
                             </div>
 
                             {/* Modal with checkboxes */}
-                            <Modal
-                                show={showModal_Account && formData.distributor}  // Only show if distributor selected
-                                onHide={() => setShowModal_Account(false)}
-                                centered
-                                size="lg"
-                            >
+                               <Modal
+                                                                   show={showModal_Account}
+                                                                   onHide={() => setShowModal_Account(false)}
+                                                                   centered
+                                                                   size="lg"  // <-- Add this
+                                                               >
+                                                                   <Modal.Header
+                                                                       closeButton
+                                                                       style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                                                                   >
+                                                                       <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                                                           Select Account Type
+                                                                       </Modal.Title>
+                                                                   </Modal.Header>
+                           
+                                                                   <Modal.Body
+                                                                       style={{
+                                                                           maxHeight: "400px",
+                                                                           display: "flex",
+                                                                           flexDirection: "column",
+                                                                           padding: "1rem",
+                                                                       }}
+                                                                   >   <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                                                                           Debug: accountTypes.length = {accountTypes.length}
+                                                                           {accountTypes.length > 0 && (
+                                                                               <div>Sample: {accountTypes[0]?.code} - {accountTypes[0]?.name}</div>
+                                                                           )}
+                                                                       </div>
+                                                                       {/* Search Bar - fixed height, no scroll */}
+                                                                       <input
+                                                                           type="text"
+                                                                           className="form-control mb-3"
+                                                                           placeholder="Search account types..."
+                                                                           value={accountSearchTerm}
+                                                                           onChange={(e) => setAccountSearchTerm(e.target.value)}
+                                                                           style={{
+                                                                               borderColor: "#007bff",
+                                                                               flexShrink: 0,
+                                                                           }}
+                                                                       />
+                           
+                                                                       {/* Scrollable list container */}
+                                                                       <div
+                                                                           style={{
+                                                                               overflowY: "auto",
+                                                                               flexGrow: 1,
+                                                                           }}
+                                                                       >
+                                                                           {accountTypes
+                                                                               .filter((opt) =>
+                                                                                   opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase())
+                                                                               )
+                                                                               .map((opt) => (
+                                                                                   <div
+                                                                                       key={opt.code}
+                                                                                       style={{ display: "flex", alignItems: "center", padding: "6px 0", marginLeft: '10px' }}
+                                                                                   >
+                                                                                       <input
+                                                                                           type="checkbox"
+                                                                                           checked={formData.accountType.includes(opt.code)}
+                                                                                           onChange={() => toggleAccountType(opt.code)}
+                                                                                           id={`accountType-${opt.code}`}
+                                                                                           style={{
+                                                                                               width: "20px",   // default is ~16px, increase this
+                                                                                               height: "20px",
+                                                                                               transform: "scale(1.3)", // alternative way to make it bigger
+                                                                                               cursor: "pointer",
+                                                                                           }}
+                                                                                       />
+                           
+                                                                                       <label
+                                                                                           htmlFor={`accountType-${opt.code}`}
+                                                                                           style={{ marginLeft: "8px", cursor: "pointer" }}
+                                                                                       >
+                                                                                           {opt.name}
+                                                                                       </label>
+                                                                                   </div>
+                                                                               ))}
+                                                                       </div>
+                                                                   </Modal.Body>
+                           
+                           
+                                                                   <Modal.Footer>
+                                                                       <Button variant="light" onClick={() => setShowModal_Account(false)}>
+                                                                           Close
+                                                                       </Button>
+                                                                   </Modal.Footer>
+                                                               </Modal>
 
-
-
-                                {/* Modal with checkboxes */}
-                         
-                                    <Modal.Header
-                                        closeButton
-                                        style={{ background: "rgb(70, 137, 166)", color: "white" }}
-                                    >
-                                        <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                                            Select Account Type
-                                        </Modal.Title>
-                                    </Modal.Header>
-
-                                    <Modal.Body
-                                        style={{
-                                            maxHeight: "400px",
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            padding: "1rem",
-                                        }}
-                                    >
-                                        {/* Search Bar - fixed height, no scroll */}
-                                        <input
-                                            type="text"
-                                            className="form-control mb-3"
-                                            placeholder="Search account types..."
-                                            value={accountSearchTerm}
-                                            onChange={(e) => setAccountSearchTerm(e.target.value)}
-                                            style={{
-                                                borderColor: "#007bff",
-                                                flexShrink: 0,
-                                            }}
-                                        />
-
-                                        {/* Scrollable list container */}
-                                        <div
-                                            style={{
-                                                overflowY: "auto",
-                                                flexGrow: 1,
-                                            }}
-                                        >
-                                            {accountTypes
-                                                .filter((opt) =>
-                                                    opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase())
-                                                )
-                                                .map((opt) => (
-                                                    <div
-                                                        key={opt.code}
-                                                        style={{ display: "flex", alignItems: "center", padding: "6px 0" }}
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={formData.accountType.includes(opt.code)}
-                                                            onChange={() => toggleAccountType(opt.code)}
-                                                            id={`accountType-${opt.code}`}
-                                                        />
-                                                        <label
-                                                            htmlFor={`accountType-${opt.code}`}
-                                                            style={{ marginLeft: "8px", cursor: "pointer" }}
-                                                        >
-                                                            {opt.name}
-                                                        </label>
-                                                    </div>
-                                                ))}
-                                        </div>
-                                    </Modal.Body>
-
-
-                                    <Modal.Footer>
-                                        <Button variant="light" onClick={() => setShowModal_Account(false)}>
-                                            Close
-                                        </Button>
-                                    </Modal.Footer>
-                                </Modal>
-
-                                {/* Submit Button */}
+                            {/* Submit Button */}
                         </div>
 
                         <div className="col-md-3" style={{ position: 'relative' }}>

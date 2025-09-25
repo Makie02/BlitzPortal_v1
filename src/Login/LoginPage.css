@@ -547,4 +547,14 @@
   .mobile-login-logo {
     width: 300px;
   }
+}.login-footer {
+    text-align: center;
+    margin-top: 20px;
+    color: #aaa;
+    font-size: 14px;
+    font-weight: 500;
+    position: absolute;
+    bottom: 10px;
+    width: 100%;
+    left: 0;
 }

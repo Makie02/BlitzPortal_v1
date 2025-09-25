@@ -3,16 +3,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';  // <---- import sweetalert2
 import { supabase } from '../supabaseClient';
-import { Modal, Button } from 'react-bootstrap'; // Ensure react-bootstrap is installed
-import { FaExclamationTriangle } from 'react-icons/fa'; // Make sure react-icons is installed
-import { Table, Form, Container, Card, Spinner } from 'react-bootstrap';
+import { Modal, Button } from 'react-bootstrap';
+import { FaExclamationTriangle } from 'react-icons/fa';
+import { Table, Form, Card, Spinner } from 'react-bootstrap';
 import * as XLSX from 'xlsx';
 import { FaFileExcel, FaCloudUploadAlt, FaDownload, FaSave, FaSearch } from 'react-icons/fa';
-import { CSVLink } from 'react-csv';
 
 const RegularVisaForm = () => {
 
-    const [singleApprovals, setSingleApprovals] = useState([]);
     const [userApprovers, setUserApprovers] = useState([]);
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -20,14 +18,6 @@ const RegularVisaForm = () => {
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
-
-            // Fetch singleapprovals
-            // const { data: approvalsData, error: approvalsError } = await supabase
-            //     .from('singleapprovals')
-            //     .select('*')
-            //     .order('created_at', { ascending: false });
-
-            // Fetch user approvers
             const { data: userApproversData, error: userApproversError } = await supabase
                 .from('User_Approvers')
                 .select('*')
@@ -51,39 +41,8 @@ const RegularVisaForm = () => {
         fetchData();
     }, []);
 
-    // Helper: get name from user_id
-    const getUserName = (user_id) => {
-        const user = users.find((u) => u.UserID === user_id);
-        return user ? user.name || 'No Name' : 'Unknown User';
-    };
-
-    // Combine and normalize data into one array for the table
-    const combinedData = [
-        ...singleApprovals.map((a) => ({
-            id: a.id,
-            approver: getUserName(a.user_id),
-            position: a.position,
-            status: a.allowed_to_approve ? 'Approved' : 'Pending',
-            type: '',
-            created_at: a.created_at,
-            isSingleApproval: true,
-        })),
-        ...userApprovers.map((u) => ({
-            id: u.id,
-            approver: u.Approver_Name || 'No Name',
-            position: '',
-            status: '',
-            type: u.Type || '',
-            created_at: u.created_at,
-            isSingleApproval: false,
-        })),
-    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); // newest first
-
-
-
-
-    const today = new Date().toISOString().split('T')[0];
-
+    const [accountSkuRows, setAccountSkuRows] = useState({}); // Object to store SKU rows per account
+    const [selectedAccountForSku, setSelectedAccountForSku] = useState("ALL_ACCOUNTS");
     // Step 0: Form data
     const [formData, setFormData] = useState({
         regularpwpcode: "",
@@ -95,6 +54,10 @@ const RegularVisaForm = () => {
         promoScheme: "",
         activityDurationFrom: new Date().toISOString().split('T')[0], // today
         activityDurationTo: new Date().toISOString().split('T')[0], // today
+        rowsCategories: [
+            { category: '', amount: '' },
+            { category: '', amount: '' }
+        ],
 
 
 
@@ -108,8 +71,6 @@ const RegularVisaForm = () => {
         accounts: null,         // New Field
         amount_display: null,   // New Field
     });
-
-
 
 
     const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
@@ -172,53 +133,6 @@ const RegularVisaForm = () => {
 
 
 
-    // Handle input change for form fields
-
-    // Handle toggle change for Is Part of Cover Visa
-    const [coverVisas, setCoverVisas] = useState([]);
-
-
-
-
-
-
-
-
-
-
-
-
-    // Auto-select first Cover Visa when toggled ON
-    // useEffect(() => {
-    //     if (formData.isPartOfCoverPwp && coverVisas.length > 0) {
-    //         setFormData((prev) => ({
-    //             ...prev,
-    //             coverVisaCode: coverVisas[0].coverVisaCode || coverVisas[0].code || '',
-    //         }));
-    //     } else {
-    //         setFormData((prev) => ({
-    //             ...prev,
-    //             coverVisaCode: '',
-    //         }));
-    //     }
-    // }, [formData.isPartOfCoverPwp, coverVisas]);
-
-
-    const formatCurrency = (num) =>
-        `PHP ${Number(num || 0).toLocaleString(undefined, {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        })}`;
-
-
-    // Handle promo table row change
-
-
-
-
-
-
-
     const [files, setFiles] = useState([]);
     const fileInputRef = useRef();
 
@@ -262,84 +176,17 @@ const RegularVisaForm = () => {
     };
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const [submitAction, setSubmitAction] = useState(null);
-
-
-    const [options, setOptions] = useState([]);
-
-    const [showCoverVisaCode, setShowCoverVisaCode] = useState(false);
-
     const [hovered, setHovered] = useState(false);
 
     const borderColor = formData.company ? 'green' : hovered ? '#ccc' : '';
-    const [groupAccount, setGroupAccount] = useState([]);
+
     const [accountTypes, setAccountTypes] = useState([]);
-    const [visaTypes, setVisaTypes] = useState([]);
-    const [activity, setActvity] = useState([]);
-    const [principal, setPrincipal] = useState([]);
 
 
-
-
-
-
-
-
-
-
-
-
-
-    // Load group account list when accountType is selected
-
-
-
-
-
-
-
-
-
-
-
-
-    const [promotedSKUs, setPromotedSKUs] = useState([]);
     const [showSkuModal, setShowSkuModal] = useState(false);
-    const [tableData, setTableData] = useState([
-        { promotedSKU: '' }, // Example row
-        // You can dynamically populate this depending on your case
-    ]);
-    const [skuSearch, setSkuSearch] = useState('');
-
-    const [currentRowIndex, setCurrentRowIndex] = useState(null);
 
 
 
-    const handleCloseSkuModal = () => {
-        setShowSkuModal(false);
-        setSkuSearch('');
-    };
-
-
-
-    const [brands, setBrands] = React.useState({});
     // State to hold filtered brands for selected principal
     const [filteredBrands, setFilteredBrands] = useState([]); // Always an array
 
@@ -375,37 +222,6 @@ const RegularVisaForm = () => {
         };
     }, [formData.principal]);
 
-    const [Costdetails, setCostdetails] = useState([]);
-
-
-    // When principal changes, filter brands
-    const [amountBadget, setAmountBadget] = useState(null);
-    const [coverPwps, setCoverPwps] = useState([]); // This replaces coverVisas
-
-    // useEffect(() => {
-    //     const fetchAmount = async () => {
-    //         if (!formData.coverVisaCode) {
-    //             setAmountBadget(null);
-    //             return;
-    //         }
-
-    //         const { data, error } = await supabase
-    //             .from('amount_badget')
-    //             .select('remainingbalance')
-    //             .eq('pwp_code', formData.coverVisaCode)
-    //             .single();
-
-    //         if (error) {
-    //             console.error('Supabase error:', error.message);
-    //             setAmountBadget(null);
-    //         } else {
-    //             console.log('Fetched remainingbalance:', data?.remainingbalance);
-    //             setAmountBadget(data?.remainingbalance ?? null);
-    //         }
-    //     };
-
-    //     fetchAmount();
-    // }, [formData.coverVisaCode]);
 
 
 
@@ -417,27 +233,28 @@ const RegularVisaForm = () => {
     React.useEffect(() => {
         async function fetchCoverPwpWithStatus() {
             try {
-                // Step 1: Fetch coverPwp codes from amount_badget
+                // Step 1: Fetch amount_badget data
                 const { data: amountData, error: amountError } = await supabase
                     .from('amount_badget')
                     .select('pwp_code, amountbadget, remainingbalance');
-
                 if (amountError) throw amountError;
 
-                // Extract all pwp_codes
+                // Step 2: Fetch approval history for those pwp_codes
                 const pwpCodes = amountData.map(item => item.pwp_code);
-
-                // Step 2: Fetch latest approval response for each pwp_code from Approval_History
-                // We'll fetch all approval history entries for these codes, sorted by DateResponded desc
                 const { data: approvalData, error: approvalError } = await supabase
                     .from('Approval_History')
                     .select('PwpCode, Response, DateResponded')
                     .in('PwpCode', pwpCodes)
                     .order('DateResponded', { ascending: false });
-
                 if (approvalError) throw approvalError;
 
-                // Step 3: Create a map from pwp_code -> latest Response
+                // Step 3: Fetch cover_pwp data to get createForm
+                const { data: coverPwpData, error: coverPwpError } = await supabase
+                    .from('cover_pwp')
+                    .select('cover_code, createForm');
+                if (coverPwpError) throw coverPwpError;
+
+                // Step 4: Build maps for quick lookup
                 const latestResponseMap = new Map();
                 for (const record of approvalData) {
                     if (!latestResponseMap.has(record.PwpCode)) {
@@ -445,14 +262,24 @@ const RegularVisaForm = () => {
                     }
                 }
 
-                // Step 4: Merge amountData with approval status
-                // Approved = true only if latest response is "approved" (case insensitive), otherwise false
+                const createFormMap = new Map();
+                for (const record of coverPwpData) {
+                    createFormMap.set(record.cover_code, record.createForm);
+                }
+
+                // Step 5: Merge everything together
                 const mergedData = amountData.map(item => {
                     const latestResponse = latestResponseMap.get(item.pwp_code) || null;
                     return {
                         ...item,
                         Approved: latestResponse === 'approved',
+                        createForm: createFormMap.get(item.pwp_code) || 'N/A', // fallback if no createForm found
                     };
+                });
+
+                // Optional: Log to console in requested format
+                mergedData.forEach(item => {
+                    console.log(`${item.pwp_code} - ${item.remainingbalance} - ${item.createForm}`);
                 });
 
                 setCoverPwpWithStatus(mergedData);
@@ -466,13 +293,14 @@ const RegularVisaForm = () => {
     }, []);
 
 
+
+
+
     const [showCoverModal, setShowCoverModal] = useState(false);
-    const [coverVisaSearch, setCoverVisaSearch] = useState('');
 
 
 
     const [showModal, setShowModal] = useState(false);
-    const [showListingsModal, setShowListingsModal] = useState(false);
 
     const [categories, setCategories] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -502,9 +330,7 @@ const RegularVisaForm = () => {
 
         setFormData(prev => ({
             ...prev,
-            // selectedSkuCodes: isChecked
-            //     ? [...(prev.selectedSkuCodes || []), skuCode]
-            //     : (prev.selectedSkuCodes || []).filter(code => code !== skuCode)
+
         }));
 
         console.log(`✅ Updated selected SKUs:`, isChecked ? 'Added' : 'Removed', skuCode);
@@ -520,93 +346,138 @@ const RegularVisaForm = () => {
         });
         setRows(newRows);
     }, [selectedSkus]);
-    const handleChangesku = (index, field, value) => {
-        setRows(prevRows => {
-            const updated = [...prevRows];
-            const currentRow = { ...updated[index] };
 
-            // If updating SKUITEM, set it from value directly (allow manual input)
+    const handleAccountSkuChange = (selectedCode) => {
+        setSelectedAccountForSku(selectedCode);
+
+        if (selectedCode && selectedCode !== 'ALL_ACCOUNTS') {
+            setAccountSkuRows(prev => {
+                const existingRows = prev[selectedCode] || [];
+
+                // Only create a default row if this account truly has none
+                if (existingRows.length === 0) {
+                    return {
+                        ...prev,
+                        [selectedCode]: [{
+                            accountCode: selectedCode,  // 👈 keep code reference
+                            SKUITEM: '',
+                            SRP: '',
+                            QTY: '',
+                            UOM: '',
+                            BILLING_AMOUNT: '',
+                            DISCOUNT: '',
+                            TOTAL_AMOUNT: '',
+                        }]
+                    };
+                }
+
+                return prev; // Keep existing rows
+            });
+        }
+    };
+
+
+
+    const handleChangeSkuForAccount = (accountCode, index, field, value) => {
+        setAccountSkuRows(prevAccountRows => {
+            const updatedAccountRows = { ...prevAccountRows };
+            const accountRows = [...(updatedAccountRows[accountCode] || [])];
+            const currentRow = { ...accountRows[index] };
+
             if (field === 'SKUITEM') {
                 currentRow.SKUITEM = value;
             } else {
-                // Otherwise, keep SKUITEM as it was or from selectedSkus if available
-                currentRow.SKUITEM = selectedSkus[index] ?? currentRow.SKUITEM ?? '';
+                currentRow.SKUITEM = currentRow.SKUITEM || '';
                 currentRow[field] = value;
             }
 
-            if (['SRP', 'QTY', 'DISCOUNT'].includes(field)) {
+            // NEW CALCULATION LOGIC
+            if (['SRP', 'QTY'].includes(field)) {
                 const srp = parseFloat(field === 'SRP' ? value : currentRow.SRP) || 0;
                 const qty = parseInt(field === 'QTY' ? value : currentRow.QTY, 10) || 0;
-                const discount = parseFloat(field === 'DISCOUNT' ? value : currentRow.DISCOUNT) || 0;
 
-                currentRow.BILLING_AMOUNT = (srp * qty) - discount;
+                // Calculate billing amount first (SRP × QTY)
+                currentRow.BILLING_AMOUNT = srp * qty;
+
+                // Then calculate total amount (billing amount - discount)
+                const discount = parseFloat(currentRow.DISCOUNT) || 0;
+                currentRow.TOTAL_AMOUNT = currentRow.BILLING_AMOUNT - discount;
+
+            } else if (field === 'DISCOUNT') {
+                const discount = parseFloat(value) || 0;
+                currentRow.DISCOUNT = discount;
+
+                // Recalculate total amount when discount changes
+                const billingAmount = parseFloat(currentRow.BILLING_AMOUNT) || 0;
+                currentRow.TOTAL_AMOUNT = billingAmount - discount;
             }
 
-            updated[index] = currentRow;
-            return updated;
+            accountRows[index] = currentRow;
+            updatedAccountRows[accountCode] = accountRows;
+
+            return updatedAccountRows;
         });
     };
+    const addSkuRowForAccount = (accountCode) => {
+        setAccountSkuRows(prev => ({
+            ...prev,
+            [accountCode]: [
+                ...(prev[accountCode] || []),
+                {
+                    SKUITEM: '',
+                    SRP: '',
+                    QTY: '',
+                    UOM: 'Case',
+                    DISCOUNT: '',
+                    BILLING_AMOUNT: ''
+                }
+            ]
+        }));
+    };
+    const removeSkuRowForAccount = (accountCode, index) => {
+        setAccountSkuRows(prev => ({
+            ...prev,
+            [accountCode]: prev[accountCode].filter((_, i) => i !== index)
+        }));
+    };
+    const calculateAccountSkuTotals = (accountCode) => {
+        const accountRows = accountSkuRows[accountCode] || [];
+        return accountRows.reduce(
+            (acc, row) => {
+                acc.SRP += parseFloat(row.SRP) || 0;
+                acc.QTY += parseInt(row.QTY) || 0;
+                acc.BILLING_AMOUNT += parseFloat(row.BILLING_AMOUNT) || 0;
+                acc.DISCOUNT += parseFloat(row.DISCOUNT) || 0;
+                acc.TOTAL_AMOUNT += parseFloat(row.TOTAL_AMOUNT) || 0;
 
-
-    const handleCloseModal = () => {
-        setShowModal(false);
+                if (row.UOM && UOM_OPTIONS.includes(row.UOM)) {
+                    acc.UOMCount[row.UOM] = (acc.UOMCount[row.UOM] || 0) + 1;
+                }
+                return acc;
+            },
+            { SRP: 0, QTY: 0, BILLING_AMOUNT: 0, DISCOUNT: 0, TOTAL_AMOUNT: 0, UOMCount: {} }
+        );
     };
 
+    const calculateGrandTotals = () => {
+        const allAccountCodes = formData.accountType || [];
+        return allAccountCodes.reduce((grandTotal, accountCode) => {
+            const accountTotals = calculateAccountSkuTotals(accountCode);
+            grandTotal.SRP += accountTotals.SRP;
+            grandTotal.QTY += accountTotals.QTY;
+            grandTotal.DISCOUNT += accountTotals.DISCOUNT;
+            grandTotal.BILLING_AMOUNT += accountTotals.BILLING_AMOUNT;
 
+            // Merge UOM counts
+            Object.keys(accountTotals.UOMCount).forEach(uom => {
+                grandTotal.UOMCount[uom] = (grandTotal.UOMCount[uom] || 0) + accountTotals.UOMCount[uom];
+            });
 
-
-
-
-
-
-    // const handleCategorySelect = async (cat) => {
-    //     setFormData(prev => ({
-    //         ...prev,
-    //         categoryName: cat.name,
-    //         categoryCode: cat.code
-    //     }));
-    //     setSelectedCategory(cat);
-    //     setShowModal(false);
-
-    //     // Fetch listings related to selected category
-    //     const { data, error } = await supabase
-    //         .from("category_listing")
-    //         .select("id, name, sku_code, description")
-    //         .eq("category_code", cat.code);
-
-    //     if (error) {
-    //         console.error("Error fetching listings:", error.message);
-    //         setListings([]);
-    //     } else {
-    //         setListings(data);
-    //         setShowListingsModal(true);
-    //     }
-    // };
-
-
-    const openListingModal = async (category) => {
-        setSelectedCategory(category);
-        setLoadingListings(true);
-        setShowListingModal(true); // show modal before fetching so loading indicator shows
-
-        try {
-            const { data, error } = await supabase
-                .from("category_listing")
-                .select("*")
-                .eq("category_code", category.code);
-
-            if (error) {
-                console.error("Error fetching listings:", error.message);
-                setListings([]);
-            } else {
-                setListings(data);
-            }
-        } catch (err) {
-            console.error("Unexpected error fetching listings:", err);
-            setListings([]);
-        } finally {
-            setLoadingListings(false);
-        }
+            return grandTotal;
+        }, { SRP: 0, QTY: 0, DISCOUNT: 0, BILLING_AMOUNT: 0, UOMCount: {} });
+    };
+    const handleCloseModal = () => {
+        setShowModal(false);
     };
 
 
@@ -643,18 +514,6 @@ const RegularVisaForm = () => {
             setSearchTerm('');
         }
     };
-
-    // Handle checkbox toggle
-    const toggleListingSelection = (listingId) => {
-        setSelectedListings(prev =>
-            prev.includes(listingId)
-                ? prev.filter(id => id !== listingId)
-                : [...prev, listingId]
-        );
-    };
-
-    // When category is selected → also fetch its listings
-
 
 
     const [activities, setActivities] = useState([]);
@@ -742,21 +601,6 @@ const RegularVisaForm = () => {
 
 
 
-    // useEffect(() => {
-    //     async function loadAccounts() {
-    //         const { data, error } = await supabase
-    //             .from('accounts')
-    //             .select('id, code, name')
-    //             .order('code', { ascending: true });
-    //         if (!error) setAccountTypes(data);
-    //     }
-    //     loadAccounts();
-    // }, []);
-
-    // compute selected
-
-
-
 
 
     // Toggle selection of accountType
@@ -765,21 +609,6 @@ const RegularVisaForm = () => {
     const [accountSearchTerm, setAccountSearchTerm] = useState("");
     const [showModal_Account, setShowModal_Account] = useState(false);
 
-    // Fetch all accounts initially (optional)
-    // useEffect(() => {
-    //     const fetchAccounts = async () => {
-    //         const { data, error } = await supabase
-    //             .from("accounts")
-    //             .select("*")
-    //             .order("code", { ascending: true });
-    //         if (error) {
-    //             console.error("Error fetching account types:", error.message);
-    //         } else {
-    //             setAccountTypes(data);
-    //         }
-    //     };
-    //     fetchAccounts();
-    // }, []);
 
     // Get selected account names for display
     const getAccountNames = () => {
@@ -803,45 +632,135 @@ const RegularVisaForm = () => {
     };
 
     // Handle changes on form inputs, including distributor change
+    // Fixed version of handleFormChange function
+    // Fixed version of handleFormChange function
+
+
+    const shouldShowCategory = () => {
+        // If distributor is BAD ORDER → hide
+        if (formData.distributorName?.trim().toUpperCase() === "BAD ORDER") {
+            return false;
+        }
+
+        // If activity is BAD ORDER (code 10007 or name contains BAD ORDER) → hide
+        const selectedActivity = activities.find((act) => act.code === formData.activity);
+
+        if (selectedActivity &&
+            (selectedActivity.name?.toUpperCase() === "BAD ORDER")) {
+            return false;
+        }
+
+        return true; // ✅ Otherwise → show
+    };
     const handleFormChange = async (e) => {
         const { name, value } = e.target;
+        console.log(`📝 Form change detected - Field: "${name}", Value: "${value}"`);
 
+        // If "distributor" changes, clear rowsAccounts early
+        if (name === "distributor" || name === "accountType") {
+            setRowsAccounts([]);
+            console.log("🧹 Cleared rowsAccounts due to distributor/accountType change");
+        }
+
+        // Main state update block
         setFormData((prev) => {
             const newForm = { ...prev, [name]: value };
 
-            if (settingsMap[value]) {
-                newForm.sku = settingsMap[value].sku;
-                newForm.accounts = settingsMap[value].accounts;
-                newForm.amount_display = settingsMap[value].amount_display;
-                console.log("🔍 SKU enabled:", settingsMap[value].sku);
+            if (name === "activity") {
+                const selectedActivity = activities.find((a) => a.code === value);
+                newForm.activityName = selectedActivity?.name || "";
+                console.log("🎯 Selected activity:", selectedActivity ? `${selectedActivity.code} - ${selectedActivity.name}` : "Not found");
+                console.log("📛 Selected Activity Name:", newForm.activityName);
+
+                if (settingsMap[value]) {
+                    newForm.sku = settingsMap[value].sku;
+                    newForm.accounts = settingsMap[value].accounts;
+                    newForm.amount_display = settingsMap[value].amount_display;
+
+                    console.log("🔍 Applied settingsMap values:", {
+                        sku: newForm.sku,
+                        accounts: newForm.accounts,
+                        amount_display: newForm.amount_display,
+                    });
+                }
             }
 
-            // Reset budget rows when distributor or accountType changes
-            if (name === "distributor" || name === "accountType") {
-                setRowsAccounts([]);  // Clear budget rows for fresh input
-            }
-
+            console.log("📋 Updated formData:", newForm);
             return newForm;
         });
 
+        // 🔄 If distributor changes, fetch related data
         if (name === "distributor") {
             try {
-                const selectedDistributor = distributors.find((d) => d.code === value);
+                const selectedDistributor = distributors.find((d) => d.code === Number(value));
 
                 if (!selectedDistributor) {
-                    console.warn("Distributor not found.");
+                    console.warn("⚠️ Distributor not found for code:", value);
+                    setAccountTypes([]);
                     return;
                 }
 
-                const { data, error } = await supabase
-                    .from("categorydetails")
-                    .select("id, code, name, description")
-                    .eq("principal_id", selectedDistributor.id);
+                console.log("📦 Selected distributor:", selectedDistributor);
 
-                if (error) throw error;
+                const isBadOrder = selectedDistributor.name === "BAD ORDER";
 
-                const formatted = data.map((item) => ({
-                    id: item.id,
+                setFormData((prev) => ({
+                    ...prev,
+                    distributor: value,
+                    distributorName: selectedDistributor.name || "",
+                    categoryName: isBadOrder ? [] : prev.categoryName,
+                    accountType: isBadOrder ? [] : prev.accountType,
+                }));
+
+                if (isBadOrder) {
+                    console.log("⛔ BAD ORDER selected → skipping categories");
+                    setAccountTypes([]);
+                    return;
+                }
+
+                // Fetch all categorydetails in batches
+                const batchSize = 1000;
+                let allData = [];
+                let hasMore = true;
+                let offset = 0;
+
+                console.log(`🔍 Starting to fetch all categories for distributor ID: ${selectedDistributor.id}`);
+
+                while (hasMore) {
+                    console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1}... (offset: ${offset})`);
+
+                    const { data, error } = await supabase
+                        .from("categorydetails")
+                        .select("code, name, description")
+                        .eq("principal_id", selectedDistributor.id)
+                        .order("name", { ascending: true })
+                        .range(offset, offset + batchSize - 1);
+
+                    if (error) {
+                        console.error("❌ Batch fetch error:", error);
+                        throw error;
+                    }
+
+                    console.log(`✅ Batch ${Math.floor(offset / batchSize) + 1} fetched: ${data?.length || 0} records`);
+
+                    if (data && data.length > 0) {
+                        allData = [...allData, ...data];
+                        offset += batchSize;
+                        hasMore = data.length === batchSize;
+                        console.log(`📊 Total records so far: ${allData.length}`);
+                    } else {
+                        hasMore = false;
+                        console.log("🏁 No more records to fetch");
+                    }
+                }
+
+                if (allData.length === 0) {
+                    console.log("⚠️ No categories found for this distributor");
+                    setAccountTypes([]);
+                    return;
+                }
+
+                const formatted = allData.map((item) => ({
                     code: item.code,
                     name: item.name,
                     description: item.description,
@@ -849,23 +768,17 @@ const RegularVisaForm = () => {
 
                 setAccountTypes(formatted);
                 setAccountSearchTerm("");
-                // Reset selected accounts when distributor changes
                 setFormData((prev) => ({ ...prev, accountType: [] }));
 
-                console.log("✅ Fetched categories for distributor:", formatted);
+                console.log("✅ All formatted accountTypes set:", formatted.length, "records");
+                console.log("🧹 Reset formData.accountType after distributor change");
+
             } catch (error) {
                 console.error("❌ Failed to fetch category details:", error.message);
                 setAccountTypes([]);
             }
         }
     };
-
-
-    // compute selected names
-    // const selectedNames = accountTypes
-    //     .filter(opt => formData.accountType && formData.accountType.includes(opt.id))
-    //     .map(opt => opt.name)
-    //     .join(', ');
 
 
 
@@ -899,12 +812,7 @@ const RegularVisaForm = () => {
     const UOM_OPTIONS = ['Case', 'PC', 'IBX'];
 
     const [rows, setRows] = useState([]);
-    const [tempIdCounter, setTempIdCounter] = useState(0);
 
-    // Fetch rows from Supabase
-
-
-    // Count how many rows per UOM
 
     // Export full table to Excel
     const triggerFileInput = () => {
@@ -1016,6 +924,7 @@ const RegularVisaForm = () => {
             UOM: row.UOM,
             DISCOUNT: row.DISCOUNT,
             BILLING_AMOUNT: row.BILLING_AMOUNT
+
         }));
 
         const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -1024,105 +933,9 @@ const RegularVisaForm = () => {
 
         XLSX.writeFile(workbook, "SKU_List.xlsx");
     };
-    // Handle input changes per row
-    const handleChange = (index, field, value) => {
-        setRows(prev => {
-            const updated = [...prev];
-            const row = { ...updated[index], [field]: value };
-
-            // Only recalculate billing amount if relevant fields change
-            if (['SRP', 'QTY', 'DISCOUNT'].includes(field)) {
-                const srp = parseFloat(field === 'SRP' ? value : row.SRP) || 0;
-                const qty = parseInt(field === 'QTY' ? value : row.QTY) || 0;
-                const discount = parseFloat(field === 'DISCOUNT' ? value : row.DISCOUNT) || 0;
-
-                row.BILLING_AMOUNT = (srp * qty) - discount;
-            }
-
-            updated[index] = row;
-            return updated;
-        });
-    };
-
-
-
-    // Save existing row to Supabase
-    // const saveRow = async (id) => {
-    //     const row = rows.find(r => r.id === id);
-    //     if (!row || typeof row.id !== 'number') return; // only save rows with real numeric IDs
-    //     const { error } = await supabase
-    //         .from('Regular_SKU')
-    //         .update({
-    //             PWP_CODE: row.PWP_CODE,
-    //             SKU: row.SKU,
-    //             SRP: parseFloat(row.SRP) || 0,
-    //             QTY: parseInt(row.QTY) || 0,
-    //             UOM: row.UOM,
-    //             DISCOUNT: parseFloat(row.DISCOUNT) || 0,
-    //             BILLING_AMOUNT: parseFloat(row.BILLING_AMOUNT) || 0,
-    //         })
-    //         .eq('id', id);
-    //     if (error) {
-    //         console.error('Error updating row:', error);
-    //         alert('Failed to save row');
-    //     } else {
-    //         fetchRows();
-    //     }
-    // };
-
-    // Delete row from Supabase
-    // const deleteRow = async (id) => {
-    //     if (typeof id !== 'number') {
-    //         // Just remove new unsaved row from state
-    //         setRows(prev => prev.filter(row => row.id !== id));
-    //         return;
-    //     }
-
-    //     const confirmed = window.confirm('Are you sure you want to delete this row?');
-    //     if (!confirmed) return;
-
-    //     const { error } = await supabase
-    //         .from('Regular_SKU')
-    //         .delete()
-    //         .eq('id', id);
-    //     if (error) {
-    //         console.error('Error deleting row:', error);
-    //         alert('Failed to delete');
-    //     } else {
-    //         fetchRows();
-    //     }
-    // };
-
-    // Add a new row with unique temp ID and balanced UOM default
-    // const addRow = () => {
-    //     const uomCounts = countUOMs(rows);
-    //     const minCount = Math.min(...UOM_OPTIONS.map(uom => uomCounts[uom] || 0));
-    //     const leastUsedUOMs = UOM_OPTIONS.filter(uom => (uomCounts[uom] || 0) === minCount);
-    //     const defaultUOM = leastUsedUOMs.length > 0 ? leastUsedUOMs[0] : 'Case';
-
-    //     const newId = `new-${tempIdCounter}`;
-    //     setTempIdCounter(tempIdCounter + 1);
-
-    //     const newRow = {
-    //         id: newId,
-    //         PWP_CODE: '',
-    //         SKU: '',
-    //         SRP: 0,
-    //         QTY: 0,
-    //         UOM: defaultUOM,
-    //         DISCOUNT: 0,
-    //         BILLING_AMOUNT: 0,
-    //     };
-    //     setRows(prev => [newRow, ...prev]);
-    // };
-
-    // Save a new row to Supabase
-
-
 
     const [rowsAccounts, setRowsAccounts] = useState([]); // Account rows from database or imported data
     const [loadingAccounts, setLoadingAccounts] = useState(false); // Loading state
-    const [fileImportAccounts, setFileImportAccounts] = useState(null); // File import reference
     const fileInputRefs = useRef(null); // Reference to file input for triggering the file picker
 
     // Fetch data from Supabase
@@ -1256,11 +1069,6 @@ const RegularVisaForm = () => {
 
 
 
-
-
-
-
-
     const handleExportCSV = () => {
         // Check if there's any data to export (i.e., if the table rows have data)
         const selectedAccounts = accountTypes.filter(account => formData.accountType.includes(account.code));
@@ -1280,6 +1088,7 @@ const RegularVisaForm = () => {
                 ACCOUNT_CODE: account.code || '',
                 ACCOUNT_NAME: account.name || '',
                 BUDGET: budgetValue.toString() || "0"
+
             };
         });
 
@@ -1320,24 +1129,6 @@ const RegularVisaForm = () => {
     // Handle export to Excel
 
 
-
-
-    // Calculate total budget
-    // const calculateTotalBudget = () => {
-    //     return rowsAccounts.reduce((sum, account) => sum + (parseFloat(account.BUDGET) || 0), 0).toFixed(2);
-    // };
-
-    // // Handle change for account data
-    // const handleChangeAccounts = (id, field, value) => {
-    //     setRowsAccounts(prev =>
-    //         prev.map(row => (row.id === id ? { ...row, [field]: value } : row))
-    //     );
-    // };
-
-    // Submit all rows (insert/update)
-
-
-
     // Delete row function
     const deleteRowAccounts = async (id) => {
         const confirmed = window.confirm('Are you sure you want to delete this row?');
@@ -1360,335 +1151,8 @@ const RegularVisaForm = () => {
     // Handle export to Excel
 
 
- 
 
 
-
-
-    const submitTosku = async () => {
-        try {
-            // ✅ Skip submitting if SKU is disabled
-            if (!formData.sku) {
-                console.log('🚫 SKU submission skipped (SKU not enabled for this activity).');
-                return; // Exit early if SKU is not enabled
-            }
-
-            // Prepare rows to submit with defaults
-            const rowsToSubmit = rows.map(row => ({
-                sku: row.SKUITEM,
-                srp: parseFloat(row.SRP) || 0,
-                qty: parseInt(row.QTY, 10) || 0,
-                uom: row.UOM || 'CASE',
-                discount: parseFloat(row.DISCOUNT) || 0,
-                billing_amount: parseFloat(row.BILLING_AMOUNT) || 0,
-                regular_code: row.regularpwpcode || generateRegularCode(allRegularPwpCodes),
-                remarks: formData.remarks || '',
-            }));
-
-            if (rows.length === 1) {
-                const updatedRow = rowsToSubmit[0];
-                updatedRow.regular_code = updatedRow.regular_code || generateRegularCode(allRegularPwpCodes);
-                rowsToSubmit.push(updatedRow);
-            } else {
-                const regularCodeForTotals = rowsToSubmit[0].regular_code || 'Total:';
-                const totalsData = {
-                    sku: 'Total:',
-                    srp: totals.SRP.toFixed(2),
-                    qty: totals.QTY,
-                    uom: 'EA',
-                    discount: totals.DISCOUNT.toFixed(2),
-                    billing_amount: totals.BILLING_AMOUNT.toFixed(2),
-                    regular_code: regularCodeForTotals,
-                    remarks: formData.remarks || 'Summary of all entries',
-                };
-                rowsToSubmit.push(totalsData);
-            }
-
-            // Removed Swal loading modal here
-
-            const { data, error } = await supabase
-                .from('regular_sku_listing')
-                .insert(rowsToSubmit);
-
-            if (error) {
-                throw new Error(error.message);
-            }
-
-            Swal.fire({
-                title: 'Success!',
-                text: 'Your data has been successfully submitted to the database.',
-                icon: 'success',
-                confirmButtonText: 'Ok',
-            });
-
-        } catch (error) {
-            Swal.fire({
-                title: 'Error!',
-                text: `There was an issue submitting your data: ${error.message}`,
-                icon: 'error',
-                confirmButtonText: 'Try Again',
-            });
-        }
-    };
-
- const submit_all = async (e) => {
-  e.preventDefault();
-
-  try {
-    // Show loading modal for 3 seconds (3000 ms)
-    await Swal.fire({
-      title: 'Submitting...',
-      html: 'Please wait while we save your data.',
-      allowOutsideClick: false,
-      didOpen: () => {
-        Swal.showLoading();
-      },
-      timer: 3000,
-      timerProgressBar: true,
-    });
-
-    // After loading modal closes, start actual submission
-    console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
-    await submitTosku();
-    console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
-
-    console.log(`[${new Date().toLocaleString()}] 📝 Submitting form data...`);
-    await handleSubmitFormAndAttachments();
-    console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
-
-    console.log(`[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`);
-
-    const filteredRows = rowsAccounts.filter(row =>
-      formData.accountType.includes(row.account_code)
-    );
-
-    const totalBudget = filteredRows
-      .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
-      .toFixed(2);
-
-    const budgetRowsToInsert = filteredRows.map(row => ({
-      regularcode: formData.regularpwpcode,
-      account_code: row.account_code,
-      account_name: row.account_name,
-      budget: row.budget || 0,
-      created_at: row.created_at || new Date().toISOString(),
-      createform: 'ADMINISTRATOR',
-      total_budget: totalBudget,
-    }));
-
-    if (budgetRowsToInsert.length > 0) {
-      const { data, error } = await supabase
-        .from('regular_accountlis_badget')
-        .insert(budgetRowsToInsert);
-
-      if (error) throw error;
-
-      console.log(`[${new Date().toLocaleString()}] ✅ Budget data saved:`, data);
-    } else {
-      console.log(`[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`);
-    }
-
-    await Swal.fire({
-      title: 'Success!',
-      text: 'Your data has been successfully submitted and saved.',
-      icon: 'success',
-      confirmButtonText: 'Ok',
-    });
-
-    window.location.reload();
-
-  } catch (error) {
-    console.error(`[${new Date().toLocaleString()}] ❌ Submit All Error:`, error);
-    Swal.fire({
-      title: 'Error!',
-      text: `There was an issue submitting your data: ${error.message}`,
-      icon: 'error',
-      confirmButtonText: 'Try Again',
-    });
-  }
-};
-
-
-
-
-    const handleSubmitFormAndAttachments = async () => {
-        try {
-            const storedUser = localStorage.getItem('loggedInUser');
-            const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-            const createdBy = parsedUser?.name || 'Unknown';
-
-            if (!formData.regularpwpcode || formData.regularpwpcode.trim() === "") {
-                throw new Error("regularpwpcode is required.");
-            }
-
-            // Validate distributor
-            let distributorCode = formData.distributor?.trim() || null;
-
-            if (distributorCode) {
-                const { data: distributorsData, error: distributorError } = await supabase
-                    .from('distributors')
-                    .select('code')
-                    .eq('code', distributorCode)
-                    .single();
-
-                if (distributorError || !distributorsData) {
-                    throw new Error(`Distributor code "${distributorCode}" is invalid.`);
-                }
-            }
-
-            // Prepare budget values
-            const amountBudget = parseFloat(formData.amountbadget || 0);
-            const billingAmountSKU = rows.reduce((acc, row) => {
-                const val = parseFloat(row.BILLING_AMOUNT);
-                return acc + (isNaN(val) ? 0 : val);
-            }, 0);
-            const totalAllocatedFromAccounts = rowsAccounts.reduce(
-                (sum, row) => sum + (parseFloat(row.budget) || 0),
-                0
-            );
-
-            // ✅ Use only one source for creditBudget based on priority
-            let creditBudget = 0;
-
-            if (amountBudget > 0) {
-                creditBudget = amountBudget;
-            } else if (billingAmountSKU > 0) {
-                creditBudget = billingAmountSKU;
-            } else if (totalAllocatedFromAccounts > 0) {
-                creditBudget = totalAllocatedFromAccounts;
-            }
-
-            // Calculate remaining balance
-            const remainingBalance =
-                selectedBalance !== null ? selectedBalance - creditBudget : null;
-
-            // Prepare form submission data
-            const submissionData = {
-                ...formData,
-                distributor: distributorCode,
-                created_at: new Date().toISOString(),
-                createForm: createdBy,
-                credit_budget: creditBudget,
-                remaining_balance: remainingBalance,
-            };
-
-            // Insert form into Supabase
-            const { data: formInsertData, error: formInsertError } = await supabase
-                .from('regular_pwp')
-                .insert([submissionData])
-                .select();
-
-            if (formInsertError) {
-                throw new Error(`Form Insert failed: ${formInsertError.message}`);
-            }
-
-            // Insert attachments (if any)
-            await Promise.all(
-                files.map(async (file) => {
-                    const { name, type, size } = file;
-
-                    const attachmentPayload = {
-                        regularpwpcode: formData.regularpwpcode,
-                        filename: name,
-                        mimetype: type,
-                        size: size,
-                    };
-
-                    const { error: attachmentError } = await supabase
-                        .from('regular_attachments')
-                        .insert([attachmentPayload])
-                        .select();
-
-                    if (attachmentError) {
-                        throw new Error(`Attachment insert failed for ${name}: ${attachmentError.message}`);
-                    }
-                })
-            );
-
-            // ✅ Reset everything after success
-            setFiles([]);
-            setRows([]);           // <-- Make sure you have setRows in your state
-            setRowsAccounts([]);   // <-- Same here
-            setFormData({
-                regularpwpcode: "",
-                accountType: [],
-                categoryCode: [],
-                categoryName: [],
-                activity: "",
-                pwptype: "Regular",
-                notification: false,
-                objective: "",
-                promoScheme: "",
-                activityDurationFrom: new Date().toISOString().split('T')[0],
-                activityDurationTo: new Date().toISOString().split('T')[0],
-                isPartOfCoverPwp: false,
-                coverPwpCode: "",
-                distributor: "",
-                amountbadget: "0",
-                categoryCode: "",
-                sku: null,
-                accounts: null,
-                amount_display: null,
-            });
-
-            // Optional: show success toast
-            // toast.success("Form submitted successfully");
-
-        } catch (error) {
-            // Handle and show error to the user
-            console.error("Submission Error:", error.message);
-            alert(error.message); // Replace with a toast/snackbar if available
-        }
-    };
-
-
-
-
-
-    const saveRecentActivity = async ({ UserId }) => {
-        try {
-            // 1. Get public IP
-            const ipRes = await fetch('https://api.ipify.org?format=json');
-            const { ip } = await ipRes.json();
-
-            // 2. Get geolocation info
-            const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-            const geo = await geoRes.json();
-
-            // 3. Build activity entry
-            const activity = {
-                Device: navigator.userAgent || 'Unknown Device',
-                Location: `${geo.city || 'Unknown'}, ${geo.region || 'Unknown'}, ${geo.country_name || 'Unknown'}`,
-                IP: ip,
-                Time: new Date().toISOString(),
-                Action: 'Create Form Regular PWP',
-            };
-
-            // 4. Save to Supabase only
-            const { error } = await supabase
-                .from('RecentActivity')
-                .insert([{
-                    userId: UserId,
-                    device: activity.Device,
-                    location: activity.Location,
-                    ip: activity.IP,
-                    time: activity.Time,
-                    action: activity.Action
-                }]);
-
-            if (error) {
-                console.error('❌ Supabase insert error:', error.message);
-            } else {
-                console.log('✅ Activity saved to Supabase');
-            }
-
-        } catch (err) {
-            console.error('❌ Failed to log activity:', err.message || err);
-        }
-    };
-
-
-    // Only update rows when categories change, NOT when accounts change
     const handleCategoryChange = (cat, isSelected) => {
         setFormData((prevData) => {
             let newCodes = [...(prevData.categoryCode || [])];
@@ -1719,15 +1183,33 @@ const RegularVisaForm = () => {
                 });
             });
 
+            // ✅ Log selected categories (code + name)
+            console.log("Updated Selected Categories:");
+            newCodes.forEach((code, index) => {
+                console.log(`Code: ${code}, Name: ${newNames[index]}`);
+            });
+
             return {
                 ...prevData,
                 categoryCode: newCodes,    // This will be saved to DB
-                categoryName: newNames,   // Only for display
+                categoryName: newNames,    // Only for display
             };
         });
     };
 
 
+    const updateSelectedCategories = (newCodes, newNames) => {
+        console.log("Updated Selected Categories:");
+        newCodes.forEach((code, index) => {
+            console.log(`Code: ${code}, Name: ${newNames[index]}`);
+        });
+
+        setFormData((prevData) => ({
+            ...prevData,
+            categoryCode: newCodes,  // Save codes to DB later
+            categoryName: newNames,  // Display names only
+        }));
+    };
 
 
     const totalAllocatedBudget = rowsAccounts.reduce(
@@ -1771,25 +1253,9 @@ const RegularVisaForm = () => {
 
 
     const [selectedRowIndex, setSelectedRowIndex] = useState(null);
-    useEffect(() => {
-        const fetchCategoryListing = async () => {
-            const { data, error } = await supabase
-                .from('category_listing')
-                .select('*')
-                .order('sku_code', { ascending: true });
 
-            if (error) {
-                console.error('Error fetching category listing:', error.message);
-            } else {
-                setCategoryListing(data);
-            }
-        };
 
-        fetchCategoryListing();
-    }, []);
 
-    // categoryListing is your list of SKUs fetched from the database
-    const [categoryListing, setCategoryListing] = useState([]);
 
 
 
@@ -1865,6 +1331,716 @@ const RegularVisaForm = () => {
         fetchApprovalData();
     }, []);
 
+    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+    const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+    const role = currentUser?.role || "";
+
+
+
+    const [categoryListing, setCategoryListing] = useState([]);
+    const [activeCategoryCode, setActiveCategoryCode] = useState(null);
+
+
+    useEffect(() => {
+        const fetchCategoryListing = async () => {
+            const { data, error } = await supabase
+                .from('category_listing')
+                .select('*')
+                .order('category_code', { ascending: true });
+
+            if (error) {
+                console.error('Error fetching category listing:', error.message);
+            } else {
+                console.log("😎 Data from category_listing:", data);
+                setCategoryListing(data);
+            }
+        };
+
+        fetchCategoryListing();
+    }, []);
+
+    const handleCategoryClick = (code) => {
+        console.log("🔍 Clicked category:", code);
+        setActiveCategoryCode(code);
+        setSearchTerm('');
+        // optionally open modal if it's not shown yet
+        if (!showSkuModal) {
+            setShowSkuModal(true);
+        }
+    };
+
+    // const submitTosku = async () => {
+
+
+    //     try {
+    //         // ✅ Skip submitting if SKU is disabled
+    //         if (!formData.sku) {
+    //             console.log('🚫 SKU submission skipped (SKU not enabled for this activity).');
+    //             return; // Exit early if SKU is not enabled
+    //         }
+
+    //         // Prepare rows to submit with defaults
+    //         const rowsToSubmit = rows.map(row => ({
+    //             sku: row.SKUITEM,
+    //             srp: parseFloat(row.SRP) || 0,
+    //             qty: parseInt(row.QTY, 10) || 0,
+    //             uom: row.UOM || 'CASE',
+    //             discount: parseFloat(row.DISCOUNT) || 0,
+    //             billing_amount: parseFloat(row.BILLING_AMOUNT) || 0,
+    //             regular_code: row.regularpwpcode || generateRegularCode(allRegularPwpCodes),
+    //             remarks: formData.remarks || '',
+    //         }));
+
+    //         if (rows.length === 1) {
+    //             const updatedRow = rowsToSubmit[0];
+    //             updatedRow.regular_code = updatedRow.regular_code || generateRegularCode(allRegularPwpCodes);
+    //             rowsToSubmit.push(updatedRow);
+    //         } else {
+    //             const regularCodeForTotals = rowsToSubmit[0].regular_code || 'Total:';
+    //             const totalsData = {
+    //                 sku: 'Total:',
+    //                 srp: totals.SRP.toFixed(2),
+    //                 qty: totals.QTY,
+    //                 uom: 'EA',
+    //                 discount: totals.DISCOUNT.toFixed(2),
+    //                 billing_amount: totals.BILLING_AMOUNT.toFixed(2),
+    //                 regular_code: regularCodeForTotals,
+    //                 remarks: formData.remarks || 'Summary of all entries',
+    //             };
+    //             rowsToSubmit.push(totalsData);
+    //         }
+
+    //         // Removed Swal loading modal here
+
+    //         const { error } = await supabase
+    //             .from('regular_sku_listing')
+    //             .insert(rowsToSubmit);
+
+    //         if (error) {
+    //             throw new Error(error.message);
+    //         }
+
+    //         Swal.fire({
+    //             title: 'Success!',
+    //             text: 'Your data has been successfully submitted to the database.',
+    //             icon: 'success',
+    //             confirmButtonText: 'Ok',
+    //         });
+
+    //     } catch (error) {
+    //         Swal.fire({
+    //             title: 'Error!',
+    //             text: `There was an issue submitting your data: ${error.message}`,
+    //             icon: 'error',
+    //             confirmButtonText: 'Try Again',
+    //         });
+    //     }
+    // };
+
+
+    const handleAddCategoryRow = () => {
+        setFormData((prev) => ({
+            ...prev,
+            rowsCategories: [...prev.rowsCategories, { category: '', amount: '' }]
+        }));
+    };
+
+    const handleCategoryRowChange = (index, field, value) => {
+        const updatedRows = [...formData.rowsCategories];
+        updatedRows[index][field] = value;
+        setFormData((prev) => ({
+            ...prev,
+            rowsCategories: updatedRows
+        }));
+    };
+
+    const handleDeleteCategoryRow = (index) => {
+        const updatedRows = formData.rowsCategories.filter((_, i) => i !== index);
+        setFormData((prev) => ({
+            ...prev,
+            rowsCategories: updatedRows
+        }));
+    };
+    const calculateTotalAmount = () => {
+        return formData.rowsCategories.reduce((total, row) => {
+            const amount = parseFloat(row.amount);
+            return total + (isNaN(amount) ? 0 : amount);
+        }, 0);
+    };
+    const [selectedCategoryRowIndex, setSelectedCategoryRowIndex] = useState(null);
+    const [BadOrderSearch, setBadOrderSearch] = useState('');
+    const [badOrderCategoryList, setBadOrderCategoryList] = useState([]);
+    const [categoryMode, setCategoryMode] = useState(null); // 'category' | 'subcategory' | null
+
+
+    const handleSelectCategory = (cat) => {
+        if (selectedCategoryRowIndex !== null) {
+            const updatedRows = [...formData.rowsCategories];
+            updatedRows[selectedCategoryRowIndex].category = `${cat.code} - ${cat.name}`;
+            setFormData(prev => ({ ...prev, rowsCategories: updatedRows }));
+            setShowModal(false);
+        }
+    };
+
+
+
+
+    useEffect(() => {
+        if (showModal) {
+            BadOrderFetchCategories();
+        }
+    }, [showModal]);
+
+
+    const BadOrderFetchCategories = async () => {
+        setLoading(true);
+
+        try {
+            // 🔧 Get the first row from mapping_category_claims
+            const { data: mappingData, error: mappingError } = await supabase
+                .from("mapping_category_claims")
+                .select("category, subcategory")
+                .limit(1);
+
+            if (mappingError) throw mappingError;
+
+            const mapping = mappingData?.[0];
+
+            if (!mapping) {
+                console.warn("⚠️ No mapping row found in mapping_category_claims.");
+                setCategoryMode(null);
+                setBadOrderCategoryList([]);
+                setLoading(false);
+                return;
+            }
+
+            console.log("📌 Mapping flags:", mapping);
+
+            if (mapping.category) {
+                setCategoryMode('category');
+
+                const { data, error } = await supabase
+                    .from("category_listing")
+                    .select("id, name, sku_code, category_code, description")
+                    .order("name", { ascending: true });
+
+
+                if (error) throw error;
+
+
+
+
+                setBadOrderCategoryList(data || []);
+            } else if (mapping.subcategory) {
+                setCategoryMode('subcategory');
+
+                const { data, error } = await supabase
+                    .from("claims_listing")
+                    .select("id, name, code, description")
+                    .order("name", { ascending: true });
+
+                if (error) throw error;
+
+                setBadOrderCategoryList(data || []);
+            } else {
+                console.warn("⚠️ Both category and subcategory are false.");
+                setCategoryMode(null);
+                setBadOrderCategoryList([]);
+            }
+
+        } catch (error) {
+            console.error("❌ Error fetching categories/subcategories:", error.message);
+            setCategoryMode(null);
+            setBadOrderCategoryList([]);
+        }
+
+        setLoading(false);
+    };
+
+
+    const filtered = badOrderCategoryList.filter(
+        (cat) =>
+            cat.name.toLowerCase().includes(BadOrderSearch.toLowerCase()) ||
+            cat.code.toLowerCase().includes(BadOrderSearch.toLowerCase())
+    );
+
+
+
+
+
+    // 🔹 Utility function for safe number conversion
+    const toNumber = (val) => {
+        if (val === null || val === undefined || val === "") return 0;
+        return Number(val) || 0;
+    };
+
+    // 🔹 Handle SKU Insert
+    const handleSku = async () => {
+        setLoading(true);
+        setMessage("");
+
+        try {
+            // Flatten SKUs from all accounts
+            const allRows = Object.keys(accountSkuRows).flatMap(accountCode =>
+                (accountSkuRows[accountCode] || []).map(row => {
+                    const account = accountTypes.find(acc => acc.code === accountCode);
+                    return {
+                        account_name: account?.name || accountCode,
+                        sku_code: row.SKUITEM ?? null,
+                        srp: toNumber(row.SRP),
+                        qty: toNumber(row.QTY),
+                        uom: row.UOM?.trim() ? row.UOM : "pc",
+                        billing_amount: toNumber(row.BILLING_AMOUNT),
+                        discount: toNumber(row.DISCOUNT),
+                        total_amount: 0,         // placeholder
+                        remaining_balance: 0,    // placeholder
+                        regular_code: formData.regularpwpcode || generateRegularCode(allRegularPwpCodes),
+                        created_at: new Date().toISOString()
+                    };
+                })
+            );
+
+            if (!allRows.length) {
+                setMessage("⚠️ No SKUs to submit.");
+                setLoading(false);
+                return;
+            }
+
+            // Compute totals
+            const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
+            const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
+            const grandTotal = totalBilling - totalDiscount;
+
+            const selected = parseFloat(selectedBalance || 0);
+            const creditBudget = parseFloat(formData?.amountbadget || 0);
+            const remainingSkuBudget = selected - grandTotal - creditBudget;
+
+            // Attach totals
+            const rowsWithTotals = allRows.map(r => ({
+                ...r,
+                total_amount: grandTotal,
+                remaining_balance: remainingSkuBudget
+            }));
+
+            const regularpwpcode = formData.regularpwpcode || generateRegularCode(allRegularPwpCodes);
+
+            // ✅ Step 1: Insert SKUs into regular_sku
+            const { error: insertError } = await supabase
+                .from("regular_sku")
+                .insert(rowsWithTotals);
+
+            if (insertError) throw insertError;
+
+            console.log("✅ Inserted SKUs:", rowsWithTotals);
+
+            // ✅ Step 2: Upsert into regular_pwp
+            // ✅ Step 2: Upsert into regular_pwp
+            await upsertRegularPwp(
+                supabase,
+                regularpwpcode,
+                remainingSkuBudget,
+                grandTotal // <-- use grandTotal instead of creditBudget
+            );
+            setMessage("✅ SKUs submitted and regular_pwp updated successfully!");
+
+
+        } catch (err) {
+            console.error("❌ Submit error:", err.message);
+            setMessage(`❌ Error: ${err.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ✅ Function to insert/update into regular_pwp
+    // ✅ Function to insert/update into regular_pwp
+    async function upsertRegularPwp(supabase, regularpwpcode, remainingSkuBudget, totalAmount) {
+        try {
+            const { data: existingPwp, error: fetchError } = await supabase
+                .from("regular_pwp")
+                .select("id")
+                .eq("regularpwpcode", regularpwpcode)
+                .maybeSingle();
+
+            if (fetchError) throw fetchError;
+
+            if (existingPwp) {
+                const { error: updateError } = await supabase
+                    .from("regular_pwp")
+                    .update({
+                        remaining_balance: remainingSkuBudget,
+                        credit_budget: totalAmount,
+                    })
+                    .eq("id", existingPwp.id);
+
+                if (updateError) throw updateError;
+                console.log("🔁 Updated regular_pwp:", existingPwp.id);
+            } else {
+                const { error: insertError } = await supabase
+                    .from("regular_pwp")
+                    .insert([
+                        {
+                            regularpwpcode,
+                            remaining_balance: remainingSkuBudget,
+                            credit_budget: totalAmount,
+                        },
+                    ]);
+
+                if (insertError) throw insertError;
+                console.log("🆕 Inserted new regular_pwp:", regularpwpcode);
+            }
+        } catch (err) {
+            console.error("❌ Upsert regular_pwp error:", err.message);
+            throw err;
+        }
+    }
+
+    const postBadOrderCategories = async () => {
+        if (!formData.regularpwpcode) {
+            alert("PWP Code is missing.");
+            return false;
+        }
+
+        if (formData.rowsCategories.length === 0) {
+            alert("No bad order categories to submit.");
+            return false;
+        }
+
+        // Calculate total amount of bad order categories
+        const totalAmount = formData.rowsCategories.reduce((sum, row) => {
+            return sum + (parseFloat(row.amount) || 0);
+        }, 0);
+
+        const safeSelectedBalance = isNaN(selectedBalance) ? 0 : selectedBalance;
+        const amountBadgetMinusTotal = safeSelectedBalance - totalAmount;
+
+        console.log("✅ Amountbadget - Total Amount:", amountBadgetMinusTotal);
+        console.log("✅ Amount Budget:", totalAmount || 0);
+
+        // Build rows to insert
+        const rowsToInsert = formData.rowsCategories.map(row => ({
+            code_pwp: formData.regularpwpcode,
+            category: row.category,
+            amount: parseFloat(row.amount) || 0,
+            remarks: formData.remarks || '',
+            created_at: new Date().toISOString(),
+            total: totalAmount,
+            remaining_budget: amountBadgetMinusTotal, // <- Use this value
+        }));
+
+        try {
+            const { data, error } = await supabase
+                .from("regular_badorder")
+                .insert(rowsToInsert);
+
+            if (error) {
+                throw error;
+            }
+
+            console.log("✅ Bad order categories submitted successfully:", data);
+
+            // ✅ Update or insert into regular_pwp as well
+            await upsertRegularPwp(
+                supabase,
+                formData.regularpwpcode,
+                amountBadgetMinusTotal,
+                totalAmount
+            );
+
+            return true;
+        } catch (error) {
+            console.error("❌ Error submitting bad order categories:", error.message);
+            alert(`Error submitting bad order categories: ${error.message}`);
+            return false;
+        }
+    };
+
+
+
+
+
+    // 🔹 Handle All Submissions (SKU + Form + Budgets)
+    const submit_all = async (e) => {
+        e.preventDefault();
+
+        try {
+            // Show loading modal
+            await Swal.fire({
+                title: 'Submitting...',
+                html: 'Please wait while we save your data.',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading(),
+                timer: 3000,
+                timerProgressBar: true,
+            });
+
+            // Step 1: Save SKUs
+
+
+            // Step 2: Save Form Data + Attachments
+            console.log(`[${new Date().toLocaleString()}] 📝 Submitting form data...`);
+            await handleSubmitFormAndAttachments();
+            console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
+
+
+            console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
+            await handleSku();
+            console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
+
+
+            // 🔍 Only submit Bad Order data if activity is "BAD ORDER"
+            if (formData.activityName === "BAD ORDER") {
+                const badorderSuccess = await postBadOrderCategories();
+                if (!badorderSuccess) return;
+            }
+
+            // Step 3: Save Budget Data
+            console.log(`[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`);
+
+            const filteredRows = rowsAccounts.filter(row =>
+                formData.accountType.includes(row.account_code)
+            );
+
+            const totalBudget = filteredRows
+                .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+                .toFixed(2);
+
+            const budgetRowsToInsert = filteredRows.map(row => ({
+                regularcode: formData.regularpwpcode,
+                account_code: row.account_code,
+                account_name: row.account_name, // ✅ Saving name properly
+                budget: row.budget || 0,
+                created_at: row.created_at || new Date().toISOString(),
+                createform: 'ADMINISTRATOR',
+                total_budget: totalBudget,
+            }));
+
+            if (budgetRowsToInsert.length > 0) {
+                const { data, error } = await supabase
+                    .from('regular_accountlis_badget')
+                    .insert(budgetRowsToInsert);
+
+                if (error) throw error;
+
+                console.log(`[${new Date().toLocaleString()}] ✅ Budget data saved:`, data);
+            } else {
+                console.log(`[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`);
+            }
+
+            // Success Modal
+            await Swal.fire({
+                title: 'Success!',
+                text: 'Your data has been successfully submitted and saved.',
+                icon: 'success',
+                confirmButtonText: 'Ok',
+            });
+
+            window.location.reload();
+        } catch (error) {
+            console.error(`[${new Date().toLocaleString()}] ❌ Submit All Error:`, error);
+            Swal.fire({
+                title: 'Error!',
+                text: `There was an issue submitting your data: ${error.message}`,
+                icon: 'error',
+                confirmButtonText: 'Try Again',
+            });
+        }
+    };
+
+
+
+
+    const handleSubmitFormAndAttachments = async () => {
+        try {
+            const storedUser = localStorage.getItem("loggedInUser");
+            const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+            const createdBy = parsedUser?.name || "Unknown";
+
+            if (!formData.regularpwpcode || formData.regularpwpcode.trim() === "") {
+                throw new Error("regularpwpcode is required.");
+            }
+
+            // Validate distributor
+            let distributorCode = formData.distributor?.trim() || null;
+
+            if (distributorCode) {
+                const { data: distributorsData, error: distributorError } = await supabase
+                    .from("distributors")
+                    .select("code")
+                    .eq("code", distributorCode)
+                    .single();
+
+                if (distributorError || !distributorsData) {
+                    throw new Error(`Distributor code "${distributorCode}" is invalid.`);
+                }
+            }
+
+            // Prepare budget values
+            const amountBudget = parseFloat(formData.amountbadget || 0);
+            const billingAmountSKU = rows.reduce((acc, row) => {
+                const val = parseFloat(row.BILLING_AMOUNT);
+                return acc + (isNaN(val) ? 0 : val);
+            }, 0);
+            const totalAllocatedFromAccounts = rowsAccounts.reduce(
+                (sum, row) => sum + (parseFloat(row.budget) || 0),
+                0
+            );
+
+            // ✅ Use only one source for creditBudget
+            let creditBudget = 0;
+            if (amountBudget > 0) creditBudget = amountBudget;
+            else if (billingAmountSKU > 0) creditBudget = billingAmountSKU;
+            else if (totalAllocatedFromAccounts > 0) creditBudget = totalAllocatedFromAccounts;
+
+            // Calculate remaining balance
+            const remainingBalance =
+                selectedBalance !== null ? selectedBalance - creditBudget : null;
+
+            // ✅ Explicit submissionData (no activityName here)
+            const submissionData = {
+                regularpwpcode: formData.regularpwpcode,
+                accountType: formData.accountType,
+                activity: formData.activity,
+                pwptype: formData.pwptype || "Regular",
+                notification: formData.notification,
+                objective: formData.objective,
+                promoScheme: formData.promoScheme,
+                activityDurationFrom: formData.activityDurationFrom,
+                activityDurationTo: formData.activityDurationTo,
+                isPartOfCoverPwp: formData.isPartOfCoverPwp,
+                coverPwpCode: formData.coverPwpCode,
+                distributor: distributorCode,
+                amountbadget: formData.amountbadget,
+                categoryCode: formData.categoryCode,
+                categoryName: formData.categoryName,
+                sku: formData.sku,
+                accounts: formData.accounts,
+                amount_display: formData.amount_display,
+                remarks: formData.remarks,
+                created_at: new Date().toISOString(),
+                createForm: createdBy,
+                credit_budget: creditBudget,
+                remaining_balance: remainingBalance,
+            };
+
+            // Insert form into Supabase
+            const { data: formInsertData, error: formInsertError } = await supabase
+                .from("regular_pwp")
+                .insert([submissionData])
+                .select();
+
+            if (formInsertError) {
+                throw new Error(`Form Insert failed: ${formInsertError.message}`);
+            }
+
+            // Insert attachments (if any)
+            await Promise.all(
+                files.map(async (file) => {
+                    const { name, type, size } = file;
+
+                    const attachmentPayload = {
+                        regularpwpcode: formData.regularpwpcode,
+                        filename: name,
+                        mimetype: type,
+                        size: size,
+                    };
+
+                    const { error: attachmentError } = await supabase
+                        .from("regular_attachments")
+                        .insert([attachmentPayload])
+                        .select();
+
+                    if (attachmentError) {
+                        throw new Error(
+                            `Attachment insert failed for ${name}: ${attachmentError.message}`
+                        );
+                    }
+                })
+            );
+
+            // ✅ Reset everything after success
+            setFiles([]);
+            setRows([]);
+            setRowsAccounts([]);
+            setFormData({
+                regularpwpcode: "",
+                accountType: [],
+                categoryCode: [],
+                categoryName: [],
+                activity: "",
+                pwptype: "Regular",
+                notification: false,
+                objective: "",
+                promoScheme: "",
+                activityDurationFrom: new Date().toISOString().split("T")[0],
+                activityDurationTo: new Date().toISOString().split("T")[0],
+                isPartOfCoverPwp: false,
+                coverPwpCode: "",
+                distributor: "",
+                amountbadget: "0",
+                categoryCode: "",
+                sku: null,
+                accounts: null,
+                amount_display: null,
+            });
+
+            console.log("✅ Form submitted successfully");
+        } catch (error) {
+            console.error("Submission Error:", error.message);
+            alert(error.message);
+        }
+    };
+
+
+
+
+
+
+
+
+    const saveRecentActivity = async ({ UserId }) => {
+        try {
+            // 1. Get public IP
+            const ipRes = await fetch('https://api.ipify.org?format=json');
+            const { ip } = await ipRes.json();
+
+            // 2. Get geolocation info
+            const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+            const geo = await geoRes.json();
+
+            // 3. Build activity entry
+            const activity = {
+                Device: navigator.userAgent || 'Unknown Device',
+                Location: `${geo.city || 'Unknown'}, ${geo.region || 'Unknown'}, ${geo.country_name || 'Unknown'}`,
+                IP: ip,
+                Time: new Date().toISOString(),
+                Action: 'Create Form Regular PWP',
+            };
+
+            // 4. Save to Supabase only
+            const { error } = await supabase
+                .from('RecentActivity')
+                .insert([{
+                    userId: UserId,
+                    device: activity.Device,
+                    location: activity.Location,
+                    ip: activity.IP,
+                    time: activity.Time,
+                    action: activity.Action
+                }]);
+
+            if (error) {
+                console.error('❌ Supabase insert error:', error.message);
+            } else {
+                console.log('✅ Activity saved to Supabase');
+            }
+
+        } catch (err) {
+            console.error('❌ Failed to log activity:', err.message || err);
+        }
+    };
+
+    const [message, setMessage] = useState("");
 
     const renderStepContent = () => {
         switch (step) {
@@ -2051,128 +2227,140 @@ const RegularVisaForm = () => {
                                 </div>
 
 
+                                {shouldShowCategory() && (
 
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>
-                                        Category <span style={{ color: 'red' }}>*</span>
-                                    </label>
+                                    <div className="col-md-4" style={{ position: 'relative' }}>
+                                        <label>
+                                            Category <span style={{ color: 'red' }}>*</span>
+                                        </label>
 
-                                    <input
-                                        type="text"
-                                        readOnly
-                                        className="form-control"
-                                        value={formData.categoryName?.join(', ') || ''}
-                                        onClick={handleInputClick}
-                                        placeholder="Select Categories"
-                                        style={{
-                                            borderColor: formData.categoryName?.length > 0 ? 'green' : '',
-                                            transition: 'border-color 0.3s',
-                                            paddingRight: '35px',
-                                            cursor: 'pointer',
-                                        }}
-                                    />
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            className="form-control"
+                                            value={formData.categoryName?.join(', ') || ''}
+                                            onClick={handleInputClick}
+                                            placeholder="Select Categories"
+                                            style={{
+                                                borderColor: formData.categoryName?.length > 0 ? 'green' : '',
+                                                transition: 'border-color 0.3s',
+                                                paddingRight: '35px',
+                                                cursor: 'pointer',
+                                            }}
+                                        />
 
 
-                                    {/* Magnifying Glass Icon */}
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            right: '10px',
-                                            top: '70%',
-                                            transform: 'translateY(-50%)',
-                                            pointerEvents: 'none',
-                                            color: '#555',
-                                            fontSize: '18px',
-                                            userSelect: 'none',
-                                        }}
-                                    >
-                                        🔍
-                                    </span>
-
-                                    {/* Checkmark if selected */}
-                                    {formData.categoryName?.length > 0 && (
+                                        {/* Magnifying Glass Icon */}
                                         <span
                                             style={{
                                                 position: 'absolute',
-                                                right: '35px',
-                                                top: '50%',
-                                                transform: 'translateY(-20%)',
-                                                color: 'green',
-                                                fontWeight: 'bold',
-                                                fontSize: '25px',
+                                                right: '10px',
+                                                top: '70%',
+                                                transform: 'translateY(-50%)',
                                                 pointerEvents: 'none',
+                                                color: '#555',
+                                                fontSize: '18px',
                                                 userSelect: 'none',
                                             }}
                                         >
-                                            ✓
+                                            🔍
                                         </span>
-                                    )}
 
-                                    {/* Modal */}
-                                    <Modal show={showModal} onHide={handleCloseModal} size="lg" centered>
+                                        {/* Checkmark if selected */}
+                                        {formData.categoryName?.length > 0 && (
+                                            <span
+                                                style={{
+                                                    position: 'absolute',
+                                                    right: '35px',
+                                                    top: '50%',
+                                                    transform: 'translateY(-20%)',
+                                                    color: 'green',
+                                                    fontWeight: 'bold',
+                                                    fontSize: '25px',
+                                                    pointerEvents: 'none',
+                                                    userSelect: 'none',
+                                                }}
+                                            >
+                                                ✓
+                                            </span>
+                                        )}
 
-
-                                        <Modal.Header
-                                            closeButton
-                                            style={{ background: "rgb(70, 137, 166)", color: "white" }}
-                                        >
-                                            <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                                                Select Categories
-                                            </Modal.Title>
-                                        </Modal.Header>
-                                        <Modal.Body>
-                                            <input
-                                                type="text"
-                                                className="form-control mb-3"
-                                                placeholder="Search category by name or code..."
-                                                value={searchTerm}
-                                                onChange={(e) => setSearchTerm(e.target.value)}
-                                            />
-
-                                            {loading ? (
-                                                <p>Loading categories...</p>
-                                            ) : (
-                                                <ul className="list-group" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                                    {filteredList.length > 0 ? (
-                                                        filteredList.map((cat) => {
-                                                            const isChecked = formData.categoryCode?.includes(cat.code);
-
-                                                            return (
-                                                                <li
-                                                                    key={cat.id}
-                                                                    className="list-group-item d-flex justify-content-between align-items-center"
-                                                                >
-                                                                    <div className="form-check">
-                                                                        <input
-                                                                            className="form-check-input"
-                                                                            type="checkbox"
-                                                                            id={`cat-check-${cat.id}`}
-                                                                            checked={isChecked}
-                                                                            onChange={(e) => handleCategoryChange(cat, e.target.checked)}
+                                        {/* Modal */}
+                                        <Modal show={showModal} onHide={handleCloseModal} size="lg" centered>
 
 
-                                                                        />
-                                                                        <label className="form-check-label" htmlFor={`cat-check-${cat.id}`}>
-                                                                            <strong>{cat.code}</strong> - {cat.name}
-                                                                        </label>
-                                                                    </div>
-                                                                </li>
-                                                            );
-                                                        })
-                                                    ) : (
-                                                        <li className="list-group-item text-muted">No categories found</li>
-                                                    )}
-                                                </ul>
-                                            )}
-                                        </Modal.Body>
-                                        <Modal.Footer>
-                                            <button className="btn btn-secondary" onClick={handleCloseModal}>
-                                                Close
-                                            </button>
-                                        </Modal.Footer>
-                                    </Modal>
-                                </div>
+                                            <Modal.Header
+                                                closeButton
+                                                style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                                            >
+                                                <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                                    Select Categories
+                                                </Modal.Title>
+                                            </Modal.Header>
+                                            <Modal.Body>
+                                                <input
+                                                    type="text"
+                                                    className="form-control mb-3"
+                                                    placeholder="Search category by name or code..."
+                                                    value={searchTerm}
+                                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                                />
+
+                                                {loading ? (
+                                                    <p>Loading categories...</p>
+                                                ) : (
+                                                    <ul className="list-group" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                                        {filteredList.length > 0 ? (
+                                                            filteredList.map((cat) => {
+                                                                const isChecked = formData.categoryCode?.includes(cat.code);
+
+                                                                return (
+                                                                    <li
+                                                                        key={cat.id}
+                                                                        className="list-group-item d-flex justify-content-between align-items-center"
+                                                                    >
+                                                                        <div className="form-check">
+                                                                            <input
+                                                                                className="form-check-input"
+                                                                                type="checkbox"
+                                                                                id={`cat-check-${cat.id}`}
+                                                                                checked={isChecked}
+                                                                                onChange={(e) => handleCategoryChange(cat, e.target.checked)}
+                                                                                style={{
+                                                                                    width: "20px",   // default is ~16px, increase this
+                                                                                    height: "20px",
+                                                                                    transform: "scale(1.3)", // alternative way to make it bigger
+                                                                                    cursor: "pointer",
+
+                                                                                }}
+
+                                                                            />
+                                                                            <label className="form-check-label" htmlFor={`cat-check-${cat.id}`}>
+                                                                                <strong>{cat.code}</strong> - {cat.name}
+                                                                            </label>
+                                                                        </div>
+                                                                    </li>
+                                                                );
+                                                            })
+                                                        ) : (
+                                                            <li className="list-group-item text-muted">No categories found</li>
+                                                        )}
+                                                    </ul>
+                                                )}
+                                            </Modal.Body>
+                                            <Modal.Footer>
+                                                <button className="btn btn-secondary" onClick={handleCloseModal}>
+                                                    Close
+                                                </button>
+                                            </Modal.Footer>
+                                        </Modal>
+                                    </div>
+                                )}
+
+
+                       
                                 {/* Account Type */}
+
                                 <div className="col-md-4" style={{ position: "relative" }}>
                                     <label>
                                         Account <span style={{ color: "red" }}>*</span>
@@ -2189,7 +2377,7 @@ const RegularVisaForm = () => {
                                             style={{
                                                 position: "absolute",
                                                 right: "40px",
-                                                top: "60%",
+                                                top: "70%",
                                                 transform: "translateY(-50%)",
                                                 pointerEvents: "none",
                                                 color: "#555",
@@ -2204,7 +2392,7 @@ const RegularVisaForm = () => {
                                             style={{
                                                 position: "absolute",
                                                 right: "10px",
-                                                top: "60%",
+                                                top: "70%",
                                                 transform: "translateY(-50%)",
                                                 pointerEvents: "none",
                                                 color: "#555",
@@ -2240,7 +2428,12 @@ const RegularVisaForm = () => {
                                                 flexDirection: "column",
                                                 padding: "1rem",
                                             }}
-                                        >
+                                        >   <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                                                Debug: accountTypes.length = {accountTypes.length}
+                                                {accountTypes.length > 0 && (
+                                                    <div>Sample: {accountTypes[0]?.code} - {accountTypes[0]?.name}</div>
+                                                )}
+                                            </div>
                                             {/* Search Bar - fixed height, no scroll */}
                                             <input
                                                 type="text"
@@ -2268,14 +2461,21 @@ const RegularVisaForm = () => {
                                                     .map((opt) => (
                                                         <div
                                                             key={opt.code}
-                                                            style={{ display: "flex", alignItems: "center", padding: "6px 0" }}
+                                                            style={{ display: "flex", alignItems: "center", padding: "6px 0", marginLeft: '10px' }}
                                                         >
                                                             <input
                                                                 type="checkbox"
                                                                 checked={formData.accountType.includes(opt.code)}
                                                                 onChange={() => toggleAccountType(opt.code)}
                                                                 id={`accountType-${opt.code}`}
+                                                                style={{
+                                                                    width: "20px",   // default is ~16px, increase this
+                                                                    height: "20px",
+                                                                    transform: "scale(1.3)", // alternative way to make it bigger
+                                                                    cursor: "pointer",
+                                                                }}
                                                             />
+
                                                             <label
                                                                 htmlFor={`accountType-${opt.code}`}
                                                                 style={{ marginLeft: "8px", cursor: "pointer" }}
@@ -2628,53 +2828,130 @@ const RegularVisaForm = () => {
                                     />
                                     <label htmlFor="coverNo" className="toggle-label">NO</label>
                                 </div>
-
                                 {formData.isPartOfCoverPwp && (
-                                    <div className="form-group mt-3" style={{ position: 'relative' }}>
-                                        <label className="form-label text-uppercase">Cover PWP Code</label>
-                                        <input
-                                            type="text"
-                                            readOnly
-                                            className="form-control"
-                                            value={formData.coverPwpCode || ''}
-                                            placeholder="Select Cover PWP Code"
-                                            onClick={() => setShowCoverModal(true)}
-                                            style={{
-                                                cursor: 'pointer',
-                                                paddingRight: '40px',
-                                                borderColor: formData.coverPwpCode ? 'green' : '',
-                                                transition: 'border-color 0.3s',
-                                            }}
-                                        />
-                                        {formData.coverPwpCode && (
+                                    <div className="d-flex justify-content-between align-items-start" style={{ gap: '1rem', marginTop: '30px' }}>
+                                        {/* Left: Cover PWP Code Input */}
+                                        <div className="flex-grow-1" style={{ maxWidth: '22rem' }}>
+                                            <label className="form-label text-uppercase">Cover PWP Code</label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                className="form-control"
+                                                value={formData.coverPwpCode || ''}
+                                                placeholder="Select Cover PWP Code"
+                                                onClick={() => setShowCoverModal(true)}
+                                                style={{
+                                                    cursor: 'pointer',
+                                                    paddingRight: '40px',
+                                                    borderColor: formData.coverPwpCode ? 'green' : '',
+                                                    transition: 'border-color 0.3s',
+                                                }}
+                                            />
+                                            {formData.coverPwpCode && (
+                                                <span
+                                                    style={{
+                                                        position: 'absolute',
+                                                        right: '40px',
+                                                        top: '38px',
+                                                        color: 'green',
+                                                        fontWeight: 'bold',
+                                                        fontSize: '25px',
+                                                        pointerEvents: 'none',
+                                                    }}
+                                                >
+                                                    ✓
+                                                </span>
+                                            )}
                                             <span
                                                 style={{
                                                     position: 'absolute',
-                                                    right: '40px',
-                                                    top: '38px',
-                                                    color: 'green',
-                                                    fontWeight: 'bold',
-                                                    fontSize: '25px',
+                                                    right: '15px',
+                                                    top: '40px',
+                                                    color: '#555',
+                                                    fontSize: '16px',
                                                     pointerEvents: 'none',
                                                 }}
                                             >
-                                                ✓
+                                                🔍
                                             </span>
+                                        </div>
+
+                                        {/* Right: Remaining Budget Card */}
+                                        {formData.coverPwpCode && selectedBalance !== null && (
+                                            <div
+                                                className="card shadow-sm mb-3"
+                                                style={{
+                                                    width: '52rem',
+                                                    borderRadius: '12px',
+                                                    border: '1px solid #e0e0e0',
+                                                    overflow: 'hidden',
+                                                    backgroundColor: '#f8f9fa',
+                                                }}
+                                            >
+                                                {/* Header */}
+                                                <div
+                                                    className="card-header text-white fw-bold text-center"
+                                                    style={{
+                                                        background: 'linear-gradient(90deg, #28a745, #218838)',
+                                                        fontSize: '1.3rem',
+                                                        letterSpacing: '1px',
+                                                    }}
+                                                >
+                                                    🎯 Remaining Budget
+                                                </div>
+
+                                                {/* Body */}
+                                                <div className="card-body text-center">
+                                                    <p
+                                                        className="card-text mb-2"
+                                                        style={{
+                                                            fontSize: '2.5rem',
+                                                            fontWeight: 'bold',
+                                                            color:
+                                                                selectedBalance - totals.BILLING_AMOUNT - parseFloat(formData.amountbadget || 0) < 0
+                                                                    ? '#dc3545'
+                                                                    : '#198754',
+                                                            marginBottom: '0.5rem',
+                                                        }}
+                                                    >
+                                                        ₱{(
+                                                            selectedBalance -
+                                                            totals.BILLING_AMOUNT -
+                                                            parseFloat(formData.amountbadget || 0)
+                                                        ).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </p>
+
+                                                    <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '1rem' }}>
+                                                        <div>
+                                                            <small className="text-muted d-block fw-bold">Original</small>
+                                                            <span style={{ fontSize: '1.1rem', fontWeight: '500' }}>
+                                                                ₱{selectedBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                            </span>
+                                                        </div>
+
+                                                        <div>
+                                                            <small className="text-muted d-block fw-bold">Allocated (Form)</small>
+                                                            <span style={{ fontSize: '1.1rem', fontWeight: '500' }}>
+                                                                ₱{parseFloat(formData.amountbadget || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Footer / optional */}
+                                                <div
+                                                    className="card-footer text-center text-muted"
+                                                    style={{ fontSize: '0.9rem', backgroundColor: '#e9ecef' }}
+                                                >
+                                                    Keep track of your remaining budget to avoid overspending
+                                                </div>
+                                            </div>
+
                                         )}
-                                        <span
-                                            style={{
-                                                position: 'absolute',
-                                                right: '15px',
-                                                top: '40px',
-                                                color: '#555',
-                                                fontSize: '16px',
-                                                pointerEvents: 'none',
-                                            }}
-                                        >
-                                            🔍
-                                        </span>
                                     </div>
                                 )}
+
+
 
                                 {/* Modal */}
                                 <Modal show={showCoverModal} onHide={() => setShowCoverModal(false)} centered>
@@ -2686,6 +2963,7 @@ const RegularVisaForm = () => {
                                             🎫 Select COVER PWP Code
                                         </Modal.Title>
                                     </Modal.Header>
+
 
                                     <Modal.Body>
                                         <input
@@ -2699,6 +2977,13 @@ const RegularVisaForm = () => {
                                         <ul className="list-group" style={{ maxHeight: "250px", overflowY: "auto" }}>
                                             {coverPwpWithStatus
                                                 .filter(cp => cp.pwp_code && typeof cp.pwp_code === 'string' && cp.pwp_code.toLowerCase().includes(coverPwpSearch.toLowerCase()))
+                                                .filter(cp => {
+                                                    // Show if admin
+                                                    if (role === 'admin') return true;
+
+                                                    // Otherwise only show if createForm matches current user name
+                                                    return cp.createForm?.toLowerCase().trim() === currentUserName;
+                                                })
                                                 .map((cp, idx) => {
                                                     const isPending = !cp.Approved;
                                                     return (
@@ -2718,21 +3003,25 @@ const RegularVisaForm = () => {
                                                                 cursor: isPending ? 'not-allowed' : 'pointer',
                                                                 fontFamily: 'monospace',
                                                                 opacity: isPending ? 0.8 : 1,
-                                                                pointerEvents: isPending ? 'none' : 'auto',  // Prevent all mouse events if pending
+                                                                pointerEvents: isPending ? 'none' : 'auto',
+                                                                display: 'flex',
+                                                                justifyContent: 'space-between',
                                                             }}
-                                                            tabIndex={isPending ? -1 : 0}  // Prevent tab focus on disabled items
+                                                            tabIndex={isPending ? -1 : 0}
                                                         >
-                                                            {cp.pwp_code?.toUpperCase().padEnd(20, ' ')}
-                                                            <span className="badge bg-secondary">
+                                                            <div style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                {cp.pwp_code?.toUpperCase()}
+                                                            </div>
+                                                            <div style={{ marginLeft: '10px', minWidth: '100px', textAlign: 'right', fontWeight: 'bold' }}>
                                                                 {cp.remainingbalance !== null
                                                                     ? cp.remainingbalance.toLocaleString('en-US', {
                                                                         minimumFractionDigits: 2,
                                                                         maximumFractionDigits: 2,
                                                                     })
                                                                     : "-"}
-                                                            </span>
-                                                        </li>
+                                                            </div>
 
+                                                        </li>
                                                     );
                                                 })}
 
@@ -2741,6 +3030,8 @@ const RegularVisaForm = () => {
                                             )}
                                         </ul>
                                     </Modal.Body>
+
+
 
                                     <Modal.Footer style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div style={{ display: 'inline-flex', alignItems: 'center' }}>
@@ -2773,51 +3064,7 @@ const RegularVisaForm = () => {
                             </div>
 
 
-                            {formData.isPartOfCoverPwp && formData.coverPwpCode && selectedBalance !== null && (
-                                <div className="d-flex justify-content-between align-items-start" style={{ gap: '1rem', marginTop: '30px' }}>
-                                    {/* Left: File Upload Drag & Drop Box */}
 
-                                    {/* Right: Remaining Budget Card */}
-                                    <div className="card border-success mb-3 shadow" style={{ width: '22rem' }}>
-                                        <div className="card-header bg-success text-white fw-bold text-center">
-                                            🎯 Remaining Budget
-                                        </div>
-                                        <div className="card-body text-center">
-                                            <p
-                                                className="card-text"
-                                                style={{
-                                                    fontSize: '2rem',
-                                                    fontWeight: 'bold',
-                                                    color:
-                                                        selectedBalance - totals.BILLING_AMOUNT - parseFloat(formData.amountbadget || 0) < 0
-                                                            ? '#dc3545'
-                                                            : '#198754',
-                                                }}
-                                            >
-                                                ₱{(
-                                                    selectedBalance -
-                                                    totals.BILLING_AMOUNT -
-                                                    parseFloat(formData.amountbadget || 0)
-                                                ).toLocaleString('en-PH', {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                })}
-                                            </p>
-                                            <small className="text-muted d-block">
-                                                Original: ₱{selectedBalance.toLocaleString('en-PH', {
-                                                    minimumFractionDigits: 2,
-                                                })}
-                                            </small>
-
-                                            <small className="text-muted d-block">
-                                                Allocated (Form): ₱{parseFloat(formData.amountbadget || 0).toLocaleString('en-PH', {
-                                                    minimumFractionDigits: 2,
-                                                })}
-                                            </small>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
 
 
 
@@ -2828,23 +3075,29 @@ const RegularVisaForm = () => {
                                     className="btn btn-primary mt-3"
                                     onClick={() => {
                                         const setting = settingsMap[formData.activity];
-                                        console.log('Next pressed. formData.activity:', formData.activity, 'setting:', setting);
 
-                                        if (setting && setting.sku) {
+                                        console.log('▶️ Next pressed. formData.activity:', formData.activity, 'setting:', setting);
+
+                                        if (formData.activityName === "BAD ORDER") {
+                                            // Special logic for BAD ORDER
+                                            setStep(4);
+                                            console.log("⛔ BAD ORDER selected → skipping SKU/accounts checks, going to Step 3");
+                                        } else if (setting?.sku) {
                                             setStep(1);
-                                        } else if (setting && setting.accounts) {
+                                            console.log("🛒 SKU found → going to Step 1");
+                                        } else if (setting?.accounts) {
                                             setStep(2);
+                                            console.log("💼 Accounts found → going to Step 2");
                                         } else {
-                                            setStep(3);;
+                                            setStep(3);
+                                            console.log("📄 Default case → going to Step 3");
                                         }
                                     }}
-
                                     style={{ width: '85px' }}
                                     disabled={!formData.activity}
                                 >
                                     Next
                                 </button>
-
 
 
 
@@ -2860,13 +3113,12 @@ const RegularVisaForm = () => {
 
 
             case 1:
-                // Promoted sales table
                 return (
                     <div>
                         <Card border="primary" className="shadow">
                             {formData.isPartOfCoverPwp && formData.coverPwpCode && selectedBalance !== null && (
                                 <div className="d-flex justify-content-between align-items-start" style={{ gap: '1rem' }}>
-                                    {/* Left: File Upload Drag & Drop Box */}
+                                    {/* Drag & Drop for Import */}
                                     <div
                                         className="border rounded p-3 mb-3"
                                         style={{
@@ -2875,10 +3127,10 @@ const RegularVisaForm = () => {
                                             position: 'relative',
                                             textAlign: 'center',
                                             cursor: 'pointer',
-                                            flex: '1',           // take available space
-                                            maxWidth: '80%',     // max width to keep space for right side
+                                            flex: '1',
+                                            maxWidth: '80%',
                                             minWidth: '300px',
-                                            height: '165px'   // optional: to avoid being too small on small screens
+                                            height: '165px'
                                         }}
                                         onDrop={(e) => {
                                             e.preventDefault();
@@ -2887,23 +3139,19 @@ const RegularVisaForm = () => {
                                         }}
                                         onDragOver={(e) => e.preventDefault()}
                                     >
-                                        <div
-                                            style={{
-                                                marginTop: '1rem',
-                                                color: '#888',
-                                                fontSize: '14px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '15px',
-                                                marginTop: '50px',
-                                                fontWeight: '500',
-                                            }}
-                                        >
+                                        <div style={{
+                                            marginTop: '50px',
+                                            color: '#888',
+                                            fontSize: '14px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '15px',
+                                            fontWeight: '500',
+                                        }}>
                                             <FaCloudUploadAlt size={20} />
                                             <span>Or drag and drop your Excel file here</span>
                                         </div>
-
                                         <input
                                             type="file"
                                             accept=".xlsx, .xls"
@@ -2913,23 +3161,18 @@ const RegularVisaForm = () => {
                                         />
                                     </div>
 
-                                    {/* Right: Remaining Budget Card */}
+                                    {/* Remaining Budget Card */}
                                     <div className="card border-success mb-3 shadow" style={{ width: '22rem' }}>
                                         <div className="card-header bg-success text-white fw-bold text-center">
                                             📦 Remaining SKU Budget
                                         </div>
-
                                         <div className="card-body text-center">
                                             {(() => {
-                                                const billingAmountSKU = rows.reduce((acc, row) => {
-                                                    const val = parseFloat(row.BILLING_AMOUNT);
-                                                    return acc + (isNaN(val) ? 0 : val);
-                                                }, 0);
-
+                                                const grandTotals = calculateGrandTotals();
                                                 const selected = parseFloat(selectedBalance || 0);
                                                 const creditBudget = parseFloat(formData?.amountbadget || 0);
-                                                const remainingSkuBudget = selected - billingAmountSKU - creditBudget;
-
+                                                const netTotal = grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT;
+                                                const remainingSkuBudget = selected - netTotal - creditBudget;
                                                 return (
                                                     <>
                                                         <p
@@ -2947,7 +3190,7 @@ const RegularVisaForm = () => {
                                                         </p>
                                                         <small className="text-muted">
                                                             Total Budget: ₱{selected.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                                                            − SKU Billing: ₱{billingAmountSKU.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                            − SKU Net: ₱{netTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                                                         </small>
                                                     </>
                                                 );
@@ -2955,287 +3198,586 @@ const RegularVisaForm = () => {
                                         </div>
                                     </div>
                                 </div>
-                            )
-                            }
-
-
-
-
-
+                            )}
 
                             <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
-                                <h4 className="mb-0">💼 Regular SKU Listing</h4>
+                                <h4 className="mb-0">💼 Account-based SKU Listing</h4>
                                 <div className="d-flex gap-2 align-items-center">
-
-
                                     <Button variant="success" onClick={triggerFileInput} className="d-flex align-items-center">
                                         <FaFileExcel className="me-2" /> Import Excel
                                     </Button>
-
                                     <Button style={{ backgroundColor: 'gray' }} variant="primary" onClick={handleExport} className="d-flex align-items-center">
                                         <FaDownload className="me-2" /> Export Excel
                                     </Button>
                                 </div>
                             </Card.Header>
+
                             <Card.Body>
-                                {loading ? (
-                                    <div className="d-flex justify-content-center align-items-center" style={{ height: '150px' }}>
-                                        <Spinner animation="border" variant="primary" />
+                                {/* Account Selection Dropdown */}
+                                <div className="mb-3">
+                                    <label className="form-label">Select Account for SKU Entry:</label>
+                                    <select
+                                        className="form-control"
+                                        value={selectedAccountForSku}
+                                        onChange={(e) => handleAccountSkuChange(e.target.value)}
+                                        style={{ maxWidth: '400px' }}
+                                    >
+                                        <option value="">Select an account...</option>
+                                        <option
+                                            value="ALL_ACCOUNTS"
+                                            style={{ fontWeight: 'bold', backgroundColor: '#e7f3ff' }}
+                                        >
+                                            🔍 View All Accounts
+                                        </option>
+                                        {accountTypes
+                                            .filter(account => formData.accountType.includes(account.code))
+                                            .map(account => (
+                                                <option key={account.code} value={account.code}>
+                                                    {account.code} - {account.name}
+                                                </option>
+                                            ))
+                                        }
+                                    </select>
+
+                                </div>
+
+
+                                {/* SKU Table for Selected Account */}
+                                {/* SKU Table for Selected Account or All Accounts */}
+                                {selectedAccountForSku === 'ALL_ACCOUNTS' ? (
+                                    // Show all accounts view
+                                    <div>
+                                        <h5 className="mb-4">All Accounts SKU Listing Overview</h5>
+
+                                        {accountTypes
+                                            .filter(account => formData.accountType.includes(account.code))
+                                            .map(account => {
+                                                const accountRows = accountSkuRows[account.name] || [];
+                                                const accountTotals = calculateAccountSkuTotals(account.code);
+
+                                                return (
+                                                    <div key={account.code} className="mb-4">
+                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                            <h6 className="mb-0">
+                                                                <span className="badge bg-info me-2">{account.code}</span>
+                                                                {account.name}
+                                                            </h6>
+                                                            <div className="d-flex gap-2">
+                                                                <Button
+                                                                    variant="outline-primary"
+                                                                    size="sm"
+                                                                    onClick={() => {
+                                                                        setSelectedAccountForSku(account.code);
+                                                                        addSkuRowForAccount(account.code);  // Add a new empty row automatically
+                                                                    }}
+                                                                >
+                                                                    Edit This Account
+                                                                </Button>
+
+
+                                                                <Button
+                                                                    variant="success"
+                                                                    size="sm"
+                                                                    onClick={() => addSkuRowForAccount(account.code)}
+                                                                >
+                                                                    Add SKU
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+
+                                                        {accountRows.length > 0 ? (
+                                                            <div style={{ overflowX: 'auto' }} className="mb-3">
+                                                                <Table bordered hover size="sm" className="align-middle text-center">
+                                                                    <thead className="table-light">
+                                                                        <tr>
+                                                                            <th>SKU</th>
+                                                                            <th>SRP</th>
+                                                                            <th>QTY</th>
+                                                                            <th>UOM</th>
+                                                                            <th>Billing Amount</th>
+                                                                            <th>Discount</th>
+                                                                            <th>Total Amount</th>
+                                                                            <th>Actions</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {accountRows
+                                                                            .filter(row => row.accountCode === selectedAccountForSku)  // filter rows by selected account
+                                                                            .map((row, idx) => (
+                                                                                <tr key={`${row.accountCode}-${idx}`}>
+                                                                                    <td style={{ minWidth: '200px' }}>
+                                                                                        <small>
+                                                                                            {categoryListing.find(sku => sku.category_code === row.SKUITEM)
+                                                                                                ? `${row.SKUITEM} - ${categoryListing.find(sku => sku.category_code === row.SKUITEM)?.name}`
+                                                                                                : row.SKUITEM || 'Not selected'
+                                                                                            }
+                                                                                        </small>
+                                                                                    </td>
+                                                                                    <td>{row.SRP || '-'}</td>
+                                                                                    <td>{row.QTY || '-'}</td>
+                                                                                    <td>{row.UOM || '-'}</td>
+                                                                                    <td>{row.BILLING_AMOUNT || '-'}</td>
+                                                                                    <td>{row.DISCOUNT || '-'}</td>
+                                                                                    <td><strong>{row.TOTAL_AMOUNT || '-'}</strong></td>
+                                                                                    <td>
+                                                                                        <Button
+                                                                                            variant="outline-danger"
+                                                                                            size="sm"
+                                                                                            onClick={() => removeSkuRowForAccount(row.accountCode, idx)}
+                                                                                        >
+                                                                                            ×
+                                                                                        </Button>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            ))
+                                                                        }
+                                                                    </tbody>
+
+                                                                    <tfoot className="table-info">
+                                                                        <tr>
+                                                                            <td><strong>Account Total</strong></td>
+                                                                            <td><strong>{accountTotals.SRP.toFixed(2)}</strong></td>
+                                                                            <td><strong>{accountTotals.QTY}</strong></td>
+                                                                            <td>
+                                                                                {UOM_OPTIONS.map(opt => (
+                                                                                    <div key={opt} style={{ fontSize: '0.7rem' }}>
+                                                                                        {opt}: {accountTotals.UOMCount[opt] || 0}
+                                                                                    </div>
+                                                                                ))}
+                                                                            </td>
+                                                                            <td><strong>{accountTotals.BILLING_AMOUNT.toFixed(2)}</strong></td>
+                                                                            <td><strong>{accountTotals.DISCOUNT.toFixed(2)}</strong></td>
+                                                                            <td><strong className="text-success">{accountTotals.TOTAL_AMOUNT.toFixed(2)}</strong></td>
+                                                                            <td>-</td>
+                                                                        </tr>
+                                                                    </tfoot>
+                                                                </Table>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-center p-3 bg-light rounded">
+                                                                <small className="text-muted"> SKU entries for this account</small>
+                                                            </div>
+                                                        )}
+                                                        <hr />
+                                                    </div>
+                                                );
+                                            })
+                                        }
+                                        {/* Grand Total Section */}
+                                        {(() => {
+                                            const grandTotals = calculateGrandTotals();
+                                            return (
+                                                <div className="mt-4 p-4 bg-white rounded shadow-lg border">
+                                                    <h4 className="text-center mb-4">📊 Grand Total Summary</h4>
+
+                                                    <div className="row text-center">
+                                                        {/* Total QTY */}
+                                                        <div className="col-md-2 mb-3">
+                                                            <div className="p-3 border rounded bg-light">
+                                                                <strong>Total QTY</strong>
+                                                                <p className="text-primary h4 mt-2">{grandTotals.QTY}</p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* UOM Count */}
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="p-3 border rounded bg-light">
+                                                                <strong>UOM Breakdown</strong>
+                                                                <div
+                                                                    className="mt-2 text-muted d-flex flex-wrap justify-content-center gap-3"
+                                                                    style={{ fontSize: "0.9rem" }}
+                                                                >
+                                                                    {UOM_OPTIONS.map(opt => (
+                                                                        <div key={opt}>
+                                                                            {opt}: <span className="fw-bold">{grandTotals.UOMCount[opt] || 0}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+
+
+                                                        </div>
+
+                                                        {/* Total Billing Amount */}
+                                                        <div className="col-md-2 mb-3">
+                                                            <div className="p-3 border rounded bg-light">
+                                                                <strong>Total Billing</strong>
+                                                                <p className="text-success h4 mt-2">
+                                                                    ₱{grandTotals.BILLING_AMOUNT.toFixed(2)}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Total Discount */}
+                                                        <div className="col-md-2 mb-3">
+                                                            <div className="p-3 border rounded bg-light">
+                                                                <strong>Total Discount</strong>
+                                                                <p className="text-warning h5 mt-2">
+                                                                    ₱{grandTotals.DISCOUNT.toFixed(2)}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Grand Total */}
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="p-3 border rounded bg-light">
+                                                                <strong>Grand Total</strong>
+                                                                <p className="text-danger h3 mt-2">
+                                                                    ₱{(grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT).toFixed(2)}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Remaining Budget */}
+                                                    <div className="card mt-4 border-0 shadow-sm">
+                                                        <div className="card-body text-center">
+                                                            {(() => {
+                                                                const grandTotals = calculateGrandTotals();
+                                                                const selected = parseFloat(selectedBalance || 0);
+                                                                const creditBudget = parseFloat(formData?.amountbadget || 0);
+                                                                const netTotal = grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT;
+                                                                const remainingSkuBudget = selected - netTotal - creditBudget;
+
+                                                                return (
+                                                                    <div>
+                                                                        <h5 className="mb-2">💰 Remaining SKU Budget</h5>
+                                                                        <p
+                                                                            className="fw-bold"
+                                                                            style={{
+                                                                                fontSize: "2rem",
+                                                                                color: remainingSkuBudget < 0 ? "#dc3545" : "#198754",
+                                                                            }}
+                                                                        >
+                                                                            ₱{remainingSkuBudget.toLocaleString("en-PH", {
+                                                                                minimumFractionDigits: 2,
+                                                                                maximumFractionDigits: 2,
+                                                                            })}
+                                                                        </p>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                            );
+                                        })()}
+                                    </div>
+                                ) : selectedAccountForSku && selectedAccountForSku !== '' ? (
+                                    // Show single account edit view (your existing code)
+                                    <div>
+                                        <div className="d-flex justify-content-between align-items-center mb-3">
+                                            <h5>SKU Listing for: {
+                                                accountTypes.find(acc => acc.code === selectedAccountForSku)?.name || selectedAccountForSku
+                                            }</h5>
+                                            <Button
+                                                variant="primary"
+                                                size="sm"
+                                                onClick={() => addSkuRowForAccount(selectedAccountForSku)}
+                                            >
+                                                Add SKU Row
+                                            </Button>
+                                        </div>
+
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <Table bordered hover responsive className="align-middle text-center">
+                                                <thead className="bg-primary text-white">
+                                                    <tr>
+                                                        <th>SKU</th>
+                                                        <th>SRP</th>
+                                                        <th>QTY</th>
+                                                        <th>UOM</th>
+                                                        <th>BILLING AMOUNT</th>
+                                                        <th>DISCOUNT</th>
+                                                        <th>TOTAL AMOUNT</th>
+                                                        <th>Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {(accountSkuRows[selectedAccountForSku] || []).map((row, idx) => (
+                                                        <tr key={`${selectedAccountForSku}-${idx}`}>
+                                                            <td style={{ display: 'flex', alignItems: 'center' }}>
+                                                                <Form.Control
+                                                                    value={
+                                                                        categoryListing.find(sku => sku.sku_code === row.SKUITEM)
+                                                                            ? `${row.SKUITEM} - ${categoryListing.find(sku => sku.sku_code === row.SKUITEM)?.name}`
+                                                                            : row.SKUITEM || ''
+                                                                    }
+                                                                    onChange={e =>
+                                                                        handleChangeSkuForAccount(
+                                                                            selectedAccountForSku,
+                                                                            idx,
+                                                                            'SKUITEM',
+                                                                            e.target.value
+                                                                        )
+                                                                    }
+                                                                    readOnly
+                                                                />
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setSelectedRowIndex(idx);
+                                                                        setShowSkuModal(true);
+                                                                    }}
+                                                                    style={{
+                                                                        border: "none",
+                                                                        background: "none",
+                                                                        cursor: "pointer",
+                                                                        padding: "8px",
+                                                                        marginLeft: "8px",
+                                                                    }}
+                                                                >
+                                                                    <FaSearch style={{ color: "blue", fontSize: "20px" }} />
+                                                                </button>
+                                                            </td>
+                                                            <td>
+                                                                <Form.Control
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={row.SRP || ''}
+                                                                    onChange={e => handleChangeSkuForAccount(selectedAccountForSku, idx, 'SRP', e.target.value)}
+                                                                />
+                                                            </td>
+                                                            <td>
+                                                                <Form.Control
+                                                                    type="number"
+                                                                    value={row.QTY || ''}
+                                                                    onChange={e => handleChangeSkuForAccount(selectedAccountForSku, idx, 'QTY', e.target.value)}
+                                                                />
+                                                            </td>
+                                                            <td>
+                                                                <Form.Select
+                                                                    value={row.UOM || ''}
+                                                                    onChange={e => handleChangeSkuForAccount(selectedAccountForSku, idx, 'UOM', e.target.value)}
+                                                                >
+                                                                    {UOM_OPTIONS.map(opt => (
+                                                                        <option key={opt} value={opt}>{opt}</option>
+                                                                    ))}
+                                                                </Form.Select>
+                                                            </td>
+                                                            <td>
+                                                                <Form.Control
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={row.BILLING_AMOUNT || ''}
+                                                                    readOnly
+                                                                    style={{ backgroundColor: '#e9ecef' }}
+                                                                />
+                                                            </td>
+                                                            <td>
+                                                                <Form.Control
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={row.DISCOUNT || ''}
+                                                                    onChange={e => handleChangeSkuForAccount(selectedAccountForSku, idx, 'DISCOUNT', e.target.value)}
+                                                                />
+                                                            </td>
+                                                            <td>
+                                                                <Form.Control
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={row.TOTAL_AMOUNT || ''}
+                                                                    readOnly
+                                                                    style={{ backgroundColor: '#d4edda', fontWeight: 'bold' }}
+                                                                />
+                                                            </td>
+                                                            <td>
+                                                                <Button
+                                                                    variant="danger"
+                                                                    size="sm"
+                                                                    onClick={() => removeSkuRowForAccount(selectedAccountForSku, idx)}
+                                                                >
+                                                                    Remove
+                                                                </Button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+
+                                                {/* Account Totals Footer */}
+                                                {selectedAccountForSku && accountSkuRows[selectedAccountForSku]?.length > 0 && (
+                                                    <tfoot>
+                                                        <tr className="table-info">
+                                                            <th>Account Total</th>
+                                                            <th>{calculateAccountSkuTotals(selectedAccountForSku).SRP.toFixed(2)}</th>
+                                                            <th>{calculateAccountSkuTotals(selectedAccountForSku).QTY}</th>
+                                                            <th>
+                                                                {UOM_OPTIONS.map(opt => (
+                                                                    <div key={opt} style={{ fontSize: '0.8rem', lineHeight: '1.2' }}>
+                                                                        {opt}: {calculateAccountSkuTotals(selectedAccountForSku).UOMCount[opt] || 0}
+                                                                    </div>
+                                                                ))}
+                                                            </th>
+                                                            <th>{calculateAccountSkuTotals(selectedAccountForSku).BILLING_AMOUNT.toFixed(2)}</th>
+                                                            <th>{calculateAccountSkuTotals(selectedAccountForSku).DISCOUNT.toFixed(2)}</th>
+                                                            <th>{calculateAccountSkuTotals(selectedAccountForSku).TOTAL_AMOUNT.toFixed(2)}</th>
+                                                            <th>-</th>
+                                                        </tr>
+                                                    </tfoot>
+                                                )}
+                                            </Table>
+                                        </div>
                                     </div>
                                 ) : (
-                                    <div style={{ overflowX: 'auto' }}>
-                                        <Table bordered hover responsive className="align-middle text-center">
-                                            <thead className="bg-primary text-white">
-                                                <tr>
-                                                    <th>SKU</th>
-                                                    <th>SRP</th>
-                                                    <th>QTY</th>
-                                                    <th>UOM</th>
-                                                    <th>DISCOUNT</th>
-                                                    <th>BILLING AMOUNT</th>
-                                                    {/* <th>Actions</th> */}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {rows.map((row, idx) => (
-                                                    <tr key={row.SKUITEM || idx}>
-                                                        <td style={{ display: 'flex', alignItems: 'center' }}>
-                                                            <Form.Control
-                                                                value={row.SKUITEM}
-                                                                onChange={e => handleChangesku(idx, 'SKUITEM', e.target.value)}
-                                                            // remove readOnly so user can edit if needed
-                                                            />
-
-
-
-
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setSelectedRowIndex(idx);
-                                                                    setShowSkuModal(true);
-                                                                }}
-
-                                                                style={{
-                                                                    border: "none",
-                                                                    background: "none",
-                                                                    cursor: "pointer",
-                                                                    padding: "8px",
-                                                                    color: "#d32f2f",
-                                                                    transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                                                                    boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                                                                    borderRadius: "8px",
-                                                                    display: "inline-flex",
-                                                                    alignItems: "center",
-                                                                    justifyContent: "center",
-                                                                    marginLeft: "8px",
-                                                                    outline: "none",
-                                                                }}
-                                                                onMouseEnter={(e) => {
-                                                                    e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                                                                    e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
-                                                                }}
-                                                                onMouseLeave={(e) => {
-                                                                    e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                                                                    e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                                                                }}
-                                                                onMouseDown={(e) => {
-                                                                    e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                                                                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                                                                }}
-                                                                onMouseUp={(e) => {
-                                                                    e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                                                                    e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
-                                                                }}
-                                                            >
-                                                                <FaSearch style={{ color: "blue", fontSize: "20px" }} />
-                                                            </button>
-                                                        </td>
-
-
-
-                                                        <td>
-                                                            <Form.Control
-                                                                type="number"
-                                                                step="0.01"
-                                                                value={row.SRP || ''}
-                                                                onChange={e => handleChangesku(idx, 'SRP', e.target.value)}
-                                                            />
-                                                        </td>
-                                                        <td>
-                                                            <Form.Control
-                                                                type="number"
-                                                                value={row.QTY || ''}
-                                                                onChange={e => handleChangesku(idx, 'QTY', e.target.value)}
-                                                            />
-                                                        </td>
-                                                        <td>
-                                                            <Form.Select
-                                                                value={row.UOM || ''}
-                                                                onChange={e => handleChangesku(idx, 'UOM', e.target.value)}
-                                                            >
-                                                                {UOM_OPTIONS.map(opt => (
-                                                                    <option key={opt} value={opt}>{opt}</option>
-                                                                ))}
-                                                            </Form.Select>
-                                                        </td>
-                                                        <td>
-                                                            <Form.Control
-                                                                type="number"
-                                                                step="0.01"
-                                                                value={row.DISCOUNT || ''}
-                                                                onChange={e => handleChangesku(idx, 'DISCOUNT', e.target.value)}
-                                                            />
-                                                        </td>
-                                                        <td>
-                                                            <Form.Control
-                                                                type="number"
-                                                                step="0.01"
-                                                                value={row.BILLING_AMOUNT || ''}
-                                                                onChange={e => handleChangesku(idx, 'BILLING_AMOUNT', e.target.value)}
-                                                            />
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-
-
-
-
-                                            {/* Footer with totals */}
-                                            <tfoot>
-                                                <tr>
-                                                    <th>Total</th>
-                                                    <th>{(parseFloat(totals?.SRP || 0)).toFixed(2)}</th>
-                                                    <th>{totals?.QTY || 0}</th>
-                                                    <th>
-                                                        {UOM_OPTIONS.map(opt => (
-                                                            <div key={opt} style={{ fontSize: '0.8rem', lineHeight: '1.2' }}>
-                                                                {opt}: {totals?.UOMCount?.[opt] || 0}
-                                                            </div>
-                                                        ))}
-                                                    </th>
-                                                    <th>{(parseFloat(totals?.DISCOUNT || 0)).toFixed(2)}</th>
-
-                                                    {/* Billing SKU Amount */}
-                                                    <th>
-                                                        {(() => {
-                                                            const billingAmountSKU = rows.reduce((acc, row) => {
-                                                                const val = parseFloat(row.BILLING_AMOUNT);
-                                                                return acc + (isNaN(val) ? 0 : val);
-                                                            }, 0);
-                                                            return billingAmountSKU.toFixed(2);
-                                                        })()}
-                                                    </th>
-
-                                                    {/* Remaining SKU Budget */}
-                                                    <th>
-                                                        {(() => {
-                                                            const selected = parseFloat(selectedBalance || 0);
-                                                            const billingSkuAmount = rows.reduce((acc, row) => {
-                                                                const val = parseFloat(row.BILLING_AMOUNT);
-                                                                return acc + (isNaN(val) ? 0 : val);
-                                                            }, 0);
-                                                            const creditBudget = parseFloat(formData?.amountbadget || 0);
-
-                                                            const remainingSkuBudget = selected - billingSkuAmount - creditBudget;
-
-                                                            return remainingSkuBudget.toLocaleString('en-PH', {
-                                                                minimumFractionDigits: 2,
-                                                                maximumFractionDigits: 2,
-                                                            });
-                                                        })()}
-                                                    </th>
-                                                </tr>
-                                            </tfoot>
-
-
-
-
-                                        </Table>
+                                    <div className="text-center p-4 bg-light rounded">
+                                        <p className="text-muted mb-0">Please select an account to manage SKU listings</p>
                                     </div>
                                 )}
                             </Card.Body>
 
-                            <Card.Footer className="d-flex justify-content-between align-items-center">
+                            <Card.Footer>
+                                {/* SKU Modal - Update the onClick handler */}
+                                <Modal
+                                    show={showSkuModal}
+                                    onHide={() => setShowSkuModal(false)}
+                                    centered
+                                    dialogClassName="responsive-sku-modal"
+                                >
+                                    <Modal.Header
+                                        closeButton
+                                        style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                                    >
+                                        <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                            Select SKU {activeCategoryCode ? `(Category: ${activeCategoryCode})` : ''}
+                                        </Modal.Title>
+                                    </Modal.Header>
+
+                                    <Modal.Body
+                                        style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            height: '70vh', // Responsive height
+                                            padding: '1rem',
+                                        }}
+                                    >
+                                        {/* Search Input */}
+                                        <input
+                                            type="text"
+                                            className="form-control mb-3"
+                                            placeholder="Search SKUs..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            style={{ borderColor: '#007bff', flexShrink: 0 }}
+                                        />
+
+                                        {/* Selected Categories */}
+                                        <div style={{ overflowY: 'auto', flexGrow: 1 }}>
+                                            <strong>Selected Categories:</strong>
+
+                                            <div
+                                                style={{
+                                                    marginTop: '0.5rem',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '8px',
+                                                }}
+                                            >
+                                                {(formData.categoryName && formData.categoryName.length > 0) ? (
+                                                    formData.categoryName.map((name, index) => {
+                                                        const code = formData.categoryCode[index];
+                                                        const isActive = activeCategoryCode === code;
+
+                                                        return (
+                                                            <div key={index}>
+                                                                {/* Category Item */}
+                                                                <div
+                                                                    onClick={() => handleCategoryClick(code)}
+                                                                    style={{
+                                                                        padding: '8px 12px',
+                                                                        border: isActive ? '2px solid black' : '1px solid #ccc',
+                                                                        borderRadius: '6px',
+                                                                        backgroundColor: isActive ? '#e6e6e6' : '#f9f9f9',
+                                                                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                                                                        fontWeight: '500',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none',
+                                                                        display: 'flex',
+                                                                        justifyContent: 'space-between',
+                                                                        alignItems: 'center',
+                                                                    }}
+                                                                >
+                                                                    <span>{code} - {name}</span>
+                                                                    <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#666' }}>{'>'}</span>
+                                                                </div>
+
+                                                                {/* SKU List (only active) */}
+                                                                {isActive && (
+                                                                    <div
+                                                                        style={{
+                                                                            marginTop: '0.5rem',
+                                                                            padding: '0.5rem',
+                                                                            backgroundColor: '#fff',
+                                                                            border: '1px solid #ddd',
+                                                                            borderRadius: '4px',
+                                                                            maxHeight: '200px',
+                                                                            overflowY: 'auto',
+                                                                        }}
+                                                                    >
+                                                                        {(categoryListing || [])
+                                                                            .filter((sku) => {
+                                                                                const matchesCategory = sku.category_code?.toLowerCase() === code.toLowerCase();
+                                                                                const matchesSearch = (
+                                                                                    sku.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                                                    (sku.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                                                    sku.category_code?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+                                                                                );
+                                                                                return matchesCategory && matchesSearch;
+                                                                            })
+                                                                            .map((sku) => (
+                                                                                <div
+                                                                                    key={sku.category_code}
+                                                                                    style={{
+                                                                                        padding: '8px',
+                                                                                        cursor: 'pointer',
+                                                                                        borderBottom: '1px solid #eee',
+                                                                                    }}
+                                                                                    onClick={() => {
+                                                                                        if (selectedAccountForSku && selectedRowIndex !== null) {
+                                                                                            handleChangeSkuForAccount(selectedAccountForSku, selectedRowIndex, 'SKUITEM', sku.sku_code);
+                                                                                        }
+                                                                                        setShowSkuModal(false);
+                                                                                    }}
+                                                                                >
+                                                                                    <div><strong>{sku.sku_code}</strong> - {sku.name}</div>
+                                                                                    <small style={{ color: '#666' }}>{sku.description || 'No description'}</small>
+                                                                                </div>
+                                                                            ))}
+
+                                                                        {/* No SKUs */}
+                                                                        {categoryListing.filter(sku =>
+                                                                            sku.category_code?.toLowerCase() === code.toLowerCase()
+                                                                        ).length === 0 && (
+                                                                                <div className="text-center text-muted p-3">
+                                                                                    No SKUs found for this category.
+                                                                                </div>
+                                                                            )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <div>None</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </Modal.Body>
+
+                                    <Modal.Footer>
+                                        <Button variant="secondary" onClick={() => setShowSkuModal(false)}>
+                                            Close
+                                        </Button>
+                                    </Modal.Footer>
+                                </Modal>
 
 
                             </Card.Footer>
-                        </Card >
+                        </Card>
 
-                        <Modal show={showSkuModal} onHide={() => setShowSkuModal(false)} centered>
-
-
-                            <Modal.Header
-                                closeButton
-                                style={{ background: "rgb(70, 137, 166)", color: "white" }}
-                            >
-                                <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                                    Select SKU
-                                </Modal.Title>
-                            </Modal.Header>
-                            <Modal.Body
-                                style={{
-                                    maxHeight: '400px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    padding: '1rem',
-                                }}
-                            >
-                                {/* Search Bar - fixed height, no scroll */}
-                                <input
-                                    type="text"
-                                    className="form-control mb-3"
-                                    placeholder="Search SKUs..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    style={{ borderColor: '#007bff', flexShrink: 0 }}
-                                />
-
-                                {/* Scrollable list container */}
-                                <div
-                                    style={{
-                                        overflowY: 'auto',
-                                        flexGrow: 1,
-                                        borderTop: '1px solid #ccc',
-                                        paddingTop: '0.5rem',
-                                    }}
-                                >
-                                    {categoryListing
-                                        .filter(sku =>
-                                            sku.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                            (sku.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                            sku.sku_code.toString().includes(searchTerm)
-                                        )
-                                        .map(sku => (
-                                            <div
-                                                key={sku.sku_code}
-                                                style={{
-                                                    padding: '8px',
-                                                    cursor: 'pointer',
-                                                    borderBottom: '1px solid #eee',
-                                                }}
-                                                onClick={() => {
-                                                    handleChangesku(selectedRowIndex, 'SKUITEM', sku.sku_code);
-                                                    setShowSkuModal(false);
-                                                }}
-                                            >
-                                                <div><strong>{sku.sku_code}</strong> - {sku.name}</div>
-                                                <small style={{ color: '#666' }}>{sku.description || 'No description'}</small>
-                                            </div>
-
-                                        ))}
-                                </div>
-                            </Modal.Body>
-
-                            <Modal.Footer>
-                                <Button variant="secondary" onClick={() => setShowSkuModal(false)}>
-                                    Close
-                                </Button>
-                            </Modal.Footer>
-                        </Modal>
-
-                        <div className="mb-3">
+                        {/* Remarks Section */}
+                        <div className="mb-3 mt-4">
                             <label className="form-label">Remarks</label>
                             <textarea
                                 name="remarks"
@@ -3245,25 +3787,25 @@ const RegularVisaForm = () => {
                                 rows={4}
                             />
                         </div>
+
+                        {/* Navigation */}
                         <div className="d-flex justify-content-between">
-
-
                             <button className="btn btn-outline-secondary" onClick={handlePrevious}>
                                 ← Previous
-                            </button>                            <div style={{ textAlign: 'right' }}>
-                                <button
-                                    type="button"
-                                    className="btn btn-primary mt-3"
-                                    onClick={() => setStep(3)}
-                                    style={{ width: '85px' }}
-                                >
-                                    Next
-                                </button>
+                            </button>
 
-                            </div>                    </div>
+
+
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => setStep(3)}
+                                style={{ width: '85px' }}
+                            >
+                                Next
+                            </button>
+                        </div>
                     </div >
-
-
                 );
 
             case 2:
@@ -3711,39 +4253,319 @@ const RegularVisaForm = () => {
 
                 );
 
+
+
+
+            case 4:
+                return (
+                    formData.activityName === "BAD ORDER" && (
+                        <div>
+                            {formData.coverPwpCode && selectedBalance !== null && (
+                                <div
+                                    className="card mb-3 shadow-sm"
+                                    style={{
+                                        width: '32rem',
+                                        borderRadius: '12px',
+                                        border: '1px solid #198754',
+                                        overflow: 'hidden',
+                                        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+                                    }}
+                                >
+                                    <div
+                                        className="card-header text-white fw-bold text-center"
+                                        style={{
+                                            background: 'linear-gradient(90deg, #198754 0%, #2ecc71 100%)',
+                                            fontSize: '1.25rem',
+                                            letterSpacing: '1px',
+                                            padding: '1rem',
+                                            borderBottom: '2px solid #145c32',
+                                            userSelect: 'none',
+                                        }}
+                                    >
+                                        🎯 Remaining Budget
+                                    </div>
+
+                                    <div className="card-body text-center px-4 py-3">
+                                        <p
+                                            className="card-text mb-2"
+                                            style={{
+                                                fontSize: '2.5rem',
+                                                fontWeight: '900',
+                                                color:
+                                                    selectedBalance - totals.BILLING_AMOUNT - parseFloat(formData.amountbadget || 0) < 0
+                                                        ? '#dc3545'
+                                                        : '#198754',
+                                                transition: 'color 0.3s ease',
+                                            }}
+                                        >
+                                            ₱
+                                            {(
+                                                selectedBalance -
+                                                totals.BILLING_AMOUNT -
+                                                parseFloat(formData.amountbadget || 0)
+                                            ).toLocaleString('en-PH', {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                            })}
+                                        </p>
+
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent: 'center',
+                                                gap: '2rem',
+                                                fontSize: '0.9rem',
+                                                color: '#6c757d',
+                                                userSelect: 'none',
+                                            }}
+                                        >
+                                            <div>
+                                                <small>Original</small>
+                                                <br />
+                                                <strong>₱{selectedBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+                                            </div>
+
+                                            <div>
+                                                <small>Allocated (Form)</small>
+                                                <br />
+                                                <strong>₱{parseFloat(formData.amountbadget || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <Card border="primary" className="shadow">
+                                <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
+                                    <h4 className="mb-0">📦 Bad Order Category Listing</h4>
+                                    {/* <div className="d-flex gap-2 align-items-center">
+                                                   <Button variant="success" onClick={triggerFileInput} className="d-flex align-items-center">
+                                                       <FaFileExcel className="me-2" /> Import Excel
+                                                   </Button>
+                                                   <Button variant="secondary" onClick={handleExport} className="d-flex align-items-center">
+                                                       <FaDownload className="me-2" /> Export Excel
+                                                   </Button>
+                                               </div> */}
+                                </Card.Header>
+
+                                <Card.Body>
+                                    <label>Category & Amount Table</label>
+                                    <table className="table table-bordered">
+                                        <thead className="thead-dark">
+                                            <tr>
+                                                <th style={{ width: '40%' }}>Category</th>
+                                                <th style={{ width: '40%' }}>Amount</th>
+                                                <th style={{ width: '20%' }}>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {formData.rowsCategories.length > 0 ? (
+                                                formData.rowsCategories.map((row, index) => (
+                                                    <tr key={index}>
+                                                        <td>
+                                                            <div className="d-flex align-items-center">
+                                                                <input
+                                                                    type="text"
+                                                                    className="form-control me-2"
+                                                                    style={{ flexGrow: 1 }}
+                                                                    value={row.category || ''}
+                                                                    onChange={(e) => handleCategoryRowChange(index, 'category', e.target.value)}
+                                                                    placeholder="Enter category name or select from modal"
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-outline-secondary"
+                                                                    onClick={() => {
+                                                                        setSelectedCategoryRowIndex(index);
+                                                                        setShowModal(true);
+                                                                    }}
+                                                                >
+                                                                    🔍
+                                                                </button>
+                                                            </div>
+                                                        </td>
+
+                                                        <td>
+                                                            <input
+                                                                type="number"
+                                                                className="form-control"
+                                                                value={row.amount}
+                                                                onChange={(e) => handleCategoryRowChange(index, 'amount', e.target.value)}
+                                                                placeholder="Enter amount"
+                                                            />
+                                                        </td>
+                                                        <td>
+                                                            <button
+                                                                className="btn btn-danger btn-sm"
+                                                                onClick={() => handleDeleteCategoryRow(index)}
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan="3" className="text-center text-muted">
+                                                        No categories added
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+
+                                        {/* Modal component for category selection */}
+                                        <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
+                                            <Modal.Header closeButton style={{ background: "#4689a6", color: "white" }}>
+                                                <Modal.Title className="w-100 text-center">📂 Select {categoryMode === 'subcategory' ? 'Subcategory' : 'Category'}</Modal.Title>
+                                            </Modal.Header>
+
+                                            <Modal.Body>
+                                                {categoryMode === null ? (
+                                                    <div className="text-danger text-center">
+                                                        🚫 No categories or subcategories available.
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <input
+                                                            type="text"
+                                                            className="form-control mb-3"
+                                                            placeholder={`Search ${categoryMode} by name or code...`}
+                                                            value={BadOrderSearch}
+                                                            onChange={(e) => setBadOrderSearch(e.target.value)}
+                                                        />
+
+                                                        {loading ? (
+                                                            <p>Loading {categoryMode}s...</p>
+                                                        ) : (
+                                                            <ul className="list-group" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                                                {filtered.length > 0 ? (
+                                                                    filtered.map((cat) => (
+                                                                        <li
+                                                                            key={cat.id}
+                                                                            className="list-group-item list-group-item-action"
+                                                                            style={{ cursor: 'pointer' }}
+                                                                            onClick={() => handleSelectCategory(cat)}
+                                                                        >
+                                                                            <strong>{cat.code}</strong> - {cat.name}
+                                                                            <div className="text-muted small">{cat.description || 'No description'}</div>
+                                                                        </li>
+                                                                    ))
+                                                                ) : (
+                                                                    <li className="list-group-item text-muted">No results found</li>
+                                                                )}
+                                                            </ul>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </Modal.Body>
+
+                                            <Modal.Footer>
+                                                <Button variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
+                                            </Modal.Footer>
+                                        </Modal>
+
+
+                                        <tfoot>
+                                            <tr>
+                                                <td className="text-end fw-bold">Total:</td>
+                                                <td colSpan="2" className="fw-bold">
+                                                    ₱{calculateTotalAmount().toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+
+                                            {formData.coverPwpCode && selectedBalance !== null && (() => {
+                                                const amountBadgetValue = selectedBalance; // Use selectedBalance as total budget
+                                                const safeAmountBadget = isNaN(amountBadgetValue) ? 0 : amountBadgetValue;
+                                                const totalAmount = calculateTotalAmount();
+                                                const remainingBudget = selectedBalance - totals.BILLING_AMOUNT - (parseFloat(formData.amountbadget) || 0);
+                                                const amountBadgetMinusTotal = safeAmountBadget - totalAmount;
+
+                                                return (
+                                                    <>
+                                                        <tr>
+                                                            <td className="text-end fw-bold">Remaining Budget:</td>
+                                                            <td colSpan="2"
+                                                                style={{
+                                                                    fontWeight: '900',
+                                                                    color: remainingBudget < 0 ? '#dc3545' : '#198754',
+                                                                    fontSize: '1.25rem',
+                                                                    userSelect: 'none',
+                                                                }}
+                                                            >
+                                                                ₱{remainingBudget.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                            </td>
+                                                        </tr>
+
+                                                        <tr>
+                                                            <td className="text-end fw-bold">Amountbadget - Total Amount:</td>
+                                                            <td colSpan="2"
+                                                                style={{
+                                                                    fontWeight: '900',
+                                                                    color: amountBadgetMinusTotal < 0 ? '#dc3545' : '#198754',
+                                                                    fontSize: '1.25rem',
+                                                                    userSelect: 'none',
+                                                                }}
+                                                            >
+                                                                ₱{amountBadgetMinusTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                                            </td>
+                                                        </tr>
+                                                    </>
+                                                );
+                                            })()}
+                                        </tfoot>
+
+
+                                    </table>
+
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary btn-sm"
+                                        onClick={handleAddCategoryRow}
+                                    >
+                                        + Add Category Row
+                                    </button>
+                                </Card.Body>
+                            </Card>
+
+                            {/* Remarks */}
+                            <div className="mb-3 mt-4">
+                                <label className="form-label">Remarks</label>
+                                <textarea
+                                    name="remarks"
+                                    className="form-control"
+                                    value={formData.remarks}
+                                    onChange={handleFormChange}
+                                    rows={4}
+                                />
+                            </div>
+
+                            {/* Navigation Buttons */}
+                            <div className="d-flex justify-content-between mt-3">
+                                <button className="btn btn-outline-secondary" onClick={handlePrevious}>
+                                    ← Previous
+                                </button>
+                                <div className="d-flex justify-content-end mt-3">
+                                    <Button
+                                        variant="success"
+                                        onClick={submit_all}
+                                        className="d-flex align-items-center"
+                                        style={{ marginTop: '1rem' }}
+                                    >
+                                        <FaSave className="me-2" /> Submit All
+                                    </Button>
+                                </div>
+
+                            </div>
+                        </div>
+                    )
+                );
+
             default:
                 return null;
         }
     };
 
-
-
-
-
-
     return <div style={{ padding: '30px', overflowX: 'auto' }} className="containes">{renderStepContent()}</div>;
-};
-const dropdownIconStyle = {
-    position: 'absolute',
-    right: '20px',
-    top: '70%',
-    transform: 'translateY(-50%)',
-    pointerEvents: 'none',
-    color: '#555',
-    fontSize: '14px',
-    userSelect: 'none',
-};
-
-const checkIconStyle = {
-    position: 'absolute',
-    right: '40px',
-    top: '50%',
-    transform: 'translateY(-20%)',
-    color: 'green',
-    fontWeight: 'bold',
-    fontSize: '25px',
-    pointerEvents: 'none',
-    userSelect: 'none',
 };
 
 export default RegularVisaForm;

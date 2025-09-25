@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ApprovalDropdownButtons from './ApprovalDropdownButton';
 import './ApprovalsPage.css';
+import Swal from 'sweetalert2'; // Make sure you have this at the top
+
 import { supabase } from '../supabaseClient';
 import ViewDataModal from './ViewData/ViewDataModal';
 export default function ApprovalsPage() {
@@ -62,104 +64,109 @@ export default function ApprovalsPage() {
 
 
   const [hasFetched, setHasFetched] = useState(false);
+useEffect(() => {
+  let isMounted = true;
 
-  useEffect(() => {
-    let isMounted = true;
+  if (!currentUser?.UserID || hasFetched) return;
 
-    // Only fetch if user is logged in and we haven't fetched yet
-    if (!currentUser?.UserID || hasFetched) return;
+  const fetchData = async () => {
+    try {
+      const myName = currentUser.name?.toLowerCase().trim();
+      const userId = currentUser.UserID;
+      const isAdmin = currentUser.role?.toLowerCase() === 'admin';
 
-    const fetchData = async () => {
-      try {
-        const myName = currentUser.name?.toLowerCase().trim();
-        const userId = currentUser.UserID;
-        const isAdmin = currentUser.role?.toLowerCase() === 'admin';
+      const visaTables = ['cover_pwp', 'regular_pwp', 'Claims_pwp']; // <-- added Claims_pwp
+      let combinedData = [];
+      let allowedNames = [];
 
-        // Tables to fetch from
-        const visaTables = ['cover_pwp', 'regular_pwp'];
-        let combinedData = [];
-        let allowedNames = [];
+      for (const table of visaTables) {
+        const { data, error } = await supabase.from(table).select('*');
 
-        // TODO: Fetch allowed approvers here, example:
-        // const { data: approverData, error: approverError } = await supabase.from('User_Approvers').select('*');
-        // if (!approverError && approverData) allowedNames = approverData.map(a => a.name);
+        if (error) {
+          console.error(`Error fetching from ${table}:`, error.message);
+          continue;
+        }
 
-        for (const table of visaTables) {
-          const { data, error } = await supabase.from(table).select('*');
+        const normalizedAllowedNames = allowedNames.map(n => n.toLowerCase().trim());
 
-          if (error) {
-            console.error(`Error fetching from ${table}:`, error.message);
-            continue;
-          }
-
-          const normalizedAllowedNames = allowedNames.map(n => n.toLowerCase().trim());
-
-          const filteredData = isAdmin
+        const filteredData = isAdmin
+          ? data
+          : normalizedAllowedNames.length === 0
             ? data
-            : normalizedAllowedNames.length === 0
-              ? data
-              : data.filter(item => {
+            : data.filter(item => {
                 const createdBy = (item.CreatedForm || item.createForm || '').toLowerCase().trim();
                 if (createdBy === myName) return true;
                 return normalizedAllowedNames.includes(createdBy);
               });
 
-          const formatted = filteredData.map(item => {
-            if (table === 'cover_pwp') {
-              return {
-                code: item.cover_code || '',
-                title: item.pwp_type || 'N/A',
-                type: item.account_type || 'N/A',
-                company: item.distributor_code || 'N/A',
-                principal: item.objective || 'N/A',
-                brand: item.promo_scheme || 'N/A',
-                approver: item.approver || 'N/A',
-                createForm: item.CreatedForm || item.createForm || 'N/A',
-                status: item.notification === true ? 'Approved' : 'Pending',
-                responseDate: '', // add if you have date field
-                sourceTable: table,
-                created_at: item.created_at || 'N/A',
-              };
-            } else if (table === 'regular_pwp') {
-              return {
-                code: item.regularpwpcode || '',
-                title: item.pwptype || 'N/A',
-                type: item.accountType ? item.accountType.join(', ') : 'N/A',
-                company: item.distributor || 'N/A',
-                principal: item.objective || 'N/A',
-                brand: item.promoScheme || 'N/A',
-                approver: item.approver || 'N/A',
-                createForm: item.CreatedForm || item.createForm || 'N/A',
-                status: item.notification === true ? 'Approved' : 'Pending',
-                responseDate: '',
-                sourceTable: table,
-                created_at: item.created_at || 'N/A',
-              };
-            }
-            return null;
-          }).filter(x => x !== null);
+        const formatted = filteredData.map(item => {
+          if (table === 'cover_pwp') {
+            return {
+              code: item.cover_code || '',
+              title: item.pwp_type || 'N/A',
+              type: item.account_type || 'N/A',
+              company: item.distributor_code || 'N/A',
+              principal: item.objective || 'N/A',
+              brand: item.promo_scheme || 'N/A',
+              approver: item.approver || 'N/A',
+              createForm: item.CreatedForm || item.createForm || 'N/A',
+              status: item.notification === true ? 'Approved' : 'Pending',
+              responseDate: '',
+              sourceTable: table,
+              created_at: item.created_at || 'N/A',
+            };
+          } else if (table === 'regular_pwp') {
+            return {
+              code: item.regularpwpcode || '',
+              title: item.pwptype || 'N/A',
+              type: item.accountType ? item.accountType.join(', ') : 'N/A',
+              company: item.distributor || 'N/A',
+              principal: item.objective || 'N/A',
+              brand: item.promoScheme || 'N/A',
+              approver: item.approver || 'N/A',
+              createForm: item.CreatedForm || item.createForm || 'N/A',
+              status: item.notification === true ? 'Approved' : 'Pending',
+              responseDate: '',
+              sourceTable: table,
+              created_at: item.created_at || 'N/A',
+            };
+          } else if (table === 'Claims_pwp') { // <-- added
+            return {
+              code: item.code_pwp || '',
+              title: item.activity || 'N/A',
+              type: item.account_types ? item.account_types.join(', ') : 'N/A',
+              company: item.distributor || 'N/A',
+              principal: '', // optional, you can map if needed
+              brand: item.category_names ? item.category_names.join(', ') : 'N/A',
+              approver: '', // optional
+              createForm: item.CreatedForm || item.createForm || 'N/A',
+              status: item.notification === true ? 'Approved' : 'Pending',
+              responseDate: '',
+              sourceTable: table,
+              created_at: item.created_at || 'N/A',
+            };
+          }
+          return null;
+        }).filter(x => x !== null);
 
-          combinedData = [...combinedData, ...formatted];
-        }
-
-        if (isMounted) {
-          setAllowedApproverNames(allowedNames);
-          setApprovals(combinedData);
-          setHasFetched(true);
-        }
-      } catch (error) {
-        console.error("Unexpected fetch error:", error);
-        if (isMounted) setHasFetched(true); // prevent infinite retry on error
+        combinedData = [...combinedData, ...formatted];
       }
-    };
 
-    fetchData();
+      if (isMounted) {
+        setAllowedApproverNames(allowedNames);
+        setApprovals(combinedData);
+        setHasFetched(true);
+      }
+    } catch (error) {
+      console.error("Unexpected fetch error:", error);
+      if (isMounted) setHasFetched(true);
+    }
+  };
 
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser?.UserID, hasFetched, supabase]);
+  fetchData();
 
+  return () => { isMounted = false; };
+}, [currentUser?.UserID, hasFetched, supabase]);
 
 
 
@@ -199,6 +206,12 @@ export default function ApprovalsPage() {
 
   // Filter logic
   useEffect(() => {
+    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+    const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+    const role = currentUser?.role || ""; // <-- get role here
+    console.log("User name:", currentUser?.name || "");
+    console.log("Role:", role);
+
     const newFilteredData = approvals.filter((entry) => {
       const entryType = entry.pwp_type?.toLowerCase();
       const entryStatus = entry.status?.toLowerCase();
@@ -239,10 +252,13 @@ export default function ApprovalsPage() {
         })()
         : true;
 
-      // User permission
-      const isUserAllowed = createdFormName
-        ? allowedApproverNames.includes(createdFormName) || createdFormName === myName.toLowerCase()
-        : true;
+      // User permission + CreatedForm match with current user
+      const isUserAllowed = role === 'admin'
+        ? true
+        : createdFormName
+          ? (allowedApproverNames.includes(createdFormName) || createdFormName === myName.toLowerCase())
+          && createdFormName === currentUserName
+          : true;
 
       return (
         matchesSearch &&
@@ -477,114 +493,215 @@ export default function ApprovalsPage() {
     fetchUserDetails();
   }, [approvalSetting, currentUser?.UserID]);
 
+const handleApproveClick = async (entryCode) => {
+  const entry = approvals.find((item) => item.code === entryCode);
+  if (!entry || !entry.code) return;
 
-  const handleApproveClick = async (entryCode) => {
-    const entry = approvals.find((item) => item.code === entryCode);
-    if (!entry || !entry.code) return;
+  console.log("🔍 Entry being approved:", entry);
 
-    console.log("Approving entry code:", entry.code);  // <-- Added console.log here
+  const dateTime = new Date().toISOString();
+  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+  const userId = currentUser?.UserID || "unknown";
 
-    const dateTime = new Date().toISOString();
-    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-    const userId = currentUser?.UserID || "unknown";
+  // 🔒 Prevent duplicate click
+  if (entry.isSubmitting) return;
 
-    try {
-      // 1. Insert into Approval_History
-      const { error: historyError } = await supabase
-        .from("Approval_History")
-        .insert({
-          PwpCode: entry.code,
-          ApproverId: userId,
-          DateResponded: dateTime,
-          Response: "Approved",
-          Type: userType || "admin",
-          Notication: false,
-          CreatedForm: entry.createdForm,
-        });
+  // Set "submitting" flag in local state
+  setApprovals((prev) =>
+    prev.map((item) =>
+      item.code === entryCode ? { ...item, isSubmitting: true } : item
+    )
+  );
 
-      if (historyError) {
-        console.error("Supabase insert error:", historyError.message);
-        return;
-      }
+  let remainingBalance = null; // remaining_balance for amount_badget
+  let creditBudget = null;     // credit_budget from regular_pwp
+  let coverPwpCode = null;     // coverPwpCode from regular_pwp
 
-      // 2. Fetch credit_budget AND coverPwpCode from regular_pwp
+  try {
+    // 1. Insert into Approval_History
+    const { error: historyError } = await supabase
+      .from("Approval_History")
+      .insert({
+        PwpCode: entry.code,
+        ApproverId: userId,
+        DateResponded: dateTime,
+        Response: "Approved",
+        Type: userType || "admin",
+        Notication: false,
+        CreatedForm: entry.createForm || "unknown",
+      });
+
+    if (historyError) {
+      console.error("❌ Supabase insert error:", historyError.message);
+      Swal.fire("Error", "Failed to log approval. Please try again.", "error");
+      return;
+    }
+
+    console.log("✅ Approval_History updated with:", {
+      PwpCode: entry.code,
+      CreatedForm: entry.createForm,
+      ApproverId: userId,
+    });
+
+    // Prepare update payload for amount_badget
+    let updatePayload = {
+      Approved: true,
+      createdate: dateTime,
+    };
+
+    // 2. If code starts with 'R', fetch credit_budget and coverPwpCode
+    if (entry.code.startsWith("R")) {
       const { data: pwpData, error: pwpError } = await supabase
         .from("regular_pwp")
-        .select("credit_budget, coverPwpCode")
+        .select("remaining_balance, coverPwpCode, credit_budget")
         .eq("regularpwpcode", entry.code)
         .single();
 
       if (pwpError || !pwpData) {
-        console.error("Failed to fetch data from regular_pwp:", pwpError?.message || "No data found");
+        console.error("❌ Failed to fetch regular_pwp:", pwpError?.message || "No data");
+        Swal.fire("Error", "Missing budget data.", "error");
         return;
       }
 
-      const creditBudget = parseFloat(pwpData.credit_budget);
-      const coverPwpCode = pwpData.coverPwpCode;
+      remainingBalance = parseFloat(pwpData.remaining_balance); // for amount_badget
+      creditBudget = parseFloat(pwpData.credit_budget);        // for approved_history_budget
+      coverPwpCode = pwpData.coverPwpCode;
 
-      if (isNaN(creditBudget) || !coverPwpCode) {
-        console.error("Invalid credit_budget or missing coverPwpCode");
+      if (isNaN(remainingBalance) || isNaN(creditBudget) || !coverPwpCode) {
+        console.error("❌ Invalid budget data");
+        Swal.fire("Error", "Invalid budget or missing cover code.", "error");
         return;
       }
 
-      // 3. Update amount_badget where pwp_code === entry.code
-      const { data: updatedRows, error: updateError } = await supabase
+      // Update amount_badget where pwp_code === coverPwpCode
+      const { data: updateData, error: updateError } = await supabase
         .from("amount_badget")
         .update({
-          Approved: true,
-          createdate: dateTime,
+          remainingbalance: remainingBalance,
+          ...updatePayload,
         })
+        .eq("pwp_code", coverPwpCode)
+        .select();
+
+      if (updateError) {
+        console.error("❌ Failed to update amount_badget with coverPwpCode:", updateError.message);
+        Swal.fire("Error", "Failed to update budget approval.", "error");
+        return;
+      }
+
+      console.log("✅ amount_badget updated with coverPwpCode:", updateData);
+
+    } else {
+      // Update amount_badget where pwp_code === entry.code
+      const { data: updatedRows, error: updateError } = await supabase
+        .from("amount_badget")
+        .update(updatePayload)
         .eq("pwp_code", entry.code)
         .select();
 
       if (updateError) {
-        console.error("Failed to update amount_badget:", updateError.message);
+        console.error("❌ Failed to update amount_badget:", updateError.message);
+        Swal.fire("Error", "Failed to update budget approval.", "error");
+        return;
       } else {
-        console.log("Updated amount_badget rows:", updatedRows);
+        console.log("✅ amount_badget updated:", updatedRows);
       }
-
-      // 4. Log to RecentActivity
-      try {
-        const ipRes = await fetch("https://api.ipify.org?format=json");
-        const { ip } = await ipRes.json();
-
-        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-        const geo = await geoRes.json();
-
-        const activity = {
-          userId,
-          device: navigator.userAgent || "Unknown Device",
-          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
-          ip,
-          time: dateTime,
-          action: `Approved the ${entry.code}`,
-        };
-
-        const { error: activityError } = await supabase
-          .from("RecentActivity")
-          .insert(activity);
-
-        if (activityError) {
-          console.error("Activity logging failed:", activityError.message);
-        }
-      } catch (logErr) {
-        console.warn("Activity logging failed:", logErr.message);
-      }
-
-      // 5. Update local state only (no page reload)
-      setApprovals((prev) =>
-        prev.map((item) =>
-          item.code === entryCode
-            ? { ...item, status: "Approved", responseDate: dateTime }
-            : item
-        )
-      );
-
-      // Removed window.location.reload();
-    } catch (error) {
-      console.error(`Failed to approve ${entry.code}:`, error.message || error);
     }
-  };
+
+    // 3. Insert into approved_history_budget (with correct credit_budget & coverPwpCode)
+    const { data: historyBudgetData, error: historyBudgetError } = await supabase
+      .from("approved_history_budget")
+      .insert({
+        pwp_code: entry.code,
+        approver_id: userId,
+        date_responded: dateTime,
+        response: "Approved",
+        type: userType || "admin",
+        created_form: entry.createForm || "unknown",
+        remaining_balance: remainingBalance, // for amount_badget
+        credit_budget: creditBudget,          // now correctly from regular_pwp.credit_budget
+        cover_pwp_code: coverPwpCode,         // from regular_pwp
+        updated_amount_badget: true
+      })
+      .select();
+
+    if (historyBudgetError) {
+      console.error("❌ Failed to insert into approved_history_budget:", historyBudgetError.message);
+      Swal.fire("Error", "Failed to log approval + budget.", "error");
+      return;
+    } else {
+      console.log("✅ approved_history_budget inserted:", historyBudgetData);
+    }
+
+    // 4. Log to RecentActivity
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const { ip } = await ipRes.json();
+
+      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+      const geo = await geoRes.json();
+
+      const activity = {
+        userId,
+        device: navigator.userAgent || "Unknown Device",
+        location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+        ip,
+        time: dateTime,
+        action: `Approved the ${entry.code}`,
+      };
+
+      const { error: activityError } = await supabase
+        .from("RecentActivity")
+        .insert(activity);
+
+      if (activityError) {
+        console.error("⚠️ Activity log failed:", activityError.message);
+      } else {
+        console.log("📝 Activity logged:", activity);
+      }
+    } catch (logErr) {
+      console.warn("⚠️ Activity logging failed:", logErr.message);
+    }
+
+    // 5. Update local state (UI only)
+    setApprovals((prev) =>
+      prev.map((item) =>
+        item.code === entryCode
+          ? {
+              ...item,
+              status: "Approved",
+              responseDate: dateTime,
+              isSubmitting: false,
+            }
+          : item
+      )
+    );
+
+    // ✅ Swal success popup
+   Swal.fire({
+  icon: "success",
+  title: "Approved!",
+  text: `Entry ${entry.code} was approved successfully.`,
+  confirmButtonText: "OK",
+}).then(() => {
+  window.location.reload(); // reload page after user clicks OK
+});
+
+
+  } catch (error) {
+    console.error(`❌ Failed to approve ${entry.code}:`, error.message || error);
+    Swal.fire("Error", "Something went wrong during approval.", "error");
+
+    // Reset submitting flag on error
+    setApprovals((prev) =>
+      prev.map((item) =>
+        item.code === entryCode ? { ...item, isSubmitting: false } : item
+      )
+    );
+  }
+};
+
+
 
 
 
@@ -884,6 +1001,10 @@ export default function ApprovalsPage() {
 
 
 
+
+  const userId = currentUser?.UserID || "unknown";
+  const names = currentUser?.name || "";
+  console.log("User name:", names);  // <--- console log here
   return (
     <div
       style={{
@@ -916,7 +1037,7 @@ export default function ApprovalsPage() {
           marginBottom: '16px',
         }}
       >
-            <div className="filter-item" style={{ flexGrow: 1, minWidth: '200px' }}>
+        <div className="filter-item" style={{ flexGrow: 1, minWidth: '200px' }}>
           <input
             type="text"
             placeholder="🔍 Search Approvals..."
@@ -938,7 +1059,7 @@ export default function ApprovalsPage() {
 
         {/* Marketing Type Filter */}
         <div className="filter-item">
-          
+
           <select
             value={visaTypeFilter}
             onChange={(e) => setVisaTypeFilter(e.target.value)}
@@ -1018,7 +1139,7 @@ export default function ApprovalsPage() {
         </div>
 
         {/* Search */}
-    
+
         {/* Today Filter (Checkbox) */}
         <label
           style={{
@@ -1112,195 +1233,208 @@ export default function ApprovalsPage() {
               <th style={{ padding: '10px 12px', textAlign: 'left' }}>Action</th>
             </tr>
           </thead>
-          <tbody style={{ fontSize: '12px', color: '#000000ff' }}>
-            {paginatedData.length > 0 ? (
-              [...paginatedData]
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)) // sort latest first
-                .map((entry, index) => {
-                  const status = getLatestResponseStatus(entry.code, approvalHistory);
-                  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-                  const currentUserId = currentUser?.name?.toLowerCase().trim();
-                  const isOwner = entry.createdForm?.toLowerCase().trim() === currentUserId;
+            <tbody style={{ fontSize: '12px', color: '#000000ff' }}>
+              {paginatedData.length > 0 ? (
+                [...paginatedData]
+                  // Filter to show only entries where createForm matches current user (case-insensitive)
+                  .filter(entry => {
+                    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+                    const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
+                    const role = currentUser?.role?.toLowerCase() || "";
 
-                  return (
-                    <tr
-                      key={index}
-                      style={{
-                        borderBottom: '1px solid #cbd5e1',
-                        cursor: 'pointer',
-                        backgroundColor: index % 2 === 0 ? '#f9fafb' : 'transparent',
-                      }}
-                      onClick={() => handleRowClick(entry)}
-                    >
-                      <td style={{ padding: '8px 12px' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedRows.includes(entry.code)}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            handleCheckboxChange(entry.code);
+                    // Show all if Admin
+                    if (role === "admin") return true;
+
+                    // Otherwise, only show if createForm matches
+                    return (entry.createForm || "").toLowerCase().trim() === currentUserId;
+                  })
+                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                  .map((entry, index) => {
+                    const status = getLatestResponseStatus(entry.code, approvalHistory);
+                    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+                    const currentUserId = currentUser?.name?.toLowerCase().trim();
+                    const isOwner = entry.createForm?.toLowerCase().trim() === currentUserId;
+
+                    return (
+                      <tr
+                        key={index}
+                        style={{
+                          borderBottom: '1px solid #cbd5e1',
+                          cursor: 'pointer',
+                          backgroundColor: index % 2 === 0 ? '#f9fafb' : 'transparent',
+                        }}
+                        onClick={() => handleRowClick(entry)}
+                      >
+                        <td style={{ padding: '8px 12px' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.includes(entry.code)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleCheckboxChange(entry.code);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 12px' }}>{entry.code}</td>
+                        <td style={{ padding: '8px 12px' }}>
+                          {new Date(entry.created_at)
+                            .toLocaleString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: 'numeric',
+                              minute: undefined,
+                              hour12: true,
+                            })
+                            .replace(',', '')}
+                        </td>
+                        <td style={{ padding: '8px 12px' }}>{entry.createForm}</td>
+                        <td
+                          style={{
+                            padding: '8px 12px',
+                            color:
+                              status === 'Approved'
+                                ? 'green'
+                                : status === 'Sent back for revision'
+                                  ? 'orange'
+                                  : status === 'Declined'
+                                    ? 'red'
+                                    : status === 'Cancelled'
+                                      ? 'black'
+                                      : '#2563eb',
+                            fontWeight: 'bold',
                           }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>{entry.code}</td>
-                      <td style={{ padding: '8px 12px' }}>
-                        {new Date(entry.created_at)
-                          .toLocaleString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: 'numeric',
-                            minute: undefined,
-                            hour12: true,
-                          })
-                          .replace(',', '')}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>{entry.createForm}</td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          color:
-                            status === 'Approved'
-                              ? 'green'
-                              : status === 'Sent back for revision'
-                                ? 'orange'
-                                : status === 'Declined'
-                                  ? 'red'
-                                  : status === 'Cancelled'
-                                    ? 'black'
-                                    : '#2563eb',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        {status}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        {getLatestResponseDate(entry.code, approvalHistory)}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          display: 'flex',
-                          gap: '6px',
-                          position: 'relative',
-                          justifyContent: 'flex-start',
-                        }}
-                      >
-                        {userType === 'Allowed' ? (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleApproveClick(entry.code);
-                              }}
-                              style={{
-                                padding: '6px 12px',
-                                backgroundColor: status === 'Approved' ? '#888' : '#2563eb',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: status === 'Approved' ? 'not-allowed' : 'pointer',
-                              }}
-                            >
-                              {status === 'Approved' ? 'Approved' : 'Approve'}
-                            </button>
-                            <div
-                              ref={(el) => (dropdownRefs.current[index] = el)}
-                              style={{ position: 'relative' }}
-                            >
+                        >
+                          {status}
+                        </td>
+                        <td style={{ padding: '8px 12px' }}>
+                          {getLatestResponseDate(entry.code, approvalHistory)}
+                        </td>
+                        <td
+                          style={{
+                            padding: '8px 12px',
+                            display: 'flex',
+                            gap: '6px',
+                            position: 'relative',
+                            justifyContent: 'flex-start',
+                          }}
+                        >
+                          {userType === 'Allowed' ? (
+                            <>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setOpenDropdownIndex(openDropdownIndex === index ? null : index);
+                                  handleApproveClick(entry.code);
                                 }}
                                 style={{
                                   padding: '6px 12px',
-                                  backgroundColor: '#dc2626',
+                                  backgroundColor: status === 'Approved' ? '#888' : '#2563eb',
                                   color: '#fff',
                                   border: 'none',
                                   borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontWeight: '600',
+                                  cursor: status === 'Approved' ? 'not-allowed' : 'pointer',
                                 }}
                               >
-                                {status === 'Declined' ? 'Declined' : 'Actions'}
+                                {status === 'Approved' ? 'Approved' : 'Approve'}
                               </button>
-
-                              {openDropdownIndex === index && (
-                                <div
+                              <div
+                                ref={(el) => (dropdownRefs.current[index] = el)}
+                                style={{ position: 'relative' }}
+                              >
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenDropdownIndex(openDropdownIndex === index ? null : index);
+                                  }}
                                   style={{
-                                    position: 'absolute',
-                                    top: 'calc(100% + 6px)',
-                                    right: 0,
-                                    backgroundColor: '#fff',
-                                    border: '1px solid #ddd',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                    borderRadius: '6px',
-                                    zIndex: 1000,
-                                    minWidth: '180px',
-                                    overflow: 'hidden',
+                                    padding: '6px 12px',
+                                    backgroundColor: '#dc2626',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
                                   }}
                                 >
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      disableModal();
-                                      handleDeclineClick(entry.code);
-                                      setOpenDropdownIndex(null);
-                                    }}
+                                  {status === 'Declined' ? 'Declined' : 'Actions'}
+                                </button>
+
+                                {openDropdownIndex === index && (
+                                  <div
                                     style={{
-                                      width: '100%',
-                                      padding: '10px 16px',
-                                      border: 'none',
-                                      background: 'none',
-                                      textAlign: 'left',
-                                      cursor: 'pointer',
-                                      color: '#dc2626',
-                                      fontWeight: '600',
+                                      position: 'absolute',
+                                      top: 'calc(100% + 6px)',
+                                      right: 0,
+                                      backgroundColor: '#fff',
+                                      border: '1px solid #ddd',
+                                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                      borderRadius: '6px',
+                                      zIndex: 1000,
+                                      minWidth: '180px',
+                                      overflow: 'hidden',
                                     }}
                                   >
-                                    Decline
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      disableModal();
-                                      handleSendBackClick(entry.code);
-                                      setOpenDropdownIndex(null);
-                                    }}
-                                    style={{
-                                      width: '100%',
-                                      padding: '10px 16px',
-                                      border: 'none',
-                                      background: 'none',
-                                      textAlign: 'left',
-                                      cursor: 'pointer',
-                                      color: '#2563eb',
-                                      fontWeight: '600',
-                                    }}
-                                  >
-                                    Send Back for Revision
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          <span style={{ color: '#6b7280' }}>View Only</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-            ) : (
-              <tr>
-                <td colSpan="11" style={{ textAlign: 'center', padding: '20px', color: '#1e40af' }}>
-                  No approval requests found.
-                </td>
-              </tr>
-            )}
-          </tbody>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        disableModal();
+                                        handleDeclineClick(entry.code);
+                                        setOpenDropdownIndex(null);
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px 16px',
+                                        border: 'none',
+                                        background: 'none',
+                                        textAlign: 'left',
+                                        cursor: 'pointer',
+                                        color: '#dc2626',
+                                        fontWeight: '600',
+                                      }}
+                                    >
+                                      Decline
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        disableModal();
+                                        handleSendBackClick(entry.code);
+                                        setOpenDropdownIndex(null);
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px 16px',
+                                        border: 'none',
+                                        background: 'none',
+                                        textAlign: 'left',
+                                        cursor: 'pointer',
+                                        color: '#2563eb',
+                                        fontWeight: '600',
+                                      }}
+                                    >
+                                      Send Back for Revision
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <span style={{ color: '#6b7280' }}>View Only</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+              ) : (
+                <tr>
+                  <td colSpan="11" style={{ textAlign: 'center', padding: '20px', color: '#1e40af' }}>
+                    No approval requests found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+
 
 
           {modalVisaCode && (

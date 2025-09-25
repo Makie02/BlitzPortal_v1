@@ -4,9 +4,7 @@ import Header from "./Header/Header";
 import Dashboard from "./Component/Dashboard";
 import "./App.css";
 import '@fortawesome/fontawesome-free/css/all.min.css';
-import { collection, query, orderBy, onSnapshot , } from "firebase/firestore";
-import { getDocs, getCollections } from "firebase/firestore";
-
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "./Firebase"; // your firebase config file
 import Swal from 'sweetalert2';
 import VisaForm from "./Create/VisaFormCorporate";
@@ -42,35 +40,53 @@ import Liecense from "./Component/liecense.js";
 import RegularPwpUploadForm from "./Create/RegularPwpUploadForm.jsx";
 import { supabase } from "./supabaseClient.js";
 import References from "./Component/References.jsx";
+import NotFoundPage from "./Nofound/NotFoundPage.js";
+import Claims_pwp from "./Create/Claims_pwp.jsx";
+import ClaimsRecords from "./NewComponents/ClaimsRecords.js";
 
 function App() {
 
-
-    const [licenseData, setLicenseData] = useState([]);
+  // Track online/offline status
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
-        fetchLicenses();
-    }, []);
+    function handleOnline() {
+      setIsOnline(true);
+    }
 
-    const fetchLicenses = async () => {
-        const { data, error } = await supabase
-            .from('subscription_licenses')
-            .select('*')
-            .order('submitted_at', { ascending: false });
+    function handleOffline() {
+      setIsOnline(false);
+    }
 
-        if (!error) {
-            // Save to state
-            setLicenseData(data);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
-            // Save to localStorage
-            localStorage.setItem('licenseData', JSON.stringify(data));
-
-            // Log to console
-            console.log('Fetched license data:', data);
-        } else {
-            console.error('Error fetching license data:', error);
-        }
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
+  }, []);
+
+  const [licenseData, setLicenseData] = useState([]);
+
+  useEffect(() => {
+    fetchLicenses();
+  }, []);
+
+  const fetchLicenses = async () => {
+    const { data, error } = await supabase
+      .from('subscription_licenses')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+
+    if (!error) {
+      setLicenseData(data);
+      localStorage.setItem('licenseData', JSON.stringify(data));
+      console.log('Fetched license data:', data);
+    } else {
+      console.error('Error fetching license data:', error);
+    }
+  };
 
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [currentView, _setCurrentView] = useState(localStorage.getItem("currentView") || "Dashboard");
@@ -78,10 +94,11 @@ function App() {
 
   const watchedCollections = ['Corporate_Visa', 'Corver_Visa', 'Regular_Visa', 'Approval_History'];
   const lastKnownTimestampsRef = useRef({});
+
   const isExpired = (validUntil) => {
     if (!validUntil) return false;
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // start of today
+    today.setHours(0, 0, 0, 0);
     const validDate = new Date(validUntil);
     validDate.setHours(0, 0, 0, 0);
     return validDate <= today;
@@ -89,7 +106,6 @@ function App() {
 
   const fetchAndUpdateLicenseKeys = async () => {
     try {
-      // Step 1: Fetch all license keys
       const { data, error } = await supabase
         .from('license_keys')
         .select('*');
@@ -105,12 +121,10 @@ function App() {
         return;
       }
 
-      // Step 2: Find keys needing status update
       const keysToExpire = data.filter(
         (key) => isExpired(key.valid_until) && key.status !== 'Expired'
       );
 
-      // Step 3: Update all expired keys statuses in parallel
       await Promise.all(
         keysToExpire.map(async (key) => {
           const { error } = await supabase
@@ -118,27 +132,18 @@ function App() {
             .update({ status: 'Expired' })
             .eq('id', key.id);
 
-          if (error) {
-            console.error(`❌ Failed to update status for key ID ${key.id}:`, error.message);
-          } else {
+          if (!error) {
             console.log(`✅ Updated status to Expired for key ID ${key.id}`);
           }
         })
       );
 
-      // Step 4: Fetch updated list again and log it
       const { data: updatedData, error: updatedError } = await supabase
         .from('license_keys')
         .select('*');
 
-      if (updatedError) {
-        // console.error('❌ Error fetching updated license keys:', updatedError.message);
-      } else {
-        // console.log('🔑 License keys after status update:', updatedData);
-
-        // Save license keys to localStorage
+      if (!updatedError) {
         localStorage.setItem('licenseKeys', JSON.stringify(updatedData));
-        // console.log('💾 License keys saved to localStorage.');
       }
 
     } catch (err) {
@@ -146,15 +151,9 @@ function App() {
     }
   };
 
-  // Call the function when component mounts
   useEffect(() => {
     fetchAndUpdateLicenseKeys();
   }, []);
-
-
-
-
-
 
   useEffect(() => {
     const unsubscribes = [];
@@ -171,7 +170,7 @@ function App() {
           } else if (typeof latestDoc.DateCreated === "string" || latestDoc.DateCreated instanceof Date) {
             docDate = new Date(latestDoc.DateCreated);
           } else {
-            docDate = new Date(); // fallback
+            docDate = new Date();
           }
 
           const lastTimestamp = lastKnownTimestampsRef.current[path];
@@ -199,16 +198,16 @@ function App() {
 
             Swal.fire({
               toast: true,
-              position: 'top-end', // top-right
+              position: 'top-end',
               icon: 'info',
               title: '🔔 New Notification',
               html: `
-    <strong>Visa Code:</strong> ${notification.visaCode}<br/>
-    <strong>Type:</strong> ${notification.visaType}<br/>
-    <strong>Brand / Approver:</strong> ${notification.brand}<br/>
-    ${notification.response ? `<strong>Response:</strong> ${notification.response}<br/>` : ""}
-    <strong>Date:</strong> ${new Date(notification.DateCreated).toLocaleString()}
-  `,
+                <strong>Visa Code:</strong> ${notification.visaCode}<br/>
+                <strong>Type:</strong> ${notification.visaType}<br/>
+                <strong>Brand / Approver:</strong> ${notification.brand}<br/>
+                ${notification.response ? `<strong>Response:</strong> ${notification.response}<br/>` : ""}
+                <strong>Date:</strong> ${new Date(notification.DateCreated).toLocaleString()}
+              `,
               showConfirmButton: false,
               timer: 5000,
               timerProgressBar: true,
@@ -217,7 +216,6 @@ function App() {
                 popup: 'swal2-toast-popup'
               }
             });
-
           }
         }
       });
@@ -229,31 +227,28 @@ function App() {
       unsubscribes.forEach((unsub) => unsub());
     };
   }, []);
-useEffect(() => {
-  const content = mainContentRef.current;
-  if (content) {
-    content.addEventListener("scroll", handleScroll);
-    return () => content.removeEventListener("scroll", handleScroll);
-  }
-}, []);
 
-
+  useEffect(() => {
+    const content = mainContentRef.current;
+    if (content) {
+      content.addEventListener("scroll", handleScroll);
+      return () => content.removeEventListener("scroll", handleScroll);
+    }
+  }, []);
 
   const closeNotification = () => setSelectedNotification(null);
 
-  // Store logged-in user object
   const [loggedInUser, setLoggedInUser] = useState(() => {
     const userData = localStorage.getItem("loggedInUser");
     return userData ? JSON.parse(userData) : null;
   });
+
   useEffect(() => {
     if (loggedInUser) {
       // console.log("✅ Logged-in User Info:", loggedInUser);
     }
   }, [loggedInUser]);
 
-
-  // Persist login state
   useEffect(() => {
     if (loggedInUser) {
       localStorage.setItem("loggedInUser", JSON.stringify(loggedInUser));
@@ -262,13 +257,11 @@ useEffect(() => {
     }
   }, [loggedInUser]);
 
+  const setCurrentView = (view) => {
+    localStorage.setItem("currentView", view);
+    _setCurrentView(view);
+  };
 
-const setCurrentView = (view) => {
-  localStorage.setItem("currentView", view);
-  _setCurrentView(view);
-};
-
-  // Scroll behavior
   const mainContentRef = useRef(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -290,7 +283,71 @@ const setCurrentView = (view) => {
     }
   }, []);
 
-  // Render views
+  const [noDataFound, setNoDataFound] = useState(false);
+
+  const [rolePermissions, setRolePermissions] = useState({});
+
+
+  // Fetch licenses
+
+
+  // Fetch role permissions
+  useEffect(() => {
+    const fetchRolePermissions = async () => {
+      if (!loggedInUser?.PermissionRole) {
+        setNoDataFound(true);
+        return;
+      }
+      try {
+        const { data: roleData, error: roleError } = await supabase
+          .from('user_role')
+          .select('role')
+          .eq('code', loggedInUser.PermissionRole)
+          .single();
+
+        if (roleError || !roleData) {
+          setNoDataFound(true);
+          return;
+        }
+
+        const roleName = roleData.role;
+        if (!roleName) {
+          setNoDataFound(true);
+          return;
+        }
+
+        const { data: permissionsData, error: permissionsError } = await supabase
+          .from('RolePermissions')
+          .select('permission, allowed')
+          .eq('role_name', roleName);
+
+        if (permissionsError || !permissionsData || permissionsData.length === 0) {
+          setNoDataFound(true);
+          return;
+        }
+
+        const permissionsObj = {};
+        permissionsData.forEach(({ permission, allowed }) => {
+          permissionsObj[permission] = allowed === true;
+        });
+
+        setRolePermissions(permissionsObj);
+        setNoDataFound(false);
+      } catch (error) {
+        setNoDataFound(true);
+      }
+    };
+
+    fetchRolePermissions();
+  }, [loggedInUser?.PermissionRole]);
+
+  // Show NotFoundPage if no critical data
+  if (loggedInUser && noDataFound && currentView !== 'LoginPage') {
+    return <NotFoundPage setCurrentView={setCurrentView} />;
+  }
+
+
+
   const renderComponent = (view) => {
     switch (view) {
       case "Dashboard": return <Dashboard setCurrentView={setCurrentView} />;
@@ -305,52 +362,49 @@ const setCurrentView = (view) => {
       case "UserManagement": return <UserManagement setCurrentView={setCurrentView} />;
       case "BrandSelector": return <BrandSelector setCurrentView={setCurrentView} />;
       case "Activities": return <Activities setCurrentView={setCurrentView} />;
-      // case "References": return <References setCurrentView={setCurrentView} />;
       case "RecordsPage": return <RecordsPage setCurrentView={setCurrentView} />;
+      case "LoginPage": return <LoginPage setLoggedInUser={setLoggedInUser} setCurrentView={setCurrentView} />;
       case "Calendar": return <Calendar setCurrentView={setCurrentView} />;
       case "ApprovalHistoryTable": return <ApprovalHistoryTable setCurrentView={setCurrentView} />;
       case "ApprovalList": return <ApprovalList setCurrentView={setCurrentView} />;
       case "Progress": return <Progress setCurrentView={setCurrentView} />;
+      case "ApprovalsPage": return <ApprovalsPage setCurrentView={setCurrentView} />;
+      case "UserPage": return <UserPage setCurrentView={setCurrentView} setLoggedInUser={setLoggedInUser} loggedInUser={loggedInUser} />;
       case "View": return <View setCurrentView={setCurrentView} />;
-
       case "View_Regular": return <View_Regular setCurrentView={setCurrentView} />;
       case "ViewCorporate": return <ViewCorporate setCurrentView={setCurrentView} />;
-
-      case "SettingsPage": return <SettingsPage setCurrentView={setCurrentView} />;
-
-
-      case "RegularPwpUploadForm": return <RegularPwpUploadForm setCurrentView={setCurrentView} />;
-      case "References": return <References setCurrentView={setCurrentView} />;
-
-      
-      case "SettingProfileUpdate": return <SettingProfileUpdate setCurrentView={setCurrentView} />;
+      case "SettingProfileUpdate": return <SettingProfileUpdate setCurrentView={setCurrentView} loggedInUser={loggedInUser} />;
+      case "SettingsPage": return <SettingsPage setCurrentView={setCurrentView} loggedInUser={loggedInUser} />;
       case "AnnouncementForm": return <AnnouncementForm setCurrentView={setCurrentView} />;
       case "RolePermissionForm": return <RolePermissionForm setCurrentView={setCurrentView} />;
       case "AddendumCancellation": return <AddendumCancellation setCurrentView={setCurrentView} />;
       case "RentalsForm": return <RentalsForm setCurrentView={setCurrentView} />;
-      case "Liecense": return <Liecense setCurrentView={setCurrentView} />;
       case "ClaimsStatusUpload": return <ClaimsStatusUpload setCurrentView={setCurrentView} />;
+      case "Liecense": return <Liecense setCurrentView={setCurrentView} />;
+      case "RegularPwpUploadForm": return <RegularPwpUploadForm setCurrentView={setCurrentView} />;
+      case "References": return <References setCurrentView={setCurrentView} />;
+      case "NotFoundPage": return <NotFoundPage setCurrentView={setCurrentView} />;
 
+      case "Claims_pwp": return <Claims_pwp setCurrentView={setCurrentView} />;
 
-      case "ApprovalsPage": return <ApprovalsPage setCurrentView={setCurrentView} />;
-      case "UserPage":
-        return <UserPage setCurrentView={setCurrentView} userId={loggedInUser.id} profile={loggedInUser} />;
+      case "ClaimsRecords": return <ClaimsRecords setCurrentView={setCurrentView} />;
+
 
       default: return <Dashboard setCurrentView={setCurrentView} />;
-
-
     }
   };
 
-  // If user not logged in, show login
-  if (!loggedInUser) {
-    return (
-      <LoginPage setLoggedInUser={setLoggedInUser} setCurrentView={setCurrentView} />
-
-    );
+  // Show offline page if no internet
+  if (!isOnline) {
+    return <NotFoundPage />;
   }
 
-  // Main App Layout
+  // Show login if not logged in
+  if (!loggedInUser) {
+    return <LoginPage setLoggedInUser={setLoggedInUser} setCurrentView={setCurrentView} />;
+  }
+
+  // Main app UI
   return (
     <div className="app-wrapper" style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       <Sidebar
@@ -360,7 +414,6 @@ const setCurrentView = (view) => {
         setLoggedIn={() => setLoggedInUser(null)}
         user={loggedInUser}
       />
-
 
       <div
         className="main-content"
@@ -387,10 +440,8 @@ const setCurrentView = (view) => {
           style={{ flexGrow: 1, overflowY: "auto", width: "100%", maxWidth: "100vw", position: "relative" }}
         >
           {renderComponent(currentView)}
-
-
-
         </div>
+
         {showScrollTop && (
           <button
             onClick={scrollToTop}

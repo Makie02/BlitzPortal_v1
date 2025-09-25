@@ -13,18 +13,20 @@ import Swal from 'sweetalert2';
 import { supabase } from '../supabaseClient';
 import '../App.css'; // or wherever your CSS is defined
 
-import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { db } from '../Firebase';
 
 const USERS_PER_PAGE = 4;
 
 const UserManagement = ({ setCurrentView }) => {
   const [users, setUsers] = useState([]);
-  const [filters, setFilters] = useState({ group: '', position: '', role: '' });
+  const [filters, setFilters] = useState({ department: '', position: '', role: '' });
+  const [positionsList, setPositionsList] = useState([]);
+  const [departmentsList, setDepartmentsList] = useState([]); // Add this line
 
   // Modal states
   const [selectedUser, setSelectedUser] = useState(null);
-  const [modalType, setModalType] = useState(null); // 'edit', 'approvers', 'brands', 'connection', 'deactivate', 'create'
+  const [modalType, setModalType] = useState(null); // 'edit', 'approvers', 'brands', 'deactivate', 'create'
   const DisableDurations = [
     { label: 'Enable Account', value: 0 },    // <-- new option to enable account
     { label: '1 day disable account', value: 1 },
@@ -58,7 +60,6 @@ const UserManagement = ({ setCurrentView }) => {
     contactNumber: '',
     profilePicture: '',
     licensekey: '',
-    username: '',
     password: '',
     userCode: '',
     subscriptionStart: '',
@@ -182,26 +183,62 @@ const UserManagement = ({ setCurrentView }) => {
       setLoading(false);
     }
   };
-
-
-
-
-
+  const [search, setSearch] = useState('');
   // Get unique options for filters dynamically
-  const groups = useMemo(() => [...new Set(users.map(u => u.group))], [users]);
-  const positions = useMemo(() => [...new Set(users.map(u => u.position))], [users]);
+  //const groups = useMemo(() => [...new Set(users.map(u => u.group))], [users]); "if want i access yung all sa database"
+  const departments = useMemo(() => {
+    if (!departmentsList || departmentsList.length === 0) return [];
+
+    return [...new Set(users.map(u => {
+      const deptObj = departmentsList.find(dept => dept.code === u.department);
+      return deptObj ? deptObj.name : u.department;
+    }))];
+  }, [users, departmentsList]);
+
+
+  const positions = useMemo(() => {
+    if (!positionsList || positionsList.length === 0) return [];
+
+    return [...new Set(users.map(u => {
+      const posObj = positionsList.find(pos => pos.code === u.position);
+      return posObj ? posObj.name : u.position;
+    }))];
+  }, [users, positionsList]);
+
   const roles = useMemo(() => [...new Set(users.map(u => u.role))], [users]);
 
-  // Filter users based on filters state
   const filteredUsers = React.useMemo(() => {
     return users.filter(user => {
-      return (
-        (filters.group === '' || user.group === filters.group) &&
-        (filters.position === '' || user.position === filters.position) &&
-        (filters.role === '' || user.role === filters.role)
-      );
+      // First apply the search filter
+      const matchesSearch = search === '' ||
+        (user.name && user.name.toLowerCase().includes(search.toLowerCase())) ||
+        (user.username && user.username.toLowerCase().includes(search.toLowerCase())) ||
+        (user.email && user.email.toLowerCase().includes(search.toLowerCase()));
+      // Then apply the dropdown filters
+      // Safe department matching with fallback
+      let matchesDepartment = filters.department === '';
+      if (!matchesDepartment && departmentsList && departmentsList.length > 0) {
+        const userDepartmentName = departmentsList.find(dept => dept.code === user.department)?.name || user.department;
+        matchesDepartment = userDepartmentName === filters.department;
+      } else if (!matchesDepartment) {
+        matchesDepartment = user.department === filters.department;
+      }
+
+
+      const matchesRole = filters.role === '' || user.role === filters.role;
+      // Safe position matching with fallback
+      let matchesPosition = filters.position === '';
+      if (!matchesPosition && positionsList && positionsList.length > 0) {
+        const userPositionName = positionsList.find(pos => pos.code === user.position)?.name || user.position;
+        matchesPosition = userPositionName === filters.position;
+      } else if (!matchesPosition) {
+        // Fallback to direct code comparison if positionsList not loaded
+        matchesPosition = user.position === filters.position;
+      }
+      return matchesSearch && matchesDepartment && matchesPosition && matchesRole;
+
     });
-  }, [users, filters]);
+  }, [users, filters, search]); // Add 'search' to the dependency array
 
   // Reset page if filteredUsers change to avoid invalid page
   useEffect(() => {
@@ -292,7 +329,7 @@ const UserManagement = ({ setCurrentView }) => {
         username: fullUserData.username || '',
         password: fullUserData.password, // Leave blank for security; only change if user edits
         contactNumber: fullUserData.contactNumber || '',
-        group: fullUserData.group || '',
+        department: fullUserData.department || '',
         salesGroup: fullUserData.salesGroup || '',
         position: fullUserData.position || '',
         keyType: fullUserData.role || '',
@@ -311,31 +348,16 @@ const UserManagement = ({ setCurrentView }) => {
 
 
   const [supabaseUserID, setSupabaseUserID] = useState(null);
-
   const [savedApprovals, setSavedApprovals] = useState([]);
-  useEffect(() => {
-    fetchPosition();
-    fetchSavedApprovals();
-  }, []);
+  const [permissionRoles, setPermissionRoles] = useState([]);
+  const [allowedToApprove, setAllowedToApprove] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState('');
 
-  const fetchSavedApprovals = async () => {
-    const { data, error } = await supabase.from('singleapprovals').select('*');
-
-    if (error) {
-      console.error('Error fetching saved approvals:', error);
-      setSavedApprovals([]);
-    } else {
-      setSavedApprovals(data || []);
-    }
-  };
-
-  const [permissionRole, setPermissionRoles] = useState([]);
-
-  // Define fetchPosition OUTSIDE useEffect so it's reusable
+  // Fetch user roles
   const fetchPosition = async () => {
     const { data, error } = await supabase
-      .from("user_role")     // changed table from References to user_role
-      .select("*");          // no filter needed here unless you want to filter roles
+      .from("user_role")
+      .select("*");
 
     if (error) {
       console.error('Error loading positions:', error);
@@ -345,16 +367,47 @@ const UserManagement = ({ setCurrentView }) => {
     }
   };
 
-  // Call fetchPosition from useEffect on mount
+  // Fetch saved approvals from the correct table name
+  const fetchSavedApprovals = async () => {
+    const { data, error } = await supabase.from('Single_Approval').select('*');
+
+    if (error) {
+      console.error('Error fetching saved approvals:', error);
+      setSavedApprovals([]);
+    } else {
+      setSavedApprovals(data || []);
+    }
+  };
+  const fetchApprovals = async () => {
+    const { data, error } = await supabase.from('Single_Approval').select('*');
+
+    if (error) {
+      console.error('Error fetching approvals:', error);
+      setSavedApprovals([]);
+    } else {
+      setSavedApprovals(data || []);
+    }
+  };
   useEffect(() => {
-    fetchPosition();
+    const fetchPositions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('position')
+          .select('*');
+
+        if (error) {
+          throw error;
+        }
+
+        setPositionsList(data || []);
+      } catch (error) {
+        console.error('Error fetching sales groups:', error.message);
+      }
+    };
+
+    fetchPositions();
   }, []);
-
-
-  const [allowedToApprove, setAllowedToApprove] = useState(false);
-  const [currentUsername, setCurrentUsername] = useState('');
-
-  // load username
+  // Load username from localStorage
   useEffect(() => {
     const storedUser = localStorage.getItem('loggedInUser');
     const parsedUser = storedUser ? JSON.parse(storedUser) : null;
@@ -362,32 +415,16 @@ const UserManagement = ({ setCurrentView }) => {
     setCurrentUsername(username);
   }, []);
 
-  // fetch existing
-  const fetchApprovals = async () => {
-    const { data, error } = await supabase
-      .from('Single_Approval')
-      .select('*');
-    if (error) {
-      console.error('Error fetching Single_Approval:', error);
-    } else {
-      setSavedApprovals(data);
-    }
-  };
-
+  // On component mount, fetch roles and approvals
   useEffect(() => {
-    fetchApprovals();
+    fetchPosition();
+    fetchSavedApprovals();
   }, []);
 
-  // save or update single
-  useEffect(() => {
-    if (selectedUser?.name) {
-      setCurrentUsername(selectedUser.name);
-    }
-  }, [selectedUser]);
-
-
   const handleSaveSingleApproval = async () => {
-    if (!currentUsername) {
+    const usernameToSave = selectedUser?.name;
+
+    if (!usernameToSave) {
       Swal.fire('Error', 'Username not found.', 'error');
       return;
     }
@@ -397,7 +434,7 @@ const UserManagement = ({ setCurrentView }) => {
     const { data: existing, error: selErr } = await supabase
       .from('Single_Approval')
       .select('*')
-      .eq('username', currentUsername)
+      .eq('username', usernameToSave)
       .single();
 
     if (selErr && selErr.code !== 'PGRST116') {
@@ -408,7 +445,7 @@ const UserManagement = ({ setCurrentView }) => {
     }
 
     const payload = {
-      username: currentUsername,
+      username: usernameToSave,
       allowed_to_approve: allowedToApprove,
     };
 
@@ -440,11 +477,9 @@ const UserManagement = ({ setCurrentView }) => {
       Swal.fire('Error', 'Failed to save approval.', 'error');
     } else {
       Swal.fire('Success', 'Approval saved successfully.', 'success');
-      fetchSavedApprovals();
+      fetchApprovals();  // make sure to use your unified fetch function here
     }
   };
-
-
 
   const handleDeleteApproval = async (id) => {
     const result = await Swal.fire({
@@ -471,9 +506,6 @@ const UserManagement = ({ setCurrentView }) => {
       }
     }
   };
-  const [editId, setEditId] = useState(null);
-  const [editPosition, setEditPosition] = useState('');
-  const [editAllowed, setEditAllowed] = useState(false);
 
   const handleUpdateApproval = async (id, updatedPosition, updatedAllowed) => {
     const { error } = await supabase
@@ -488,7 +520,6 @@ const UserManagement = ({ setCurrentView }) => {
       fetchSavedApprovals();
     }
   };
-
   const openCreateModal = () => {
     setNewUserData({
       name: '',
@@ -506,7 +537,6 @@ const UserManagement = ({ setCurrentView }) => {
     });
     setModalType('create');
   };
-
   // Handle new user form input change
   const handleNewUserChange = (e) => {
     const { name, value } = e.target;
@@ -525,8 +555,6 @@ const UserManagement = ({ setCurrentView }) => {
       }));
     }
   };
-
-
   // Handle edit user form change
   const handleEditUserChange = (e) => {
     const { name, value } = e.target;
@@ -535,9 +563,6 @@ const UserManagement = ({ setCurrentView }) => {
       [name]: value,
     }));
   };
-
-
-
   // Handle profile picture upload for new user
   const handleNewUserImageChange = (e) => {
     const file = e.target.files[0];
@@ -603,11 +628,6 @@ const UserManagement = ({ setCurrentView }) => {
     }
   };
 
-
-
-
-
-
   const saveNewUser = async () => {
     const keyType = newUserData.keyType;
     if (!keyType || keyType === '-') throw new Error("Invalid role");
@@ -670,7 +690,7 @@ const UserManagement = ({ setCurrentView }) => {
       salesGroup: newUserData.salesGroup,
       email: newUserData.email,
       position: newUserData.position,
-      group: newUserData.group,
+      department: newUserData.department,
       contactNumber: newUserData.contactNumber,
       isActive: newUserData.isActive,
       profilePicture: newUserData.profilePicture,
@@ -782,17 +802,8 @@ const UserManagement = ({ setCurrentView }) => {
     return { id: userId, UserID: newUserID };
   };
 
-
-
-
-
-
-
-
-
   const [settings, setSettings] = useState({});
   const [notification, setNotification] = useState(null);
-
   const addLog = (msg) => console.log(msg);
   const toggleSetting = async (key) => {
     const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
@@ -831,12 +842,6 @@ const UserManagement = ({ setCurrentView }) => {
       console.error('Unexpected error saving setting:', error);
     }
   };
-
-  const [positionsList, setPositionsList] = useState([]);
-
-
-
-
 
   useEffect(() => {
     const fetchPositions = async () => {
@@ -877,7 +882,6 @@ const UserManagement = ({ setCurrentView }) => {
     }
     return false;
   }
-
   const saveEditedUser = async (e) => {
     e.preventDefault();
     if (!selectedUser || !supabaseUserId || !originalSupabaseData) return;
@@ -901,7 +905,7 @@ const UserManagement = ({ setCurrentView }) => {
         salesGroup: editUserData.salesGroup || null,
         email: editUserData.email || null,
         position: editUserData.position || null,
-        group: editUserData.group || null,
+        department: editUserData.department || null,
         contactNumber: editUserData.contactNumber || null,
         profilePicture: editUserData.profilePicture || null,
         username: editUserData.username || null,
@@ -978,9 +982,6 @@ const UserManagement = ({ setCurrentView }) => {
       Swal.fire('Error', error.message || 'Failed to update user', 'error');
     }
   };
-
-
-
   const convertToPostgresDate = (input) => {
     if (!input) return null;
 
@@ -1008,55 +1009,6 @@ const UserManagement = ({ setCurrentView }) => {
   };
 
 
-
-  // async function updateUserInSupabase(userId, userData) {
-  //   if (!userId || (typeof userId !== 'number' && typeof userId !== 'string')) {
-  //     throw new Error('Valid numeric or string user ID is required.');
-  //   }
-
-  //   if (!userData.keyType || userData.keyType === '-') {
-  //     throw new Error('Invalid role selected.');
-  //   }
-
-  //   const updatePayload = {
-  //     role: userData.keyType,
-  //     name: userData.name || null,
-  //     salesGroup: userData.salesGroup || null,
-  //     email: userData.email || null,
-  //     position: userData.position || null,
-  //     group: userData.group || null,
-  //     contactNumber: userData.contactNumber || null,
-  //     isActive: userData.isActive !== undefined ? userData.isActive : null,
-  //     profilePicture: userData.profilePicture || null,
-  //     username: userData.username || null,
-  //     password: userData.password || null, // Remember to hash passwords in production!
-  //   };
-
-  //   // Remove undefined keys
-  //   Object.keys(updatePayload).forEach(
-  //     (key) => updatePayload[key] === undefined && delete updatePayload[key]
-  //   );
-
-  //   const { data, error } = await supabase
-  //     .from('Account_Users')
-  //     .update(updatePayload)
-  //     .eq('id', userId);
-
-  //   if (error) {
-  //     console.error('Supabase update error:', error);
-  //     throw new Error(error.message || 'Failed to update user in Supabase');
-  //   }
-
-  //   return data;
-  // }
-
-
-
-  // Other button handlers (just alerts for now)
-  const handleApprovers = (user) => alert(`Manage approvers for: ${user.name}`);
-  const handleBrands = (user) => alert(`Manage brands for: ${user.name}`);
-  const handleConnection = (user) => alert(`Manage connections for: ${user.name}`);
-
   // Pagination
 
   // Filter change handler
@@ -1068,36 +1020,13 @@ const UserManagement = ({ setCurrentView }) => {
   // For clickable image upload input, hide actual input and trigger on img click
   const fileInputIdEdit = "profilePicInputEdit";
   const fileInputIdNew = "profilePicInputNew";
-
-
-
-
-
   const [selectedApprover, setSelectedApprover] = useState('');
   const [approvers, setApprovers] = useState([]); // array of strings
   const [loading, setLoading] = useState(false);
 
   const [usersList, setUsersList] = useState([]);
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      const { data, error } = await supabase
-        .from("Account_Users")
-        .select("id, name");
 
-      if (error) {
-        console.error("Error fetching users from Supabase:", error.message);
-      } else if (data) {
-        const usersArray = data.map(user => ({
-          id: user.id,
-          name: user.name || "Unnamed User",
-        }));
-        setUsersList(usersArray);
-      }
-    };
-
-    fetchUsers();
-  }, []);
 
 
 
@@ -1354,7 +1283,6 @@ const UserManagement = ({ setCurrentView }) => {
 
   const [salesGroup, setSalesGroup] = useState([]); // Holds array of sales group options
 
-
   useEffect(() => {
     const fetchSalesGroup = async () => {
       try {
@@ -1424,8 +1352,6 @@ const UserManagement = ({ setCurrentView }) => {
     setLoading(false);
   };
 
-
-
   const handleRemoveApprover = async (approverToRemove, type) => {
     setLoading(true);
     try {
@@ -1456,8 +1382,6 @@ const UserManagement = ({ setCurrentView }) => {
     }
     setLoading(false);
   };
-
-
 
   const [brands, setBrands] = useState([]);
   const [selectedBrands, setSelectedBrands] = useState([]);
@@ -1506,10 +1430,6 @@ const UserManagement = ({ setCurrentView }) => {
     fetchBrands();
   }, [modalType, supabaseUserID]);
 
-
-
-
-
   const handleBrandToggle = (brand) => {
     if (selectedBrands.includes(brand)) {
       setSelectedBrands(selectedBrands.filter((b) => b !== brand));
@@ -1517,7 +1437,6 @@ const UserManagement = ({ setCurrentView }) => {
       setSelectedBrands([...selectedBrands, brand]);
     }
   };
-
   const saveUserBrands = async ({
     userId,
     supabaseUserId,
@@ -1569,7 +1488,6 @@ const UserManagement = ({ setCurrentView }) => {
     }
   };
 
-
   const handleSaveBrands = () => {
     saveUserBrands({
       userId: selectedUser?.id,
@@ -1580,13 +1498,7 @@ const UserManagement = ({ setCurrentView }) => {
     });
   };
 
-
-
-
-
-
   const [salesDivisions, setSalesDivisions] = useState([]);
-  const [selectedDivision, setSelectedDivision] = useState('');
 
   // Fetch SalesDivision list when modal opens
   useEffect(() => {
@@ -1623,116 +1535,6 @@ const UserManagement = ({ setCurrentView }) => {
   // Fetch user's current sales division when modal opens or selectedUser changes
 
 
-  const [selectedDivisions, setSelectedDivisions] = useState([]);
-
-  // When modal opens, reset or load selected divisions (optional)
-  useEffect(() => {
-    if (modalType === 'connection' && selectedUser) {
-      // Example: fetch existing divisions from database or reset array
-      // For demo, resetting here:
-      setSelectedDivisions([]); // or set to existing divisions if you fetch them
-    }
-  }, [modalType, selectedUser]);
-  const handleDivisionToggle = (divisionName) => {
-    setSelectedDivisions(prev =>
-      prev.includes(divisionName)
-        ? prev.filter(d => d !== divisionName)
-        : [...prev, divisionName]
-    );
-  };
-
-  // Save divisions to Firebase as an object with numeric keys
-  const handleSaveDivisions = async () => {
-    if (selectedDivisions.length === 0) {
-      Swal.fire('Error', 'Please select at least one Sales Division.', 'error');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Step 1: Delete old connections for this user to prevent duplicates
-      const { error: delError } = await supabase
-        .from('User_Connections')
-        .delete()
-        .eq('UserID', supabaseUserID);
-
-      if (delError) {
-        console.error('Error deleting old User_Connections:', delError);
-        throw delError;
-      }
-
-      // Step 2: Insert new connections, each division as a row, with flags on each
-      const inserts = selectedDivisions.map(div => ({
-        UserID: supabaseUserID,
-        Division: div,
-        IncludeBUHead: includeBUHead,
-        IncludeVPSales: includeVPSales,
-      }));
-
-      const { error: insertError } = await supabase
-        .from('User_Connections')
-        .insert(inserts);
-
-      if (insertError) {
-        console.error('Error inserting User_Connections:', insertError);
-        throw insertError;
-      }
-
-      Swal.fire('Success', 'Sales Divisions and settings saved successfully.', 'success');
-      setModalType(null);
-    } catch (error) {
-      console.error('Failed to save Sales Divisions:', error);
-      Swal.fire('Error', 'Failed to save Sales Divisions.', 'error');
-    }
-    setLoading(false);
-  };
-
-
-
-  useEffect(() => {
-    const fetchSavedConnections = async () => {
-      if (!selectedUser) return;
-
-      // Replace `selectedUser.id` with your actual user ID in Supabase if different
-      const { data, error } = await supabase
-        .from('User_Connections')
-        .select('Division, IncludeBUHead, IncludeVPSales')
-        .eq('UserID', selectedUser.id);
-
-      if (error) {
-        console.error('Error fetching User_Connections:', error);
-        setSelectedDivisions([]);
-        setIncludeBUHead(false);
-        setIncludeVPSales(false);
-        return;
-      }
-
-      console.log('Fetched User_Connections:', data);
-
-      // Extract divisions
-      const divisions = data.map(row => row.Division);
-
-      // Extract flags (assuming flags are the same for all rows; pick from first or default false)
-      const includeBUHeadFlag = data.length > 0 ? data[0].IncludeBUHead : false;
-      const includeVPSalesFlag = data.length > 0 ? data[0].IncludeVPSales : false;
-
-      setSelectedDivisions(divisions);
-      setIncludeBUHead(includeBUHeadFlag);
-      setIncludeVPSales(includeVPSalesFlag);
-    };
-
-    if (modalType === 'connection') {
-      fetchSavedConnections();
-    } else {
-      // Clear selections if modal closed
-      setSelectedDivisions([]);
-      setIncludeBUHead(false);
-      setIncludeVPSales(false);
-    }
-  }, [modalType, selectedUser]);
-
-  const [includeBUHead, setIncludeBUHead] = useState(false);
-  const [includeVPSales, setIncludeVPSales] = useState(false);
 
   const [Department, setDepartment] = useState([]);
   const [PermissionRole, setPermissionRole] = useState([]);
@@ -1740,21 +1542,20 @@ const UserManagement = ({ setCurrentView }) => {
   useEffect(() => {
     const fetchDepartments = async () => {
       const { data, error } = await supabase
-        .from("department")     // <-- change table here
+        .from("department")
         .select("*")
-        .order('code', { ascending: true });  // optional, order by code
+        .order('code', { ascending: true });
 
       if (error) {
         console.error('Error loading departments:', error);
-        setDepartment([]);   // make sure your state setter is called setDepartment
+        setDepartmentsList([]); // ✅ TAMA - gamitin ang setDepartmentsList
       } else {
-        setDepartment(data || []);
+        setDepartmentsList(data || []); // ✅ TAMA - gamitin ang setDepartmentsList
       }
     };
 
     fetchDepartments();
   }, []);
-
 
   useEffect(() => {
     const fetchUserRoles = async () => {
@@ -1773,7 +1574,6 @@ const UserManagement = ({ setCurrentView }) => {
 
     fetchUserRoles();
   }, []);
-
 
   const [rolePermissions, setRolePermissions] = useState([]);
   const [selectedRole, setSelectedRole] = useState(null);
@@ -1816,7 +1616,6 @@ const UserManagement = ({ setCurrentView }) => {
   }, [selectedUser]);
 
 
-
   const formatDate = (date) => {
     if (!date) return "-";
     if (date.toDate) date = date.toDate();
@@ -1824,10 +1623,6 @@ const UserManagement = ({ setCurrentView }) => {
   };
 
   const [licenseModalOpen, setLicenseModalOpen] = useState(false);
-  const [licenseKeys, setLicenseKeys] = useState([]);
-  const [licenseLoading, setLicenseLoading] = useState(false);
-  const [licenseCards, setLicenseCards] = useState([]);
-  const [editingMode, setEditingMode] = useState(false);
   const [filteredServices, setFilteredServices] = useState([]);
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [viewingClient, setViewingClient] = useState(false);
@@ -2231,19 +2026,23 @@ const UserManagement = ({ setCurrentView }) => {
       <h2 className="my-4">User Management</h2>
 
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <Button variant="primary" onClick={openCreateModal}>
-          <FaPlus className="me-2" /> Create User
-        </Button>
-
-
 
 
         <Form className="d-flex flex-wrap gap-3" style={{ flexGrow: 1, marginLeft: '1rem' }}>
-          <Form.Group controlId="filterGroup" style={{ minWidth: 150 }}>
+          <Form.Group controlId="searchName" style={{ minWidth: 200 }}>
+            <Form.Label>Search Name</Form.Label>
+            <Form.Control
+              type="text"
+              placeholder="Enter name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </Form.Group>
+          <Form.Group controlId="filterDepartment" style={{ minWidth: 150 }}>
             <Form.Label>Department</Form.Label>
-            <Form.Select name="group" value={filters.group} onChange={handleFilterChange}>
+            <Form.Select name="department" value={filters.department} onChange={handleFilterChange}>
               <option value="">All</option>
-              {groups.map(group => <option key={group} value={group}>{group}</option>)}
+              {departments.map(department => <option key={department} value={department}>{department}</option>)}
             </Form.Select>
           </Form.Group>
 
@@ -2263,7 +2062,10 @@ const UserManagement = ({ setCurrentView }) => {
             </Form.Select>
           </Form.Group>
         </Form>
-        <Button variant="primary" onClick={() => setCurrentView('RolePermissionForm')}>
+        <Button variant="primary" onClick={openCreateModal} className="me-2">
+          <FaPlus className="me-2" /> Create User
+        </Button>
+        <Button variant="primary" onClick={() => setCurrentView('RolePermissionForm')} classname="ms-2">
           <FaPlus className="me-2" /> Role Permission
         </Button>
       </div>
@@ -2333,28 +2135,18 @@ const UserManagement = ({ setCurrentView }) => {
                         <Card.Title>{user.name}</Card.Title>
                         <Card.Subtitle className="mb-2 text-muted">{user.role}</Card.Subtitle>
                         <Card.Text>
-                          <strong>Position:</strong> {user.position}
+                          <strong>Position:</strong> {
+                            positionsList.find(pos => pos.code === user.position)?.name || user.position
+                          }
                           <br />
                           <strong>Email:</strong> {user.email}
                           <br />
                           <strong>Contact Number:</strong> {user.contactNumber || 'N/A'}
                           <br />
-                          <strong>Group:</strong>{' '}
-                          <Badge
-                            bg={
-                              user.group === 'Office'
-                                ? 'primary'
-                                : user.group === 'Build'
-                                  ? 'warning'
-                                  : user.group === 'Home'
-                                    ? 'success'
-                                    : 'secondary'
-                            }
-                          >
-                            {user.group}
-
+                          <strong>Department:</strong>{' '}
+                          <Badge bg="secondary">
+                            {departmentsList.find(dept => dept.code === user.department)?.name || user.department}
                           </Badge>
-
                         </Card.Text>
                       </Col>
                     </Row>
@@ -2386,16 +2178,6 @@ const UserManagement = ({ setCurrentView }) => {
                         className="mb-1"
                       >
                         <FaTags />
-                      </Button>
-
-                      <Button
-                        variant="outline-info"
-                        size="sm"
-                        onClick={() => openModal(user, 'connection')}
-                        title="Connection"
-                        className="mb-1"
-                      >
-                        <FaPlug />
                       </Button>
                       <Button
                         variant="outline-danger"
@@ -2932,7 +2714,6 @@ const UserManagement = ({ setCurrentView }) => {
                       </option>
                     ))}
                   </Form.Select>
-
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="newUserPosition">
@@ -2951,30 +2732,27 @@ const UserManagement = ({ setCurrentView }) => {
                     <option value="">-- Select Position --</option>
                     {positionsList.map((pos, idx) => (
                       <option key={idx} value={pos.code}>
-                        {pos.name} - {pos.description}
+                        {pos.name}
                       </option>
                     ))}
                   </Form.Control>
-
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="newUserGroup">
                   <Form.Label>Department</Form.Label>
                   <Form.Select
-                    name="group"
-                    value={newUserData.group}
+                    name="department"
+                    value={newUserData.department}
                     onChange={handleNewUserChange}
                     required
                   >
                     <option value="">-- Select Department --</option>
-                    <option value="All">All</option>
-                    {Department.map((pos, idx) => (
-                      <option key={idx} value={pos.code}>
-                        {pos.name} - {pos.description}
+                    {departmentsList.map((dept, idx) => (  // ✅ TAMA - departmentsList
+                      <option key={idx} value={dept.code}>
+                        {dept.name} - {dept.description}
                       </option>
                     ))}
                   </Form.Select>
-
                 </Form.Group>
 
 
@@ -3259,7 +3037,6 @@ const UserManagement = ({ setCurrentView }) => {
                 </>
 
 
-
                 {/** License Key Selector Modal — shared between Create and Edit */}
                 <Modal show={licenseModalOpen} onHide={() => setLicenseModalOpen(false)} centered size="xl">
                   <Modal.Header closeButton>
@@ -3539,7 +3316,6 @@ const UserManagement = ({ setCurrentView }) => {
                     name="email"
                     value={editUserData.email || ''}
                     onChange={handleEditUserChange}
-                    required
                   />
                 </Form.Group>
 
@@ -3573,8 +3349,6 @@ const UserManagement = ({ setCurrentView }) => {
 
                 <Form.Group className="mb-3" controlId="editUserPosition">
                   <Form.Label>Position</Form.Label>
-
-
                   <Form.Select
                     name="position"
                     value={editUserData.position || ''}
@@ -3586,7 +3360,6 @@ const UserManagement = ({ setCurrentView }) => {
                       <option key={pos.code} value={pos.code}>{pos.name}</option>
                     ))}
                   </Form.Select>
-
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="editUserGroup">
@@ -3594,13 +3367,13 @@ const UserManagement = ({ setCurrentView }) => {
 
 
                   <Form.Select
-                    name="group"
-                    value={editUserData.group || ''}
+                    name="department"  // Changed from "group" to "department"
+                    value={editUserData.department || ''}
                     onChange={handleEditUserChange}
                     required
                   >
                     <option value="" disabled>-- Select Department --</option>
-                    {Department.map((dep) => (
+                    {departmentsList.map((dep) => (
                       <option key={dep.code} value={dep.code}>{dep.name}</option>
                     ))}
                   </Form.Select>
@@ -3644,14 +3417,6 @@ const UserManagement = ({ setCurrentView }) => {
                         {role.name} {role.description}
                       </option>
                     ))}
-
-                    {PermissionRole.map((role, idx) => (
-                      <option key={role.code} value={role.code}>
-                        {role.name} {role.description}
-                      </option>
-
-
-                    ))}
                   </Form.Select>
                 </Form.Group>
 
@@ -3681,7 +3446,7 @@ const UserManagement = ({ setCurrentView }) => {
 
 
 
-      {/* Placeholder Modals for Approvers, Brands, Connection, Deactivate */}
+      {/* Placeholder Modals for Approvers, Brands, Deactivate */}
       {/* You can implement these as needed */}
       <Modal show={modalType === 'approvers'} onHide={() => setModalType(null)} centered>
         <Modal.Header closeButton>
@@ -3928,46 +3693,47 @@ const UserManagement = ({ setCurrentView }) => {
                 <p>No approvals found.</p>
               ) : (
                 <table striped bordered hover responsive>
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Username</th>
-                      <th>Allowed</th>
-                      <th>Created At</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {savedApprovals.map((approval) => (
-                      <tr key={approval.id}>
-                        <td>{approval.id}</td>
-                        <td>{approval.username}</td>
-                        <td>{approval.allowed_to_approve ? 'Yes' : 'No'}</td>
-                        <td>{new Date(approval.created_at).toLocaleString()}</td>
-                        <td>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            className="me-2"
-                            onClick={() => {
-                              setEditId(approval.id);
-                              setCurrentUsername(approval.username);
-                              setAllowedToApprove(approval.allowed_to_approve);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={() => handleDeleteApproval(approval.id)}
-                          >
-                            Delete
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+
+                  <div className="container-fluid px-2">
+                    <div className="table-responsive w-100">
+                      <table className="table table-striped table-bordered table-hover align-middle">
+                        <thead className="table-dark">
+                          <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Allowed</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {savedApprovals.map((approval) => (
+                            <tr key={approval.id}>
+                              <td>{approval.id}</td>
+                              <td>{approval.username}</td>
+                              <td>
+                                <span
+                                  className={`badge ${approval.allowed_to_approve ? 'bg-success' : 'bg-secondary'}`}
+                                >
+                                  {approval.allowed_to_approve ? 'Yes' : 'No'}
+                                </span>
+                              </td>
+                              <td>
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() => handleDeleteApproval(approval.id)}
+                                >
+                                  <i className="bi bi-trash-fill me-1"></i> Delete
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+
                 </table>
               )}
             </>

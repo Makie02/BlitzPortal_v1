@@ -44,13 +44,13 @@ const ApprovalList = () => {
   // Filter data based on search term and date range
   useEffect(() => {
     let filtered = approvalData.filter((item) => {
-      const matchesSearch = 
+      const matchesSearch =
         item.ApproverId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.PwpCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.Response?.toLowerCase().includes(searchTerm.toLowerCase());
 
       let matchesDate = true;
-      
+
       if (dateFrom || dateTo) {
         const itemDate = new Date(item.created_at);
         const fromDate = dateFrom ? new Date(dateFrom) : null;
@@ -89,7 +89,7 @@ const ApprovalList = () => {
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "ApprovalHistory");
-      
+
       // Auto-fit columns
       const cols = [];
       const maxLengths = {};
@@ -117,13 +117,34 @@ const ApprovalList = () => {
       setExportLoading(false);
     }
   };
+  const renderCreatedForm = (createdForm) => {
+    if (!createdForm || createdForm.trim() === '') {
+      return '-';
+    }
+
+    // If createdForm might be a string representing a form type, you can customize this
+    // For example, you could add icons or styling based on form type
+
+    // Example: if createdForm is one of predefined types, style accordingly
+    switch (createdForm.toLowerCase()) {
+      case 'purchase order':
+        return <span style={{ color: '#1e88e5', fontWeight: '600' }}>{createdForm}</span>;
+      case 'expense report':
+        return <span style={{ color: '#f4511e', fontWeight: '600' }}>{createdForm}</span>;
+      case 'leave request':
+        return <span style={{ color: '#43a047', fontWeight: '600' }}>{createdForm}</span>;
+      default:
+        // Default fallback, just display as text
+        return <span>{createdForm}</span>;
+    }
+  };
 
   // Export to PDF
   const handleExportToPDF = async () => {
     setExportLoading(true);
     try {
       const printWindow = window.open('', '_blank');
-      
+
       let htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -241,7 +262,7 @@ const ApprovalList = () => {
       printWindow.document.write(htmlContent);
       printWindow.document.close();
       printWindow.focus();
-      
+
       setTimeout(() => {
         printWindow.print();
       }, 500);
@@ -258,10 +279,23 @@ const ApprovalList = () => {
     setDateFrom("");
     setDateTo("");
   };
+  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+  const role = currentUser?.role || "";
+
+  // Filter function for the rows:
+  const filterByCreatedForm = (row) => {
+    if (role === "admin") return true;
+    return row.CreatedForm?.toLowerCase().trim() === currentUserName;
+  };
+
+  // Apply the filter before rendering:
+  const filteredRows = paginatedData.filter(filterByCreatedForm);
+
 
   return (
-    <div style={{ 
-      padding: "20px", 
+    <div style={{
+      padding: "20px",
       backgroundColor: '#f8f9fa',
       minHeight: '100vh'
     }}>
@@ -277,17 +311,17 @@ const ApprovalList = () => {
           backgroundColor: '#f8f8f8ff',
           color: 'white'
         }}>
-          <h1 style={{ 
-            margin: '0 0 8px', 
+          <h1 style={{
+            margin: '0 0 8px',
             fontSize: '24px',
             fontWeight: '600'
           }}>
             Approval History
           </h1>
-          <p style={{ 
-            margin: 0, 
-            opacity: 0.9, 
-            fontSize: '14px' 
+          <p style={{
+            margin: 0,
+            opacity: 0.9,
+            fontSize: '14px'
           }}>
             {filteredData.length} records found
             {(dateFrom || dateTo) && ` (filtered by date)`}
@@ -308,9 +342,9 @@ const ApprovalList = () => {
             marginBottom: '15px'
           }}>
             {/* Search */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
               flex: '1',
               minWidth: '250px'
             }}>
@@ -341,9 +375,9 @@ const ApprovalList = () => {
             </div>
 
             {/* Date Range */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
               gap: '10px'
             }}>
               <FaCalendarAlt style={{ color: '#666', fontSize: '14px' }} />
@@ -415,7 +449,7 @@ const ApprovalList = () => {
               <FaFileExcel />
               {exportLoading ? 'Generating...' : 'Generate Excel'}
             </button>
-            
+
             <button
               onClick={handleExportToPDF}
               disabled={exportLoading}
@@ -441,9 +475,9 @@ const ApprovalList = () => {
 
         {/* Loading and Error States */}
         {loading && (
-          <div style={{ 
-            padding: '40px', 
-            textAlign: 'center' 
+          <div style={{
+            padding: '40px',
+            textAlign: 'center'
           }}>
             <div style={{
               width: '40px',
@@ -475,56 +509,64 @@ const ApprovalList = () => {
         {/* Table */}
         {!loading && (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ 
-              width: '100%', 
+            <table style={{
+              width: '100%',
               borderCollapse: 'collapse'
             }}>
               <thead>
                 <tr style={{ backgroundColor: '#2575fc', color: 'white' }}>
-                  <th style={{ 
-                    padding: '16px 20px', 
+                  <th style={{
+                    padding: '16px 20px',
                     textAlign: 'left',
                     fontWeight: '600',
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>ID</th>
-                  <th style={{ 
-                    padding: '16px 20px', 
+                  <th style={{
+                    padding: '16px 20px',
                     textAlign: 'left',
                     fontWeight: '600',
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>ApproverId</th>
-                  <th style={{ 
-                    padding: '16px 20px', 
+                  <th style={{
+                    padding: '16px 20px',
                     textAlign: 'left',
                     fontWeight: '600',
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>PWP Code</th>
-                  <th style={{ 
-                    padding: '16px 20px', 
+                  <th style={{
+                    padding: '16px 20px',
                     textAlign: 'left',
                     fontWeight: '600',
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>Response</th>
-                  <th style={{ 
-                    padding: '16px 20px', 
+                  <th style={{
+                    padding: '16px 20px',
                     textAlign: 'left',
                     fontWeight: '600',
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>Date Responded</th>
-                  <th style={{ 
-                    padding: '16px 20px', 
+                  <th style={{
+                    padding: '16px 20px',
                     textAlign: 'left',
                     fontWeight: '600',
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>Created At</th>
-                  <th style={{ 
-                    padding: '16px 20px', 
+                  <th style={{
+                    padding: '16px 20px',
+                    textAlign: 'left',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    borderBottom: '2px solid #1565c0'
+                  }}>Created By</th>
+
+                  <th style={{
+                    padding: '16px 20px',
                     textAlign: 'center',
                     fontWeight: '600',
                     fontSize: '14px',
@@ -533,10 +575,10 @@ const ApprovalList = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginatedData.length === 0 ? (
+                {filteredRows.length === 0 ? (
                   <tr>
-                    <td 
-                      colSpan="7" 
+                    <td
+                      colSpan="8"
                       style={{
                         padding: '40px 20px',
                         textAlign: 'center',
@@ -545,42 +587,41 @@ const ApprovalList = () => {
                         backgroundColor: '#fafafa'
                       }}
                     >
-                      {filteredData.length === 0 && !loading ? 
-                        'No approval records found.' : 
-                        'Loading...'
-                      }
+                      {filteredRows.length === 0 && !loading
+                        ? 'No approval records found.'
+                        : 'Loading...'}
                     </td>
                   </tr>
                 ) : (
-                  paginatedData.map((item, index) => (
-                    <tr 
+                  filteredRows.map((item, index) => (
+                    <tr
                       key={item.id}
                       style={{
                         backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
                         transition: 'background-color 0.2s ease'
                       }}
                     >
-                      <td style={{ 
-                        padding: '16px 20px', 
+                      <td style={{
+                        padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         fontSize: '14px',
                         color: '#000000ff'
                       }}>{item.id}</td>
-                      <td style={{ 
-                        padding: '16px 20px', 
+                      <td style={{
+                        padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         fontSize: '14px',
                         color: '#000000ff'
                       }}>{item.ApproverId}</td>
-                      <td style={{ 
-                        padding: '16px 20px', 
+                      <td style={{
+                        padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         fontSize: '14px',
                         color: '#000000ff',
                         fontFamily: 'monospace'
                       }}>{item.PwpCode}</td>
-                      <td style={{ 
-                        padding: '16px 20px', 
+                      <td style={{
+                        padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         fontSize: '14px'
                       }}>
@@ -589,15 +630,14 @@ const ApprovalList = () => {
                           borderRadius: '4px',
                           fontSize: '12px',
                           fontWeight: '500',
-                          color: '#000000ff',
                           backgroundColor: item.Response === 'Approved' ? '#e8f5e8' : '#fff3e0',
                           color: item.Response === 'Approved' ? '#2e7d32' : '#ef6c00'
                         }}>
                           {item.Response}
                         </span>
                       </td>
-                      <td style={{ 
-                        padding: '16px 20px', 
+                      <td style={{
+                        padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         fontSize: '14px',
                         color: '#000000ff',
@@ -606,8 +646,8 @@ const ApprovalList = () => {
                           ? new Date(item.DateResponded).toLocaleString()
                           : '-'}
                       </td>
-                      <td style={{ 
-                        padding: '16px 20px', 
+                      <td style={{
+                        padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         fontSize: '14px',
                         color: '#000000ff',
@@ -616,14 +656,23 @@ const ApprovalList = () => {
                           ? new Date(item.created_at).toLocaleString()
                           : '-'}
                       </td>
-                      <td style={{ 
-                        padding: '16px 20px', 
+                      <td style={{
+                        padding: '16px 20px',
+                        borderBottom: '1px solid #e0e0e0',
+                        fontSize: '14px',
+                        color: '#000000ff',
+                      }}>
+                        {renderCreatedForm(item.CreatedForm)}
+                      </td>
+
+                      <td style={{
+                        padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         textAlign: 'center'
                       }}>
                         {item.Response === "Approved" && (
-                          <FaCheckCircle 
-                            color="#4caf50" 
+                          <FaCheckCircle
+                            color="#4caf50"
                             size={20}
                             title="Approved"
                           />
@@ -633,6 +682,7 @@ const ApprovalList = () => {
                   ))
                 )}
               </tbody>
+
             </table>
           </div>
         )}

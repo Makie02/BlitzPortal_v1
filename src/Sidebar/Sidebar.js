@@ -4,7 +4,7 @@ import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 import { supabase } from "../supabaseClient";
 import logo from '../Assets/sssss.png';
-
+import NotFoundPage from "../Nofound/NotFoundPage";
 function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLoggedIn, user, loggedIn }) {
     const [activeDropdown, setActiveDropdown] = useState(null);
     const [IsOpen, setIsOpen] = useState(null);
@@ -199,6 +199,7 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
     const [rolePermissions, setRolePermissions] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+    const [noPermissionsData, setNoPermissionsData] = useState(false);
 
     // ✅ Fetch permissions based on PermissionRole
     useEffect(() => {
@@ -219,6 +220,7 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                 if (!roleName) {
                     console.warn("⚠️ No role name found for code:", localUser.PermissionRole);
                     setRolePermissions({});
+                    setNoPermissionsData(true);  // No data found for role name
                     return;
                 }
 
@@ -230,20 +232,29 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
 
                 if (permissionsError) throw permissionsError;
 
+                if (!permissionsData || permissionsData.length === 0) {
+                    setNoPermissionsData(true);  // No permissions found
+                    setRolePermissions({});
+                    return;
+                }
+
                 const permissionsObj = {};
                 permissionsData.forEach(({ permission, allowed }) => {
                     permissionsObj[permission] = allowed === true;
                 });
 
                 setRolePermissions(permissionsObj);
+                setNoPermissionsData(false);  // Data found successfully
             } catch (error) {
                 console.error("❌ Error fetching role or permissions:", error);
                 setRolePermissions({});
+                setNoPermissionsData(true);  // Treat error as no data
             }
         };
 
         fetchRolePermissions();
     }, [localUser?.PermissionRole]);
+
 
     const hasPermissionForView = (view) => {
         const allowed = !!rolePermissions[view];
@@ -335,6 +346,8 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
             title: "Claims",
             submenu: [
                 { title: "Claims Status", view: "ClaimsStatusUpload" },
+                { title: "Claims PWP", view: "Claims_pwp" },
+
                 // { title: "Rentals", view: "RentalsForm" },
 
 
@@ -357,7 +370,6 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
             submenu: [
                 { title: "References", view: "References" },
                 { title: "User Management", view: "UserManagement" },
-                { title: "Category", view: "BrandSelector" },
                 // { label: "Brand Approval Plan", view: "BrandApprovalForm" },
                 // { title: "Cost Details", view: "Activities" },
             ],
@@ -370,6 +382,11 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                 { title: "References" }, // No view
                 { title: "View Records", view: "RecordsPage" },
                 { title: "Approved  List", view: "ApprovalList" },
+
+                { title: "Claims Records List", view: "ClaimsRecords" },
+
+
+                
             ],
         },
     ];
@@ -434,6 +451,9 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
         setSearchResults([]);
         setActiveDropdown(null);
     };
+    if (noPermissionsData) {
+        return <NotFoundPage />;
+    }
     return (
         <nav
             id="sidebar"

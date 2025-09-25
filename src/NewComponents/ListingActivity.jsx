@@ -7,6 +7,16 @@ export default function ListingActivity() {
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // Define all setting fields
+  const settingFields = [
+    'category',
+    'sku',
+    'accounts',
+    'amount_display',
+    'distributor',
+    'claims'
+  ];
+
   // Fetch activities and settings
   const fetchData = async () => {
     setLoading(true);
@@ -47,21 +57,18 @@ export default function ListingActivity() {
     fetchData();
   }, []);
 
-  // Toggle a setting (sku, accounts, amount_display)
+  // Toggle a setting (dynamic fields)
   const toggleSetting = async (activityCode, field) => {
-    const currentSetting = settings[activityCode] || {
-      sku: false,
-      accounts: false,
-      amount_display: false,
-    };
+    const currentSetting = settings[activityCode] || {};
 
     const newValue = !currentSetting[field];
 
     if (!currentSetting.id) {
       // Insert new setting row
+      const newSetting = { activity_code: activityCode, [field]: newValue };
       const { error } = await supabase
         .from('activity_settings')
-        .insert([{ activity_code: activityCode, [field]: newValue }]);
+        .insert([newSetting]);
 
       if (error) {
         alert('Error inserting setting: ' + error.message);
@@ -96,33 +103,26 @@ export default function ListingActivity() {
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <Table
-                striped
-                bordered
-                hover
-                responsive
-                className="align-middle text-center"
-              >
+              <Table striped bordered hover responsive className="align-middle text-center">
                 <thead className="table-primary">
                   <tr>
                     <th>Code</th>
                     <th>Name</th>
                     <th>Description</th>
-                    <th>SKU</th>
-                    <th>Accounts</th>
-                    <th>Amount Display</th>
+                    {settingFields.map(field => (
+                      <th key={field} className="text-capitalize">{field.replace('_', ' ')}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {activities.map(activity => {
                     const setting = settings[activity.code] || {};
-
                     return (
                       <tr key={activity.code}>
                         <td className="text-start">{activity.code}</td>
                         <td className="text-start">{activity.name}</td>
                         <td className="text-start">{activity.description}</td>
-                        {['sku', 'accounts', 'amount_display'].map(field => (
+                        {settingFields.map(field => (
                           <td key={field} style={{ verticalAlign: 'middle' }}>
                             <Form.Check
                               type="checkbox"

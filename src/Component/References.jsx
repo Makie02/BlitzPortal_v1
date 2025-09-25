@@ -13,6 +13,10 @@ import RegularSkuTable from '../NewComponents/RegularSkuTable.jsx';
 import Category from '../NewComponents/Category.jsx';
 import Category_Listing from '../NewComponents/Category_Listing.jsx';
 import ApprovalSettings from '../NewComponents/ApprovalSettings.jsx';
+import Budgets from '../NewComponents/Budget.js';
+import NotFoundPage from '../Nofound/NotFoundPage.js';
+import ModuleForm from '../NewComponents/ModuleForm.js';
+import ClaimsListing from '../NewComponents/ClaimsListing.jsx';
 
 const References = (setCurrentView) => {
     const [view, setView] = useState(null); // null means show cards list
@@ -20,36 +24,45 @@ const References = (setCurrentView) => {
     const cards = [
         { id: 1, title: "DISTRIBUTOR" },
         { id: 2, title: "DISTRIBUTOR-LISTING" },
-        { id: 3, title: "ACCOUNTS" },
+
+        { id: 3, title: "MODULE" },
 
         { id: 4, title: "ACTIVITY" },
         { id: 5, title: "DEPARTMENT" },
-        { id: 6, title: "Promoted-SKU/s" },
-        { id: 7, title: "USER ROLE" },
 
-        { id: 8, title: "SALESGROUP" },
-        { id: 9, title: "POSITION" },
+        { id: 6, title: "USER ROLE" },
 
-        { id: 10, title: "LISTING-ACTIVITY" },
-        { id: 11, title: "REGULAR-SKU" },
+        { id: 7, title: "SALESGROUP" },
+        { id: 8, title: "POSITION" },
 
-        { id: 12, title: "CATEGORY" },
-        { id: 13, title: "CATEGORY-LISTING" },
-
-        { id: 14, title: "APPROVAL-SETTING" },
+        { id: 9, title: "LISTING-ACTIVITY" },
 
 
+        { id: 10, title: "CATEGORY" },
+        { id: 11, title: "CATEGORY-LIST-SKU/s" },
 
+        { id: 12, title: "APPROVAL-SETTING" },
+
+        { id: 13, title: "BUDGET-VIEW" },
+
+        { id: 14, title: "404-PAGE" },
+
+        { id: 15, title: "CLAIMS-lISTING-ACTIVITY" },
+
+
+
+
+        
 
     ];
 
     const handleClick = (card) => {
         // For cards that have components, set view to title
-        if (card.title === 'USER ROLE' || card.title === 'DISTRIBUTOR-LISTING' || card.title === 'USER MANAGEMENT' || card.title === 'POSITION' || card.title === 'LISTING-ACTIVITY' || card.title === 'REGULAR-SKU'
+        if (card.title === 'USER ROLE' || card.title === 'CLAIMS-lISTING-ACTIVITY' || card.title === 'MODULE'|| card.title === 'BUDGET-VIEW' || card.title === '404-PAGE' || card.title === 'DISTRIBUTOR-LISTING' || card.title === 'USER MANAGEMENT' || card.title === 'POSITION' || card.title === 'LISTING-ACTIVITY' || card.title === 'REGULAR-SKU'
 
             || card.title === 'APPROVAL-SETTING'
 
-            || card.title === 'DEPARTMENT' || card.title === 'ACCOUNTS' || card.title === 'Promoted-SKU/s' || card.title === 'ACTIVITY' || card.title === 'SALESGROUP' || card.title === 'DISTRIBUTOR' || card.title === 'CATEGORY' || card.title === 'CATEGORY-LISTING') {
+            || card.title === 'DEPARTMENT' || card.title === 'ACCOUNTS' || card.title === 'Promoted-SKU/s' || card.title === 'ACTIVITY' || card.title === 'SALESGROUP' || card.title === 'DISTRIBUTOR' || card.title === 'CATEGORY' || card.title === 'CATEGORY-LIST-SKU/s') {
             setView(card.title);
         } else {
             alert(`${card.title} clicked`);
@@ -85,6 +98,8 @@ const References = (setCurrentView) => {
                 {view === 'DISTRIBUTOR-LISTING' && <CategorySelector />}
                 {view === 'DEPARTMENT' && <Department />}
 
+                {view === 'BUDGET-VIEW' && <Budgets />}
+
 
                 {view === 'Promoted-SKU/s' && <PromotedSKU />}
                 {view === 'POSITION' && <Position />}
@@ -93,10 +108,12 @@ const References = (setCurrentView) => {
                 {view === 'REGULAR-SKU' && <RegularSkuTable />}
 
                 {view === 'CATEGORY' && <Category />}
-                {view === 'CATEGORY-LISTING' && <Category_Listing />}
+                {view === 'CATEGORY-LIST-SKU/s' && <Category_Listing />}
 
                 {view === 'APPROVAL-SETTING' && <ApprovalSettings />}
-
+                {view === '404-PAGE' && <NotFoundPage />}
+                {view === 'MODULE' && <ModuleForm />}
+                {view === 'CLAIMS-lISTING-ACTIVITY' && <ClaimsListing />}
 
 
 

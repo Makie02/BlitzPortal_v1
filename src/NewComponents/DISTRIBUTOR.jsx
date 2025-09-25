@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import Swal from 'sweetalert2';
+import { debounce } from 'lodash';
+import Papa from 'papaparse';
 
 const ROW_OPTIONS = [5, 10, 20];
 
@@ -33,18 +35,11 @@ const Distributor = () => {
     fetchDistributors();
   }, []);
 
-  const generateNextCode = () => {
-    if (distributors.length === 0) return '20001';
-    const nums = distributors.map(d => {
-      const n = parseInt(d.code, 10);
-      return isNaN(n) ? 0 : n;
-    });
-    const maxNum = Math.max(...nums);
-    return (maxNum + 1).toString();
-  };
+
 
   const openAddModal = () => {
-    setForm({ id: null, code: generateNextCode(), name: '', description: '' });
+    // Don't set code when adding - let database generate it
+    setForm({ id: null, code: 'Auto-generated', name: '', description: '' });
     setIsEditing(false);
     setModalOpen(true);
   };
@@ -57,8 +52,14 @@ const Distributor = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
+    const updated = { ...form, [name]: value };
+    setForm(updated);
+
+    if (isEditing) {
+      autoSave(updated);
+    }
   };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -80,9 +81,10 @@ const Distributor = () => {
         fetchDistributors();
       }
     } else {
+      // Don't include code field at all for auto-generation
       const { error } = await supabase
         .from('distributors')
-        .insert([{ code: form.code, name: form.name, description: form.description || null }]);
+        .insert([{ name: form.name, description: form.description || null }]);
       if (error) {
         Swal.fire('Insert Error', error.message, 'error');
       } else {
@@ -118,12 +120,119 @@ const Distributor = () => {
     }
   };
 
+
+  const handleExport = () => {
+    const headers = ['ID', 'Code', 'Name', 'Description'];
+    const rows = distributors.map(d => [d.id, d.code, d.name, d.description || '']);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'distributors.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
+const handleImport = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: async (results) => {
+      const imported = results.data;
+
+      // Normalize headers
+      const normalizedData = imported.map(row => {
+        const normalized = {};
+        for (const key in row) {
+          if (key && typeof key === 'string') {
+            normalized[key.toLowerCase().trim()] = row[key];
+          }
+        }
+        return normalized;
+      });
+
+      const allNames = normalizedData
+        .filter(row => row.name && row.name.trim())
+        .map(row => row.name.trim());
+
+      // Get existing names from DB
+      const { data: existing, error: fetchError } = await supabase
+        .from('distributors')
+        .select('name')
+        .in('name', allNames);
+
+      if (fetchError) {
+        Swal.fire('Fetch Error', fetchError.message, 'error');
+        return;
+      }
+
+      const existingNames = new Set(existing.map(e => e.name));
+
+      const validEntries = normalizedData
+        .filter(row => row.name && !existingNames.has(row.name.trim()))
+        .map(row => ({
+          name: row.name.trim(),
+          description: row.description?.trim() || null,
+        }));
+
+      if (validEntries.length === 0) {
+        Swal.fire('Import Notice', 'No new distributors to import. All names already exist.', 'info');
+        return;
+      }
+
+      const { error: insertError } = await supabase
+        .from('distributors')
+        .insert(validEntries);
+
+      if (insertError) {
+        Swal.fire('Insert Error', insertError.message, 'error');
+      } else {
+        Swal.fire('Success', `${validEntries.length} new distributors imported successfully.`, 'success');
+        fetchDistributors();
+      }
+    },
+    error: (err) => {
+      Swal.fire('Parse Error', err.message, 'error');
+    }
+  });
+
+  e.target.value = '';
+};
+
+  const autoSave = debounce(async (updatedForm) => {
+    if (updatedForm.id && updatedForm.name.trim()) {
+      const { error } = await supabase
+        .from('distributors')
+        .update({
+          name: updatedForm.name,
+          description: updatedForm.description || null
+        })
+        .eq('id', updatedForm.id);
+
+      if (error) {
+        console.error('Auto-save error:', error.message);
+      } else {
+        console.log('Auto-saved changes');
+      }
+    }
+  }, 1000); // 1 second debounce
+
   // Filtering distributors by searchTerm
   const filteredDistributors = distributors.filter(dist => {
     const term = searchTerm.toLowerCase();
     return (
       dist.name.toLowerCase().includes(term) ||
-      dist.code.toLowerCase().includes(term) ||
+      dist.code.toString().toLowerCase().includes(term) ||
       (dist.description && dist.description.toLowerCase().includes(term))
     );
   });
@@ -275,9 +384,15 @@ const Distributor = () => {
       <h2>Distributors</h2>
       <button onClick={openAddModal} style={addButtonStyle}>+ Add New Distributor</button>
       <div style={tableWrapperStyle}>
+        <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button onClick={handleExport} style={addButtonStyle}>Export CSV</button>
+          <label style={{ ...addButtonStyle, cursor: 'pointer' }}>
+            Import CSV
+            <input type="file" accept=".csv" onChange={handleImport} style={{ display: 'none' }} />
+          </label>
+        </div>
 
         <div style={searchWrapperStyle}>
-
           <input
             type="text"
             placeholder="Search by code, name, description..."
@@ -362,7 +477,6 @@ const Distributor = () => {
 
                 {/* Show page numbers */}
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
-                  // For large number of pages, you can improve this later with ellipsis
                   return (
                     <button
                       key={page}
@@ -387,68 +501,64 @@ const Distributor = () => {
                 </button>
               </div>
             </div>
-        
-         
-    </>
-  )
-}
-
-{
-  modalOpen && (
-    <div style={modalOverlayStyle}>
-      <div style={modalContentStyle}>
-        <h3>{isEditing ? 'Edit Distributor' : 'Add New Distributor'}</h3>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '12px' }}>
-            <label>Code:</label>
-            <input
-              type="text"
-              name="code"
-              value={form.code}
-              readOnly
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ marginBottom: '12px' }}>
-            <label>Name: *</label>
-            <input
-              type="text"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-              style={inputStyle}
-              autoFocus
-            />
-          </div>
-          <div style={{ marginBottom: '12px' }}>
-            <label>Description:</label>
-            <textarea
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              style={{ ...inputStyle, height: '60px' }}
-            />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              style={{ ...actionBtnStyle, backgroundColor: '#6c757d' }}
-            >
-              Cancel
-            </button>
-            <button type="submit" style={actionBtnStyle}>
-              {isEditing ? 'Update' : 'Add'}
-            </button>
-          </div>
-        </form>
+          </>
+        )}
       </div>
+
+      {modalOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3>{isEditing ? 'Edit Distributor' : 'Add New Distributor'}</h3>
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: '12px' }}>
+                <label>Code:</label>
+                <input
+                  type="text"
+                  name="code"
+                  value={form.code}
+                  readOnly
+                  style={{ ...inputStyle, backgroundColor: '#f8f9fa' }}
+                />
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label>Name: *</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={form.name}
+                  onChange={handleChange}
+                  required
+                  style={inputStyle}
+                  autoFocus
+                />
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label>Description:</label>
+                <textarea
+                  name="description"
+                  value={form.description}
+                  onChange={handleChange}
+                  style={{ ...inputStyle, height: '60px' }}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  style={{ ...actionBtnStyle, backgroundColor: '#6c757d' }}
+                >
+                  Cancel
+                </button>
+                <button type="submit" style={actionBtnStyle}>
+                  {isEditing ? 'Update' : 'Add'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
-  )
-} </div>
-      </div >
-      );
+  );
 };
 
 export default Distributor;

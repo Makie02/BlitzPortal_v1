@@ -27,14 +27,138 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
     }
   }, []);
 
-  const [showNotifications, setShowNotifications] = useState(false);
+  const [showApprovalIcon, setShowApprovalIcon] = useState(true); // Show/hide logic as needed
+
+
+
+  const [approvalUnreadCount, setApprovalUnreadCount] = useState(0);
+  const [approvalNotifications, setApprovalNotifications] = useState([]);
   const [showApprovalNotifications, setShowApprovalNotifications] = useState(false);
+
+  // Move fetchApprovalCount outside useEffect so you can call it anywhere
+  const fetchApprovalCount = async () => {
+    try {
+      const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+      const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+      const role = currentUser?.role || "";
+
+      let query = supabase
+        .from('Approval_History')
+        .select('Notication, CreatedForm')
+        .eq('Notication', false);
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching approval notifications:', error);
+        return;
+      }
+
+      if (!data) {
+        setApprovalUnreadCount(0);
+        return;
+      }
+
+      if (role === 'admin') {
+        setApprovalUnreadCount(data.length);
+        return;
+      }
+
+      // Filter for CreatedForm === currentUserName (case insensitive)
+      const filtered = data.filter(row =>
+        (row.CreatedForm?.toLowerCase().trim() || '') === currentUserName
+      );
+
+      setApprovalUnreadCount(filtered.length);
+    } catch (err) {
+      console.error('Unexpected error fetching approval notifications:', err);
+      setApprovalUnreadCount(0);
+    }
+  };
+
+  // Fetch all approval notifications (you might already have this)
+  const fetchApprovalNotifications = async () => {
+    try {
+      const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+      const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+      const role = currentUser?.role || "";
+
+      const { data, error } = await supabase
+        .from('Approval_History')
+        .select('*')
+        .order('DateResponded', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching approval notifications:', error);
+        return;
+      }
+
+      if (!data) {
+        setApprovalNotifications([]);
+        return;
+      }
+
+      if (role === 'admin') {
+        // Admin sees all notifications
+        setApprovalNotifications(data);
+        return;
+      }
+
+      // Filter to only include rows where CreatedForm matches currentUserName
+      const filtered = data.filter(row =>
+        (row.CreatedForm?.toLowerCase().trim() || '') === currentUserName
+      );
+
+      setApprovalNotifications(filtered);
+    } catch (err) {
+      console.error('Unexpected error fetching approval notifications:', err);
+      setApprovalNotifications([]);
+    }
+  };
+
+  const markApprovalAsRead = async (approvalId) => {
+    if (!approvalId) return;
+
+    try {
+      const { error } = await supabase
+        .from('Approval_History')
+        .update({ Notication: true })
+        .eq('id', approvalId);
+
+      if (error) {
+        console.error('Error marking approval as read:', error.message);
+        return;
+      }
+
+      // Refresh notifications list AND count right after marking as read
+      await fetchApprovalNotifications();
+      await fetchApprovalCount();
+    } catch (err) {
+      console.error('Unexpected error in markApprovalAsRead:', err);
+    }
+  };
+
+  useEffect(() => {
+    // Initial load of notifications and count
+    fetchApprovalNotifications();
+    fetchApprovalCount();
+
+    // Poll every 30 seconds
+    const interval = setInterval(() => {
+      fetchApprovalNotifications();
+      fetchApprovalCount();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+
+
+  const [showNotifications, setShowNotifications] = useState(false);
   const [loadingView, setLoadingView] = useState(null);
   const [notifications, setNotifications] = useState([]);
-  const [approvalNotifications, setApprovalNotifications] = useState([]);
   const [showVisaModal, setShowVisaModal] = useState(false);
 
-  const [showApprovalIcon, setShowApprovalIcon] = useState(false);
   const [showNotificationIcon, setShowNotificationIcon] = useState(false);
   const [highlightIds, setHighlightIds] = useState(new Set());
   const [selectedNotification, setSelectedNotification] = useState(null);
@@ -94,99 +218,69 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
     }
   }, [loggedInUser]);
 
-  const fetchNotifications = async () => {
-    try {
-      const tables = ["cover_pwp", "regular_pwp"];
-      const allNotifications = [];
+const fetchNotifications = async () => {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+    const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+    const role = currentUser?.role || "";
 
-      for (const table of tables) {
-        const { data, error } = await supabase.from(table).select('*');
-        if (error) {
-          console.error(`Error fetching from ${table}:`, error.message);
-          continue;
-        }
-        if (data?.length) {
-          data.forEach(item => {
-            // Exclude notifications where CreatedForm matches current user's name (names)
-            if (item.CreatedForm !== names) {
-              allNotifications.push({
-                ...item,
-                _path: table,
-                _key: item.id, // Adjust if your PK is different
-              });
-            }
-          });
-        }
+    const tables = ["cover_pwp", "regular_pwp"];
+    const allNotifications = [];
+
+    for (const table of tables) {
+      const { data, error } = await supabase.from(table).select('*');
+
+      if (error) {
+        console.error(`Error fetching from ${table}:`, error.message);
+        continue;
       }
 
-      setNotifications(allNotifications);
-    } catch (err) {
-      console.error('Unexpected error fetching notifications:', err);
+      console.log(`Fetched ${data?.length || 0} items from ${table}`);
+
+      if (data?.length) {
+        data.forEach(item => {
+          const createdFormName = (item.createForm || "").toLowerCase().trim();
+          const isCreatedByUser = createdFormName === currentUserName;
+
+          // Only push if admin or creator AND notification is unread (false)
+          if ((role === "admin" || isCreatedByUser) && item.notification === false) {
+            allNotifications.push({
+              ...item,
+              _path: table,
+              _key: item.id,
+            });
+          }
+        });
+      }
     }
-  };
+
+    console.log("Total unread notifications found:", allNotifications.length);
+
+    setNotifications(allNotifications);
+    setUnreadCount(allNotifications.length); // unread count
+
+  } catch (err) {
+    console.error('Unexpected error fetching notifications:', err);
+  }
+};
+
+
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+
 
   const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
   const userId = currentUser?.UserID || "unknown";
   const names = currentUser?.name || "";
 
-  const [unreadCount, setUnreadCount] = useState(0);
 
-  const fetchApprovalNotifications = async () => {
-    console.log("User name:", names);  // <--- console log here
 
-    try {
-      const { data, error } = await supabase
-        .from("Approval_History")
-        .select("*")
-        .neq("ApproverId", userId)
-        .eq("CreatedForm", names)
-        .order("DateResponded", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching Approval_History:", error.message);
-        return;
-      }
 
-      const list = data.map((item) => ({ ...item, _key: item.id }));
-      setApprovalNotifications(list);
-
-      // Count all notifications where Notification is false
-      const unreadCount = data.filter((item) => item.Notification === false).length;
-      setUnreadCount(unreadCount);
-    } catch (err) {
-      console.error("Unexpected error fetching Approval_History:", err);
-    }
-  };
-
-  const markApprovalAsRead = async (approvalId) => {
-    if (!approvalId) return;
-
-    try {
-      const { error } = await supabase
-        .from('Approval_History')
-        .update({ Notication: true })
-        .eq('id', approvalId);
-
-      if (error) {
-        console.error('Error marking approval as read:', error.message);
-        return;
-      }
-
-      await fetchApprovalNotifications();
-    } catch (err) {
-      console.error('Unexpected error in markApprovalAsRead:', err);
-    }
-  };
-
-  useEffect(() => {
-    fetchApprovalNotifications();
-
-    const interval = setInterval(() => {
-      fetchApprovalNotifications();
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, []);
 
 
 
@@ -196,28 +290,33 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
       const updatesByTable = {};
 
       notifications.forEach(n => {
-        if (!n.notification) {
+        // ✅ Only mark those that are currently "read" (true)
+        if (n.notification === true) {
           if (!updatesByTable[n._path]) updatesByTable[n._path] = [];
           updatesByTable[n._path].push(n._key);
         }
       });
 
       for (const [table, ids] of Object.entries(updatesByTable)) {
-        const { error } = await supabase
-          .from(table)
-          .update({ notification: true })
-          .in('id', ids);
+        if (ids.length > 0) {
+          const { error } = await supabase
+            .from(table)
+            .update({ notification: false }) // ✅ Mark as UNREAD
+            .in('id', ids);
 
-        if (error) {
-          console.error(`Error updating notifications in ${table}:`, error.message);
+          if (error) {
+            console.error(`Error updating notifications in ${table}:`, error.message);
+          }
         }
       }
 
-      await fetchNotifications();
+      await fetchNotifications(); // 🔁 Refresh the notifications list
     } catch (err) {
-      console.error('Unexpected error marking all notifications as read:', err);
+      console.error('Unexpected error marking notifications as unread:', err);
     }
   };
+
+
 
 
 
@@ -260,20 +359,8 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
   }, []);
 
   // Highlight unread notifications briefly every 10 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const unreadIds = notifications.filter(n => !n.Notification).map(n => n._key);
-      if (unreadIds.length === 0) return;
-
-      setHighlightIds(new Set(unreadIds));
-      setTimeout(() => setHighlightIds(new Set()), 10000);
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [notifications]);
 
   // Approval unread count for UI badges
-  const approvalUnreadCount = approvalNotifications.filter(n => !n.Notification).length;
 
   // UI button definitions etc.
   const buttons = [
@@ -328,10 +415,37 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
     }, 1000);
   };
 
-  const handleNotificationClick = (notification) => {
-    setSelectedNotification(notification);
-    setShowModal(true);
+  const handleNotificationClick = async (notificationItem) => {
+    console.log("Clicked notification:", notificationItem);
+
+    // Skip if already read
+    if (notificationItem.notification === true) {
+      setSelectedNotification(notificationItem);
+      setShowModal(true);
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from(notificationItem._path)
+        .update({ notification: true })  // Mark as read
+        .eq("id", notificationItem._key);
+
+      if (error) {
+        console.error("Error updating notification:", error.message);
+        return;
+      }
+
+      // Refresh list and show modal with the selected notification
+      await fetchNotifications();
+      setSelectedNotification(notificationItem);
+      setShowModal(true);
+
+    } catch (err) {
+      console.error("Unexpected error updating notification:", err);
+    }
   };
+
 
   return (
     <header
@@ -413,13 +527,12 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
         {/* Approval Notifications Dropdown */}
         {showApprovalNotifications && (
           <div
-            ref={approvalNotificationsRef} // Attach the ref here
+            ref={approvalNotificationsRef}
             className="approval-dropdown"
-
             style={{
               position: "absolute",
               top: 40,
-              right: 50,  // Adjust this to avoid overlap with bell icon
+              right: 50,
               width: 320,
               maxHeight: 400,
               overflowY: "auto",
@@ -434,7 +547,7 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
               style={{
                 margin: 0,
                 padding: "12px 16px",
-                background: "#28a745", // green header for approval
+                background: "#28a745",
                 color: "#fff",
                 borderTopLeftRadius: 8,
                 borderTopRightRadius: 8,
@@ -448,12 +561,16 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
             )}
             {approvalNotifications
               .slice()
-              .sort((a, b) => new Date(b.DateResponded).getTime() - new Date(a.DateResponded).getTime())
-              .map((n, i) => {
-                const isUnread = !n.Notification; // We mark read/unread by Notification boolean
+              .sort(
+                (a, b) =>
+                  new Date(b.DateResponded).getTime() -
+                  new Date(a.DateResponded).getTime()
+              )
+              .map((n) => {
+                const isUnread = n.Notication === false; // unread if Notication === false
 
                 // Determine background color based on Response value
-                let responseBgColor = "transparent"; // default transparent
+                let responseBgColor = "transparent";
                 if (n.Response === "Sent back for revision") responseBgColor = "orange";
                 else if (n.Response === "Declined") responseBgColor = "red";
                 else if (n.Response === "Approved") responseBgColor = "green";
@@ -467,12 +584,11 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
                       flexDirection: "column",
                       padding: "12px 16px",
                       borderBottom: "1px solid #eee",
-                      backgroundColor: "#e6f7ff", // unread highlight
+                      backgroundColor: isUnread ? "#e6f7ff" : "#d3d3d3", // light blue if unread, gray if read
                       cursor: "pointer",
                       transition: "background-color 0.3s",
                     }}
                   >
-
                     <span style={{ fontWeight: "bold" }}>
                       M-ID: {n.PwpCode || n.regularpwpcode}
                     </span>
@@ -485,54 +601,62 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
                         borderRadius: "4px",
                         display: "inline-block",
                         maxWidth: "fit-content",
-                        marginTop: "4px"
+                        marginTop: "4px",
                       }}
                     >
                       Response: {n.Response || "Pending"}
                     </span>
                     <span style={{ fontSize: 12, color: "#555", marginTop: "4px" }}>
-                      Date: {new Date(n.DateResponded).toLocaleString()}
+                      Date: {new Date(n.DateResponded).toLocaleDateString()}
                     </span>
                   </div>
                 );
               })}
-
           </div>
         )}
 
 
+
         {/* Notification Bell Icon — RIGHT */}
-    {showNotificationIcon && (
-  <div
-    onClick={async () => {
-      setShowNotifications(!showNotifications);
-      if (!showNotifications) {
-        await markAllRead();
-      }
-    }}
-    className="notification-bell"
-    style={{ cursor: "pointer", position: "relative", color: "#fff", fontSize: 22 }}
-  >
-    <img src={FaBells} alt="Notifications" style={{ width: 30, height: 30 }} />
-    {unreadCount > 0 && (
-      <span
-        style={{
-          position: "absolute",
-          top: "-6px",
-          right: "-8px",
-          backgroundColor: "red",
-          color: "#fff",
-          borderRadius: "50%",
-          fontSize: "10px",
-          padding: "2px 5px",
-          fontWeight: "bold",
-        }}
-      >
-        {unreadCount}
-      </span>
-    )}
-  </div>
-)}
+        {showNotificationIcon && (
+          <div
+            onClick={async () => {
+              setShowNotifications(!showNotifications);
+
+              if (!showNotifications) {
+                await markAllRead(); // ✅ This now marks all as UNREAD
+              }
+            }}
+            className="notification-bell"
+            style={{
+              cursor: "pointer",
+              position: "relative",
+              color: "#fff",
+              fontSize: 22
+            }}
+          >
+            <img src={FaBells} alt="Notifications" style={{ width: 30, height: 30 }} />
+            {unreadCount > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: "-6px",
+                  right: "-8px",
+                  backgroundColor: "red",
+                  color: "#fff",
+                  borderRadius: "50%",
+                  fontSize: "10px",
+                  padding: "2px 5px",
+                  fontWeight: "bold",
+                }}
+              >
+                {unreadCount}
+              </span>
+            )}
+          </div>
+        )}
+
+
 
 
 
@@ -577,15 +701,14 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
               .slice()
               .sort(
                 (a, b) =>
-                  new Date(b.DateCreated).getTime() -
-                  new Date(a.DateCreated).getTime()
+                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
               )
               .map((n, i) => {
                 const isRead = !!n.notification;
                 return (
                   <div
                     key={i}
-                    onClick={() => handleNotificationClick(n)}
+                    onClick={() => handleNotificationClick(n)}  // just pass n here
                     style={{
                       display: "flex",
                       flexDirection: "column",
@@ -600,14 +723,15 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
                       {n.regularpwpcode || n.cover_code} – {n.pwp_type || n.pwptype}
                     </span>
                     <span style={{ fontSize: 12, color: "#555" }}>
-                      {n.createForm} •{" "}
-                      {new Date(n.created_at).toLocaleString()}
+                      {n.createForm} • {new Date(n.created_at).toLocaleString()}
                     </span>
                   </div>
                 );
               })}
+
           </div>
         )}
+
 
         {showModal && selectedNotification && (
           <div

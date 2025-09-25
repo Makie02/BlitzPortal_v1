@@ -268,8 +268,13 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
 
                         <button type="submit" className="login-button fade-slide delay-2">Login</button>
                     </form>
+              
                 </div>
+                  <footer className="login-footer">
+                        Version 1.0
+                    </footer>
             </div>
+                
         </div>
     );
 }

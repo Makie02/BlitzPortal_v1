@@ -3,11 +3,12 @@ import defaultCover from '../Assets/bg.jpg';
 import { supabase } from '../supabaseClient';
 
 const TABS = [
-    { key: 'assignedPlan', label: 'Assigned Plan' },
-    { key: 'brands', label: 'Brands' },
-    { key: 'salesDivision', label: 'Sales Division' },
+    { key: 'category', label: 'Category' }, // changed from 'brands'
     { key: 'approvers', label: 'Approvers' },
+    { key: 'salesDivision', label: 'Sales Division' },
+
 ];
+
 
 const renderValue = (value) => {
     if (!value || (Array.isArray(value) && value.length === 0)) {
@@ -54,11 +55,91 @@ const renderValue = (value) => {
 
 
 const UserPage = ({ user, setCurrentView }) => {
+
+    const [categoryData, setCategoryData] = useState([]);
+    useEffect(() => {
+        const fetchCategoryData = async () => {
+            try {
+                const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+                const currentUserName = (currentUser?.name || "").toLowerCase().trim();
+
+                if (!currentUserName) {
+                    console.warn("No logged in user found");
+                    setCategoryData([]);
+                    return;
+                }
+
+                const { data, error } = await supabase
+                    .from('user_distributors')
+                    .select('*')
+                    .ilike('username', currentUserName); // case-insensitive match
+
+                if (error) {
+                    console.error('Error fetching category data:', error.message);
+                    setCategoryData([]);
+                } else {
+                    setCategoryData(data || []);
+                }
+            } catch (err) {
+                console.error('Unexpected error fetching category data:', err);
+                setCategoryData([]);
+            }
+        };
+
+        fetchCategoryData();
+    }, []);
+
     const [profile, setProfile] = useState(null);
     const [coverUrl, setCoverUrl] = useState(null);
     const [avatarUrl, setAvatarUrl] = useState(null);
-    const [activeTab, setActiveTab] = useState('assignedPlan');
+    const [activeTab, setActiveTab] = useState('category');
     const [animating, setAnimating] = useState(false);
+    const [singleApprovalApprovers, setSingleApprovalApprovers] = useState([]);
+    const [loadingSingleApprovals, setLoadingSingleApprovals] = useState(false);
+    const [errorSingleApprovals, setErrorSingleApprovals] = useState(null);
+
+
+    const fetchSingleApprovals = async (currentUserName) => {
+        if (!currentUserName) return;
+
+        setLoadingSingleApprovals(true);
+        setErrorSingleApprovals(null);
+
+        try {
+            const { data, error } = await supabase
+                .from('Single_Approval')
+                .select('*')
+                .ilike('username', currentUserName)
+                .eq('allowed_to_approve', true);
+
+            if (error) throw error;
+
+            setSingleApprovalApprovers(data || []);
+        } catch (err) {
+            console.error("Error fetching Single_Approval data:", err.message);
+            setErrorSingleApprovals(err.message);
+            setSingleApprovalApprovers([]);
+        } finally {
+            setLoadingSingleApprovals(false);
+        }
+    };
+    useEffect(() => {
+        const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+        if (activeTab === "approvers" && currentUser?.UserID) {
+            fetchUserApprovers(currentUser.UserID);
+        }
+    }, [activeTab]);
+    useEffect(() => {
+        const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+        const currentUserName = (currentUser?.name || "").toLowerCase().trim();
+
+        if (activeTab === "approvers" && currentUser?.UserID && currentUserName) {
+            fetchUserApprovers(currentUser.UserID);
+            fetchSingleApprovals(currentUserName);
+        }
+    }, [activeTab]);
+
+
     const [tabData, setTabData] = useState({
         assignedPlan: null,
         brands: [],
@@ -162,6 +243,61 @@ const UserPage = ({ user, setCurrentView }) => {
             fetchUserProfile();
         }
     }, [user]);
+    const renderApprovers = () => {
+        if (loadingApprovers || loadingSingleApprovals) return <p>Loading approvers...</p>;
+
+        if (errorApprovers) return <p style={{ color: 'red' }}>Error: {errorApprovers}</p>;
+        if (errorSingleApprovals) return <p style={{ color: 'red' }}>Error: {errorSingleApprovals}</p>;
+
+        // Combine both approvers arrays with mapped data to unify the display
+        const combinedApprovers = [
+            ...userApprovers.map(approver => ({
+                id: approver.id,
+                name: approver.Approver_Name || 'N/A',
+                type: approver.Type || 'User Approver',
+            })),
+            ...singleApprovalApprovers.map(sa => ({
+                id: `single_${sa.id}`,  // unique key prefix to avoid clashes
+                name: sa.username || 'N/A',
+                type: 'Single Approval',
+            }))
+        ];
+
+        if (combinedApprovers.length === 0) {
+            return <p><i>No approvers assigned.</i></p>;
+        }
+
+        return (
+            <div
+                style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                    gap: '16px',
+                    marginTop: '10px',
+                }}
+            >
+                {combinedApprovers.map((approver) => (
+                    <div
+                        key={approver.id}
+                        style={{
+                            border: '1px solid #ddd',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            backgroundColor: '#f9f9f9',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                        }}
+                    >
+                        <p style={{ margin: '4px 0' }}>
+                            <strong>Name:</strong> {approver.name}
+                        </p>
+                        <p style={{ margin: '4px 0' }}>
+                            <strong>Type:</strong> {approver.type}
+                        </p>
+                    </div>
+                ))}
+            </div>
+        );
+    };
 
 
     const [userApprovers, setUserApprovers] = useState([]);
@@ -317,21 +453,21 @@ const UserPage = ({ user, setCurrentView }) => {
     };
 
     // Tab content renderers
-    const renderBrands = (brands) => {
-        if (!brands || brands.length === 0) return <p><i>No brands assigned.</i></p>;
+    const renderCategory = (categories) => {
+        if (!categories || categories.length === 0) return <p><i>No categories assigned.</i></p>;
 
         return (
             <div
                 style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(8, 1fr)",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))",
                     gap: "12px",
                     padding: "10px 0",
                 }}
             >
-                {brands.map((brand, idx) => (
+                {categories.map((cat, idx) => (
                     <div
-                        key={idx}
+                        key={cat.id || idx}
                         style={{
                             border: "1px solid #ccc",
                             padding: "8px",
@@ -340,7 +476,8 @@ const UserPage = ({ user, setCurrentView }) => {
                             fontSize: "14px",
                         }}
                     >
-                        <strong>Brand:</strong> {brand.Brand || "Unnamed Brand"}
+                        <strong>Distributor Code:</strong> {cat.code || "N/A"}<br />
+                        <strong>Distributor Name:</strong> {cat.distributor_name || "N/A"}
                     </div>
                 ))}
             </div>
@@ -349,46 +486,47 @@ const UserPage = ({ user, setCurrentView }) => {
 
 
 
+
     const renderAssignedPlan = (assignedPlan) => {
         if (!assignedPlan) return <p><i>No assigned plan.</i></p>;
         return renderValue(assignedPlan);
     };
-  const renderApprovers = () => {
-    if (loadingApprovers) return <p>Loading approvers...</p>;
-    if (errorApprovers) return <p style={{ color: 'red' }}>Error: {errorApprovers}</p>;
-    if (!userApprovers || userApprovers.length === 0) return <p><i>No approvers assigned.</i></p>;
+    const renderApproverss = () => {
+        if (loadingApprovers) return <p>Loading approvers...</p>;
+        if (errorApprovers) return <p style={{ color: 'red' }}>Error: {errorApprovers}</p>;
+        if (!userApprovers || userApprovers.length === 0) return <p><i>No approvers assigned.</i></p>;
 
-    return (
-        <div
-            style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                gap: '16px',
-                marginTop: '10px',
-            }}
-        >
-            {userApprovers.map((approver, idx) => (
-                <div
-                    key={approver.id || idx}
-                    style={{
-                        border: '1px solid #ddd',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        backgroundColor: '#f9f9f9',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                    }}
-                >
-                    <p style={{ margin: '4px 0' }}>
-                        <strong>Name:</strong> {approver.Approver_Name || 'N/A'}
-                    </p>
-                    <p style={{ margin: '4px 0' }}>
-                        <strong>Type:</strong> {approver.Type || 'N/A'}
-                    </p>
-                </div>
-            ))}
-        </div>
-    );
-};
+        return (
+            <div
+                style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                    gap: '16px',
+                    marginTop: '10px',
+                }}
+            >
+                {userApprovers.map((approver, idx) => (
+                    <div
+                        key={approver.id || idx}
+                        style={{
+                            border: '1px solid #ddd',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            backgroundColor: '#f9f9f9',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                        }}
+                    >
+                        <p style={{ margin: '4px 0' }}>
+                            <strong>Name:</strong> {approver.Approver_Name || 'N/A'}
+                        </p>
+                        <p style={{ margin: '4px 0' }}>
+                            <strong>Type:</strong> {approver.Type || 'N/A'}
+                        </p>
+                    </div>
+                ))}
+            </div>
+        );
+    };
 
 
 
@@ -512,9 +650,33 @@ const UserPage = ({ user, setCurrentView }) => {
                     <h1 style={styles.name}>{profile.name || 'No Name'}</h1>
                     <h3 style={styles.username}>@{profile.username || 'username'}</h3>
                     <p style={styles.bio}>{profile.bio || 'This user hasn’t written a bio yet.'}</p>
-                    <button onClick={() => setCurrentView("SettingProfileUpdate")}>
+                    <button
+                        onClick={() => setCurrentView("SettingProfileUpdate")}
+                        style={{
+                            backgroundColor: '#1877f2',       // Facebook blue vibe
+                            color: 'white',
+                            padding: '10px 20px',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            fontSize: '16px',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 8px rgba(24, 119, 242, 0.3)',
+                            transition: 'background-color 0.3s ease, box-shadow 0.3s ease',
+                            userSelect: 'none',
+                        }}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.backgroundColor = '#145dbf';
+                            e.currentTarget.style.boxShadow = '0 6px 12px rgba(20, 93, 191, 0.4)';
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.backgroundColor = '#1877f2';
+                            e.currentTarget.style.boxShadow = '0 4px 8px rgba(24, 119, 242, 0.3)';
+                        }}
+                    >
                         Edit Profile
                     </button>
+
                 </div>
 
                 {/* Tabs */}
@@ -544,12 +706,11 @@ const UserPage = ({ user, setCurrentView }) => {
                     }}
                     key={activeTab}
                 >
-                    {activeTab === 'brands' && renderBrands(userBrands)}
-                    {activeTab === 'assignedPlan' && renderAssignedPlan(tabData.assignedPlan)}
+                    {activeTab === 'category' && renderCategory(categoryData)}
                     {activeTab === 'approvers' && renderApprovers()}
-
                     {activeTab === 'salesDivision' && renderValue(salesDivision)}
                 </div>
+
             </div>
 
             {/* CSS for zoom animation */}

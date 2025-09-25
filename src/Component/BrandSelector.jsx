@@ -1,19 +1,21 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { FaEdit, FaTrash } from "react-icons/fa";
 import { supabase } from "../supabaseClient";
 import Swal from "sweetalert2";
-import "./BrandSelector.css"; // Keep your styles
+import "./BrandSelector.css";
+import * as XLSX from "xlsx";
 
 function CategorySelector() {
   const [selectedDistributor, setSelectedDistributor] = useState(null);
   const [selectedDistributorId, setSelectedDistributorId] = useState(null);
   const [categoryDetails, setCategoryDetails] = useState([]);
   const [showFormModal, setShowFormModal] = useState(false);
-  const [formData, setFormData] = useState({ name: "", description: "", id: null });
+  const [formData, setFormData] = useState({ code: "", name: "", description: "" });
   const [distributorNames, setDistributorNames] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchCategory, setSearchCategory] = useState("");
+  const fileInputRef = useRef(null);
 
-  // Load distributor names and IDs from Supabase
   useEffect(() => {
     let isMounted = true;
 
@@ -38,12 +40,14 @@ function CategorySelector() {
     };
   }, []);
 
-  // Filter distributors based on search term
   const filteredDistributors = distributorNames.filter(({ name }) =>
     name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // When clicking a distributor, set name + id and fetch categories by id
+  const filteredCategories = categoryDetails.filter(({ name }) =>
+    name.toLowerCase().includes(searchCategory.toLowerCase())
+  );
+
   const handleClick = async (distributor) => {
     setSelectedDistributor(distributor.name);
     setSelectedDistributorId(distributor.id);
@@ -51,7 +55,7 @@ function CategorySelector() {
 
     const { data, error } = await supabase
       .from("categorydetails")
-      .select("id, name, description")
+      .select("code, name, description")
       .eq("principal_id", distributor.id);
 
     if (error) {
@@ -59,26 +63,26 @@ function CategorySelector() {
       setCategoryDetails([]);
     } else {
       const formatted = data.map((item) => ({
-        id: item.id.toString(),
+        code: item.code,
         name: item.name,
         description: item.description || "",
       }));
+
       setCategoryDetails(formatted);
     }
   };
 
-  // Fetch categories (helper for after save)
   const fetchCategoryDetailsFromSupabase = async (distributorId) => {
     try {
       const { data, error } = await supabase
         .from("categorydetails")
-        .select("id, name, description")
+        .select("code, name, description")
         .eq("principal_id", distributorId);
 
       if (error) throw error;
 
       return data.map((item) => ({
-        id: item.id.toString(),
+        code: item.code,
         name: item.name,
         description: item.description,
       }));
@@ -88,105 +92,99 @@ function CategorySelector() {
     }
   };
 
-  // Handle form input change
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Save category (add or update)
-const handleSave = async (e) => {
-  e.preventDefault();
+  const handleSave = async (e) => {
+    e.preventDefault();
 
-  if (!formData.name.trim()) {
-    Swal.fire({
-      icon: "warning",
-      title: "Validation Error",
-      text: "Name is required",
-    });
-    return;
-  }
-
-  if (!selectedDistributorId) {
-    Swal.fire({
-      icon: "warning",
-      title: "No Distributor Selected",
-      text: "Please select a distributor first.",
-    });
-    return;
-  }
-
-  try {
-    if (formData.id) {
-      // === UPDATE ===
-      const { error } = await supabase
-        .from("categorydetails")
-        .update({
-          name: formData.name,
-          description: formData.description || null,
-        })
-        .eq("id", formData.id);
-
-      if (error) throw error;
-    } else {
-      // === INSERT ===
-      // 🔢 Generate smart sequential code
-      const { data: existingCodes, error: fetchError } = await supabase
-        .from("categorydetails")
-        .select("code")
-        .like("code", "A%")
-        .order("code", { ascending: false })
-        .limit(1);
-
-      if (fetchError) throw fetchError;
-
-      let nextCode = "A00001";
-      if (existingCodes.length > 0) {
-        const lastCode = existingCodes[0].code; // e.g., A00057
-        const numericPart = parseInt(lastCode.slice(1)) + 1; // 58
-        nextCode = `A${numericPart.toString().padStart(5, "0")}`; // A00058
-      }
-
-      const { error } = await supabase
-        .from("categorydetails")
-        .insert({
-          code: nextCode,
-          name: formData.name,
-          description: formData.description || null,
-          principal_id: selectedDistributorId,
-          parentname: selectedDistributor,
-        });
-
-      if (error) throw error;
+    if (!formData.name.trim()) {
+      Swal.fire({
+        icon: "warning",
+        title: "Validation Error",
+        text: "Name is required",
+      });
+      return;
     }
 
-    // Refresh UI
-    setShowFormModal(false);
-    setFormData({ id: null, name: "", description: "" });
+    if (!selectedDistributorId) {
+      Swal.fire({
+        icon: "warning",
+        title: "No Distributor Selected",
+        text: "Please select a distributor first.",
+      });
+      return;
+    }
 
-    const newDetails = await fetchCategoryDetailsFromSupabase(selectedDistributorId);
-    setCategoryDetails(newDetails);
+    try {
+      if (formData.code) {
+        // UPDATE
+        const { error } = await supabase
+          .from("categorydetails")
+          .update({
+            name: formData.name,
+            description: formData.description || null,
+          })
+          .eq("code", formData.code);
 
-    Swal.fire({
-      icon: "success",
-      title: "Success",
-      text: "Category saved successfully!",
-      timer: 1500,
-      showConfirmButton: false,
-    });
-  } catch (error) {
-    console.error("Save failed:", error);
-    Swal.fire({
-      icon: "error",
-      title: "Save Failed",
-      text: error.message || "Unknown error",
-    });
-  }
-};
+        if (error) throw error;
+      } else {
+        // INSERT
+        const { data: existingCodes, error: fetchError } = await supabase
+          .from("categorydetails")
+          .select("code")
+          .like("code", "A%")
+          .order("code", { ascending: false })
+          .limit(1);
 
+        if (fetchError) throw fetchError;
 
-  // Delete category with Swal confirmation
-  const handleDelete = async (id) => {
+        let nextCode = "A00001";
+        if (existingCodes.length > 0) {
+          const lastCode = existingCodes[0].code;
+          const numericPart = parseInt(lastCode.slice(1)) + 1;
+          nextCode = `A${numericPart.toString().padStart(5, "0")}`;
+        }
+
+        const { error } = await supabase
+          .from("categorydetails")
+          .insert({
+            code: nextCode,
+            name: formData.name,
+            description: formData.description || null,
+            principal_id: selectedDistributorId,
+            parentname: selectedDistributor,
+          });
+
+        if (error) throw error;
+      }
+
+      setShowFormModal(false);
+      setFormData({ code: "", name: "", description: "" });
+
+      const newDetails = await fetchCategoryDetailsFromSupabase(selectedDistributorId);
+      setCategoryDetails(newDetails);
+
+      Swal.fire({
+        icon: "success",
+        title: "Success",
+        text: "Category saved successfully!",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      console.error("Save failed:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Save Failed",
+        text: error.message || "Unknown error",
+      });
+    }
+  };
+
+  const handleDelete = async (code) => {
     const result = await Swal.fire({
       title: "Are you sure?",
       text: "Do you really want to delete this category?",
@@ -202,11 +200,11 @@ const handleSave = async (e) => {
         const { error } = await supabase
           .from("categorydetails")
           .delete()
-          .eq("id", id);
+          .eq("code", code);
 
         if (error) throw error;
 
-        setCategoryDetails((prev) => prev.filter((item) => item.id !== id));
+        setCategoryDetails((prev) => prev.filter((item) => item.code !== code));
 
         Swal.fire({
           icon: "success",
@@ -226,17 +224,15 @@ const handleSave = async (e) => {
     }
   };
 
-  // Open modal with existing data or empty for add
   const openFormModal = (existing = null) => {
     if (existing) {
       setFormData({ ...existing });
     } else {
-      setFormData({ name: "", description: "", id: null });
+      setFormData({ code: "", name: "", description: "" });
     }
     setShowFormModal(true);
   };
 
-  // Close modal and clear selection
   const closeModal = () => {
     setSelectedDistributor(null);
     setSelectedDistributorId(null);
@@ -244,12 +240,128 @@ const handleSave = async (e) => {
     setCategoryDetails([]);
   };
 
+  // --- EXPORT function: download JSON of categories ---
+  // --- EXPORT to Excel ---
+  const handleExport = () => {
+    if (!selectedDistributorId) {
+      Swal.fire("No distributor selected", "Please select a distributor to export data.", "warning");
+      return;
+    }
+    if (categoryDetails.length === 0) {
+      Swal.fire("No data", "There are no categories to export.", "info");
+      return;
+    }
+
+    // Prepare data for sheet - remove codes if you want
+    const exportData = categoryDetails.map(({ code, name, description }) => ({
+      Code: code,
+      Name: name,
+      Description: description || "",
+    }));
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+    // Create workbook and append worksheet
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Categories");
+
+    // Generate Excel file buffer
+    const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+
+    // Create blob and download
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${selectedDistributor}_categories.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // --- IMPORT from Excel ---
+const handleImportFile = async (event) => {
+  const file = event.target.files[0];
+  event.target.value = ""; // reset input
+
+  if (!file) return;
+
+  try {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+
+    // Assuming first sheet contains categories
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+
+    // Convert to JSON
+    const importedCategories = XLSX.utils.sheet_to_json(worksheet);
+
+    if (!Array.isArray(importedCategories)) {
+      throw new Error("Invalid file format");
+    }
+
+    // Validate data - ensure "Name" exists and is string
+    for (const item of importedCategories) {
+      if (!item.Name || typeof item.Name !== "string") {
+        throw new Error("Each category must have a valid 'Name' column");
+      }
+    }
+
+    // Automatically proceed with import (no confirmation dialog)
+
+    // Delete existing categories for this distributor
+    const { error: deleteError } = await supabase
+      .from("categorydetails")
+      .delete()
+      .eq("principal_id", selectedDistributorId);
+
+    if (deleteError) throw deleteError;
+
+    // Insert new categories with new codes (A00001, A00002, ...)
+    for (let i = 0; i < importedCategories.length; i++) {
+      const code = `A${(i + 1).toString().padStart(5, "0")}`;
+      const { error: insertError } = await supabase
+        .from("categorydetails")
+        .insert({
+          code,
+          name: importedCategories[i].Name,
+          description: importedCategories[i].Description || null,
+          principal_id: selectedDistributorId,
+          parentname: selectedDistributor,
+        });
+
+      if (insertError) throw insertError;
+    }
+
+    const newDetails = await fetchCategoryDetailsFromSupabase(selectedDistributorId);
+    setCategoryDetails(newDetails);
+
+    Swal.fire({
+      icon: "success",
+      title: "Import successful",
+      text: `Imported ${importedCategories.length} categories.`,
+      timer: 1500,
+      showConfirmButton: false,
+    });
+  } catch (error) {
+    console.error("Import failed:", error);
+    Swal.fire("Import Failed", error.message || "Invalid file format or error during import", "error");
+  }
+};
+
   return (
     <div className="brand-selector-wrapper">
+
+
+
       <div className="brand-grid-container">
+       
         <h1 className="brand-header">Accounts</h1>
 
-        {/* Search bar */}
         <input
           type="text"
           placeholder="Search distributors..."
@@ -285,6 +397,26 @@ const handleSave = async (e) => {
 
       {selectedDistributor ? (
         <div className="brand-modal rotate-in">
+           <div style={{ marginBottom: 15, display: "flex", gap: 10 }}>
+          <button className="btn-export" onClick={handleExport} disabled={!selectedDistributorId}>
+            Export Categories
+          </button>
+          <button
+            className="btn-import"
+            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+            disabled={!selectedDistributorId}
+          >
+            Import Categories
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"  // Excel files, update accept to match XLSX format
+            style={{ display: "none" }}
+            onChange={handleImportFile}
+          />
+
+        </div>
           <button className="close-btn" onClick={closeModal}>
             &times;
           </button>
@@ -293,103 +425,70 @@ const handleSave = async (e) => {
           <button className="btn-add-new" onClick={() => openFormModal()}>
             Add Category
           </button>
-
-          <div className="brand-table-wrapper">
-            <table>
+          <input
+            type="text"
+            placeholder="Search categories..."
+            value={searchCategory}
+            onChange={(e) => setSearchCategory(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px",
+              fontSize: "14px",
+              borderRadius: "6px",
+              border: "1px solid #ccc",
+              marginTop: 10,
+            }}
+          />
+          <div style={tableWrapperStyle}>
+            <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Description</th>
-                  <th>Actions</th>
+                  <th style={thStyle}>Name</th>
+                  <th style={thStyle}>Description</th>
+                  <th style={thStyle}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {categoryDetails.length === 0 ? (
+                {filteredCategories.length === 0 ? (
                   <tr>
-                    <td colSpan={3}>No categories found</td>
+                    <td style={{ ...tdStyle, textAlign: "center" }} colSpan={3}>
+                      No categories found
+                    </td>
                   </tr>
                 ) : (
-                  categoryDetails.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.name}</td>
-                      <td>{item.description}</td>
-                      <td>
+                  filteredCategories.map((item) => (
+                    <tr
+                      key={item.code}
+                      style={{ cursor: "default" }}
+                      onMouseEnter={(e) => {
+                        Object.assign(e.currentTarget.style, rowHoverStyle);
+                      }}
+                      onMouseLeave={(e) => {
+                        Object.assign(e.currentTarget.style, {
+                          backgroundColor: tdStyle.backgroundColor,
+                          boxShadow: tdStyle.boxShadow,
+                        });
+                      }}
+                    >
+                      <td style={tdStyle}>{item.name}</td>
+                      <td style={tdStyle}>{item.description}</td>
+                      <td style={tdStyle}>
                         <button
                           onClick={() => openFormModal(item)}
                           aria-label={`Edit ${item.name}`}
                           title="Edit"
-                          style={{
-                            border: "none",
-                            background: "none",
-                            cursor: "pointer",
-                            padding: "8px",
-                            color: "#d32f2f",
-                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                            borderRadius: "8px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            marginLeft: "8px",
-                            outline: "none",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                            e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                          }}
-                          onMouseDown={(e) => {
-                            e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                          }}
-                          onMouseUp={(e) => {
-                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
-                          }}
+                          style={editButtonStyle}
                         >
-                          <FaEdit style={{ color: "orange", fontSize: "20px" }} />
+                          <FaEdit style={{ fontSize: 20 }} />
                         </button>
 
                         <button
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() => handleDelete(item.code)}
                           aria-label={`Delete ${item.name}`}
                           title="Delete"
-                          style={{
-                            border: "none",
-                            background: "none",
-                            cursor: "pointer",
-                            padding: "8px",
-                            color: "#d32f2f",
-                            transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-                            borderRadius: "8px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            marginLeft: "8px",
-                            outline: "none",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                            e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
-                          }}
-                          onMouseDown={(e) => {
-                            e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
-                          }}
-                          onMouseUp={(e) => {
-                            e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                            e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
-                          }}
+                          style={deleteButtonStyle}
                         >
-                          <FaTrash style={{ color: "red", fontSize: "20px" }} />
+                          <FaTrash style={{ fontSize: 20 }} />
                         </button>
                       </td>
                     </tr>
@@ -402,7 +501,7 @@ const handleSave = async (e) => {
           {showFormModal && (
             <div className="DistriModal-overlay">
               <form className="DistriModal-content" onSubmit={handleSave}>
-                <h3>{formData.id ? "Edit Category" : "Add Category"}</h3>
+                <h3>{formData.code ? "Edit Category" : "Add Category"}</h3>
 
                 <label htmlFor="name">Name</label>
                 <input
@@ -437,7 +536,6 @@ const handleSave = async (e) => {
               </form>
             </div>
           )}
-
         </div>
       ) : (
         <p>Please select a distributor to view categories.</p>
@@ -447,3 +545,71 @@ const handleSave = async (e) => {
 }
 
 export default CategorySelector;
+
+const tableWrapperStyle = {
+  overflowX: "auto",
+  marginTop: 20,
+  borderRadius: 8,
+  boxShadow: "0 8px 20px rgba(0,0,0,0.1)",
+  background: "#fff",
+  padding: 15,
+  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+};
+
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "separate",
+  borderSpacing: "0 12px",
+};
+
+const thStyle = {
+  padding: "12px 15px",
+  textAlign: "left",
+  fontWeight: 500,
+  fontSize: 16,
+  color: "#f7f7f7ff",
+  backgroundColor: "#0087c5ff",
+  borderBottom: "2px solid #ddd",
+};
+
+const tdStyle = {
+  padding: "12px 15px",
+  textAlign: "left",
+  fontWeight: 500,
+  fontSize: 16,
+  color: "#333",
+  backgroundColor: "#fafafa",
+  borderBottom: "1px solid #eee",
+  borderRadius: 0,
+  boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+  transition: "background-color 0.3s ease, box-shadow 0.3s ease",
+};
+
+const rowHoverStyle = {
+  backgroundColor: "#e6f7ff",
+  boxShadow: "0 4px 12px rgba(0, 127, 255, 0.15)",
+};
+
+const buttonBaseStyle = {
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+  padding: "6px 10px",
+  marginLeft: 8,
+  borderRadius: 6,
+  transition: "all 0.25s ease",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  outline: "none",
+};
+
+const editButtonStyle = {
+  ...buttonBaseStyle,
+  color: "orange",
+};
+
+const deleteButtonStyle = {
+  ...buttonBaseStyle,
+  color: "#d32f2f",
+};

@@ -232,15 +232,16 @@ function Category_Listing() {
                         }}
                     />
 
-                    <div className="brand-table-wrapper">
-                        <table>
+                    <div style={tableWrapperStyle}>
+                        <table style={tableStyle}>
                             <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Description</th>
-                                    <th>Actions</th>
+                                    <th style={thStyle}>Name</th>
+                                    <th style={thStyle}>Description</th>
+                                    <th style={thStyle}>Actions</th>
                                 </tr>
                             </thead>
+
                             <tbody>
                                 {filteredListings.length === 0 ? (
                                     <tr>
@@ -248,11 +249,19 @@ function Category_Listing() {
                                     </tr>
                                 ) : (
                                     filteredListings.map((item) => (
-                                        <tr key={item.id}>
-                                            <td>{item.name}</td>
-                                            <td>{item.description}</td>
-                                            <td>
-                                                        <button
+                                        <tr onMouseEnter={(e) => {
+                                            Object.assign(e.currentTarget.style, rowHoverStyle);
+                                        }}
+                                            onMouseLeave={(e) => {
+                                                Object.assign(e.currentTarget.style, {
+                                                    backgroundColor: tdStyle.backgroundColor,
+                                                    boxShadow: tdStyle.boxShadow,
+                                                });
+                                            }} key={item.id}>
+                                            <td style={tdStyle}>{item.name}</td>
+                                            <td style={tdStyle}>{item.description}</td>
+                                            <td style={tdStyle} >
+                                                <button
                                                     onClick={() => openFormModal(item)}
                                                     aria-label={`Edit ${item.name}`}
                                                     title="Edit"
@@ -381,3 +390,70 @@ function Category_Listing() {
 }
 
 export default Category_Listing;
+const tableWrapperStyle = {
+    overflowX: "auto",
+    marginTop: 20,
+    borderRadius: 8,
+    boxShadow: "0 8px 20px rgba(0,0,0,0.1)",
+    background: "#fff",
+    padding: 15,
+    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+};
+
+const tableStyle = {
+    width: "100%",
+    borderCollapse: "separate",
+    borderSpacing: "0 12px",
+};
+
+const thStyle = {
+    padding: "12px 15px",
+    textAlign: "left",
+    fontWeight: 500,
+    fontSize: 16,
+    color: "#f7f7f7ff",
+    backgroundColor: "#0087c5ff",
+    borderBottom: "2px solid #ddd",
+};
+
+const tdStyle = {
+    padding: "12px 15px",
+    textAlign: "left",
+    fontWeight: 500,
+    fontSize: 16,
+    color: "#333",
+    backgroundColor: "#fafafa",
+    borderBottom: "1px solid #eee",
+    borderRadius: 0,
+    boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+    transition: "background-color 0.3s ease, box-shadow 0.3s ease",
+};
+
+const rowHoverStyle = {
+    backgroundColor: "#e6f7ff",
+    boxShadow: "0 4px 12px rgba(0, 127, 255, 0.15)",
+};
+
+const buttonBaseStyle = {
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    padding: "6px 10px",
+    marginLeft: 8,
+    borderRadius: 6,
+    transition: "all 0.25s ease",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    outline: "none",
+};
+
+const editButtonStyle = {
+    ...buttonBaseStyle,
+    color: "orange",
+};
+
+const deleteButtonStyle = {
+    ...buttonBaseStyle,
+    color: "#d32f2f",
+};
