@@ -1,32 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 
-const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
+const RecordViewModal = ({ record, onClose }) => {
   const [fullRecord, setFullRecord] = useState(null);
+  const [budgetHistory, setBudgetHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState("single");
 
-  // ✅ categorydetails map
+  // Category & Distributor Maps
   const [categoryMap, setCategoryMap] = useState({});
-  // ✅ distributors map
   const [distributorMap, setDistributorMap] = useState({});
 
-  useEffect(() => {
-    if (record) {
-      fetchFullRecord();
-      fetchCategoryMap();
-      fetchDistributorMap();
-    }
-  }, [record]);
-
-  // ✅ Fetch categorydetails (with pagination up to 80k+)
+  // Fetch categorydetails (code → name)
   const fetchCategoryMap = async () => {
     try {
       let allData = [];
       let from = 0;
-      const chunkSize = 5000;
+      const chunkSize = 1000; // fetch in chunks
       let moreData = true;
 
       while (moreData) {
@@ -37,13 +28,15 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
 
         if (error) throw error;
 
-        if (data && data.length > 0) {
+        if (data.length > 0) {
           allData = [...allData, ...data];
           from += chunkSize;
         } else {
           moreData = false;
         }
       }
+
+      console.log(`✅ categorydetails raw data: ${allData.length} rows loaded`);
 
       const map = {};
       allData.forEach((item) => {
@@ -56,23 +49,82 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
     }
   };
 
-  // ✅ Fetch distributors (with pagination)
-  const fetchDistributorMap = async () => {
+  // ✅ Helper for account type conversion
+  const convertCodesToNames = (value) => {
+    let codes = [];
+
+    if (Array.isArray(value)) {
+      codes = value;
+    } else if (typeof value === "string") {
+      try {
+        codes = JSON.parse(value); // JSON array
+      } catch {
+        codes = value.split(",").map((c) => c.trim());
+      }
+    } else if (value) {
+      codes = [value];
+    }
+
+    const converted = codes.map((code) => {
+      const strCode = String(code).trim();
+      const name = categoryMap[strCode];
+      console.log("👉 Converting account_type:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
+    });
+
+    return converted.length > 0 ? converted.join(", ") : "-";
+  };
+  const [activityMap, setActivityMap] = useState({});
+
+  useEffect(() => {
+    if (record) {
+      fetchFullRecord();
+      fetchCategoryMap();
+      fetchActivityMap();
+      fetchRemainingBudget(); // ✅ added
+    }
+  }, [record]);
+
+  // Fetch distributors (code → name)
+  useEffect(() => {
+    const fetchDistributorMap = async () => {
+      const { data, error } = await supabase
+        .from("distributors") // ⚠️ change table name if different
+        .select("code, name");
+
+      if (error) {
+        console.error("❌ Error fetching distributors:", error);
+        return;
+      }
+
+      const map = {};
+      data.forEach((item) => {
+        map[String(item.code)] = item.name;
+      });
+      setDistributorMap(map);
+    };
+
+    fetchDistributorMap();
+  }, []);
+
+
+
+  const fetchActivityMap = async () => {
     try {
       let allData = [];
       let from = 0;
-      const chunkSize = 5000;
+      const chunkSize = 1000;
       let moreData = true;
 
       while (moreData) {
         const { data, error } = await supabase
-          .from("distributors")
-          .select("id, code, name")
+          .from("activity")
+          .select("code, name")
           .range(from, from + chunkSize - 1);
 
         if (error) throw error;
 
-        if (data && data.length > 0) {
+        if (data.length > 0) {
           allData = [...allData, ...data];
           from += chunkSize;
         } else {
@@ -80,51 +132,119 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
         }
       }
 
+      console.log(`✅ activity raw data: ${allData.length} rows loaded`);
+
       const map = {};
       allData.forEach((item) => {
-        map[String(item.id).trim()] = item.name;
         map[String(item.code).trim()] = item.name;
       });
 
-      setDistributorMap(map);
+      setActivityMap(map);
     } catch (err) {
-      console.error("❌ Failed to fetch distributors:", err.message);
+      console.error("❌ Failed to fetch activity:", err.message);
     }
   };
 
-  // ✅ Format cell values
+  // Fetch full record
+  useEffect(() => {
+    if (record && activeTab === "single") fetchFullRecord();
+    if (activeTab === "budget") fetchBudgetHistory();
+  }, [record, activeTab]);
+
+  const fetchFullRecord = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const tableName = record.source || "regular_pwp";
+      const { data, error: fetchError } = await supabase
+        .from(tableName)
+        .select("*")
+        .eq("id", record.id)
+        .single();
+      if (fetchError) throw fetchError;
+      setFullRecord(data);
+    } catch (err) {
+      setError(`Failed to fetch record details: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchBudgetHistory = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const { data, error: fetchError } = await supabase
+        .from("approved_history_budget")
+        .select("*")
+        .order("id", { ascending: false });
+      if (fetchError) throw fetchError;
+      setBudgetHistory(data || []);
+    } catch (err) {
+      setError(`Failed to fetch budget history: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
+
+  useEffect(() => {
+    if (!record) return;
+
+    if (activeTab === "budget") {
+      if (budgetHistory.length === 0) {
+        fetchBudgetHistory();
+      }
+
+      const filtered = budgetHistory.filter(
+        (b) =>
+          b["Cover PWP Code"] === record.cover_code ||
+          b["PWP Code"] === record.regularpwpcode
+      );
+      setFilteredBudgetHistory(filtered);
+    }
+  }, [activeTab, record, budgetHistory]);
+
+  const formatColumnName = (colName) => {
+    return colName
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase())
+      .replace("Pwp", "PWP")
+      .replace("Id", "ID");
+  };
+
+  // ✅ Format cell values with logs
   const formatCellValue = (value, colName) => {
     if (!value && value !== 0) return "-";
 
-    // Convert account_types
-    if (colName === "account_types") {
-      let codes = [];
+    console.log("🔍 formatCellValue:", colName, value);
 
-      if (Array.isArray(value)) {
-        codes = value;
-      } else if (typeof value === "string") {
-        try {
-          codes = JSON.parse(value);
-        } catch {
-          codes = value.split(",").map((c) => c.trim());
-        }
-      }
-
-      const converted = codes.map((code) => {
-        const strCode = String(code).trim();
-        return categoryMap[strCode] || strCode;
-      });
-
-      return converted.length > 0 ? converted.join(", ") : "-";
+    // ✅ Handle account types
+    if (
+      colName === "account_type" ||
+      colName === "account_types" ||
+      colName === "accountType"
+    ) {
+      return convertCodesToNames(value);
     }
 
-    // Convert distributor/distributor_code
+    // ✅ Convert distributor
     if (colName === "distributor" || colName === "distributor_code") {
       const strCode = String(value).trim();
-      return distributorMap[strCode] || strCode;
+      const name = distributorMap[strCode];
+      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
     }
 
-    // Format date
+    // ✅ Convert activity (code → name)
+    if (colName === "activity" || colName === "activity_code") {
+      const strCode = String(value).trim();
+      const name = activityMap[strCode];
+      console.log("👉 Converting activity:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
+    }
+
     if (colName === "created_at" && value) {
       try {
         return new Date(value).toLocaleString();
@@ -140,182 +260,340 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
     return String(value);
   };
 
-  const fetchFullRecord = async () => {
-    try {
-      setLoading(true);
-      setError(null);
 
-      const tableName = record.source || "regular_pwp";
-      const { data, error: fetchError } = await supabase
-        .from(tableName)
-        .select("*")
-        .eq("id", record.id)
+  const [remainingBudget, setRemainingBudget] = useState(null);
+
+  const fetchRemainingBudget = async () => {
+    try {
+      const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
+      if (!pwpCode) return;
+
+      const { data, error } = await supabase
+        .from("amount_badget")
+        .select("remainingbalance")
+        .eq("pwp_code", pwpCode)
+        .order("id", { ascending: false })
+        .limit(1)
         .single();
 
-      if (fetchError) throw fetchError;
+      if (error) throw error;
 
-      setFullRecord(data);
+      setRemainingBudget(data?.remainingbalance ?? null);
     } catch (err) {
-      setError(`Failed to fetch record details: ${err.message}`);
-    } finally {
-      setLoading(false);
+      console.error("❌ Failed to fetch remaining budget:", err.message);
+      setRemainingBudget(null);
     }
   };
 
-  // ✅ Delete record
-  const handleDeleteRecord = async (recordToDelete, tableName) => {
-    try {
-      setDeleting(true);
-      setError(null);
 
-      const { error: deleteError } = await supabase
-        .from(tableName)
-        .delete()
-        .eq("id", recordToDelete.id);
-
-      if (deleteError) throw deleteError;
-
-      window.location.reload();
-
-      if (recordToDelete.id === record.id) {
-        if (onRecordDeleted) onRecordDeleted(recordToDelete);
-        onClose();
-        return;
-      }
-
-      setDeleteConfirm(null);
-    } catch (err) {
-      setError(`Failed to delete record: ${err.message}`);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const confirmDelete = (recordToDelete, tableName) => {
-    setDeleteConfirm({ record: recordToDelete, tableName });
-  };
-
-  const cancelDelete = () => setDeleteConfirm(null);
-
-  const formatColumnName = (colName) =>
-    colName
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (l) => l.toUpperCase())
-      .replace("Pwp", "PWP")
-      .replace("Id", "ID");
 
   if (!record) return null;
-
   return (
-    <div style={modalOverlay}>
-      <div style={modalContainer}>
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.7)",
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: "white",
+          borderRadius: "12px",
+          maxWidth: "95vw",
+          maxHeight: "90vh",
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.3)",
+        }}
+      >
         {/* Header */}
-        <div style={modalHeader}>
+        <div
+          style={{
+            padding: "24px 30px",
+            backgroundColor: "#0080ffff",
+            color: "white",
+            borderRadius: "12px 12px 0 0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <div>
-            <h2 style={{ margin: "0 0 8px", fontSize: "25px", color: "#fff" }}>
-              Record Details
+            <h2 style={{ margin: "0 0 8px", fontSize: "30px", color: "#ffff" }}>
+              {activeTab === "single" ? "Record Details" : "Budget History"}
             </h2>
-            <p style={{ margin: 0, opacity: 0.9, fontSize: "14px" }}>
-              ID: {record.id} -{" "}
-              {record.source === "cover_pwp" ? "Cover PWP" : "Regular PWP"}
-            </p>
-          </div>
-          <button onClick={onClose} style={closeBtn}>×</button>
-        </div>
-
-        {/* Delete */}
-        <div style={deleteBar}>
-          {fullRecord && (
-            <button
-              onClick={() => confirmDelete(fullRecord, record.source || "regular_pwp")}
-              disabled={deleting}
-              style={deleteBtn}
-            >
-              {deleting ? "⏳ Deleting..." : "🗑️ Delete Record"}
-            </button>
-          )}
-        </div>
-
-        {/* Delete Confirm */}
-        {deleteConfirm && (
-          <div style={confirmOverlay}>
-            <div style={confirmBox}>
-              <h3 style={{ margin: "0 0 16px", color: "#d32f2f" }}>
-                ⚠️ Confirm Delete
+            <div style={{ marginBottom: "8px" }}>
+              {remainingBudget !== null && (
+                <div style={{
+                  fontSize: "16px",
+                  fontWeight: "600",
+                  color: "#1e58a3",
+                  backgroundColor: "#e3f2fd",
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  display: "inline-block",
+                  marginBottom: "4px",
+                }}>
+                  Remaining Budget: {remainingBudget.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
+                </div>
+              )}
+              <h3 style={{ margin: 0, color: "#ffffffff", fontSize: "18px" }}>
+                {record?.source === "cover_pwp"
+                  ? `Cover PWP Record: ${record?.cover_code || "-"}`
+                  : `Regular PWP Record: ${record?.regularpwpcode || "-"}`}
               </h3>
-              <p style={{ margin: "0 0 24px", color: "#666" }}>
-                Are you sure you want to delete this record?
-                <br />
-                <strong>ID: {deleteConfirm.record.id}</strong>
-                <br />
-                <em>This action cannot be undone.</em>
-              </p>
-              <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-                <button onClick={cancelDelete} disabled={deleting} style={cancelBtn}>
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleDeleteRecord(deleteConfirm.record, deleteConfirm.tableName)}
-                  disabled={deleting}
-                  style={deleteConfirmBtn}
-                >
-                  {deleting ? "Deleting..." : "Delete"}
-                </button>
-              </div>
             </div>
-          </div>
-        )}
 
-        {/* Record Details */}
-        <div style={detailsBox}>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              backgroundColor: "rgba(255,255,255,0.2)",
+              color: "white",
+              border: "none",
+              borderRadius: "50%",
+              width: "40px",
+              height: "40px",
+              cursor: "pointer",
+              fontSize: "18px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: "1px solid #e0e0e0", backgroundColor: "#f5f5f5" }}>
+          {["single", "budget"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                flex: 1,
+                padding: "12px",
+                cursor: "pointer",
+                border: "none",
+                borderBottom: activeTab === tab ? "3px solid #1e58a3ff" : "3px solid transparent",
+                backgroundColor: activeTab === tab ? "#1e58a3ff" : "#f5f5f5",
+                color: activeTab === tab ? "white" : "#1976d2",
+                fontWeight: "500",
+                position: "relative",
+              }}
+            >
+              {tab === "single" ? "📋 Single Record" : "💰 Budget History"}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
           {loading ? (
-            <p>Loading record details...</p>
+            <div style={{ textAlign: "center", padding: "40px" }}>
+              <div
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  border: "4px solid #e3f2fd",
+                  borderTop: "4px solid #1976d2",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                  margin: "0 auto 20px",
+                }}
+              ></div>
+              <p>Loading...</p>
+            </div>
           ) : error ? (
             <div style={{ textAlign: "center", color: "#d32f2f" }}>
               <p>{error}</p>
-              <button onClick={fetchFullRecord} style={retryBtn}>Retry</button>
             </div>
-          ) : (
-            fullRecord && (
-              <div style={gridBox}>
-                {Object.entries(fullRecord).map(([key, value]) => (
-                  <div key={key} style={gridItem}>
-                    <div style={colLabel}>{formatColumnName(key)}</div>
-                    <div style={colValue}>{formatCellValue(value, key)}</div>
-                  </div>
-                ))}
-              </div>
-            )
-          )}
-        </div>
+          ) : activeTab === "single" && fullRecord ? (
+            <div
+              style={{
+                display: "grid",
+                gap: "20px",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              }}
+            >
+              {Object.entries(fullRecord).map(([key, value]) => {
+                const displayValue =
+                  (key === "accountType" || key === "account_type") &&
+                    Object.keys(categoryMap).length > 0
+                    ? convertCodesToNames(value)
+                    : formatCellValue(value, key);
 
-        {/* Footer */}
-        <div style={footerBar}>
-          <button onClick={onClose} style={closeFooterBtn}>Close</button>
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      padding: "16px",
+                      backgroundColor: "#f8f9fa",
+                      borderRadius: "8px",
+                      border: "1px solid #e0e0e0",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#666",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      {formatColumnName(key)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        color: "#333",
+                        lineHeight: "1.4",
+                        wordBreak: "break-word",
+                        whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
+                        fontFamily: typeof value === "object" ? "monospace" : "inherit",
+                      }}
+                    >
+                      {displayValue}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : activeTab === "budget" ? (
+            <div>
+              {activeTab === "budget" ? (
+                <div>
+                  {filteredBudgetHistory.length > 0 ? (
+                    <div>
+                      {/* Only display header if cover_pwp_code or pwp_code matches */}
+                      {filteredBudgetHistory.some(
+                        (b) =>
+                          b["cover_pwp_code"] === record.cover_code ||
+                          b["pwp_code"] === record.regularpwpcode
+                      ) && (
+                          <h3 style={{ margin: 0, color: "#000000ff", fontSize: "18px" }}>
+                            {record.source === "cover_pwp"
+                              ? `Cover PWP Record: ${record.cover_code || "-"}`
+                              : `Regular PWP Record: ${record.regularpwpcode || "-"}`}
+                          </h3>
+                        )}
+
+                      {/* Display table only if there is at least one matching row */}
+                      {filteredBudgetHistory.some(
+                        (b) =>
+                          b["cover_pwp_code"] === record.cover_code ||
+                          b["pwp_code"] === record.regularpwpcode
+                      ) ? (
+                        <div style={{ overflowX: "auto", maxHeight: "400px" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead style={{ position: "sticky", top: 0, backgroundColor: "#f5f5f5" }}>
+                              <tr>
+                                {[
+                                  "id",
+                                  "pwp_code",
+                                  "cover_pwp_code",
+                                  "approver_id",
+                                  "date_responded",
+                                  "response",
+                                  "remaining_balance",
+                                  "credit_budget",
+                                  "type",
+                                  "created_form",
+                                ].map((col) => (
+                                  <th
+                                    key={col}
+                                    style={{
+                                      padding: "12px 16px",
+                                      textAlign: "left",
+                                      borderBottom: "2px solid #ddd",
+                                      fontSize: "12px",
+                                      fontWeight: "600",
+                                      backgroundColor: "#f5f5f5",
+                                    }}
+                                  >
+                                    {formatColumnName(col)}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredBudgetHistory
+                                .filter(
+                                  (b) =>
+                                    b["cover_pwp_code"] === record.cover_code ||
+                                    b["pwp_code"] === record.regularpwpcode
+                                )
+                                .map((row, index) => (
+                                  <tr
+                                    key={row.id || index}
+                                    style={{ backgroundColor: index % 2 === 0 ? "white" : "#fafafa" }}
+                                  >
+                                    {[
+                                      "id",
+                                      "pwp_code",
+                                      "cover_pwp_code",
+                                      "approver_id",
+                                      "date_responded",
+                                      "response",
+                                      "remaining_balance",
+                                      "credit_budget",
+                                      "type",
+                                      "created_form",
+                                    ].map((col) => (
+                                      <td
+                                        key={col}
+                                        style={{
+                                          padding: "12px 16px",
+                                          borderBottom: "1px solid #eee",
+                                          fontSize: "12px",
+                                          maxWidth: "200px",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {formatCellValue(row[col], col)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+                          No budget history found for this record
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+                      No budget history found for this record
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
 };
-
-// 💅 Inline styles
-const modalOverlay = { position:"fixed",top:0,left:0,right:0,bottom:0,backgroundColor:"rgba(0,0,0,0.7)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px" };
-const modalContainer = { backgroundColor:"white",borderRadius:"12px",maxWidth:"800px",maxHeight:"90vh",width:"100%",display:"flex",flexDirection:"column",boxShadow:"0 10px 40px rgba(0,0,0,0.3)" };
-const modalHeader = { padding:"24px 30px",backgroundColor:"#1976d2",color:"white",borderRadius:"12px 12px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center" };
-const closeBtn = { backgroundColor:"rgba(255,255,255,0.2)",color:"white",border:"none",borderRadius:"50%",width:"40px",height:"40px",cursor:"pointer",fontSize:"18px",display:"flex",alignItems:"center",justifyContent:"center" };
-const deleteBar = { padding:"16px 30px",backgroundColor:"#f5f5f5",borderBottom:"1px solid #e0e0e0",display:"flex",justifyContent:"flex-end" };
-const deleteBtn = { padding:"8px 16px",backgroundColor:"#d32f2f",color:"white",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontWeight:"500" };
-const confirmOverlay = { position:"absolute",top:0,left:0,right:0,bottom:0,backgroundColor:"rgba(0,0,0,0.8)",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"12px",zIndex:10 };
-const confirmBox = { backgroundColor:"white",padding:"30px",borderRadius:"12px",maxWidth:"400px",textAlign:"center" };
-const cancelBtn = { padding:"10px 20px",backgroundColor:"#6c757d",color:"white",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"14px" };
-const deleteConfirmBtn = { padding:"10px 20px",backgroundColor:"#d32f2f",color:"white",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"14px" };
-const detailsBox = { flex:1,overflow:"auto",padding:"30px" };
-const retryBtn = { padding:"8px 16px",backgroundColor:"#1976d2",color:"white",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"14px" };
-const gridBox = { display:"grid",gap:"20px",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))" };
-const gridItem = { padding:"16px",backgroundColor:"#f8f9fa",borderRadius:"8px",border:"1px solid #e0e0e0" };
-const colLabel = { fontSize:"12px",fontWeight:"600",color:"#666",textTransform:"uppercase",marginBottom:"8px" };
-const colValue = { fontSize:"14px",color:"#333",wordBreak:"break-word",whiteSpace:"normal" };
-const footerBar = { padding:"20px 30px",backgroundColor:"#f5f5f5",borderTop:"1px solid #e0e0e0",borderRadius:"0 0 12px 12px",display:"flex",justifyContent:"flex-end" };
-const closeFooterBtn = { padding:"10px 20px",backgroundColor:"#6c757d",color:"white",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontWeight:"500" };
 
 export default RecordViewModal;
