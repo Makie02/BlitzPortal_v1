@@ -724,7 +724,7 @@ function RecordsPage() {
                   borderBottom: '2px solid #e0e0e0',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
-                  width: '120px'
+                  width: '220px'
                 }}>
                   Status
                 </th>
