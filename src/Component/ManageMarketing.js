@@ -920,7 +920,8 @@ function EnhancedDatabaseInterface() {
                       style={{
                         padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
-                        textAlign: 'center'
+                        textAlign: 'center',
+                        width:"250px"
                       }}
                     >
                       {getStatusBadge(row.approval_status)}
