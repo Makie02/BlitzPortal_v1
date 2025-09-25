@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../supabaseClient";
 import RecordViewModal from "./RecordViewModal";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
 function RecordsPage() {
   const [data, setData] = useState([]);
@@ -19,21 +21,27 @@ function RecordsPage() {
   const [setRowsPerPage] = useState(10);
 
   // Define the specific columns to show for each table (moved outside component or use useMemo)
-  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code',  'pwp_type', 'created_at', 'createForm'], []);
-  const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'pwptype', 'created_at', 'createForm'], []);
+  const COVER_COLUMNS = useMemo(
+    () => ['id', 'cover_code', 'distributor_code', 'pwp_type', 'created_at', 'createForm'],
+    []
+  );
 
-const handleViewRecord = (record) => {
-  console.log("Selected record:", record);
+  const REGULAR_COLUMNS = useMemo(
+    () => ['id', 'regularpwpcode', 'distributor', 'pwptype', 'created_at', 'createForm'],
+    []
+  );
+  const handleViewRecord = (record) => {
+    console.log("Selected record:", record);
 
-  if (record.source === "cover_pwp") {
-    console.log("Cover code:", record.cover_code);
-  } else {
-    console.log("Regular PWP code:", record.regularpwpcode);
-  }
+    if (record.source === "cover_pwp") {
+      console.log("Cover code:", record.cover_code);
+    } else {
+      console.log("Regular PWP code:", record.regularpwpcode);
+    }
 
-  setSelectedRecord(record);
-  setShowModal(true);
-};
+    setSelectedRecord(record);
+    setShowModal(true);
+  };
 
 
   // Function to filter object keys based on allowed columns
@@ -230,11 +238,13 @@ const handleViewRecord = (record) => {
           return {
             ...item,
             code: item.regularpwpcode || item.cover_code || '-',
-            accountType: accountName,   // ensures your table shows name
-            account_type: accountName,  // for cover PWP column
-            pwptype: item.pwptype || item.pwp_type || '-'
+            accountType: accountName,
+            account_type: accountName,
+            pwptype: item.pwptype || item.pwp_type || '-',
+            distributor: item.distributor || item.distributor_code || '-' // <-- add this line
           };
         });
+
 
 
         setColumns(allColumns);
@@ -252,22 +262,45 @@ const handleViewRecord = (record) => {
   }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, categoryMap]);
 
 
+
+
+  const exportToExcel = () => {
+    if (!filteredData.length) return;
+
+    // Map data for Excel
+    const exportData = filteredData.map(row => {
+      const obj = {};
+      columns.forEach(col => {
+        obj[formatColumnName(col)] = formatCellValue(row[col], col);
+      });
+      obj['Status'] = row.approval_status || 'Pending';
+      return obj;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Records");
+
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const data = new Blob([excelBuffer], { type: "application/octet-stream" });
+    saveAs(data, `Records_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
   const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
   const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
   const role = currentUser?.role || "";
-  
+
   const filteredData = useMemo(() => {
     if (role === 'admin') return data;
     return data.filter(row => row.createForm?.toLowerCase().trim() === currentUserName);
   }, [data, currentUserName, role]);
-  
+
   // Pagination using filteredData
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   );
-  
+
   // Updated getStatusBadge function - replace your existing one
   const getStatusBadge = (status) => {
     const statusLower = status ? status.toLowerCase() : 'pending';
@@ -328,10 +361,39 @@ const handleViewRecord = (record) => {
       .replace('Pwp', 'PWP')
       .replace('Id', 'ID');
   };
+  // Fetch distributors (code → name)
+  const [distributorMap, setDistributorMap] = useState({});
 
+  useEffect(() => {
+    const fetchDistributorMap = async () => {
+      const { data, error } = await supabase
+        .from("distributors") // ⚠️ change table name if different
+        .select("code, name");
+
+      if (error) {
+        console.error("❌ Error fetching distributors:", error);
+        return;
+      }
+
+      const map = {};
+      data.forEach((item) => {
+        map[String(item.code)] = item.name;
+      });
+      setDistributorMap(map);
+    };
+
+    fetchDistributorMap();
+  }, []);
   const formatCellValue = (value, colName) => {
     if (!value && value !== 0) return '-';
 
+
+    if (colName === "distributor" || colName === "distributor_code") {
+      const strCode = String(value).trim();
+      const name = distributorMap[strCode];
+      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
+    }
     if (colName === 'created_at' && value) {
       try {
         return new Date(value).toLocaleDateString("en-US", {
@@ -339,6 +401,9 @@ const handleViewRecord = (record) => {
           month: "short",
           day: "numeric"
         }); // e.g., Sep 17, 2025
+
+
+
       } catch {
         return value;
       }
@@ -605,6 +670,24 @@ const handleViewRecord = (record) => {
                   {updating ? 'Updating...' : 'Refresh'}
                 </button>
               </div>
+              <div className="filter-item">
+                <button
+                  onClick={exportToExcel}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    backgroundColor: '#4caf50',
+                    color: '#fff',
+                    fontWeight: '500',
+                    width: '100%'
+                  }}
+                >
+                  📥 Export to Excel
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
