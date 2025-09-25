@@ -26,11 +26,7 @@ function ClaimsRecords() {
     'createForm'       
   ], []);
 
-  const totalPages = Math.ceil(data.length / rowsPerPage);
-  const paginatedData = data.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
-  );
+
 
   // Helper function to convert codes to readable text
 const convertCodeToText = useCallback((code, type, accountTypesMap, distributorsMap) => {
@@ -243,6 +239,25 @@ const fetchData = useCallback(async () => {
     setShowModal(false);
     setSelectedRecord(null);
   }, []);
+
+
+  // Filter data based on current user (unless admin)
+const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+const role = currentUser?.role || "";
+
+const filteredData = useMemo(() => {
+  if (role === 'admin') return data;
+  return data.filter(row => row.createForm?.toLowerCase().trim() === currentUserName);
+}, [data, currentUserName, role]);
+
+// Pagination using filteredData
+const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+const paginatedData = filteredData.slice(
+  (currentPage - 1) * rowsPerPage,
+  currentPage * rowsPerPage
+);
+
 
   // Status badge component
   const getStatusBadge = useCallback((status) => {
