@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../supabaseClient";
 import RecordViewModal from "./RecordViewModal";
@@ -18,8 +19,8 @@ function RecordsPage() {
   const [setRowsPerPage] = useState(10);
 
   // Define the specific columns to show for each table (moved outside component or use useMemo)
-  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code', 'account_type', 'pwp_type', 'created_at', 'createForm'], []);
-  const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'accountType', 'pwptype', 'created_at', 'createForm'], []);
+  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code',  'pwp_type', 'created_at', 'createForm'], []);
+  const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'pwptype', 'created_at', 'createForm'], []);
 
 const handleViewRecord = (record) => {
   console.log("Selected record:", record);
