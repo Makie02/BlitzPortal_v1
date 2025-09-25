@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
 const RecordViewModal = ({ record, onClose }) => {
   const [fullRecord, setFullRecord] = useState(null);
@@ -7,6 +9,53 @@ const RecordViewModal = ({ record, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("single");
+
+
+  const exportBudgetHistoryToExcel = () => {
+    if (filteredBudgetHistory.length === 0) return;
+
+    // Map the data to a cleaner format
+    const dataToExport = filteredBudgetHistory.map((row) => ({
+      ID: row.id,
+      PWP_Code: row.pwp_code,
+      Cover_PWP_Code: row.cover_pwp_code,
+      Approver_ID: row.approver_id,
+      Date_Responded: row.date_responded,
+      Response: row.response,
+      Remaining_Balance: row.remaining_balance,
+      Credit_Budget: row.credit_budget,
+      Type: row.type,
+      Created_Form: row.created_form,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "BudgetHistory");
+
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+    saveAs(blob, "BudgetHistory.xlsx");
+  };
+
+
+  // Add this function inside your component, similar to exportBudgetHistoryToExcel
+  const exportSingleRecordToExcel = () => {
+    if (!fullRecord) return;
+
+    // Map the record to a cleaner format (you can adjust column names if needed)
+    const dataToExport = Object.entries(fullRecord).map(([key, value]) => ({
+      Column: formatColumnName(key),
+      Value: formatCellValue(value, key),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "RecordDetails");
+
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+    saveAs(blob, "RecordDetails.xlsx");
+  };
 
   // Category & Distributor Maps
   const [categoryMap, setCategoryMap] = useState({});
@@ -376,6 +425,7 @@ const RecordViewModal = ({ record, onClose }) => {
         </div>
 
         {/* Tabs */}
+        {/* Tabs */}
         <div style={{ display: "flex", borderBottom: "1px solid #e0e0e0", backgroundColor: "#f5f5f5" }}>
           {["single", "budget"].map((tab) => (
             <button
@@ -397,6 +447,46 @@ const RecordViewModal = ({ record, onClose }) => {
             </button>
           ))}
         </div>
+        {/* Export Button (only show in single tab) */}
+        {activeTab === "single" && fullRecord && (
+          <div style={{ padding: "16px", textAlign: "right" }}>
+            <button
+              onClick={exportSingleRecordToExcel}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#0aac12ff",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: "500",
+              }}
+            >
+              Export Single Record to Excel
+            </button>
+          </div>
+        )}
+
+        {/* Export Button (only show in budget tab) */}
+        {activeTab === "budget" && filteredBudgetHistory.length > 0 && (
+          <div style={{ padding: "16px", textAlign: "right" }}>
+            <button
+              onClick={exportBudgetHistoryToExcel}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#0aac12ff",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: "500",
+              }}
+            >
+              Export to Excel
+            </button>
+          </div>
+        )}
+
 
         {/* Content */}
         <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
