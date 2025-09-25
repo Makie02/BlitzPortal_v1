@@ -73,37 +73,71 @@ const RegularVisaForm = () => {
     });
 
 
-    const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
-    const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true); // Loading state for fetching codes
+  const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
+  const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true); // Loading state
 
-    useEffect(() => {
-        async function fetchRegularPwpCodes() {
-            const { data, error } = await supabase
-                .from('regular_pwp') // Assuming your table is called 'regular_pwp'
-                .select('regularpwpcode'); // Selecting the column with regular pwp codes
+  // ---------------- Generate new code ----------------
+  const generateRegularCode = (existingCodes = []) => {
+    const year = new Date().getFullYear(); // Current year
+    const prefix = `R${year}-`;
 
-            if (error) {
-                console.error('Error fetching regular pwp codes:', error);
-                setLoadingRegularPwpCodes(false); // Set loading to false on error
-            } else {
-                const codes = data
-                    .map(row => row.regularpwpcode) // Extracting regularpwpcode
-                    .filter(Boolean); // Removing any falsy values (null, undefined)
+    // Filter existing codes with this year's prefix and extract numbers
+    const codesForYear = existingCodes
+      .filter(code => code?.startsWith(prefix))
+      .map(code => parseInt(code.replace(prefix, ""), 10))
+      .filter(num => !isNaN(num));
 
-                setAllRegularPwpCodes(codes); // Set the codes in the state
+    const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
+    const newCode = `${prefix}${newNumber}`;
 
-                // Generate a new code if the coverCode is not set in formData
-                if (!formData.regularpwpcode) {
-                    const newCode = generateRegularCode(codes); // Generate the new cover code
-                    setFormData(prev => ({ ...prev, regularpwpcode: newCode })); // Update formData with the new coverCode
-                }
+    console.log("🔹 Existing codes:", existingCodes);
+    console.log("🔹 Codes for this year:", codesForYear);
+    console.log("🔹 Generated new code:", newCode);
 
-                setLoadingRegularPwpCodes(false); // Set loading to false after data fetch
-            }
-        }
+    return newCode;
+  };
 
-        fetchRegularPwpCodes(); // Call the fetch function when the component mounts
-    }, []); // Empty dependency array so it runs only once when the component mounts
+  // ---------------- Fetch codes ----------------
+  const fetchRegularPwpCodes = async () => {
+    try {
+      console.log("⏳ Fetching regular PWP codes...");
+      const { data, error } = await supabase
+        .from("regular_pwp")
+        .select("regularpwpcode");
+
+      if (error) throw error;
+
+      const codes = data.map(row => row.regularpwpcode).filter(Boolean);
+      console.log("✅ Fetched codes:", codes);
+
+      setAllRegularPwpCodes(codes);
+
+      // If formData code is empty or already exists, generate a new one
+      if (!formData.regularpwpcode || codes.includes(formData.regularpwpcode)) {
+        const newCode = generateRegularCode(codes);
+        console.log("✏️ Updating formData with new code:", newCode);
+        setFormData(prev => ({ ...prev, regularpwpcode: newCode }));
+      }
+
+      setLoadingRegularPwpCodes(false);
+    } catch (err) {
+      console.error("❌ Error fetching regular pwp codes:", err);
+      setLoadingRegularPwpCodes(false);
+    }
+  };
+
+  // ---------------- Real-time polling ----------------
+  useEffect(() => {
+    fetchRegularPwpCodes(); // Initial fetch
+
+    const intervalId = setInterval(() => {
+      fetchRegularPwpCodes();
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(intervalId); // Cleanup
+  }, [formData.regularpwpcode]);
+
+
 
     useEffect(() => {
         // This effect runs whenever `allRegularPwpCodes` changes
@@ -114,21 +148,6 @@ const RegularVisaForm = () => {
     }, [allRegularPwpCodes]); // Dependencies are the fetched codes
 
     // Generate a new code based on the existing ones
-    const generateRegularCode = (existingCodes = []) => {
-        const year = new Date().getFullYear(); // Get the current year
-        const prefix = `R${year}-`; // Prefix with the year (e.g., R2025-)
-
-        // Filter out existing codes that start with the prefix and extract numeric parts
-        const codesForYear = existingCodes
-            .filter(code => code?.startsWith(prefix)) // Only keep codes with the current year prefix
-            .map(code => parseInt(code.replace(prefix, ''), 10)) // Remove the prefix and convert to integers
-            .filter(num => !isNaN(num)); // Ensure we only keep valid numbers
-
-        // Get the next code number by incrementing the maximum of existing ones
-        const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1; // If codes exist, find the highest number and increment
-
-        return `${prefix}${newNumber}`; // Return the new generated code
-    };
 
 
 
@@ -2373,26 +2392,12 @@ const RegularVisaForm = () => {
                                     >
                                         {formData.accountType.length ? getAccountNames() : "Select Account Type"}
 
-                                        <span
-                                            style={{
-                                                position: "absolute",
-                                                right: "40px",
-                                                top: "70%",
-                                                transform: "translateY(-50%)",
-                                                pointerEvents: "none",
-                                                color: "#555",
-                                                fontSize: "14px",
-                                                userSelect: "none",
-                                            }}
-                                        >
-                                            ▼
-                                        </span>
-
+                                    
                                         <span
                                             style={{
                                                 position: "absolute",
                                                 right: "10px",
-                                                top: "70%",
+                                                top: "65%",
                                                 transform: "translateY(-50%)",
                                                 pointerEvents: "none",
                                                 color: "#555",
