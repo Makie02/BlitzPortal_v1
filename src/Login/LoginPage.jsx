@@ -271,7 +271,7 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
               
                 </div>
                   <footer className="login-footer">
-                        Version 1.0
+                        Version 1.0.0
                     </footer>
             </div>
                 
