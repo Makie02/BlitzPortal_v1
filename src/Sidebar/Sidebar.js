@@ -329,6 +329,10 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
             submenu: [
                 { title: "Dashboard", view: "Dashboard" },
                 { title: "Progress", view: "Progress" },
+                { title: "Budget Status", view: "BudgetDashboard" },
+
+
+                
             ],
         },
         {
