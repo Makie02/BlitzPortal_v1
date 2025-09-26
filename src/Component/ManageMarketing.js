@@ -20,9 +20,8 @@ function EnhancedDatabaseInterface() {
   const [selectedRow, setSelectedRow] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-
   // Define the specific columns to show for each table (moved outside component or use useMemo)
-  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code',  'pwp_type', 'created_at', 'createForm'], []);
+  const COVER_COLUMNS = useMemo(() => ['id', 'cover_code', 'pwp_type', 'created_at', 'createForm'], []);
   const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'pwptype', 'created_at', 'createForm'], []);
 
 
@@ -241,60 +240,60 @@ function EnhancedDatabaseInterface() {
     }
   }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo]);
 
- const handleEdit = async (row) => {
-  let tableName = "regular_pwp";
+  const handleEdit = async (row) => {
+    let tableName = "regular_pwp";
 
-  if (row.source === "cover_pwp" || row.source === "cover") {
-    tableName = "cover_pwp";
-  } else if (row.source === "regular_pwp" || row.source === "regular") {
-    tableName = "regular_pwp";
-  }
-
-  try {
-    // Fetch the full record
-    const { data: record, error: recordError } = await supabase
-      .from(tableName)
-      .select("*")
-      .eq("id", row.id)
-      .single();
-
-    if (recordError) {
-      console.error("Error fetching full record:", recordError);
-      return;
+    if (row.source === "cover_pwp" || row.source === "cover") {
+      tableName = "cover_pwp";
+    } else if (row.source === "regular_pwp" || row.source === "regular") {
+      tableName = "regular_pwp";
     }
 
-    console.log("Full Record:", record);
-
-    // Convert activity code to name
-    let activityName = null;
-    if (record.activity) {
-      const { data: activityData, error: activityError } = await supabase
-        .from("activity")
-        .select("name")
-        .eq("code", record.activity)
+    try {
+      // Fetch the full record
+      const { data: record, error: recordError } = await supabase
+        .from(tableName)
+        .select("*")
+        .eq("id", row.id)
         .single();
 
-      if (activityError) {
-        console.error("Error fetching activity name:", activityError);
-      } else {
-        activityName = activityData?.name || record.activity; // fallback to code if name not found
+      if (recordError) {
+        console.error("Error fetching full record:", recordError);
+        return;
       }
+
+      console.log("Full Record:", record);
+
+      // Convert activity code to name
+      let activityName = null;
+      if (record.activity) {
+        const { data: activityData, error: activityError } = await supabase
+          .from("activity")
+          .select("name")
+          .eq("code", record.activity)
+          .single();
+
+        if (activityError) {
+          console.error("Error fetching activity name:", activityError);
+        } else {
+          activityName = activityData?.name || record.activity; // fallback to code if name not found
+        }
+      }
+
+      console.log("Activity Name:", activityName);
+
+      // Pass full record and activity name to modal
+      setSelectedRow({
+        ...record,
+        activityName, // add human-readable activity name
+        source: row.source,
+      });
+
+      setIsModalOpen(true);
+    } catch (err) {
+      console.error("Unexpected error fetching record:", err);
     }
-
-    console.log("Activity Name:", activityName);
-
-    // Pass full record and activity name to modal
-    setSelectedRow({
-      ...record,
-      activityName, // add human-readable activity name
-      source: row.source,
-    });
-
-    setIsModalOpen(true);
-  } catch (err) {
-    console.error("Unexpected error fetching record:", err);
-  }
-};
+  };
 
 
   const handleSave = async (updatedData) => {
@@ -342,71 +341,125 @@ function EnhancedDatabaseInterface() {
   const handleDelete = async (rowId) => {
     setUpdating(true);
     try {
-      // Find the main row by ID
+      // Find row
       const row = data.find(r => r.id === rowId);
       if (!row) {
         setError("Row not found.");
         return;
       }
 
-      // Main codes to match related rows
-      const regularCode = row.regularpwpcode || row.regularcode || row.regular_code;
+      // ✅ COVER PWP DELETE FLOW
+      // ✅ COVER PWP DELETE FLOW
+      if (row.cover_code && row.cover_code.startsWith("C")) {
+        const coverCode = row.cover_code;
 
-      if (!regularCode) {
-        setError("Related code missing for deletion.");
-        return;
+        // 1. Delete cover attachments
+        const { error: attachmentError } = await supabase
+          .from("cover_attachments")
+          .delete()
+          .eq("cover_code", coverCode);
+        if (attachmentError) throw new Error(`Failed to delete cover attachments: ${attachmentError.message}`);
+
+        // 2. Delete from approved_history_budget (linked via cover_pwp_code)
+        const { error: approvedHistoryError } = await supabase
+          .from("approved_history_budget")
+          .delete()
+          .eq("cover_pwp_code", coverCode);
+        if (approvedHistoryError) throw new Error(`Failed to delete approved history (cover): ${approvedHistoryError.message}`);
+
+        // 3. Delete from Approval_History (linked via PwpCode)
+        const { error: approvalError } = await supabase
+          .from("Approval_History")
+          .delete()
+          .eq("PwpCode", coverCode);
+        if (approvalError) throw new Error(`Failed to delete approval history (cover): ${approvalError.message}`);
+
+        // 4. Delete from amount_badget (linked via pwp_code)
+        const { error: amountError } = await supabase
+          .from("amount_badget")
+          .delete()
+          .ilike("pwp_code", coverCode); // case-insensitive match
+        if (amountError) throw new Error(`Failed to delete amount budget (cover): ${amountError.message}`);
+
+        // 5. Delete from cover_pwp
+        const { error: coverError } = await supabase
+          .from("cover_pwp")
+          .delete()
+          .eq("id", rowId);
+        if (coverError) throw new Error(`Failed to delete cover PWP: ${coverError.message}`);
+
+
+
+
+      } else {
+        // ✅ REGULAR PWP DELETE FLOW
+        const regularCode = row.regularpwpcode || row.regularcode || row.regular_code;
+        if (!regularCode) {
+          setError("Related code missing for deletion.");
+          return;
+        }
+
+        // 1. Delete budget rows
+        const { error: budgetError } = await supabase
+          .from("regular_accountlis_badget")
+          .delete()
+          .eq("regularcode", regularCode);
+        if (budgetError) throw new Error(`Failed to delete budget rows: ${budgetError.message}`);
+
+        // 2. Delete attachments
+        const { error: attachmentError } = await supabase
+          .from("regular_attachments")
+          .delete()
+          .eq("regularpwpcode", regularCode);
+        if (attachmentError) throw new Error(`Failed to delete attachments: ${attachmentError.message}`);
+
+        // 3. Delete approval history
+        const { error: approvalError } = await supabase
+          .from("Approval_History")
+          .delete()
+          .eq("PwpCode", regularCode);
+        if (approvalError) throw new Error(`Failed to delete approval history: ${approvalError.message}`);
+
+        // 4. Delete SKUs
+
+        // 5. Delete from amount_badget
+        const { error: amountError } = await supabase
+          .from("amount_badget")
+          .delete()
+          .eq("pwp_code", regularCode);
+        if (amountError) throw new Error(`Failed to delete amount budget: ${amountError.message}`);
+
+        // 6. Delete from approved_history_budget (linked via pwp_code)
+        const { error: approvedHistoryError } = await supabase
+          .from("approved_history_budget")
+          .delete()
+          .eq("pwp_code", regularCode);
+        if (approvedHistoryError) throw new Error(`Failed to delete approved history: ${approvedHistoryError.message}`);
+
+        // 7. Delete from regular_pwp
+        const { error: mainDeleteError } = await supabase
+          .from("regular_pwp")
+          .delete()
+          .eq("id", rowId);
+        if (mainDeleteError) throw new Error(`Failed to delete main record: ${mainDeleteError.message}`);
+
+
+        const { error: mainregular_skuDeleteError } = await supabase
+          .from("regular_sku")
+          .delete()
+          .eq("regular_code", regularCode);
+        if (mainregular_skuDeleteError) throw new Error(`Failed to delete regular_sku record: ${mainregular_skuDeleteError.message}`);
+
+        const { error: regularBadorderError } = await supabase
+          .from("regular_badorder")
+          .delete()
+          .eq("code_pwp", regularCode); // ✅ correct column
+        if (regularBadorderError) throw new Error(`Failed to delete regular_badorder record: ${regularBadorderError.message}`);
+
+
       }
 
-      // 1. Delete related entries first (children before parent)
-
-      // Delete from regular_accountlis_badget
-      const { error: budgetError } = await supabase
-        .from("regular_accountlis_badget")
-        .delete()
-        .eq("regularcode", regularCode);
-
-      if (budgetError) {
-        throw new Error(`Failed to delete budget rows: ${budgetError.message}`);
-      }
-
-      // Delete from regular_attachments
-      const { error: attachmentError } = await supabase
-        .from("regular_attachments")
-        .delete()
-        .eq("regularpwpcode", regularCode);
-
-      if (attachmentError) {
-        throw new Error(`Failed to delete attachments: ${attachmentError.message}`);
-      }
-
-      const { error: ApprovalHistory } = await supabase
-        .from("Approval_History")
-        .delete()
-        .eq("PwpCode", regularCode);
-      if (ApprovalHistory) throw new Error(`Failed to delete budget rows: ${ApprovalHistory.message}`);
-
-
-      // Delete from regular_sku_listing
-      const { error: skuError } = await supabase
-        .from("regular_sku_listing")
-        .delete()
-        .eq("regular_code", regularCode);
-
-      if (skuError) {
-        throw new Error(`Failed to delete SKUs: ${skuError.message}`);
-      }
-
-      // 2. Now delete from the main table (e.g., regular_pwp)
-      const { error: mainDeleteError } = await supabase
-        .from("regular_pwp")
-        .delete()
-        .eq("id", rowId);
-
-      if (mainDeleteError) {
-        throw new Error(`Failed to delete main record: ${mainDeleteError.message}`);
-      }
-
-      // Refresh and close modal
+      // ✅ Refresh UI
       setDeleteConfirm(null);
       await fetchData();
     } catch (err) {
@@ -415,6 +468,8 @@ function EnhancedDatabaseInterface() {
       setUpdating(false);
     }
   };
+
+
   const [modalTitle, setModalTitle] = useState("");
 
   const storedUser = localStorage.getItem('loggedInUser');
@@ -921,7 +976,7 @@ function EnhancedDatabaseInterface() {
                         padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
                         textAlign: 'center',
-                        width:"250px"
+                        width: "250px"
                       }}
                     >
                       {getStatusBadge(row.approval_status)}
