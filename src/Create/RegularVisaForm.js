@@ -3,11 +3,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';  // <---- import sweetalert2
 import { supabase } from '../supabaseClient';
-import { Modal, Button } from 'react-bootstrap';
+import { Modal, Button, Nav } from 'react-bootstrap';
 import { FaExclamationTriangle } from 'react-icons/fa';
 import { Table, Form, Card, Spinner } from 'react-bootstrap';
 import * as XLSX from 'xlsx';
 import { FaFileExcel, FaCloudUploadAlt, FaDownload, FaSave, FaSearch } from 'react-icons/fa';
+import { saveAs } from 'file-saver';
+import { motion } from "framer-motion";
 
 const RegularVisaForm = () => {
 
@@ -73,69 +75,69 @@ const RegularVisaForm = () => {
     });
 
 
-  const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
-  const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true); // Loading state
+    const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
+    const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true); // Loading state
 
-  // ---------------- Generate new code ----------------
-  const generateRegularCode = (existingCodes = []) => {
-    const year = new Date().getFullYear(); // Current year
-    const prefix = `R${year}-`;
+    // ---------------- Generate new code ----------------
+    const generateRegularCode = (existingCodes = []) => {
+        const year = new Date().getFullYear(); // Current year
+        const prefix = `R${year}-`;
 
-    // Filter existing codes with this year's prefix and extract numbers
-    const codesForYear = existingCodes
-      .filter(code => code?.startsWith(prefix))
-      .map(code => parseInt(code.replace(prefix, ""), 10))
-      .filter(num => !isNaN(num));
+        // Filter existing codes with this year's prefix and extract numbers
+        const codesForYear = existingCodes
+            .filter(code => code?.startsWith(prefix))
+            .map(code => parseInt(code.replace(prefix, ""), 10))
+            .filter(num => !isNaN(num));
 
-    const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
-    const newCode = `${prefix}${newNumber}`;
+        const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
+        const newCode = `${prefix}${newNumber}`;
 
-    console.log("🔹 Existing codes:", existingCodes);
-    console.log("🔹 Codes for this year:", codesForYear);
-    console.log("🔹 Generated new code:", newCode);
+        console.log("🔹 Existing codes:", existingCodes);
+        console.log("🔹 Codes for this year:", codesForYear);
+        console.log("🔹 Generated new code:", newCode);
 
-    return newCode;
-  };
+        return newCode;
+    };
 
-  // ---------------- Fetch codes ----------------
-  const fetchRegularPwpCodes = async () => {
-    try {
-      console.log("⏳ Fetching regular PWP codes...");
-      const { data, error } = await supabase
-        .from("regular_pwp")
-        .select("regularpwpcode");
+    // ---------------- Fetch codes ----------------
+    const fetchRegularPwpCodes = async () => {
+        try {
+            console.log("⏳ Fetching regular PWP codes...");
+            const { data, error } = await supabase
+                .from("regular_pwp")
+                .select("regularpwpcode");
 
-      if (error) throw error;
+            if (error) throw error;
 
-      const codes = data.map(row => row.regularpwpcode).filter(Boolean);
-      console.log("✅ Fetched codes:", codes);
+            const codes = data.map(row => row.regularpwpcode).filter(Boolean);
+            console.log("✅ Fetched codes:", codes);
 
-      setAllRegularPwpCodes(codes);
+            setAllRegularPwpCodes(codes);
 
-      // If formData code is empty or already exists, generate a new one
-      if (!formData.regularpwpcode || codes.includes(formData.regularpwpcode)) {
-        const newCode = generateRegularCode(codes);
-        console.log("✏️ Updating formData with new code:", newCode);
-        setFormData(prev => ({ ...prev, regularpwpcode: newCode }));
-      }
+            // If formData code is empty or already exists, generate a new one
+            if (!formData.regularpwpcode || codes.includes(formData.regularpwpcode)) {
+                const newCode = generateRegularCode(codes);
+                console.log("✏️ Updating formData with new code:", newCode);
+                setFormData(prev => ({ ...prev, regularpwpcode: newCode }));
+            }
 
-      setLoadingRegularPwpCodes(false);
-    } catch (err) {
-      console.error("❌ Error fetching regular pwp codes:", err);
-      setLoadingRegularPwpCodes(false);
-    }
-  };
+            setLoadingRegularPwpCodes(false);
+        } catch (err) {
+            console.error("❌ Error fetching regular pwp codes:", err);
+            setLoadingRegularPwpCodes(false);
+        }
+    };
 
-  // ---------------- Real-time polling ----------------
-  useEffect(() => {
-    fetchRegularPwpCodes(); // Initial fetch
+    // ---------------- Real-time polling ----------------
+    useEffect(() => {
+        fetchRegularPwpCodes(); // Initial fetch
 
-    const intervalId = setInterval(() => {
-      fetchRegularPwpCodes();
-    }, 5000); // Poll every 5 seconds
+        const intervalId = setInterval(() => {
+            fetchRegularPwpCodes();
+        }, 5000); // Poll every 5 seconds
 
-    return () => clearInterval(intervalId); // Cleanup
-  }, [formData.regularpwpcode]);
+        return () => clearInterval(intervalId); // Cleanup
+    }, [formData.regularpwpcode]);
 
 
 
@@ -366,34 +368,34 @@ const RegularVisaForm = () => {
         setRows(newRows);
     }, [selectedSkus]);
 
-    const handleAccountSkuChange = (selectedCode) => {
-        setSelectedAccountForSku(selectedCode);
+    // const handleAccountSkuChange = (selectedCode) => {
+    //     setSelectedAccountForSku(selectedCode);
 
-        if (selectedCode && selectedCode !== 'ALL_ACCOUNTS') {
-            setAccountSkuRows(prev => {
-                const existingRows = prev[selectedCode] || [];
+    //     if (selectedCode && selectedCode !== 'ALL_ACCOUNTS') {
+    //         setAccountSkuRows(prev => {
+    //             const existingRows = prev[selectedCode] || [];
 
-                // Only create a default row if this account truly has none
-                if (existingRows.length === 0) {
-                    return {
-                        ...prev,
-                        [selectedCode]: [{
-                            accountCode: selectedCode,  // 👈 keep code reference
-                            SKUITEM: '',
-                            SRP: '',
-                            QTY: '',
-                            UOM: '',
-                            BILLING_AMOUNT: '',
-                            DISCOUNT: '',
-                            TOTAL_AMOUNT: '',
-                        }]
-                    };
-                }
+    //             // Only create a default row if this account truly has none
+    //             if (existingRows.length === 0) {
+    //                 return {
+    //                     ...prev,
+    //                     [selectedCode]: [{
+    //                         accountCode: selectedCode,  // 👈 keep code reference
+    //                         SKUITEM: '',
+    //                         SRP: '',
+    //                         QTY: '',
+    //                         UOM: '',
+    //                         BILLING_AMOUNT: '',
+    //                         DISCOUNT: '',
+    //                         TOTAL_AMOUNT: '',
+    //                     }]
+    //                 };
+    //             }
 
-                return prev; // Keep existing rows
-            });
-        }
-    };
+    //             return prev; // Keep existing rows
+    //         });
+    //     }
+    // };
 
 
 
@@ -460,23 +462,37 @@ const RegularVisaForm = () => {
         }));
     };
     const calculateAccountSkuTotals = (accountCode) => {
-        const accountRows = accountSkuRows[accountCode] || [];
-        return accountRows.reduce(
-            (acc, row) => {
-                acc.SRP += parseFloat(row.SRP) || 0;
-                acc.QTY += parseInt(row.QTY) || 0;
-                acc.BILLING_AMOUNT += parseFloat(row.BILLING_AMOUNT) || 0;
-                acc.DISCOUNT += parseFloat(row.DISCOUNT) || 0;
-                acc.TOTAL_AMOUNT += parseFloat(row.TOTAL_AMOUNT) || 0;
+        const rows = accountSkuRows[accountCode] || [];
 
-                if (row.UOM && UOM_OPTIONS.includes(row.UOM)) {
-                    acc.UOMCount[row.UOM] = (acc.UOMCount[row.UOM] || 0) + 1;
-                }
-                return acc;
-            },
-            { SRP: 0, QTY: 0, BILLING_AMOUNT: 0, DISCOUNT: 0, TOTAL_AMOUNT: 0, UOMCount: {} }
-        );
+        let totals = {
+            SRP: 0,
+            QTY: 0,
+            BILLING_AMOUNT: 0,
+            DISCOUNT: 0,
+            TOTAL_AMOUNT: 0,
+            UOMCount: {},
+        };
+
+        rows.forEach(({ SRP, QTY, DISCOUNT, UOM }) => {
+            const srp = Number(SRP || 0);
+            const qty = Number(QTY || 0);
+            const discount = Number(DISCOUNT || 0);
+
+            const rowTotal = srp * qty;
+            const rowDiscountValue = rowTotal * (discount / 100);
+
+            totals.SRP += srp;
+            totals.QTY += qty;
+            totals.BILLING_AMOUNT += rowTotal;
+            totals.DISCOUNT += rowDiscountValue;
+            totals.TOTAL_AMOUNT += rowTotal - rowDiscountValue;
+
+            totals.UOMCount[UOM] = (totals.UOMCount[UOM] || 0) + qty;
+        });
+
+        return totals;
     };
+
 
     const calculateGrandTotals = () => {
         const allAccountCodes = formData.accountType || [];
@@ -833,73 +849,7 @@ const RegularVisaForm = () => {
     const [rows, setRows] = useState([]);
 
 
-    // Export full table to Excel
-    const triggerFileInput = () => {
-        if (window.excelInput) window.excelInput.click();
-    };
 
-    // Common handler for file import
-    const handleFileImport = (file) => {
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const data = new Uint8Array(event.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const imported = XLSX.utils.sheet_to_json(worksheet);
-
-            // ❌ Reject if more than 2 rows
-            if (imported.length > 2) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Import Limit Exceeded',
-                    text: 'You can only import up to 2 rows.',
-                });
-                return;
-            }
-
-            // ✅ Proceed with processing
-            const importedRows = imported.map((row, idx) => {
-                const SRP = parseFloat(row.SRP) || 0;
-                const QTY = parseInt(row.QTY) || 0;
-                const DISCOUNT = parseFloat(row.DISCOUNT) || 0;
-
-                return {
-                    id: Date.now() + idx,
-                    SKU: row.SKUITEM || '',
-                    SRP,
-                    QTY,
-                    UOM: row.UOM || '',
-                    DISCOUNT,
-                    BILLING_AMOUNT: (SRP * QTY) - DISCOUNT,
-                };
-            });
-
-            const totals = importedRows.reduce(
-                (acc, row) => {
-                    acc.SRP += row.SRP;
-                    acc.QTY += row.QTY;
-                    acc.DISCOUNT += row.DISCOUNT;
-                    acc.BILLING_AMOUNT += row.BILLING_AMOUNT;
-
-                    if (row.UOM && UOM_OPTIONS.includes(row.UOM)) {
-                        acc.UOMCount[row.UOM] = (acc.UOMCount[row.UOM] || 0) + 1;
-                    }
-
-                    return acc;
-                },
-                { SRP: 0, QTY: 0, DISCOUNT: 0, BILLING_AMOUNT: 0, UOMCount: {} }
-            );
-
-            setRows(importedRows);
-            setTotals(totals);
-        };
-
-        reader.readAsArrayBuffer(file);
-    };
-
-    // Calculate totals live
 
     const [totals, setTotals] = useState({
         SRP: 0,
@@ -929,29 +879,7 @@ const RegularVisaForm = () => {
     }, [rows]);
 
 
-    // Export to Excel
-    const handleExport = () => {
-        if (rows.length === 0) {
-            alert("ADD 0 = 00  IN BUDGET.");
-            return;
-        }
 
-        const exportData = rows.map(row => ({
-            SKU: row.SKUITEM,
-            SRP: row.SRP,
-            QTY: row.QTY,
-            UOM: row.UOM,
-            DISCOUNT: row.DISCOUNT,
-            BILLING_AMOUNT: row.BILLING_AMOUNT
-
-        }));
-
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "SKU_Data");
-
-        XLSX.writeFile(workbook, "SKU_List.xlsx");
-    };
 
     const [rowsAccounts, setRowsAccounts] = useState([]); // Account rows from database or imported data
     const [loadingAccounts, setLoadingAccounts] = useState(false); // Loading state
@@ -1587,89 +1515,98 @@ const RegularVisaForm = () => {
 
 
 
-    // 🔹 Utility function for safe number conversion
-    const toNumber = (val) => {
-        if (val === null || val === undefined || val === "") return 0;
-        return Number(val) || 0;
-    };
+const toNumber = (val) => {
+    if (val === null || val === undefined || val === "") return 0;
+    return Number(val) || 0;
+};
 
-    // 🔹 Handle SKU Insert
-    const handleSku = async () => {
-        setLoading(true);
-        setMessage("");
+// 🔹 Handle SKU Insert
+const handleSku = async () => {
+    setLoading(true);
+    setMessage("");
 
-        try {
-            // Flatten SKUs from all accounts
-            const allRows = Object.keys(accountSkuRows).flatMap(accountCode =>
-                (accountSkuRows[accountCode] || []).map(row => {
-                    const account = accountTypes.find(acc => acc.code === accountCode);
-                    return {
-                        account_name: account?.name || accountCode,
-                        sku_code: row.SKUITEM ?? null,
-                        srp: toNumber(row.SRP),
-                        qty: toNumber(row.QTY),
-                        uom: row.UOM?.trim() ? row.UOM : "pc",
-                        billing_amount: toNumber(row.BILLING_AMOUNT),
-                        discount: toNumber(row.DISCOUNT),
-                        total_amount: 0,         // placeholder
-                        remaining_balance: 0,    // placeholder
-                        regular_code: formData.regularpwpcode || generateRegularCode(allRegularPwpCodes),
-                        created_at: new Date().toISOString()
-                    };
-                })
-            );
+    try {
+        // Flatten SKUs from all accounts
+        const allRows = Object.keys(accountSkuRows).flatMap(accountCode =>
+            (accountSkuRows[accountCode] || []).map(row => {
+                const account = accountTypes.find(acc => acc.code === accountCode);
 
-            if (!allRows.length) {
-                setMessage("⚠️ No SKUs to submit.");
-                setLoading(false);
-                return;
-            }
+                const srp = toNumber(row.SRP);
+                const qty = toNumber(row.QTY);
+                const discountPercent = toNumber(row.DISCOUNT);
 
-            // Compute totals
-            const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
-            const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
-            const grandTotal = totalBilling - totalDiscount;
+                // ✅ Proper calculations
+                const billingAmount = srp * qty; // before discount
+                const discountValue = billingAmount * (discountPercent / 100);
+                const totalAmount = billingAmount - discountValue;
 
-            const selected = parseFloat(selectedBalance || 0);
-            const creditBudget = parseFloat(formData?.amountbadget || 0);
-            const remainingSkuBudget = selected - grandTotal - creditBudget;
+                return {
+                    account_name: account?.name || accountCode,
+                    sku_code: row.SKUITEM ?? null,
+                    srp,
+                    qty,
+                    uom: row.UOM?.trim() ? row.UOM : "pc",
+                    billing_amount: billingAmount,
+                    discount: discountValue, // save discount as peso amount
+                    total_amount: totalAmount,
+                    remaining_balance: 0,    // placeholder
+                    regular_code: formData.regularpwpcode || generateRegularCode(allRegularPwpCodes),
+                    created_at: new Date().toISOString()
+                };
+            })
+        );
 
-            // Attach totals
-            const rowsWithTotals = allRows.map(r => ({
-                ...r,
-                total_amount: grandTotal,
-                remaining_balance: remainingSkuBudget
-            }));
-
-            const regularpwpcode = formData.regularpwpcode || generateRegularCode(allRegularPwpCodes);
-
-            // ✅ Step 1: Insert SKUs into regular_sku
-            const { error: insertError } = await supabase
-                .from("regular_sku")
-                .insert(rowsWithTotals);
-
-            if (insertError) throw insertError;
-
-            console.log("✅ Inserted SKUs:", rowsWithTotals);
-
-            // ✅ Step 2: Upsert into regular_pwp
-            // ✅ Step 2: Upsert into regular_pwp
-            await upsertRegularPwp(
-                supabase,
-                regularpwpcode,
-                remainingSkuBudget,
-                grandTotal // <-- use grandTotal instead of creditBudget
-            );
-            setMessage("✅ SKUs submitted and regular_pwp updated successfully!");
-
-
-        } catch (err) {
-            console.error("❌ Submit error:", err.message);
-            setMessage(`❌ Error: ${err.message}`);
-        } finally {
+        if (!allRows.length) {
+            setMessage("⚠️ No SKUs to submit.");
             setLoading(false);
+            return;
         }
-    };
+
+        // ✅ Compute totals
+        const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
+        const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
+        const grandTotal = totalBilling - totalDiscount;
+
+        const selected = parseFloat(selectedBalance || 0);
+        const creditBudget = parseFloat(formData?.amountbadget || 0);
+        const remainingSkuBudget = selected - grandTotal - creditBudget;
+
+        // ✅ Attach consistent totals to every row
+        const rowsWithTotals = allRows.map(r => ({
+            ...r,
+            total_amount: r.total_amount,
+            remaining_balance: remainingSkuBudget
+        }));
+
+        const regularpwpcode = formData.regularpwpcode || generateRegularCode(allRegularPwpCodes);
+
+        // ✅ Step 1: Insert SKUs into regular_sku
+        const { error: insertError } = await supabase
+            .from("regular_sku")
+            .insert(rowsWithTotals);
+
+        if (insertError) throw insertError;
+
+        console.log("✅ Inserted SKUs:", rowsWithTotals);
+
+        // ✅ Step 2: Upsert into regular_pwp
+        await upsertRegularPwp(
+            supabase,
+            regularpwpcode,
+            remainingSkuBudget,
+            grandTotal
+        );
+
+        setMessage("✅ SKUs submitted and regular_pwp updated successfully!");
+
+    } catch (err) {
+        console.error("❌ Submit error:", err.message);
+        setMessage(`❌ Error: ${err.message}`);
+    } finally {
+        setLoading(false);
+    }
+};
+
 
     // ✅ Function to insert/update into regular_pwp
     // ✅ Function to insert/update into regular_pwp
@@ -2061,6 +1998,76 @@ const RegularVisaForm = () => {
 
     const [message, setMessage] = useState("");
 
+
+
+
+
+
+    // Handle Excel Import
+    const handleFileImport = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            // Assuming your first sheet contains the data
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+            // Map the data to your accountSkuRows
+            // Example: [{ SKUITEM: 'SKU001', QTY: 10, SRP: 100, ... }]
+            console.log('Imported Excel Data:', jsonData);
+
+            // Update state based on your account selection
+            if (selectedAccountForSku) {
+                setAccountSkuRows(prev => ({
+                    ...prev,
+                    [selectedAccountForSku]: jsonData.map(row => ({
+                        ...row,
+                        accountCode: selectedAccountForSku
+                    }))
+                }));
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    // Trigger hidden file input
+    const triggerFileInput = () => {
+        if (window.excelInput) {
+            window.excelInput.click();
+        }
+    };
+
+    // Handle Excel Export
+    const handleExport = () => {
+        // Combine all accounts into one array
+        let exportData = [];
+        Object.keys(accountSkuRows).forEach(account => {
+            exportData = exportData.concat(accountSkuRows[account]);
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'SKU_Data');
+
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
+        saveAs(blob, 'SKU_Listing.xlsx');
+    };
+
+    const [tabs, setTabs] = useState([]);
+
+    const handleAccountSkuChange = (value) => {
+        setSelectedAccountForSku(value);
+
+        if (value && !tabs.includes(value)) {
+            setTabs((prev) => [...prev, value]); // add new tab if not already added
+        }
+    };
+
     const renderStepContent = () => {
         switch (step) {
             case 0:
@@ -2377,7 +2384,7 @@ const RegularVisaForm = () => {
                                 )}
 
 
-                       
+
                                 {/* Account Type */}
 
                                 <div className="col-md-4" style={{ position: "relative" }}>
@@ -2392,7 +2399,7 @@ const RegularVisaForm = () => {
                                     >
                                         {formData.accountType.length ? getAccountNames() : "Select Account Type"}
 
-                                    
+
                                         <span
                                             style={{
                                                 position: "absolute",
@@ -3211,9 +3218,11 @@ const RegularVisaForm = () => {
                                     <Button variant="success" onClick={triggerFileInput} className="d-flex align-items-center">
                                         <FaFileExcel className="me-2" /> Import Excel
                                     </Button>
+
                                     <Button style={{ backgroundColor: 'gray' }} variant="primary" onClick={handleExport} className="d-flex align-items-center">
                                         <FaDownload className="me-2" /> Export Excel
                                     </Button>
+
                                 </div>
                             </Card.Header>
 
@@ -3243,43 +3252,67 @@ const RegularVisaForm = () => {
                                             ))
                                         }
                                     </select>
-
                                 </div>
+                                {/* Dynamic Account Tabs */}
 
+                                {tabs.length > 0 && (
+                                    <Nav variant="tabs" activeKey={selectedAccountForSku} className="mb-3">
+                                        {tabs.map((tab) => (
+                                            <Nav.Item key={tab}>
+                                                <motion.div
+                                                    whileHover={{ scale: 1.05 }}
+                                                    whileTap={{ scale: 0.95 }}
+                                                    transition={{ type: "spring", stiffness: 300 }}
+                                                    style={{ display: "inline-block" }}
+                                                >
+                                                    <Nav.Link
+                                                        eventKey={tab}
+                                                        onClick={() => setSelectedAccountForSku(tab)}
+                                                        style={{
+                                                            backgroundColor:
+                                                                selectedAccountForSku === tab ? "#007bff" : "#8ea1b4ff",
+                                                            color: selectedAccountForSku === tab ? "#fff" : "#000",
+                                                            borderRadius: "10px",
+                                                            marginRight: "8px",
+                                                            fontWeight: "500",
+                                                            transition: "all 0.3s ease",
+                                                            boxShadow:
+                                                                selectedAccountForSku === tab
+                                                                    ? "0 4px 10px rgba(0, 123, 255, 0.4)"
+                                                                    : "none",
+                                                        }}
+                                                    >
+                                                        {tab === "ALL_ACCOUNTS"
+                                                            ? "🔍 All Accounts"
+                                                            : accountTypes.find((acc) => acc.code === tab)?.name || tab}
+                                                    </Nav.Link>
+                                                </motion.div>
+                                            </Nav.Item>
+                                        ))}
+                                    </Nav>
+                                )}
 
-                                {/* SKU Table for Selected Account */}
                                 {/* SKU Table for Selected Account or All Accounts */}
                                 {selectedAccountForSku === 'ALL_ACCOUNTS' ? (
-                                    // Show all accounts view
+                                    // Show all accounts view (editable tables)
                                     <div>
                                         <h5 className="mb-4">All Accounts SKU Listing Overview</h5>
 
                                         {accountTypes
                                             .filter(account => formData.accountType.includes(account.code))
                                             .map(account => {
-                                                const accountRows = accountSkuRows[account.name] || [];
+                                                const accountRows = accountSkuRows[account.code] || [];
                                                 const accountTotals = calculateAccountSkuTotals(account.code);
 
                                                 return (
                                                     <div key={account.code} className="mb-4">
                                                         <div className="d-flex justify-content-between align-items-center mb-2">
                                                             <h6 className="mb-0">
-                                                                <span className="badge bg-info me-2">{account.code}</span>
+                                                                <span className="badge bg-primary me-2">{account.code}</span>
                                                                 {account.name}
                                                             </h6>
+
                                                             <div className="d-flex gap-2">
-                                                                <Button
-                                                                    variant="outline-primary"
-                                                                    size="sm"
-                                                                    onClick={() => {
-                                                                        setSelectedAccountForSku(account.code);
-                                                                        addSkuRowForAccount(account.code);  // Add a new empty row automatically
-                                                                    }}
-                                                                >
-                                                                    Edit This Account
-                                                                </Button>
-
-
                                                                 <Button
                                                                     variant="success"
                                                                     size="sm"
@@ -3293,7 +3326,7 @@ const RegularVisaForm = () => {
                                                         {accountRows.length > 0 ? (
                                                             <div style={{ overflowX: 'auto' }} className="mb-3">
                                                                 <Table bordered hover size="sm" className="align-middle text-center">
-                                                                    <thead className="table-light">
+                                                                    <thead className="table-primary text-white">
                                                                         <tr>
                                                                             <th>SKU</th>
                                                                             <th>SRP</th>
@@ -3305,62 +3338,166 @@ const RegularVisaForm = () => {
                                                                             <th>Actions</th>
                                                                         </tr>
                                                                     </thead>
+
                                                                     <tbody>
-                                                                        {accountRows
-                                                                            .filter(row => row.accountCode === selectedAccountForSku)  // filter rows by selected account
-                                                                            .map((row, idx) => (
-                                                                                <tr key={`${row.accountCode}-${idx}`}>
-                                                                                    <td style={{ minWidth: '200px' }}>
-                                                                                        <small>
-                                                                                            {categoryListing.find(sku => sku.category_code === row.SKUITEM)
-                                                                                                ? `${row.SKUITEM} - ${categoryListing.find(sku => sku.category_code === row.SKUITEM)?.name}`
-                                                                                                : row.SKUITEM || 'Not selected'
+                                                                        {accountRows.map((row, idx) => {
+                                                                            const srp = Number(row.SRP || 0);
+                                                                            const qty = Number(row.QTY || 0);
+                                                                            const discount = Number(row.DISCOUNT || 0);
+
+                                                                            const totalBeforeDiscount = srp * qty;
+                                                                            const discountValue = totalBeforeDiscount * (discount / 100);
+                                                                            const billingAmount = totalBeforeDiscount; // base billing before discount
+                                                                            const totalAmount = totalBeforeDiscount - discountValue;
+
+                                                                            return (
+                                                                                <tr key={`${account.code}-${idx}`}>
+                                                                                    {/* SKU */}
+                                                                                    <td style={{ display: 'flex', alignItems: 'center', minWidth: '200px' }}>
+                                                                                        <Form.Control
+                                                                                            value={
+                                                                                                categoryListing.find(sku => sku.sku_code === row.SKUITEM)
+                                                                                                    ? `${row.SKUITEM} - ${categoryListing.find(sku => sku.sku_code === row.SKUITEM)?.name}`
+                                                                                                    : row.SKUITEM || ''
                                                                                             }
-                                                                                        </small>
+                                                                                            onChange={e =>
+                                                                                                handleChangeSkuForAccount(
+                                                                                                    account.code,
+                                                                                                    idx,
+                                                                                                    'SKUITEM',
+                                                                                                    e.target.value
+                                                                                                )
+                                                                                            }
+                                                                                            readOnly
+                                                                                        />
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                setSelectedAccountForSku(account.code);
+                                                                                                setSelectedRowIndex(idx);
+                                                                                                setShowSkuModal(true);
+                                                                                            }}
+                                                                                            style={{
+                                                                                                border: "none",
+                                                                                                background: "none",
+                                                                                                cursor: "pointer",
+                                                                                                padding: "8px",
+                                                                                                marginLeft: "8px",
+                                                                                            }}
+                                                                                        >
+                                                                                            <FaSearch style={{ color: "blue", fontSize: "20px" }} />
+                                                                                        </button>
                                                                                     </td>
-                                                                                    <td>{row.SRP || '-'}</td>
-                                                                                    <td>{row.QTY || '-'}</td>
-                                                                                    <td>{row.UOM || '-'}</td>
-                                                                                    <td>{row.BILLING_AMOUNT || '-'}</td>
-                                                                                    <td>{row.DISCOUNT || '-'}</td>
-                                                                                    <td><strong>{row.TOTAL_AMOUNT || '-'}</strong></td>
+
+                                                                                    {/* SRP */}
+                                                                                    <td>
+                                                                                        <Form.Control
+                                                                                            type="number"
+                                                                                            step="0.01"
+                                                                                            value={row.SRP || ''}
+                                                                                            onChange={e =>
+                                                                                                handleChangeSkuForAccount(account.code, idx, "SRP", e.target.value)
+                                                                                            }
+                                                                                        />
+                                                                                    </td>
+
+                                                                                    {/* Qty */}
+                                                                                    <td>
+                                                                                        <Form.Control
+                                                                                            type="number"
+                                                                                            value={row.QTY || ''}
+                                                                                            onChange={e =>
+                                                                                                handleChangeSkuForAccount(account.code, idx, "QTY", e.target.value)
+                                                                                            }
+                                                                                        />
+                                                                                    </td>
+
+                                                                                    {/* UOM */}
+                                                                                    <td>
+                                                                                        <Form.Select
+                                                                                            value={row.UOM || ''}
+                                                                                            onChange={e =>
+                                                                                                handleChangeSkuForAccount(account.code, idx, "UOM", e.target.value)
+                                                                                            }
+                                                                                        >
+                                                                                            {UOM_OPTIONS.map(opt => (
+                                                                                                <option key={opt} value={opt}>
+                                                                                                    {opt}
+                                                                                                </option>
+                                                                                            ))}
+                                                                                        </Form.Select>
+                                                                                    </td>
+
+                                                                                    {/* Billing Amount (before discount) */}
+                                                                                    <td>
+                                                                                        <Form.Control
+                                                                                            type="number"
+                                                                                            value={billingAmount.toFixed(2)}
+                                                                                            readOnly
+                                                                                            style={{ backgroundColor: "#e9ecef" }}
+                                                                                        />
+                                                                                    </td>
+
+                                                                                    {/* Discount (%) */}
+                                                                                    <td>
+                                                                                        <Form.Control
+                                                                                            type="number"
+                                                                                            step="0.01"
+                                                                                            value={row.DISCOUNT || ''}
+                                                                                            onChange={e =>
+                                                                                                handleChangeSkuForAccount(account.code, idx, "DISCOUNT", e.target.value)
+                                                                                            }
+                                                                                        />
+                                                                                    </td>
+
+                                                                                    {/* Total Amount (after discount) */}
+                                                                                    <td>
+                                                                                        <Form.Control
+                                                                                            type="number"
+                                                                                            value={totalAmount.toFixed(2)}
+                                                                                            readOnly
+                                                                                            style={{
+                                                                                                backgroundColor: "#d4edda",
+                                                                                                fontWeight: "bold",
+                                                                                            }}
+                                                                                        />
+                                                                                    </td>
+
+                                                                                    {/* Actions */}
                                                                                     <td>
                                                                                         <Button
-                                                                                            variant="outline-danger"
+                                                                                            variant="danger"
                                                                                             size="sm"
-                                                                                            onClick={() => removeSkuRowForAccount(row.accountCode, idx)}
+                                                                                            onClick={() => removeSkuRowForAccount(account.code, idx)}
                                                                                         >
-                                                                                            ×
+                                                                                            Remove
                                                                                         </Button>
                                                                                     </td>
                                                                                 </tr>
-                                                                            ))
-                                                                        }
-                                                                    </tbody>
+                                                                            );
+                                                                        })}
 
-                                                                    <tfoot className="table-info">
+                                                                    </tbody>
+                                                                    <tfoot className="table-primary text-white">
                                                                         <tr>
                                                                             <td><strong>Account Total</strong></td>
                                                                             <td><strong>{accountTotals.SRP.toFixed(2)}</strong></td>
                                                                             <td><strong>{accountTotals.QTY}</strong></td>
                                                                             <td>
-                                                                                {UOM_OPTIONS.map(opt => (
-                                                                                    <div key={opt} style={{ fontSize: '0.7rem' }}>
-                                                                                        {opt}: {accountTotals.UOMCount[opt] || 0}
-                                                                                    </div>
-                                                                                ))}
+
                                                                             </td>
                                                                             <td><strong>{accountTotals.BILLING_AMOUNT.toFixed(2)}</strong></td>
                                                                             <td><strong>{accountTotals.DISCOUNT.toFixed(2)}</strong></td>
-                                                                            <td><strong className="text-success">{accountTotals.TOTAL_AMOUNT.toFixed(2)}</strong></td>
+                                                                            <td><strong >{accountTotals.TOTAL_AMOUNT.toFixed(2)}</strong></td>
                                                                             <td>-</td>
                                                                         </tr>
                                                                     </tfoot>
+
                                                                 </Table>
                                                             </div>
                                                         ) : (
                                                             <div className="text-center p-3 bg-light rounded">
-                                                                <small className="text-muted"> SKU entries for this account</small>
+                                                                <small className="text-muted">No SKU entries for this account</small>
                                                             </div>
                                                         )}
                                                         <hr />
@@ -3368,106 +3505,59 @@ const RegularVisaForm = () => {
                                                 );
                                             })
                                         }
+
+                                        {/* Grand Total Section */}
                                         {/* Grand Total Section */}
                                         {(() => {
                                             const grandTotals = calculateGrandTotals();
+                                            const selected = parseFloat(selectedBalance || 0);
+                                            const creditBudget = parseFloat(formData?.amountbadget || 0);
+                                            const netTotal = grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT;
+                                            const remainingSkuBudget = selected - netTotal - creditBudget;
+
                                             return (
-                                                <div className="mt-4 p-4 bg-white rounded shadow-lg border">
+                                                <div className="mt-4">
                                                     <h4 className="text-center mb-4">📊 Grand Total Summary</h4>
+                                                    <Table bordered hover responsive className="text-center align-middle">
+                                                        <thead className="table-primary text-white">
+                                                            <tr>
+                                                                <th>Total QTY</th>
+                                                                <th>Total Billing</th>
+                                                                <th>Total Discount</th>
+                                                                <th>Grand Total</th>
+                                                                <th>Remaining SKU Budget</th>
+                                                            </tr>
+                                                        </thead>
 
-                                                    <div className="row text-center">
-                                                        {/* Total QTY */}
-                                                        <div className="col-md-2 mb-3">
-                                                            <div className="p-3 border rounded bg-light">
-                                                                <strong>Total QTY</strong>
-                                                                <p className="text-primary h4 mt-2">{grandTotals.QTY}</p>
-                                                            </div>
-                                                        </div>
+                                                        <tbody>
+                                                            <tr>
+                                                                <td className="fw-bold text-primary">{grandTotals.QTY}</td>
 
-                                                        {/* UOM Count */}
-                                                        <div className="col-md-3 mb-3">
-                                                            <div className="p-3 border rounded bg-light">
-                                                                <strong>UOM Breakdown</strong>
-                                                                <div
-                                                                    className="mt-2 text-muted d-flex flex-wrap justify-content-center gap-3"
-                                                                    style={{ fontSize: "0.9rem" }}
-                                                                >
-                                                                    {UOM_OPTIONS.map(opt => (
-                                                                        <div key={opt}>
-                                                                            {opt}: <span className="fw-bold">{grandTotals.UOMCount[opt] || 0}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-
-
-                                                        </div>
-
-                                                        {/* Total Billing Amount */}
-                                                        <div className="col-md-2 mb-3">
-                                                            <div className="p-3 border rounded bg-light">
-                                                                <strong>Total Billing</strong>
-                                                                <p className="text-success h4 mt-2">
+                                                                <td className="fw-bold text-success">
                                                                     ₱{grandTotals.BILLING_AMOUNT.toFixed(2)}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Total Discount */}
-                                                        <div className="col-md-2 mb-3">
-                                                            <div className="p-3 border rounded bg-light">
-                                                                <strong>Total Discount</strong>
-                                                                <p className="text-warning h5 mt-2">
+                                                                </td>
+                                                                <td className="fw-bold text-warning">
                                                                     ₱{grandTotals.DISCOUNT.toFixed(2)}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Grand Total */}
-                                                        <div className="col-md-3 mb-3">
-                                                            <div className="p-3 border rounded bg-light">
-                                                                <strong>Grand Total</strong>
-                                                                <p className="text-danger h3 mt-2">
-                                                                    ₱{(grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT).toFixed(2)}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Remaining Budget */}
-                                                    <div className="card mt-4 border-0 shadow-sm">
-                                                        <div className="card-body text-center">
-                                                            {(() => {
-                                                                const grandTotals = calculateGrandTotals();
-                                                                const selected = parseFloat(selectedBalance || 0);
-                                                                const creditBudget = parseFloat(formData?.amountbadget || 0);
-                                                                const netTotal = grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT;
-                                                                const remainingSkuBudget = selected - netTotal - creditBudget;
-
-                                                                return (
-                                                                    <div>
-                                                                        <h5 className="mb-2">💰 Remaining SKU Budget</h5>
-                                                                        <p
-                                                                            className="fw-bold"
-                                                                            style={{
-                                                                                fontSize: "2rem",
-                                                                                color: remainingSkuBudget < 0 ? "#dc3545" : "#198754",
-                                                                            }}
-                                                                        >
-                                                                            ₱{remainingSkuBudget.toLocaleString("en-PH", {
-                                                                                minimumFractionDigits: 2,
-                                                                                maximumFractionDigits: 2,
-                                                                            })}
-                                                                        </p>
-                                                                    </div>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    </div>
+                                                                </td>
+                                                                <td className="fw-bold text-danger">
+                                                                    ₱{netTotal.toFixed(2)}
+                                                                </td>
+                                                                <td
+                                                                    className="fw-bold"
+                                                                    style={{ color: remainingSkuBudget < 0 ? "#dc3545" : "#198754", fontSize: "1.2rem" }}
+                                                                >
+                                                                    ₱{remainingSkuBudget.toLocaleString("en-PH", {
+                                                                        minimumFractionDigits: 2,
+                                                                        maximumFractionDigits: 2,
+                                                                    })}
+                                                                </td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </Table>
                                                 </div>
-
                                             );
                                         })()}
+
                                     </div>
                                 ) : selectedAccountForSku && selectedAccountForSku !== '' ? (
                                     // Show single account edit view (your existing code)
@@ -4043,16 +4133,21 @@ const RegularVisaForm = () => {
                             </Card.Body>
 
                             <Card.Footer className="d-flex justify-content-between align-items-center">
+                                {/* Left side */}
                                 <div>
-                                    <Button variant="outline-secondary" onClick={handlePrevious} className="me-2">
+                                    <Button variant="outline-secondary" onClick={handlePrevious}>
                                         ← Previous
                                     </Button>
+                                </div>
 
+                                {/* Right side */}
+                                <div>
                                     <Button variant="primary" onClick={() => setStep(3)}>
                                         Next →
                                     </Button>
                                 </div>
                             </Card.Footer>
+
                         </Card>
                     </div>
 
