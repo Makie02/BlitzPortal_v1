@@ -775,7 +775,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
       console.log("formValues.remaining_balance:", formValues.remaining_balance);
       console.log("originalTotalBilling:", originalTotalBilling);
       console.log("currentTotalBilling:", currentTotalBilling);
-      console.log("billingDifference:", billingDifference);
       console.log("adjustedRemainingBalance:", adjustedRemainingBalance);
 
       const resolvedAmountBudget = (amountbadget && amountbadget > 0) ? amountbadget : currentTotalBilling;
@@ -943,16 +942,24 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
           setSkuList([]);
           setOriginalTotalBilling(0);
         } else {
-          setSkuList(data);
+          // Reset discount to 0 for all fetched SKUs
+          const skuDataWithZeroDiscount = data.map(item => ({
+            ...item,
+            discount: 0,           // set discount to 0
+            billing_amount: Number(item.billing_amount) || 0, // ensure billing_amount is number
+          }));
 
-          // Calculate and store original total billing (excluding "Total:" row)
-          const originalTotal = data
+          setSkuList(skuDataWithZeroDiscount);
+
+          // Calculate original total billing (excluding "Total:" row)
+          const originalTotal = skuDataWithZeroDiscount
             .filter((item) => item.sku !== "Total:")
             .reduce((acc, { billing_amount }) => acc + (Number(billing_amount) || 0), 0);
 
           setOriginalTotalBilling(originalTotal);
+
           console.log("Original Total Billing:", originalTotal);
-          console.log("Fetched SKU List:", data);
+          console.log("Fetched SKU List with discount reset:", skuDataWithZeroDiscount);
         }
       } catch (error) {
         console.error("Unexpected error fetching SKU list:", error);
@@ -963,6 +970,8 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
     };
 
     fetchSkuList();
+
+
   }, [formData?.regularpwpcode]);
 
   // Log SKU List whenever it updates
@@ -974,30 +983,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
 
 
   // Handle changes to a specific SKU item
-  const handleSkuChange = (id, field, value) => {
-    setFormEdited(true); // ✅ Safe here
-
-    const updatedSkuList = skuList.map((item) => {
-      if (item.id === id) {
-        const updatedItem = { ...item, [field]: value };
-
-        if (field === "srp" || field === "qty" || field === "discount") {
-          updatedItem.billing_amount = calculateBillingAmount(
-            updatedItem.srp,
-            updatedItem.qty,
-            updatedItem.discount
-          );
-        }
-
-        return updatedItem;
-      }
-      return item;
-    });
-
-
-    setSkuList(updatedSkuList); // Update the state with the new sku list
-    console.log("Updated SKU List after handleSkuChange:", updatedSkuList);
-  };
 
   // Calculate Billing Amount based on SRP, Quantity, and Discount
   const calculateBillingAmount = (srp, qty, discount) => {
@@ -1182,28 +1167,81 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
   // Inside your component (before return)
   // Total before discount (just SRP × Qty for all rows)
   // totals across skuList
-  const totalBeforeDiscountAll = skuList.reduce((sum, { srp, qty }) => {
-    return sum + Number(srp || 0) * Number(qty || 0);
-  }, 0);
 
-  const totalDiscountAll = skuList.reduce((sum, { srp, qty, discount }) => {
-    const rowTotal = Number(srp || 0) * Number(qty || 0);
-    const rowDiscountValue = rowTotal * (Number(discount || 0) / 100);
-    return sum + rowDiscountValue;
-  }, 0);
+  // Add a state for adjustedRemainingBalance
+  const handleSkuChange = (id, field, value) => {
+    setFormEdited(true);
 
-  // current total after discounts
-  const currentTotalBilling = totalBeforeDiscountAll - totalDiscountAll;
+    const updatedSkuList = skuList.map((item) => {
+      if (item.id === id) {
+        // Ensure discount defaults to 0 if undefined or empty
+        let updatedValue = value;
+        if (field === "discount" && (value === undefined || value === "" || value === null)) {
+          updatedValue = 0;
+        }
 
-  // make sure originalTotalBilling is defined (fallback 0)
+        const updatedItem = { ...item, [field]: updatedValue };
+
+        // Calculate billing amount if SRP, Qty, or Discount changes
+        if (field === "srp" || field === "qty" || field === "discount") {
+          const srpNum = Number(updatedItem.srp || 0);
+          const qtyNum = Number(updatedItem.qty || 0);
+          const discountNum = Number(updatedItem.discount || 0);
+
+          updatedItem.billing_amount = srpNum * qtyNum - discountNum;
+        }
+
+        return updatedItem;
+      }
+      return item;
+    });
+
+    setSkuList(updatedSkuList); // Update SKU list
+    console.log("Updated SKU List after handleSkuChange:", updatedSkuList);
+  };
+
+
+  // Inside your component, after skuList state
+  // 1️⃣ Calculate totals dynamically
+  // Inside your component, before `return (...)`
+  // Original total billing
   const origTotal = Number(originalTotalBilling || 0);
 
-  // billingDifference should be orig - current (positive when billing decreased)
+  // Sum all SKUs
+  const totalBeforeDiscountAll = skuList.reduce(
+    (sum, { srp, qty }) => sum + Number(srp || 0) * Number(qty || 0),
+    0
+  );
+
+  const totalDiscountAll = skuList.reduce(
+    (sum, { discount }) => sum + Number(discount || 0),
+    0
+  );
+
+  const currentTotalBilling = totalBeforeDiscountAll - totalDiscountAll;
+
+  // Billing difference
   const billingDifference = origTotal - currentTotalBilling;
 
-  // remaining balance (subtract the positive difference)
-  const adjustedRemainingBalance = Number(formValues?.remaining_balance || 0) - billingDifference;
+  // Adjusted Remaining Balance
+  // Only subtract if there is an actual difference
+  const remainingBalanceOriginal = Number(formValues?.remaining_balance || 0);
+  const adjustedRemainingBalance =
+    billingDifference !== 0 ? remainingBalanceOriginal - billingDifference : remainingBalanceOriginal;
 
+  console.log("Remaining Balance:", remainingBalanceOriginal);
+  console.log("Original Total Billing:", origTotal);
+  console.log("Current Total Billing:", currentTotalBilling);
+  console.log("Billing Difference:", billingDifference);
+  console.log("Adjusted Remaining Balance:", adjustedRemainingBalance);
+
+
+
+
+
+
+
+  // current total after discounts
 
   // Delete row
 
@@ -2103,17 +2141,21 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                     <th style={{ padding: "12px", border: "1px solid #ddd" }}>Qty</th>
                     <th style={{ padding: "12px", border: "1px solid #ddd" }}>UOM</th>
                     <th style={{ padding: "12px", border: "1px solid #ddd" }}>Total</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Discount %</th>
+                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Discount ₱</th>
                     <th style={{ padding: "12px", border: "1px solid #ddd" }}>Billing Amount</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {skuList.map(({ id, account_name, sku_code, srp, qty, uom, discount }, idx) => {
+                  {skuList.map(({ id, account_name, sku_code, srp, qty, uom, discount }) => {
                     if (sku_code === "Total:") return null;
 
-                    const totalBeforeDiscount = Number(srp || 0) * Number(qty || 0);
-                    const billingAmount = totalBeforeDiscount * (1 - Number(discount || 0) / 100);
+                    const srpNum = Number(srp || 0);
+                    const qtyNum = Number(qty || 0);
+                    const discountNum = Number(discount || 0);
+
+                    const totalBeforeDiscount = srpNum * qtyNum;
+                    const billingAmount = totalBeforeDiscount - discountNum;
 
                     return (
                       <tr
@@ -2124,15 +2166,25 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                           fontSize: "14px",
                           transition: "background-color 0.3s ease",
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0f8ff")}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#f0f8ff")
+                        }
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
                       >
                         {/* Accounts */}
-                        <td style={{ minWidth: "180px", padding: "10px", border: "1px solid #ddd" }}>
+                        <td
+                          style={{
+                            minWidth: "180px",
+                            padding: "10px",
+                            border: "1px solid #ddd",
+                          }}
+                        >
                           <input
                             type="text"
                             value={account_name || ""}
-                            onChange={(e) => handleSkuChange(id, "account_name", e.target.value)}
+                            onChange={(e) =>
+                              handleSkuChange(id, "account_name", e.target.value)
+                            }
                             style={{
                               width: "100%",
                               padding: "8px",
@@ -2145,7 +2197,13 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                         </td>
 
                         {/* SKU */}
-                        <td style={{ minWidth: "200px", padding: "10px", border: "1px solid #ddd" }}>
+                        <td
+                          style={{
+                            minWidth: "200px",
+                            padding: "10px",
+                            border: "1px solid #ddd",
+                          }}
+                        >
                           <input
                             type="text"
                             value={categoryMap[sku_code] || sku_code || ""}
@@ -2155,7 +2213,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                               padding: "8px",
                               borderRadius: "5px",
                               border: "1px solid #ddd",
-                              fontSize: "14px",
                             }}
                             disabled
                           />
@@ -2215,13 +2272,17 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                           <span>{totalBeforeDiscount.toFixed(2)}</span>
                         </td>
 
-                        {/* Discount */}
+                        {/* Discount in Peso */}
+                        {/* Discount in Peso */}
                         <td style={{ padding: "10px", border: "1px solid #ddd" }}>
                           <input
                             type="number"
-                            value={discount || 0}
+                            value={discount !== undefined && discount !== null ? discount : 0} // default 0
                             step="0.01"
-                            onChange={(e) => handleSkuChange(id, "discount", e.target.value)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              handleSkuChange(id, "discount", value === "" ? 0 : parseFloat(value));
+                            }}
                             style={{
                               width: "100%",
                               padding: "8px",
@@ -2230,6 +2291,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                             }}
                           />
                         </td>
+
 
                         {/* Final Billing Amount */}
                         <td style={{ padding: "10px", border: "1px solid #ddd" }}>
@@ -2283,7 +2345,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                       Billing Difference:
                     </td>
                     <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      {billingDifference.toFixed(2)}
+                      {(origTotal - currentTotalBilling).toFixed(2)}
                     </td>
                   </tr>
 
