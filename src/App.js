@@ -43,7 +43,7 @@ import References from "./Component/References.jsx";
 import NotFoundPage from "./Nofound/NotFoundPage.js";
 import Claims_pwp from "./Create/Claims_pwp.jsx";
 import ClaimsRecords from "./NewComponents/ClaimsRecords.js";
-
+import BudgetDashboard from "./NewComponents/BudgetDashboard.js";
 function App() {
 
   // Track online/offline status
@@ -388,6 +388,9 @@ function App() {
       case "Claims_pwp": return <Claims_pwp setCurrentView={setCurrentView} />;
 
       case "ClaimsRecords": return <ClaimsRecords setCurrentView={setCurrentView} />;
+
+      case "BudgetDashboard": return <BudgetDashboard setCurrentView={setCurrentView} />;
+
 
 
       default: return <Dashboard setCurrentView={setCurrentView} />;
