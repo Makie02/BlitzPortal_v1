@@ -364,7 +364,7 @@ function EnhancedDatabaseInterface() {
         const { error: approvedHistoryError } = await supabase
           .from("approved_history_budget")
           .delete()
-          .eq("cover_pwp_code", coverCode);
+          .eq("pwp_code", coverCode);
         if (approvedHistoryError) throw new Error(`Failed to delete approved history (cover): ${approvedHistoryError.message}`);
 
         // 3. Delete from Approval_History (linked via PwpCode)
@@ -1030,17 +1030,23 @@ function EnhancedDatabaseInterface() {
                           {/* Edit Button */}
                           <button
                             onClick={() => handleEdit(row)}
-                            disabled={updating || row.approval_status === 'Approved'}
+                            disabled={updating || ["Approved", "Pending", "Declined"].includes(row.approval_status)}
                             aria-label={`Edit ${row.name}`}
-                            title="Edit"
+                            title={
+                              ["Approved", "Pending", "Declined"].includes(row.approval_status)
+                                ? `Edit disabled (${row.approval_status})`
+                                : "Edit"
+                            }
                             style={{
                               border: "none",
                               background: "none",
-                              cursor: (updating || row.approval_status === 'Approved') ? "not-allowed" : "pointer",
+                              cursor: (updating || ["Approved", "Pending", "Declined"].includes(row.approval_status))
+                                ? "not-allowed"
+                                : "pointer",
                               padding: "8px",
                               color: "#d32f2f",
                               transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                              boxShadow: row.approval_status === 'Approved'
+                              boxShadow: ["Approved", "Pending", "Declined"].includes(row.approval_status)
                                 ? "0 4px 6px rgba(108, 117, 125, 0.5)"
                                 : "0 4px 6px rgba(0,0,0,0.2)",
                               borderRadius: "8px",
@@ -1049,36 +1055,42 @@ function EnhancedDatabaseInterface() {
                               justifyContent: "center",
                               marginLeft: "8px",
                               outline: "none",
-                              opacity: (updating || row.approval_status === 'Approved') ? 0.5 : 1,
-                              pointerEvents: (updating || row.approval_status === 'Approved') ? 'none' : 'auto'
+                              opacity: (updating || ["Approved", "Pending", "Declined"].includes(row.approval_status)) ? 0.5 : 1,
+                              pointerEvents: (updating || ["Approved", "Pending", "Declined"].includes(row.approval_status)) ? 'none' : 'auto'
                             }}
                             onMouseEnter={(e) => {
-                              if (row.approval_status !== 'Approved') {
+                              if (!["Approved", "Pending", "Declined"].includes(row.approval_status)) {
                                 e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
                                 e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
                               }
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                              e.currentTarget.style.boxShadow = row.approval_status === 'Approved'
+                              e.currentTarget.style.boxShadow = ["Approved", "Pending", "Declined"].includes(row.approval_status)
                                 ? "0 4px 6px rgba(108, 117, 125, 0.5)"
                                 : "0 4px 6px rgba(0,0,0,0.2)";
                             }}
                             onMouseDown={(e) => {
-                              if (row.approval_status !== 'Approved') {
+                              if (!["Approved", "Pending", "Declined"].includes(row.approval_status)) {
                                 e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
                                 e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
                               }
                             }}
                             onMouseUp={(e) => {
-                              if (row.approval_status !== 'Approved') {
+                              if (!["Approved", "Pending", "Declined"].includes(row.approval_status)) {
                                 e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
                                 e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
                               }
                             }}
                           >
-                            <FaEdit style={{ color: row.approval_status === 'Approved' ? "#6c757d" : "orange", fontSize: "20px" }} />
+                            <FaEdit
+                              style={{
+                                color: ["Approved", "Pending", "Declined"].includes(row.approval_status) ? "#6c757d" : "orange",
+                                fontSize: "20px"
+                              }}
+                            />
                           </button>
+
 
                           {/* Delete Button */}
                           <button
@@ -1205,70 +1217,72 @@ function EnhancedDatabaseInterface() {
       />
 
       {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
+      {
+        deleteConfirm && (
           <div style={{
-            backgroundColor: 'white',
-            padding: '30px',
-            borderRadius: '12px',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-            maxWidth: '400px',
-            width: '90%'
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
           }}>
-            <h3 style={{ margin: '0 0 15px', color: '#333' }}>Confirm Delete</h3>
-            <p style={{ margin: '0 0 20px', color: '#666' }}>
-              Are you sure you want to delete this record? This action cannot be undone.
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                disabled={updating}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#757575',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: updating ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                disabled={updating}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#f44336',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: updating ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  opacity: updating ? 0.7 : 1
-                }}
-              >
-                {updating ? 'Deleting...' : 'Delete'}
-              </button>
+            <div style={{
+              backgroundColor: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+              maxWidth: '400px',
+              width: '90%'
+            }}>
+              <h3 style={{ margin: '0 0 15px', color: '#333' }}>Confirm Delete</h3>
+              <p style={{ margin: '0 0 20px', color: '#666' }}>
+                Are you sure you want to delete this record? This action cannot be undone.
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setDeleteConfirm(null)}
+                  disabled={updating}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#757575',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: updating ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDelete(deleteConfirm)}
+                  disabled={updating}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#f44336',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: updating ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    opacity: updating ? 0.7 : 1
+                  }}
+                >
+                  {updating ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 
