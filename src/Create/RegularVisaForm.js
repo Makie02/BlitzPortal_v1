@@ -2494,10 +2494,10 @@ const RegularVisaForm = () => {
                           marginBottom: "10px",
                         }}
                       >
-                        Debug: accountTypes.length = {accountTypes.length}
+                      {accountTypes.length}
                         {accountTypes.length > 0 && (
                           <div>
-                            Sample: {accountTypes[0]?.code} -{" "}
+                            DATA: {accountTypes[0]?.code} -{" "}
                             {accountTypes[0]?.name}
                           </div>
                         )}
