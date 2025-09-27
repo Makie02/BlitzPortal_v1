@@ -2208,12 +2208,15 @@ const Claims_pwp = () => {
                                         onChange={handleFormChange}
                                     >
                                         <option value="">Select Activity</option>
-                                        {activities.map((opt, index) => (
-                                            <option key={index} value={opt.code}>
-                                                {opt.name}
-                                            </option>
-                                        ))}
+                                        {activities
+                                            .filter(opt => opt.name === 'BAD ORDER' || opt.name === 'CREDITABLE WITHHOLDING TAX')
+                                            .map((opt, index) => (
+                                                <option key={index} value={opt.code}>
+                                                    {opt.name}
+                                                </option>
+                                            ))}
                                     </select>
+
 
 
                                     {/* Dropdown arrow */}
@@ -2481,7 +2484,13 @@ const Claims_pwp = () => {
                                                                 checked={formData.accountType.includes(opt.code)}
                                                                 onChange={() => toggleAccountType(opt.code)}
                                                                 id={`accountType-${opt.code}`}
+                                                                style={{
+                                                                    width: "20px",    // width of checkbox
+                                                                    height: "20px",   // height of checkbox
+                                                                    cursor: "pointer" // optional: changes cursor on hover
+                                                                }}
                                                             />
+
                                                             <label
                                                                 htmlFor={`accountType-${opt.code}`}
                                                                 style={{ marginLeft: "8px", cursor: "pointer" }}
