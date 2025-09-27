@@ -318,7 +318,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
   // Assume you have these in your component's state:
   const currentTotalBudget = budgetList.reduce((sum, item) => sum + Number(item.budget || 0), 0);
   const budgetDifference = currentTotalBudget - originalTotalBudget;
-  const adjustedRemainingBalanceForBudget = Number(formData?.initial_remaining_balance || 0) - budgetDifference;
+const adjustedRemainingBalanceForBudget = Number(formData?.initial_remaining_balance || 0) - currentTotalBudget;
   // Handler for editing budget value
 
   // Assuming you get current remaining_balance value from formData or somewhere else:
@@ -649,64 +649,64 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
 
 
 
-  const handleSubmit = async () => {
-    setUpdating(true);
-    setError(null);
+const handleSubmit = async () => {
+  setUpdating(true);
+  setError(null);
 
-    try {
-      const pwpCodeToDelete = formData.cover_code || formData.regularpwpcode;
+  try {
+    const pwpCodeToDelete = formData.cover_code || formData.regularpwpcode;
 
-      if (pwpCodeToDelete) {
-        // Delete existing Approval_History for the same PwpCode
-        const { error: deleteError } = await supabase
-          .from('Approval_History')
-          .delete()
-          .eq('PwpCode', pwpCodeToDelete);
+    if (pwpCodeToDelete) {
+      // Delete existing Approval_History for the same PwpCode
+      const { error: deleteError } = await supabase
+        .from('Approval_History')
+        .delete()
+        .eq('PwpCode', pwpCodeToDelete);
 
-        if (deleteError) {
-          console.error('❌ Error deleting existing Approval_History:', deleteError);
-          throw deleteError;
-        }
-        console.log(`✅ Deleted existing Approval_History for PwpCode: ${pwpCodeToDelete}`);
+      if (deleteError) {
+        console.error('❌ Error deleting existing Approval_History:', deleteError);
+        throw deleteError;
       }
-
-      // Submit new PWP data
-      if (formData.cover_code) {
-        await submitCoverPWP();
-      } else {
-        const accountsUpdated = await handleSaveAccountstable(); // get success flag
-        await submitSkuTable();
-        await submitRegularPWP();
-        await submitAccountToRegular(accountsUpdated);  // pass flag here
-        await submitSkuTotalToRegular(
-          formData.regularpwpcode,
-          adjustedRemainingBalance,
-          currentTotalBilling,
-          formValues.amountbadget
-        );
-      }
-
-      // Show success message and reload page
-      await Swal.fire({
-        icon: 'success',
-        title: 'Success',
-        text: 'Success Update all data',
-      }).then(() => {
-        window.location.reload();
-      });
-
-    } catch (err) {
-      console.error('❌ Submit error:', err);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Submission Failed',
-        text: err.message || 'Something went wrong during submission.',
-      });
-      setError(`Submit Error: ${err.message}`);
-    } finally {
-      setUpdating(false);
+      console.log(`✅ Deleted existing Approval_History for PwpCode: ${pwpCodeToDelete}`);
     }
-  };
+
+    // Submit new PWP data
+    if (formData.cover_code) {
+      await submitCoverPWP();
+    } else {
+      const accountsUpdated = await handleSaveAccountstable(); // get success flag
+      await submitSkuTable();
+      await submitRegularPWP();
+      await submitAccountToRegular(accountsUpdated);  // pass flag here
+      await submitSkuTotalToRegular(
+        formData.regularpwpcode,
+        adjustedRemainingBalance,
+        currentTotalBilling,
+        formValues.amountbadget
+      );
+    }
+
+    // Show success message and reload page
+    await Swal.fire({
+      icon: 'success',
+      title: 'Success',
+      text: 'Success Update all data',
+    }).then(() => {
+      window.location.reload();
+    });
+
+  } catch (err) {
+    console.error('❌ Submit error:', err);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Submission Failed',
+      text: err.message || 'Something went wrong during submission.',
+    });
+    setError(`Submit Error: ${err.message}`);
+  } finally {
+    setUpdating(false);
+  }
+};
 
 
 
@@ -775,6 +775,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
       console.log("formValues.remaining_balance:", formValues.remaining_balance);
       console.log("originalTotalBilling:", originalTotalBilling);
       console.log("currentTotalBilling:", currentTotalBilling);
+      console.log("billingDifference:", billingDifference);
       console.log("adjustedRemainingBalance:", adjustedRemainingBalance);
 
       const resolvedAmountBudget = (amountbadget && amountbadget > 0) ? amountbadget : currentTotalBilling;
@@ -942,24 +943,16 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
           setSkuList([]);
           setOriginalTotalBilling(0);
         } else {
-          // Reset discount to 0 for all fetched SKUs
-          const skuDataWithZeroDiscount = data.map(item => ({
-            ...item,
-            discount: 0,           // set discount to 0
-            billing_amount: Number(item.billing_amount) || 0, // ensure billing_amount is number
-          }));
+          setSkuList(data);
 
-          setSkuList(skuDataWithZeroDiscount);
-
-          // Calculate original total billing (excluding "Total:" row)
-          const originalTotal = skuDataWithZeroDiscount
+          // Calculate and store original total billing (excluding "Total:" row)
+          const originalTotal = data
             .filter((item) => item.sku !== "Total:")
             .reduce((acc, { billing_amount }) => acc + (Number(billing_amount) || 0), 0);
 
           setOriginalTotalBilling(originalTotal);
-
           console.log("Original Total Billing:", originalTotal);
-          console.log("Fetched SKU List with discount reset:", skuDataWithZeroDiscount);
+          console.log("Fetched SKU List:", data);
         }
       } catch (error) {
         console.error("Unexpected error fetching SKU list:", error);
@@ -970,8 +963,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
     };
 
     fetchSkuList();
-
-
   }, [formData?.regularpwpcode]);
 
   // Log SKU List whenever it updates
@@ -983,6 +974,30 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
 
 
   // Handle changes to a specific SKU item
+  const handleSkuChange = (id, field, value) => {
+    setFormEdited(true); // ✅ Safe here
+
+    const updatedSkuList = skuList.map((item) => {
+      if (item.id === id) {
+        const updatedItem = { ...item, [field]: value };
+
+        if (field === "srp" || field === "qty" || field === "discount") {
+          updatedItem.billing_amount = calculateBillingAmount(
+            updatedItem.srp,
+            updatedItem.qty,
+            updatedItem.discount
+          );
+        }
+
+        return updatedItem;
+      }
+      return item;
+    });
+
+
+    setSkuList(updatedSkuList); // Update the state with the new sku list
+    console.log("Updated SKU List after handleSkuChange:", updatedSkuList);
+  };
 
   // Calculate Billing Amount based on SRP, Quantity, and Discount
   const calculateBillingAmount = (srp, qty, discount) => {
@@ -1095,13 +1110,16 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
     setSkuList(updatedSkuList);
   };
 
-  // const currentTotalBilling = skuList
-  //   .filter((item) => item.sku !== "Total:")
-  //   .reduce((acc, { billing_amount }) => acc + (Number(billing_amount) || 0), 0);
+  // Calculate current total billing amount (excluding "Total:" row)
+  const currentTotalBilling = skuList
+    .filter((item) => item.sku !== "Total:")
+    .reduce((acc, { billing_amount }) => acc + (Number(billing_amount) || 0), 0);
 
-  // const billingDifference = currentTotalBilling - originalTotalBilling;
+  // Calculate the difference between current and original billing
+  const billingDifference = currentTotalBilling - originalTotalBilling;
 
-  // const adjustedRemainingBalance = Number(formValues.remaining_balance) - billingDifference;
+  // Calculate the adjusted remaining balance
+  const adjustedRemainingBalance = Number(formValues.remaining_balance) - billingDifference;
 
   // Calculate the total billing amount and remaining excluding the "Total:" row
   const [categoryMap, setCategoryMap] = useState({}); // key = sku_code, value = name
@@ -1164,84 +1182,8 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
 
   // Handle input changes
 
-  // Inside your component (before return)
-  // Total before discount (just SRP × Qty for all rows)
-  // totals across skuList
-
-  // Add a state for adjustedRemainingBalance
-  const handleSkuChange = (id, field, value) => {
-    setFormEdited(true);
-
-    const updatedSkuList = skuList.map((item) => {
-      if (item.id === id) {
-        // Ensure discount defaults to 0 if undefined or empty
-        let updatedValue = value;
-        if (field === "discount" && (value === undefined || value === "" || value === null)) {
-          updatedValue = 0;
-        }
-
-        const updatedItem = { ...item, [field]: updatedValue };
-
-        // Calculate billing amount if SRP, Qty, or Discount changes
-        if (field === "srp" || field === "qty" || field === "discount") {
-          const srpNum = Number(updatedItem.srp || 0);
-          const qtyNum = Number(updatedItem.qty || 0);
-          const discountNum = Number(updatedItem.discount || 0);
-
-          updatedItem.billing_amount = srpNum * qtyNum - discountNum;
-        }
-
-        return updatedItem;
-      }
-      return item;
-    });
-
-    setSkuList(updatedSkuList); // Update SKU list
-    console.log("Updated SKU List after handleSkuChange:", updatedSkuList);
-  };
 
 
-  // Inside your component, after skuList state
-  // 1️⃣ Calculate totals dynamically
-  // Inside your component, before `return (...)`
-  // Original total billing
-  const origTotal = Number(originalTotalBilling || 0);
-
-  // Sum all SKUs
-  const totalBeforeDiscountAll = skuList.reduce(
-    (sum, { srp, qty }) => sum + Number(srp || 0) * Number(qty || 0),
-    0
-  );
-
-  const totalDiscountAll = skuList.reduce(
-    (sum, { discount }) => sum + Number(discount || 0),
-    0
-  );
-
-  const currentTotalBilling = totalBeforeDiscountAll - totalDiscountAll;
-
-  // Billing difference
-  const billingDifference = origTotal - currentTotalBilling;
-
-  // Adjusted Remaining Balance
-  // Only subtract if there is an actual difference
-  const remainingBalanceOriginal = Number(formValues?.remaining_balance || 0);
-  const adjustedRemainingBalance =
-    billingDifference !== 0 ? remainingBalanceOriginal - billingDifference : remainingBalanceOriginal;
-
-  console.log("Remaining Balance:", remainingBalanceOriginal);
-  console.log("Original Total Billing:", origTotal);
-  console.log("Current Total Billing:", currentTotalBilling);
-  console.log("Billing Difference:", billingDifference);
-  console.log("Adjusted Remaining Balance:", adjustedRemainingBalance);
-
-
-
-
-
-
-
-  // current total after discounts
 
   // Delete row
 
@@ -1961,7 +1903,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                         {/* Original Remaining Balance */}
                         <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
                           <td colSpan={2} style={{ padding: "8px", border: "1px solid #ddd" }}>
-                            Original Remaining Balance
+                            Original Remaining Balance 
                           </td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>
                             {Number(formData?.initial_remaining_balance || 0).toFixed(2)}
@@ -2120,42 +2062,42 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                   width: "100%",
                   borderCollapse: "collapse",
                   backgroundColor: "#f9f9f9",
-                  boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+                  boxShadow: "0 2px 10px rgba(0, 0, 0,Sub Account 0.1)",
                   borderRadius: "8px",
                   overflow: "hidden",
                 }}
               >
                 <thead>
-                  <tr
-                    style={{
-                      backgroundColor: "#3b82f6",
-                      color: "white",
-                      fontWeight: "bold",
-                      textAlign: "center",
-                      fontSize: "14px",
-                    }}
-                  >
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Accounts</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SKU</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SRP</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Qty</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>UOM</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Total</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Discount ₱</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Billing Amount</th>
-                  </tr>
-                </thead>
+  <tr
+    style={{
+      backgroundColor: "#3b82f6",
+      color: "white",
+      fontWeight: "bold",
+      textAlign: "center",
+      fontSize: "14px",
+    }}
+  >
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Account Name</th>
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SKU</th>
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SRP</th>
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Qty</th>
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>UOM</th>
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Amount Before Discount</th>
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Discount %</th>
+    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Total Billing</th>
+  </tr>
+</thead>
 
                 <tbody>
-                  {skuList.map(({ id, account_name, sku_code, srp, qty, uom, discount }) => {
+                    {skuList.map(({ id, sku_code, account_name, srp, qty, uom, discount, billing_amount }, idx) => {
+                    // Skip Total row, we'll compute it dynamically in footer
                     if (sku_code === "Total:") return null;
 
-                    const srpNum = Number(srp || 0);
-                    const qtyNum = Number(qty || 0);
-                    const discountNum = Number(discount || 0);
+                     const amountBeforeDiscount = Number(srp || 0) * Number(qty || 0);
+                     const discountAmount = amountBeforeDiscount * (Number(discount || 0) / 100);
+                      const finalAmount = amountBeforeDiscount - discountAmount;
 
-                    const totalBeforeDiscount = srpNum * qtyNum;
-                    const billingAmount = totalBeforeDiscount - discountNum;
+                    const computedBilling = Number(srp || 0) * Number(qty || 0) * (1 - Number(discount || 0) / 100);
 
                     return (
                       <tr
@@ -2166,27 +2108,34 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                           fontSize: "14px",
                           transition: "background-color 0.3s ease",
                         }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.backgroundColor = "#f0f8ff")
-                        }
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0f8ff")}
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
                       >
-                        {/* Accounts */}
-                        <td
-                          style={{
-                            minWidth: "180px",
-                            padding: "10px",
-                            border: "1px solid #ddd",
-                          }}
-                        >
+
+   <td style={{ width: "300px", padding: "10px", border: "1px solid #ddd" }}>
+            <input
+              type="text"
+              value={categoryMap[account_name] || account_name || ""}
+              onChange={(e) => handleSkuChange(id, "account_name", e.target.value)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "8px",
+                borderRadius: "5px",
+                border: "1px solid #ddd",
+                fontSize: "14px",
+              }}
+              disabled
+            />
+          </td>
+                        <td style={{ width: '300px', padding: "10px", border: "1px solid #ddd" }}>
                           <input
                             type="text"
-                            value={account_name || ""}
-                            onChange={(e) =>
-                              handleSkuChange(id, "account_name", e.target.value)
-                            }
+                            value={categoryMap[sku_code] || sku_code || ""}
+                            onChange={(e) => handleSkuChange(id, "sku_code", e.target.value)}
                             style={{
                               width: "100%",
+                              boxSizing: "border-box",
                               padding: "8px",
                               borderRadius: "5px",
                               border: "1px solid #ddd",
@@ -2196,29 +2145,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                           />
                         </td>
 
-                        {/* SKU */}
-                        <td
-                          style={{
-                            minWidth: "200px",
-                            padding: "10px",
-                            border: "1px solid #ddd",
-                          }}
-                        >
-                          <input
-                            type="text"
-                            value={categoryMap[sku_code] || sku_code || ""}
-                            onChange={(e) => handleSkuChange(id, "sku_code", e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                            }}
-                            disabled
-                          />
-                        </td>
 
-                        {/* SRP */}
                         <td style={{ padding: "10px", border: "1px solid #ddd" }}>
                           <input
                             type="number"
@@ -2234,7 +2161,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                           />
                         </td>
 
-                        {/* Qty */}
                         <td style={{ padding: "10px", border: "1px solid #ddd" }}>
                           <input
                             type="number"
@@ -2249,7 +2175,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                           />
                         </td>
 
-                        {/* UOM */}
                         <td style={{ padding: "10px", border: "1px solid #ddd" }}>
                           <select
                             value={uom || "pc"}
@@ -2266,114 +2191,112 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
                             <option value="ibx">IBX</option>
                           </select>
                         </td>
-
-                        {/* Total Before Discount */}
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <span>{totalBeforeDiscount.toFixed(2)}</span>
-                        </td>
-
-                        {/* Discount in Peso */}
-                        {/* Discount in Peso */}
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <input
-                            type="number"
-                            value={discount !== undefined && discount !== null ? discount : 0} // default 0
-                            step="0.01"
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              handleSkuChange(id, "discount", value === "" ? 0 : parseFloat(value));
-                            }}
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                            }}
-                          />
-                        </td>
-
-
-                        {/* Final Billing Amount */}
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <strong>{billingAmount.toFixed(2)}</strong>
-                        </td>
-                      </tr>
-                    );
-                  })}
+      <td style={{ 
+        padding: "10px", 
+        border: "1px solid #ddd",
+        backgroundColor: "#f8f9fa",
+        fontWeight: "600",
+        color: "#495057"
+      }}>
+        <span>{amountBeforeDiscount.toFixed(2)}</span>
+      </td>
+                         <td style={{ width: '80px', padding: "10px", border: "1px solid #ddd" }}>
+        <input
+          type="number"
+          value={discount || 0}
+          step="0.01"
+          min="0"
+          max="100"
+          onChange={(e) => handleSkuChange(id, "discount", e.target.value)}
+          style={{
+            width: "100%",
+            padding: "8px",
+            borderRadius: "5px",
+            border: "1px solid #ddd",
+          }}
+        />
+        <span style={{ fontSize: "12px", color: "#666" }}>%</span>
+      </td>
+                         <td style={{ 
+        padding: "10px", 
+        border: "1px solid #ddd",
+        backgroundColor: "#e8f5e9",
+        fontWeight: "bold",
+        color: "#2e7d32"
+      }}>
+        <span>{finalAmount.toFixed(2)}</span>
+      </td>
+    </tr>
+  );
+})}
                 </tbody>
 
-
                 <tfoot>
-                  <tr>
-                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      Total Before Discount:
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      {totalBeforeDiscountAll.toFixed(2)}
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      (-) Discount:
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", color: "red" }}>
-                      -{totalDiscountAll.toFixed(2)}
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      Total Billing (After Discount):
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold" }}>
-                      {currentTotalBilling.toFixed(2)}
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      Original Total Billing:
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      {origTotal.toFixed(2)}
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      Billing Difference:
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      {(origTotal - currentTotalBilling).toFixed(2)}
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td
-                      colSpan="6"
-                      style={{
-                        textAlign: "right",
-                        padding: "12px",
-                        border: "1px solid #ddd",
-                        fontWeight: "bold",
-                        fontSize: "16px",
-                        paddingTop: "20px",
-                        backgroundColor: "#f0f8ff",
-                      }}
-                    >
-                      Remaining Balance: {adjustedRemainingBalance.toFixed(2)}
-                    </td>
-                  </tr>
-                </tfoot>
+  <tr>
+    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold" }}>
+      Original Remaining Balance: (before editing)
+    </td>
+    <td colSpan="4" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold" }}>
+      {Number(formValues.remaining_balance).toFixed(2)}
+    </td>
+  </tr>
 
 
+  <tr>
+    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold" }}>
+      Total Before Discount:
+    </td>
+    <td colSpan="4" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold", backgroundColor: "#f8f9fa" }}>
+      {skuList
+        .filter(item => item.sku_code !== "Total:")
+        .reduce((acc, item) => acc + (Number(item.srp || 0) * Number(item.qty || 0)), 0)
+        .toFixed(2)
+      }
+    </td>
+  </tr>
+
+ 
+  <tr>
+    <td colSpan="5" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold" }}>
+      Total Discount Amount:
+    </td>
+    <td colSpan="3" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold", backgroundColor: "#fff3cd" }}>
+      {(skuList
+        .filter(item => item.sku_code !== "Total:")
+        .reduce((acc, item) => {
+          const beforeDiscount = Number(item.srp || 0) * Number(item.qty || 0);
+          const afterDiscount = beforeDiscount * (1 - Number(item.discount || 0) / 100);
+          return acc + (beforeDiscount - afterDiscount);
+        }, 0)
+      ).toFixed(2)}
+    </td>
+  </tr>
+
+
+
+  <tr>
+    <td
+      colSpan="8"
+      style={{
+        textAlign: "right",
+        padding: "12px",
+        border: "1px solid #ddd",
+        fontWeight: "bold",
+        fontSize: "16px",
+        paddingTop: "20px",
+        backgroundColor: "#f0f8ff",
+      }}
+    >
+      Remaining Balance: {adjustedRemainingBalance.toFixed(2)}
+    </td>
+  </tr>
+</tfoot>
               </table>
             )}
           </div>
           {formData?.activityName === "BAD ORDER" && badorderList.length > 0 && (
             <div>
-              <h2 style={{ textAlign: 'left' }}>BAD ORDER  </h2>
+              <h2 style={{textAlign:'left'}}>BAD ORDER  </h2>
 
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
