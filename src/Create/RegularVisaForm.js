@@ -479,7 +479,7 @@ const RegularVisaForm = () => {
             const discount = Number(DISCOUNT || 0);
 
             const rowTotal = srp * qty;
-            const rowDiscountValue = rowTotal * (discount / 100);
+            const rowDiscountValue = discount; // Now treated as peso amount
 
             totals.SRP += srp;
             totals.QTY += qty;
@@ -492,6 +492,7 @@ const RegularVisaForm = () => {
 
         return totals;
     };
+
 
 
     const calculateGrandTotals = () => {
@@ -717,6 +718,10 @@ const RegularVisaForm = () => {
                         accounts: newForm.accounts,
                         amount_display: newForm.amount_display,
                     });
+                } else {
+                    // Erase amount_display if no settingsMap for this activity
+                    newForm.amount_display = '';
+                    console.log("⚠️ No settingsMap found, cleared amount_display");
                 }
             }
 
@@ -1515,97 +1520,95 @@ const RegularVisaForm = () => {
 
 
 
-const toNumber = (val) => {
-    if (val === null || val === undefined || val === "") return 0;
-    return Number(val) || 0;
-};
+    const toNumber = (val) => {
+        if (val === null || val === undefined || val === "") return 0;
+        return Number(val) || 0;
+    };
 
-// 🔹 Handle SKU Insert
-const handleSku = async () => {
-    setLoading(true);
-    setMessage("");
+    // 🔹 Handle SKU Insert
+    const handleSku = async () => {
+        setLoading(true);
+        setMessage("");
 
-    try {
-        // Flatten SKUs from all accounts
-        const allRows = Object.keys(accountSkuRows).flatMap(accountCode =>
-            (accountSkuRows[accountCode] || []).map(row => {
-                const account = accountTypes.find(acc => acc.code === accountCode);
+        try {
+            // Flatten SKUs from all accounts
+            const allRows = Object.keys(accountSkuRows).flatMap(accountCode =>
+                (accountSkuRows[accountCode] || []).map(row => {
+                    const account = accountTypes.find(acc => acc.code === accountCode);
 
-                const srp = toNumber(row.SRP);
-                const qty = toNumber(row.QTY);
-                const discountPercent = toNumber(row.DISCOUNT);
+                    const srp = toNumber(row.SRP);
+                    const qty = toNumber(row.QTY);
+                    const discountValue = toNumber(row.DISCOUNT); // 💰 Peso discount
 
-                // ✅ Proper calculations
-                const billingAmount = srp * qty; // before discount
-                const discountValue = billingAmount * (discountPercent / 100);
-                const totalAmount = billingAmount - discountValue;
+                    const billingAmount = srp * qty; // before discount
+                    const totalAmount = billingAmount - discountValue;
 
-                return {
-                    account_name: account?.name || accountCode,
-                    sku_code: row.SKUITEM ?? null,
-                    srp,
-                    qty,
-                    uom: row.UOM?.trim() ? row.UOM : "pc",
-                    billing_amount: billingAmount,
-                    discount: discountValue, // save discount as peso amount
-                    total_amount: totalAmount,
-                    remaining_balance: 0,    // placeholder
-                    regular_code: formData.regularpwpcode || generateRegularCode(allRegularPwpCodes),
-                    created_at: new Date().toISOString()
-                };
-            })
-        );
+                    return {
+                        account_name: account?.name || accountCode,
+                        sku_code: row.SKUITEM ?? null,
+                        srp,
+                        qty,
+                        uom: row.UOM?.trim() ? row.UOM : "pc",
+                        billing_amount: billingAmount,
+                        discount: discountValue, // 💰 Save as peso value
+                        total_amount: totalAmount,
+                        remaining_balance: 0,    // placeholder
+                        regular_code: formData.regularpwpcode || generateRegularCode(allRegularPwpCodes),
+                        created_at: new Date().toISOString()
+                    };
+                })
+            );
 
-        if (!allRows.length) {
-            setMessage("⚠️ No SKUs to submit.");
+            if (!allRows.length) {
+                setMessage("⚠️ No SKUs to submit.");
+                setLoading(false);
+                return;
+            }
+
+            // ✅ Compute totals
+            const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
+            const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
+            const grandTotal = totalBilling - totalDiscount;
+
+            const selected = parseFloat(selectedBalance || 0);
+            const creditBudget = parseFloat(formData?.amountbadget || 0);
+            const remainingSkuBudget = selected - grandTotal - creditBudget;
+
+            // ✅ Attach consistent totals to every row
+            const rowsWithTotals = allRows.map(r => ({
+                ...r,
+                total_amount: r.total_amount,
+                remaining_balance: remainingSkuBudget
+            }));
+
+            const regularpwpcode = formData.regularpwpcode || generateRegularCode(allRegularPwpCodes);
+
+            // ✅ Step 1: Insert SKUs into regular_sku
+            const { error: insertError } = await supabase
+                .from("regular_sku")
+                .insert(rowsWithTotals);
+
+            if (insertError) throw insertError;
+
+            console.log("✅ Inserted SKUs:", rowsWithTotals);
+
+            // ✅ Step 2: Upsert into regular_pwp
+            await upsertRegularPwp(
+                supabase,
+                regularpwpcode,
+                remainingSkuBudget,
+                grandTotal
+            );
+
+            setMessage("✅ SKUs submitted and regular_pwp updated successfully!");
+
+        } catch (err) {
+            console.error("❌ Submit error:", err.message);
+            setMessage(`❌ Error: ${err.message}`);
+        } finally {
             setLoading(false);
-            return;
         }
-
-        // ✅ Compute totals
-        const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
-        const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
-        const grandTotal = totalBilling - totalDiscount;
-
-        const selected = parseFloat(selectedBalance || 0);
-        const creditBudget = parseFloat(formData?.amountbadget || 0);
-        const remainingSkuBudget = selected - grandTotal - creditBudget;
-
-        // ✅ Attach consistent totals to every row
-        const rowsWithTotals = allRows.map(r => ({
-            ...r,
-            total_amount: r.total_amount,
-            remaining_balance: remainingSkuBudget
-        }));
-
-        const regularpwpcode = formData.regularpwpcode || generateRegularCode(allRegularPwpCodes);
-
-        // ✅ Step 1: Insert SKUs into regular_sku
-        const { error: insertError } = await supabase
-            .from("regular_sku")
-            .insert(rowsWithTotals);
-
-        if (insertError) throw insertError;
-
-        console.log("✅ Inserted SKUs:", rowsWithTotals);
-
-        // ✅ Step 2: Upsert into regular_pwp
-        await upsertRegularPwp(
-            supabase,
-            regularpwpcode,
-            remainingSkuBudget,
-            grandTotal
-        );
-
-        setMessage("✅ SKUs submitted and regular_pwp updated successfully!");
-
-    } catch (err) {
-        console.error("❌ Submit error:", err.message);
-        setMessage(`❌ Error: ${err.message}`);
-    } finally {
-        setLoading(false);
-    }
-};
+    };
 
 
     // ✅ Function to insert/update into regular_pwp
@@ -2068,6 +2071,54 @@ const handleSku = async () => {
         }
     };
 
+
+    const [coverPwpLookup, setCoverPwpLookup] = useState([]);
+
+    useEffect(() => {
+        const fetchCoverDistributors = async () => {
+            const { data, error } = await supabase
+                .from('cover_pwp')
+                .select('cover_code, distributor_code');
+
+            if (error) {
+                console.error("Error fetching cover_pwp distributor codes:", error.message);
+            } else {
+                setCoverPwpLookup(data); // Save the list for lookups
+            }
+        };
+
+        fetchCoverDistributors();
+    }, []);
+    useEffect(() => {
+        const fetchDistributors = async () => {
+            const { data, error } = await supabase
+                .from('distributors')
+                .select('code, name');
+
+            if (error) {
+                console.error("Error fetching distributors:", error.message);
+            } else {
+                // Build map: { [code]: name }
+                const map = {};
+                data.forEach(dist => {
+                    map[dist.code] = dist.name;
+                });
+                setDistributorMap(map);
+            }
+        };
+
+        fetchDistributors();
+    }, []);
+    const [distributorMap, setDistributorMap] = useState({});
+
+
+// Add this hook somewhere in the component:
+React.useEffect(() => {
+  if (!formData.activity || !settingsMap[formData.activity]?.amount_display) {
+                                    setRawAmount('');
+    setFormData(prev => ({...prev, amountbadget: '' }));
+  }
+}, [formData.activity, settingsMap]);
     const renderStepContent = () => {
         switch (step) {
             case 0:
@@ -2547,7 +2598,6 @@ const handleSku = async () => {
 
                                 {/* Amount Budget (conditionally shown or empty placeholder) */}
                                 {formData.activity && settingsMap[formData.activity]?.amount_display ? (
-
                                     <div className="col-md-4" style={{ position: 'relative' }}>
                                         <label className="form-label">
                                             Amount Budget <span style={{ color: 'red' }}>*</span>
@@ -2577,9 +2627,11 @@ const handleSku = async () => {
                                         )}
                                     </div>
                                 ) : (
-                                    // Placeholder to keep layout stable
                                     <div className="col-md-4"></div>
                                 )}
+
+
+
 
                                 <div className="row mt-3">
                                     {/* Objective - Left Side */}
@@ -2966,7 +3018,13 @@ const handleSku = async () => {
 
 
                                 {/* Modal */}
-                                <Modal show={showCoverModal} onHide={() => setShowCoverModal(false)} centered>
+                                <Modal
+                                    show={showCoverModal}
+                                    onHide={() => setShowCoverModal(false)}
+                                    centered
+                                    dialogClassName="modal-xxl"
+                                >
+
                                     <Modal.Header
                                         closeButton
                                         style={{ background: 'linear-gradient(to right, #0d6efd, #6610f2)', color: 'white' }}
@@ -3021,19 +3079,37 @@ const handleSku = async () => {
                                                             }}
                                                             tabIndex={isPending ? -1 : 0}
                                                         >
+                                                            {/* LEFT: PWP Code */}
                                                             <div style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                 {cp.pwp_code?.toUpperCase()}
                                                             </div>
-                                                            <div style={{ marginLeft: '10px', minWidth: '100px', textAlign: 'right', fontWeight: 'bold' }}>
-                                                                {cp.remainingbalance !== null
-                                                                    ? cp.remainingbalance.toLocaleString('en-US', {
-                                                                        minimumFractionDigits: 2,
-                                                                        maximumFractionDigits: 2,
-                                                                    })
-                                                                    : "-"}
-                                                            </div>
 
+                                                            {/* RIGHT: Balance + Distributor */}
+                                                            <div style={{ marginLeft: '10px', minWidth: '180px', textAlign: 'right' }}>
+                                                                <div style={{ fontWeight: 'bold' }}>
+                                                                    {cp.remainingbalance !== null
+                                                                        ? cp.remainingbalance.toLocaleString('en-US', {
+                                                                            minimumFractionDigits: 2,
+                                                                            maximumFractionDigits: 2,
+                                                                        })
+                                                                        : "-"}
+                                                                </div>
+                                                                <div style={{ fontSize: '0.75rem', color: '#6c757d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {
+                                                                        (() => {
+                                                                            const match = coverPwpLookup.find(item => item.cover_code === cp.pwp_code);
+                                                                            const distributorCode = match?.distributor_code;
+                                                                            const distributorName = distributorMap[distributorCode];
+                                                                            return distributorName || "No Distributor";
+                                                                        })()
+                                                                    }
+
+                                                                </div>
+
+                                                            </div>
                                                         </li>
+
+
                                                     );
                                                 })}
 
@@ -3699,11 +3775,7 @@ const handleSku = async () => {
                                                             <th>{calculateAccountSkuTotals(selectedAccountForSku).SRP.toFixed(2)}</th>
                                                             <th>{calculateAccountSkuTotals(selectedAccountForSku).QTY}</th>
                                                             <th>
-                                                                {UOM_OPTIONS.map(opt => (
-                                                                    <div key={opt} style={{ fontSize: '0.8rem', lineHeight: '1.2' }}>
-                                                                        {opt}: {calculateAccountSkuTotals(selectedAccountForSku).UOMCount[opt] || 0}
-                                                                    </div>
-                                                                ))}
+
                                                             </th>
                                                             <th>{calculateAccountSkuTotals(selectedAccountForSku).BILLING_AMOUNT.toFixed(2)}</th>
                                                             <th>{calculateAccountSkuTotals(selectedAccountForSku).DISCOUNT.toFixed(2)}</th>
