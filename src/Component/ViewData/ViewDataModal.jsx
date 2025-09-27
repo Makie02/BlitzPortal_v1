@@ -645,12 +645,16 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                         >
                             <thead>
                                 <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
+                                    <th style={{ padding: '10px' }}>Accounts</th>
+
                                     <th style={{ padding: '10px' }}>SKU</th>
                                     <th style={{ padding: '10px' }}>SRP</th>
                                     <th style={{ padding: '10px' }}>Qty</th>
                                     <th style={{ padding: '10px' }}>UOM</th>
+                                    <th style={{ padding: '10px' }}>Total Amount</th>
+
                                     <th style={{ padding: '10px' }}>Discount</th>
-                                    <th style={{ padding: '10px' }}>Billing Amount</th>
+                                    <th style={{ padding: '10px' }}>Total Billing Amount</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -658,6 +662,8 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                                     .filter(row => row.sku_code !== 'Total:' && row.sku_code !== 'Total')
                                     .map((row) => (
                                         <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                            <td style={{ padding: '8px' }}>{row.account_name ?? '-'}</td>
+
                                             <td style={{ padding: '8px' }}>
                                                 {categoryMap[row.sku_code] || row.sku_code || '-'}
                                             </td>
@@ -666,12 +672,14 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                                             </td>
                                             <td style={{ padding: '8px' }}>{row.qty ?? '-'}</td>
                                             <td style={{ padding: '8px' }}>{row.uom || '-'}</td>
+                                            <td style={{ padding: '8px' }}>{row.billing_amount || '-'}</td>
+
                                             <td style={{ padding: '8px' }}>
                                                 {row.discount != null ? `${row.discount}%` : '-'}
                                             </td>
                                             <td style={{ padding: '8px' }}>
-                                                {row.billing_amount != null
-                                                    ? Number(row.billing_amount).toLocaleString()
+                                                {row.total_amount != null
+                                                    ? Number(row.total_amount).toLocaleString()
                                                     : '-'}
                                             </td>
                                         </tr>
@@ -679,10 +687,14 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                                 {/* Total Row */}
                                 <tr style={{ fontWeight: 'bold', backgroundColor: '#f1f5fb' }}>
                                     <td style={{ padding: '10px' }} colSpan="5">Total</td>
+                                         <td ></td>
+                                    <td ></td>
+
+
                                     <td style={{ padding: '10px' }}>
                                         {skuListing
                                             .filter(row => row.sku_code !== 'Total:' && row.sku_code !== 'Total')
-                                            .reduce((acc, row) => acc + (parseFloat(row.billing_amount) || 0), 0)
+                                            .reduce((acc, row) => acc + (parseFloat(row.total_amount) || 0), 0)
                                             .toLocaleString()}
                                     </td>
                                 </tr>
