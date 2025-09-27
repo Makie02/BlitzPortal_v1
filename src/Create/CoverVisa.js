@@ -502,68 +502,68 @@ const CoverVisa = () => {
         .join(', ');
 
 
-  const [allCoverCodes, setAllCoverCodes] = useState([]);
-  const [loadingCoverCode, setLoadingCoverCode] = useState(true);
+    const [allCoverCodes, setAllCoverCodes] = useState([]);
+    const [loadingCoverCode, setLoadingCoverCode] = useState(true);
 
-  // ---------------- Generate cover code ----------------
-  const generateCoverCode = (existingCodes = []) => {
-    const year = new Date().getFullYear();
-    const prefix = `C${year}-`;
+    // ---------------- Generate cover code ----------------
+    const generateCoverCode = (existingCodes = []) => {
+        const year = new Date().getFullYear();
+        const prefix = `C${year}-`;
 
-    const codesForYear = existingCodes
-      .filter(code => code?.startsWith(prefix))
-      .map(code => parseInt(code.replace(prefix, ""), 10))
-      .filter(num => !isNaN(num));
+        const codesForYear = existingCodes
+            .filter(code => code?.startsWith(prefix))
+            .map(code => parseInt(code.replace(prefix, ""), 10))
+            .filter(num => !isNaN(num));
 
-    const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
-    const newCode = `${prefix}${newNumber}`;
+        const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
+        const newCode = `${prefix}${newNumber}`;
 
-    console.log("🔹 Existing cover codes:", existingCodes);
-    console.log("🔹 Cover codes for this year:", codesForYear);
-    console.log("🔹 Generated new cover code:", newCode);
+        console.log("🔹 Existing cover codes:", existingCodes);
+        console.log("🔹 Cover codes for this year:", codesForYear);
+        console.log("🔹 Generated new cover code:", newCode);
 
-    return newCode;
-  };
+        return newCode;
+    };
 
-  // ---------------- Fetch cover codes ----------------
-  const fetchCoverCodes = async () => {
-    try {
-      console.log("⏳ Fetching cover codes...");
-      const { data, error } = await supabase
-        .from("cover_pwp")
-        .select("cover_code");
+    // ---------------- Fetch cover codes ----------------
+    const fetchCoverCodes = async () => {
+        try {
+            console.log("⏳ Fetching cover codes...");
+            const { data, error } = await supabase
+                .from("cover_pwp")
+                .select("cover_code");
 
-      if (error) throw error;
+            if (error) throw error;
 
-      const codes = data.map(row => row.cover_code).filter(Boolean);
-      console.log("✅ Fetched cover codes:", codes);
+            const codes = data.map(row => row.cover_code).filter(Boolean);
+            console.log("✅ Fetched cover codes:", codes);
 
-      setAllCoverCodes(codes);
+            setAllCoverCodes(codes);
 
-      // Generate new code if empty or already used
-      if (!formData.coverCode || codes.includes(formData.coverCode)) {
-        const newCode = generateCoverCode(codes);
-        console.log("✏️ Updating formData with new cover code:", newCode);
-        setFormData(prev => ({ ...prev, coverCode: newCode }));
-      }
+            // Generate new code if empty or already used
+            if (!formData.coverCode || codes.includes(formData.coverCode)) {
+                const newCode = generateCoverCode(codes);
+                console.log("✏️ Updating formData with new cover code:", newCode);
+                setFormData(prev => ({ ...prev, coverCode: newCode }));
+            }
 
-      setLoadingCoverCode(false);
-    } catch (err) {
-      console.error("❌ Error fetching cover codes:", err);
-      setLoadingCoverCode(false);
-    }
-  };
+            setLoadingCoverCode(false);
+        } catch (err) {
+            console.error("❌ Error fetching cover codes:", err);
+            setLoadingCoverCode(false);
+        }
+    };
 
-  // ---------------- Real-time polling ----------------
-  useEffect(() => {
-    fetchCoverCodes(); // Initial fetch
+    // ---------------- Real-time polling ----------------
+    useEffect(() => {
+        fetchCoverCodes(); // Initial fetch
 
-    const intervalId = setInterval(() => {
-      fetchCoverCodes();
-    }, 5000); // Poll every 5 seconds
+        const intervalId = setInterval(() => {
+            fetchCoverCodes();
+        }, 5000); // Poll every 5 seconds
 
-    return () => clearInterval(intervalId); // Cleanup
-  }, [formData.coverCode]);
+        return () => clearInterval(intervalId); // Cleanup
+    }, [formData.coverCode]);
 
     useEffect(() => {
         if (!formData.coverCode && allCoverCodes.length > 0) {
@@ -834,33 +834,16 @@ const CoverVisa = () => {
                 </div>
                 {/* Remaining Budget */}
                 <div
-                    className="col-md-4 d-flex justify-content-end align-items-center"
-                    style={{ position: 'absolute', top: '40px', right: '20px' }} // ⬅ added margin-top effect
+                    className="remaining-budget-container d-flex flex-wrap justify-content-end align-items-center"
                 >
-                    <span
-                        style={{
-                            fontSize: '18px',   // ⬅ mas malaki label
-                            fontWeight: '600',
-                            marginRight: '12px',
-                            color: '#444'
-                        }}
-                    >
+                    <span className="remaining-budget-label">
                         Remaining Budget:
                     </span>
-                    <span
-                        style={{
-                            fontSize: '24px',   // ⬅ mas malaki value
-                            fontWeight: 'bold',
-                            color: '#000',
-                            background: '#ffffff',
-                            padding: '8px 20px', // ⬅ mas spacious
-                            borderRadius: '10px',
-                            boxShadow: '0 3px 8px rgba(0,0,0,0.2)'
-                        }}
-                    >
+                    <span className="remaining-budget-value">
                         {totalRemaining !== null ? `₱${totalRemaining.toLocaleString()}` : "Loading..."}
                     </span>
                 </div>
+
 
 
 
