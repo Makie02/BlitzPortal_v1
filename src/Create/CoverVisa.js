@@ -1014,9 +1014,9 @@ const CoverVisa = () => {
                                         padding: "1rem",
                                     }}
                                 >   <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
-                                        Debug: accountTypes.length = {accountTypes.length}
+                                         {accountTypes.length}
                                         {accountTypes.length > 0 && (
-                                            <div>Sample: {accountTypes[0]?.code} - {accountTypes[0]?.name}</div>
+                                            <div>DATA: {accountTypes[0]?.code} - {accountTypes[0]?.name}</div>
                                         )}
                                     </div>
                                     {/* Search Bar - fixed height, no scroll */}
