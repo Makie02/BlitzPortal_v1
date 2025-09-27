@@ -36,7 +36,7 @@
     display: flex;
     justify-content: center;
     width: 100%;
-    max-width: 540px;
+    max-width: 640px;
     margin: 0 auto;
 }
 
@@ -557,4 +557,29 @@
     bottom: 10px;
     width: 100%;
     left: 0;
+}
+/* Existing styles for footer */
+/* Footer base style */
+.login-footer {
+    text-align: center;
+    color: #888;
+    font-size: 0.9rem;
+    padding: 10px 0;
+    margin-top: 50px;
+}
+
+/* Responsive adjustments for mobile screens */
+@media (max-width: 768px) {
+    .login-footer {
+        font-size: 0.8rem;
+        margin-top: 50px; /* Add more margin on mobile */
+    }
+
+    .login-container {
+        padding-bottom: 20px; /* Avoid form overlapping with footer */
+    }
+
+    .login-left {
+        padding: 25px;
+    }
 }
