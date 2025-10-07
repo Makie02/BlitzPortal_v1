@@ -1,0 +1,247 @@
+/* Container card */
+.button-card-container {
+  background: #fff;
+  padding: 30px 20px;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+  max-width: 800px;
+  margin: 0 auto 40px auto;
+  text-align: center;
+}
+
+/* Section title */
+.section-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 25px;
+  font-family: "Segoe UI", sans-serif;
+}
+
+/* Wrapper for buttons */
+.view-buttons-wrapper {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Each button as a card */
+.view-button-card {
+  background-color: #f9f9f9;
+  color: #007bff;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 18px 26px;
+  min-width: 160px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  font-family: "Segoe UI", sans-serif;
+}
+
+.view-button-card .arrow {
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: all 0.3s ease;
+  font-size: 20px;
+}
+
+.view-button-card:hover {
+  background-color: #007bff;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 123, 255, 0.25);
+}
+
+.view-button-card:hover .arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: #fff;
+}
+
+.view-button-card.active {
+  background-color: #007bff;
+  color: #fff;
+  border-color: #0056b3;
+}
+
+.view-button-card.active .arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: #fff;
+}
+
+
+
+
+/* Responsive container for cards */
+.cards {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1em;
+  padding: 1em;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Card container responsiveness */
+.card-container {
+  width: 100%;               /* full width inside container */
+  max-width: 550px;          /* max width limit */
+  padding: 1em 1.5em;
+  box-sizing: border-box;
+  transition: all 200ms ease-in-out;
+  cursor: pointer;
+  border-radius: 0.5em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Icon size scaling */
+.card-container .icon-container svg {
+  width: 40px;
+  height: 40px;
+}
+
+/* Adjust font size inside icon-container */
+.card-container .icon-container p {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Arrow and label font size */
+.card-container p {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+/* Smaller screen tweaks */
+@media (max-width: 700px) {
+  .card-container {
+    max-width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.25em 1em;
+  }
+  .card-container .icon-container {
+    flex-direction: row;
+    justify-content: center;
+    gap: 1em;
+    width: 100%;
+  }
+  .card-container p:last-child {
+    font-size: 1.5rem;
+  }
+  .card-container .icon-container svg {
+    width: 50px;
+    height: 50px;
+  }
+}
+
+/* Adjust the .view-buttons-wrapper max-width on smaller screens */
+.view-buttons-wrapper {
+  max-width: 100%;
+  padding: 1rem 1rem;
+}
+
+/* Section title responsive font size */
+.section-title {
+  font-size: 1.8rem;
+}
+
+@media (max-width: 480px) {
+  .section-title {
+    font-size: 1.5rem;
+  }
+}
+
+
+.card-container p {
+  font-weight: 600;
+}
+
+.twitter-card {
+  background-color: #1da1f2;
+  color: white;
+}
+
+.facebook-card {
+  background-color: #4267B2;
+  color: white;
+}
+
+
+
+
+.Upload-card {
+  background-color: #002857;
+  color: white;
+}
+
+
+.instagram-card {
+  background-color: #e1306c;
+  color: white;
+}
+
+.card-container:hover {
+  transform: scale(1.05);
+  z-index: 1;
+}
+
+.cards:hover > .card-container:not(:hover) {
+  filter: blur(4px);
+  opacity: 0.7;
+}
+
+.active-card {
+  border: 2px solid white;
+}
+.section-title {
+  text-align: center;             /* Center horizontally */
+  font-size: 2.2rem;              /* Bigger, noticeable */
+  font-weight: 700;               /* Bold */
+  color: #222;                   /* Dark text for contrast */
+  margin-bottom: 1.5rem;          /* Space below title */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+  /* Optional stylish underline */
+  position: relative;
+  display: inline-block;
+  padding-bottom: 0.3rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.section-title::after {
+  content: "";
+  display: block;
+  width: 60px;
+  height: 3px;
+  background-color: #4a90e2; /* subtle blue underline */
+  margin: 8px auto 0 auto;
+  border-radius: 2px;
+}
+.view-buttons-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;     /* center horizontally */
+  justify-content: center; /* center vertically if container allows */
+  padding: 2rem 1rem;
+  max-width: 480px;
+  margin: 0 auto;          /* center wrapper in its parent */
+  text-align: center;      /* center text inside */
+}

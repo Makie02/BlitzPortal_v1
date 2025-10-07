@@ -1,0 +1,10 @@
+.header-scrolled {
+    background-color: #f1f1f1;
+  }
+  .search-bar-show {
+    display: block;
+  }
+  .back-to-top.active {
+    display: block;
+  }
+  

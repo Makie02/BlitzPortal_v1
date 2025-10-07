@@ -1,0 +1,195 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  background-image: url('./images/bg-bgimage.jpg');
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Optional: Improve performance on mobile */
+@media (max-width: 768px) {
+  body {
+    background-size: cover;
+    /* Ensure it fills the screen */
+    background-position: top center;
+    /* Adjust for mobile layout */
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    background-image: url('./images/bg-bgimage.jpg');
+    /* Mobile-optimized image */
+  }
+}
+
+@keyframes fadeSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide-up {
+  animation: fadeSlideUp 0.6s ease forwards;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.input-wrapper input[type="checkbox"] {
+  margin-left: 10px;
+  /* a bit of spacing from label */
+  order: 2;
+  /* ensure input is on the right */
+}
+
+thead {
+  background-color: rgba(173, 216, 230, 0.2);
+  /* light blue with transparency */
+  border: 2px solid #add8e6;
+  /* light blue border */
+}
+
+
+
+/* Wider modal with responsive behavior */
+.modal-wide-custom {
+  max-width: 50vw !important;
+  /* Very wide, but responsive */
+  width: 100%;
+  margin: auto;
+}
+
+.modal-wide-custom .modal-content {
+  padding: 1.5rem;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+}
+
+/* Optional: Scrollable modal body if content overflows */
+.modal-wide-custom .modal-body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Make modal full width on small devices */
+@media (max-width: 768px) {
+  .modal-wide-custom {
+    max-width: 100vw !important;
+  }
+
+  .modal-wide-custom .modal-content {
+    padding: 1rem;
+    border-radius: 0;
+  }
+
+  .modal-wide-custom .modal-body {
+    max-height: none;
+  }
+}
+
+.glass-button {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(5px);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.glass-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Desktop styles */
+.remaining-budget-container {
+  position: absolute;
+  top: 40px;
+  right: 20px;
+  z-index: 10;
+}
+
+.remaining-budget-label {
+  font-size: 18px;
+  font-weight: 600;
+  margin-right: 12px;
+  color: #444;
+}
+
+.remaining-budget-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #000;
+  background: #fff;
+  padding: 8px 20px;
+  border-radius: 10px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .remaining-budget-container {
+    position: static;
+    /* Remove absolute on small screens */
+    justify-content: center;
+    margin-top: 20px;
+    padding: 10px;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .remaining-budget-label {
+    font-size: 16px;
+    margin-right: 0;
+    margin-bottom: 6px;
+  }
+
+  .remaining-budget-value {
+    font-size: 20px;
+    padding: 6px 16px;
+  }
+}
+
+/* Make SKU modal wide */
+.responsive-sku-modal {
+  max-width: 50% !important;
+  /* Wider modal */
+  width: 90% !important;
+  height: 85vh !important;
+  /* ✅ Taller modal (85% of viewport height) */
+}
+
+@media (max-width: 768px) {
+  .responsive-sku-modal {
+    max-width: 95% !important;
+    width: 95% !important;
+    height: 90vh !important;
+    /* ✅ On mobile, take almost full height */
+  }
+}

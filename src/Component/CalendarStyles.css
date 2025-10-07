@@ -1,0 +1,26 @@
+/* CalendarStyles.css */
+
+.calendar-wrapper {
+  height: 90vh;
+  padding: 1rem;
+}
+
+@media screen and (max-width: 768px) {
+  .calendar-wrapper {
+    height: 80vh;
+    padding: 0.5rem;
+  }
+
+  .rbc-event {
+    font-size: 12px;
+    padding: 4px !important;
+  }
+
+  .rbc-toolbar-label {
+    font-size: 16px;
+  }
+
+  .rbc-header {
+    font-size: 12px;
+  }
+}

@@ -1,0 +1,139 @@
+.notification-bell:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 10px #ffffff33;
+}
+.notification-dropdown {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  background-color: #fff;
+  color: #333;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  padding: 15px;
+  width: 300px;
+  z-index: 999;
+  font-family: 'Roboto', sans-serif;
+  animation: fadeInScale 0.3s ease-in-out;
+}
+
+.notification-dropdown h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 1rem;
+  color: #14532d;
+}
+
+.notification-dropdown p {
+  margin: 5px 0;
+  line-height: 1.4;
+}
+
+.notification-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.notification-grid span {
+  background: #e9f5ec;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  color: #14532d;
+  white-space: nowrap;
+}
+/* From Uiverse.io by dugepard */ 
+.check {
+  display: none;
+}
+
+.hamburger-button {
+  position: relative;
+  display: inline-block;
+  width: px;
+  height: 50px;
+  cursor: pointer;
+}
+
+.hamburger-button div {
+  width: 70px;
+  height: 10px;
+  background-color: darkgray;
+  border-radius: 3px;
+  position: absolute;
+  transition: 0.4s;
+}
+
+.line1 {
+  top: 0;
+}
+
+.line2 {
+  top: calc(40%);
+}
+
+.line3 {
+  top: calc(80%);
+}
+
+.hamburger-button:hover div {
+  width: 54.2857143%;
+}
+
+.hamburger-button:hover .line1 {
+  transform: translate(31.5px, 12px) rotate(35deg);
+  border-radius: 7px;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.hamburger-button:hover .line3 {
+  transform: translate(31.5px, -12px) rotate(-35deg);
+  border-radius: 7px;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.check:checked ~ .hamburger-button:hover .line1 {
+  transform: translate(0, 12px) rotate(-35deg);
+  border-radius: 7px;
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+
+.check:checked ~ .hamburger-button:hover .line3 {
+  transform: translate(0, -12px) rotate(35deg);
+  border-radius: 7px;
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+
+.check:checked ~ .hamburger-button:hover .line2 {
+  margin-left: 32px;
+}
+.approval-dropdown {
+  position: absolute;
+  top: 40px;
+  right: 50px;
+  width: 320px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  padding: 0;
+  z-index: 1000;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .approval-dropdown {
+    right: 50%;
+    left: 50%;
+    transform: translateX(-90%);
+    width: 90vw;       /* Makes it smaller and responsive */
+    max-height: 60vh;  /* Less height on mobile */
+  }
+}
