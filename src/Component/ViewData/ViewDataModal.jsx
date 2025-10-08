@@ -74,8 +74,74 @@ const ViewDataModal = ({ visaCode, onClose }) => {
         created_at: 'Created At',
 
 
-        branchType:'Branch Type',
+        branchType: 'Branch Type',
     };
+    function base64ToUint8Array(base64) {
+        try {
+            // Remove data URI prefix if present
+            let cleaned = base64.replace(/^data:.*;base64,/, '');
+
+            // Remove any whitespace/newlines (important!)
+            cleaned = cleaned.replace(/\s/g, '');
+
+            // Decode Base64 to binary string
+            const binaryString = atob(cleaned);
+
+            // Convert to Uint8Array
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes;
+        } catch (err) {
+            console.error('Base64 decoding error:', err);
+            return null;
+        }
+    }
+
+    // Download a Base64 attachment from Supabase
+    const handleDownloadAttachment = (file) => {
+        try {
+            if (!file.file_data) {
+                alert("No file data available!");
+                return;
+            }
+
+            // Convert Base64 string to Blob
+            const byteString = atob(file.file_data.replace(/^data:.*;base64,/, ''));
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+
+            const blob = new Blob([ab], { type: file.mimetype || "application/octet-stream" });
+
+            // Create a temporary link to download
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = file.filename || "download";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Release memory
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error("Download failed:", err);
+            alert("Failed to download file.");
+        }
+    };
+
+
+
+
+
+
+
+
     const formatFieldName = (key) => {
         // Decide which mapping to use based on the type
         const map =
@@ -188,24 +254,6 @@ const ViewDataModal = ({ visaCode, onClose }) => {
 
         return String(value);
     };
-    // const fetchAccountTypeName = async (code) => {
-    //     try {
-    //         const { data, error } = await supabase
-    //             .from('categorydetails')
-    //             .select('code, name')
-    //             .eq('code', code)
-    //             .single();
-
-    //         if (!error && data) {
-    //             setAccountTypeNameCache((prev) => ({
-    //                 ...prev,
-    //                 [code]: data.name,
-    //             }));
-    //         }
-    //     } catch (err) {
-    //         console.error('Error fetching account type name:', err.message);
-    //     }
-    // };
 
     const fetchDistributorName = async (code) => {
         try {
@@ -279,7 +327,6 @@ const ViewDataModal = ({ visaCode, onClose }) => {
         return skuData;
     };
 
-    // const fetchAccountTypeNames = async (codesString) => {
     //     if (!codesString) {
     //         setAccountTypeNames(null);
     //         return;
@@ -348,6 +395,8 @@ const ViewDataModal = ({ visaCode, onClose }) => {
     //         setDistributorName(null);
     //     }
     // };
+    const [attachments, setAttachments] = useState([]);
+    const [coverAttachments, setCoverAttachments] = useState([]);
 
     const [badOrderList, setBadOrderList] = useState([]);
     useEffect(() => {
@@ -387,7 +436,17 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                     if (error) throw error;
                     result = data;
 
-                } else if (visaCode.startsWith('R')) {
+                    // ✅ Fetch Cover Attachments
+                    const { data: coverFiles, error: coverFilesError } = await supabase
+                        .from('cover_attachments')
+                        .select('*')
+                        .eq('cover_code', visaCode)
+                        .order('uploaded_at', { ascending: true });
+
+                    if (coverFilesError) throw coverFilesError;
+                    setCoverAttachments(coverFiles || []);
+                }
+                else if (visaCode.startsWith('R')) {
                     setType('Regular PWP');
 
                     const { data, error } = await supabase
@@ -397,6 +456,18 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                         .single();
                     if (error) throw error;
                     result = data;
+
+                    const { data: attachmentsData, error: attachmentsError } = await supabase
+                        .from('regular_attachments')
+                        .select('*')
+                        .eq('regularpwpcode', visaCode)
+                        .order('uploaded_at', { ascending: true });
+
+
+                    if (attachmentsError) throw attachmentsError;
+                    setAttachments(attachmentsData || []);
+
+
 
                     // Fetch associated SKU Listing from regular_sku
                     const { data: skuData, error: skuError } = await supabase
@@ -505,7 +576,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
 
                                 if (
                                     type === 'Regular PWP' &&
-                                    ['amount_badget', 'amountbadget', 'promoScheme', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'sku', 'YearBudget'].includes(key)
+                                    ['amount_badget', 'amountbadget', , 'id', 'promoScheme', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'sku', 'YearBudget'].includes(key)
                                 ) return false;
 
                                 if (key.toLowerCase() === 'accounts') return accountsBudgetList.length > 0;
@@ -574,6 +645,172 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                             )}
                         </div>
                     )}
+
+                    {type === 'Regular PWP' && (
+                        <div
+                            className="modal-footer"
+                            style={{
+                                background: '#f8f9fa',
+                                borderTop: '1px solid #dee2e6',
+                                padding: '16px 20px',
+                                borderRadius: '0 0 8px 8px',
+                            }}
+                        >
+                            <div className="attachments-section" style={{ width: '100%' }}>
+                                <h6
+                                    style={{
+                                        marginBottom: '10px',
+                                        fontWeight: '600',
+                                        fontSize: '15px',
+                                        color: '#333',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                    }}
+                                >
+                                    📎 Attachments
+                                </h6>
+
+                                {attachments.length > 0 ? (
+                                    <ul
+                                        className="attachment-list"
+                                        style={{
+                                            listStyle: 'none',
+                                            padding: 0,
+                                            display: 'flex',
+                                            flexWrap: 'wrap',
+                                            gap: '10px',
+                                        }}
+                                    >
+                                        {attachments.map((file) => (
+                                            <li key={file.id}>
+                                                <button
+                                                    onClick={() => handleDownloadAttachment(file)}
+                                                    style={{
+                                                        backgroundColor: '#e9ecef',
+                                                        border: '1px solid #ced4da',
+                                                        borderRadius: '25px',
+                                                        padding: '8px 14px',
+                                                        fontSize: '14px',
+                                                        color: '#495057',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s ease',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                    }}
+                                                    onMouseOver={(e) =>
+                                                        (e.currentTarget.style.backgroundColor = '#dee2e6')
+                                                    }
+                                                    onMouseOut={(e) =>
+                                                        (e.currentTarget.style.backgroundColor = '#e9ecef')
+                                                    }
+                                                >
+                                                    <i className="fa fa-download" style={{ color: '#0d6efd' }}></i>
+                                                    <span>
+                                                        {file.filename}{' '}
+                                                        <span style={{ color: '#6c757d' }}>
+                                                            ({(file.size / 1024).toFixed(2)} KB)
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <span style={{ color: '#6c757d', fontSize: '14px' }}>
+                                        No attachments available.
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    {type === 'Cover PWP' && (
+                        <div
+                            className="modal-footer"
+                            style={{
+                                background: '#f8f9fa',
+                                borderTop: '1px solid #dee2e6',
+                                padding: '16px 20px',
+                                borderRadius: '0 0 8px 8px',
+                            }}
+                        >
+                            <div className="attachments-section" style={{ width: '100%' }}>
+                                <h6
+                                    style={{
+                                        marginBottom: '10px',
+                                        fontWeight: '600',
+                                        fontSize: '15px',
+                                        color: '#333',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                    }}
+                                >
+                                    📎 Attachments
+                                </h6>
+
+                                {coverAttachments.length > 0 ? (
+                                    <ul
+                                        className="attachment-list"
+                                        style={{
+                                            listStyle: 'none',
+                                            padding: 0,
+                                            display: 'flex',
+                                            flexWrap: 'wrap',
+                                            gap: '10px',
+                                        }}
+                                    >
+                                        {coverAttachments.map((file) => (
+                                            <li key={file.id}>
+                                                <button
+                                                    onClick={() => handleDownloadAttachment({
+                                                        filename: file.file_name,
+                                                        file_data: file.file_data,
+                                                        mimetype: file.file_type,
+                                                        size: file.file_size,
+                                                    })}
+                                                    style={{
+                                                        backgroundColor: '#e9ecef',
+                                                        border: '1px solid #ced4da',
+                                                        borderRadius: '25px',
+                                                        padding: '8px 14px',
+                                                        fontSize: '14px',
+                                                        color: '#495057',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s ease',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                    }}
+                                                    onMouseOver={(e) =>
+                                                        (e.currentTarget.style.backgroundColor = '#dee2e6')
+                                                    }
+                                                    onMouseOut={(e) =>
+                                                        (e.currentTarget.style.backgroundColor = '#e9ecef')
+                                                    }
+                                                >
+                                                    <i className="fa fa-download" style={{ color: '#0d6efd' }}></i>
+                                                    <span>
+                                                        {file.file_name}{' '}
+                                                        <span style={{ color: '#6c757d' }}>
+                                                            ({(file.file_size / 1024).toFixed(2)} KB)
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <span style={{ color: '#6c757d', fontSize: '14px' }}>
+                                        No attachments available.
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+
 
 
 
