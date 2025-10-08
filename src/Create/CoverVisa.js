@@ -507,7 +507,19 @@ React.useEffect(() => {
   );
   const selectedName = selectedDistributor ? selectedDistributor.name : "";
 
-  const handleSubmits = async (e) => {
+
+
+
+// 🔹 Utility function to convert files to Base64 with prefix
+const toBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file); // includes "data:<type>;base64,..." prefix
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+  });
+
+const handleSubmits = async (e) => {
   e.preventDefault();
 
   if (
@@ -540,8 +552,6 @@ React.useEffect(() => {
       return;
     }
 
-    const loggedInUsername = parsedUser.name;
-
     // ✅ Fetch the user ID for the selected username from formData.createForm
     const { data: selectedUserData, error: userError } = await supabase
       .from("Account_Users")
@@ -559,14 +569,14 @@ React.useEffect(() => {
       return;
     }
 
-      const selectedUserId = selectedUserData.UserID;
-
-    // ✅ Convert selected accountType IDs into codes
+    const selectedUserId = selectedUserData.UserID;
     const accountCodes = formData.accountType; // array of codes
+
+    // ✅ Insert into main cover_pwp
     const dataToInsert = {
       cover_code: formData.coverCode,
       distributor_code: formData.distributor,
-      account_type: accountCodes.join(","), 
+      account_type: accountCodes.join(","),
       amount_badget: parseFloat(formData.amountbadget),
       pwp_type: formData.coverType || "COVER_PWP",
       objective: formData.objective,
@@ -574,64 +584,47 @@ React.useEffect(() => {
       details: formData.details,
       remarks: formData.remarks,
       notification: false,
-
-      // ✅ save user ID instead of name
-      createForm: selectedUserId,
+      createForm: selectedUserId, // save user ID
     };
 
-    const { data: mainData, error: mainError } = await supabase
+    const { error: mainError } = await supabase
       .from("cover_pwp")
       .insert([dataToInsert]);
+    if (mainError) throw mainError;
 
-    if (mainError) {
-      console.error("Error saving main form data:", mainError);
-      await Swal.fire({
-        icon: "error",
-        title: "Submission Error",
-        text: "Error saving form data.",
-        confirmButtonText: "OK",
-      });
-      return;
-    }
+    // ✅ Insert into amount_badget
+    const { error: budgetError } = await supabase.from("amount_badget").insert([
+      {
+        pwp_code: formData.coverCode,
+        amountbadget: parseFloat(formData.amountbadget),
+        createduser: selectedUserId,
+        distributor: formData.distributor,
+        remainingbalance: parseFloat(formData.amountbadget),
+        Approved: false,
+      },
+    ]);
+    if (budgetError) throw budgetError;
 
-    // ✅ Insert to amount_badget table
-  const { data: budgetInsert, error: budgetError } = await supabase
-      .from("amount_badget")
-      .insert([
-        {
-          pwp_code: formData.coverCode,
-          amountbadget: parseFloat(formData.amountbadget),
-          createduser: selectedUserId, // ✅ save user ID instead of name
-          distributor: formData.distributor,
-          remainingbalance: parseFloat(formData.amountbadget),
-          Approved: false,
-        },
-      ]);
-
-    // ✅ Handle file attachments
+    // ✅ Handle file attachments with Base64 (with prefix)
     if (files.length > 0) {
-      const attachmentInserts = files.map((file) => ({
-        cover_code: formData.coverCode,
-        file_name: file.name,
-        file_type: file.type || null,
-        file_size: file.size || null,
-        uploaded_by: loggedInUsername, // 👈 track uploader ID
-      }));
+      const attachmentInserts = [];
+
+      for (const file of files) {
+        const base64Data = await toBase64(file);
+        attachmentInserts.push({
+          cover_code: formData.coverCode,
+          file_name: file.name,
+          file_type: file.type || null,
+          file_size: file.size || null,
+          file_data: base64Data, // ✅ full Base64 string with prefix
+        });
+      }
 
       const { error: attachmentError } = await supabase
         .from("cover_attachments")
         .insert(attachmentInserts);
 
-      if (attachmentError) {
-        console.error("Error saving attachment records:", attachmentError);
-        await Swal.fire({
-          icon: "error",
-          title: "Attachment Error",
-          text: "Failed to save file attachments metadata.",
-          confirmButtonText: "OK",
-        });
-        return;
-      }
+      if (attachmentError) throw attachmentError;
     }
 
     await Swal.fire({
