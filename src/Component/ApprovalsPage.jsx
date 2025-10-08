@@ -244,10 +244,20 @@ export default function ApprovalsPage() {
       const createdFormName = entry.createForm?.toLowerCase();
       const entryDate = entry.created_at ? new Date(entry.created_at) : null;
 
-      const matchesSearch = Object.values(entry)
-        .join(" ")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
+      const matchesSearch = (() => {
+        const distributorName = getDistributorName(entry.distributor)
+          ?.toLowerCase()
+          .trim();
+
+        const searchValue = searchTerm.toLowerCase().trim();
+
+        return (
+          distributorName.includes(searchValue) ||
+          Object.values(entry).join(" ").toLowerCase().includes(searchValue)
+        );
+      })();
+
+
 
       const matchesStatus = statusFilter
         ? entryStatus === statusFilter.toLowerCase()
