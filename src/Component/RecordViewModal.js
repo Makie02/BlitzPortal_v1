@@ -393,7 +393,7 @@ const RecordViewModal = ({ record, onClose }) => {
                   display: "inline-block",
                   marginBottom: "4px",
                 }}>
-                  Remaining Budget: {remainingBudget.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
+                  Remaining Budget: {remainingBudget.toLocaleString(undefined, { style: 'currency', currency: 'PHP' })}
                 </div>
               )}
               <h3 style={{ margin: 0, color: "#ffffffff", fontSize: "18px" }}>
