@@ -1915,165 +1915,148 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
   };
 
 
+// Convert file to base64 string
+// Convert file to base64 string (with Data URL)
+const toBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file); // includes "data:<type>;base64,..." prefix
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+  });
 
-  const handleSubmitFormAndAttachments = async () => {
-    try {
-      // Get current user
-      const storedUser = localStorage.getItem("loggedInUser");
-      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-      const createdBy = parsedUser?.name || "Unknown";
+// Submit main form and attachments
+const handleSubmitFormAndAttachments = async () => {
+  try {
+    const storedUser = localStorage.getItem("loggedInUser");
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    const createdBy = parsedUser?.name || "Unknown";
 
-      // ✅ Required validation
-      if (!formData.regularpwpcode?.trim()) {
-        throw new Error("Regular PWP Code is required.");
-      }
-
-      // ✅ Validate distributor if selected
-      let distributorCode = formData.distributor?.trim() || null;
-      if (distributorCode) {
-        const { data: distributorsData, error: distributorError } = await supabase
-          .from("distributors")
-          .select("code")
-          .eq("code", distributorCode)
-          .single();
-
-        if (distributorError || !distributorsData) {
-          throw new Error(`Distributor code "${distributorCode}" is invalid.`);
-        }
-      }
-
-      // ✅ Calculate budgets
-      const amountBudget = parseFloat(formData.amountbadget || 0);
-      const billingAmountSKU = rows.reduce((acc, row) => {
-        const val = parseFloat(row.BILLING_AMOUNT);
-        return acc + (isNaN(val) ? 0 : val);
-      }, 0);
-
-      const totalAllocatedFromAccounts = rowsAccounts.reduce(
-        (sum, row) => sum + (parseFloat(row.budget) || 0),
-        0
-      );
-
-      let creditBudget = 0;
-      if (amountBudget > 0) creditBudget = amountBudget;
-      else if (billingAmountSKU > 0) creditBudget = billingAmountSKU;
-      else if (totalAllocatedFromAccounts > 0) creditBudget = totalAllocatedFromAccounts;
-
-      const remainingBalance =
-        selectedBalance !== null ? selectedBalance - creditBudget : null;
-
-      // ✅ Convert accountType IDs → names before saving
-      let convertedAccountType = [];
-      if (Array.isArray(formData.accountType)) {
-        // For NON-CHAIN (multiple)
-        convertedAccountType = formData.accountType
-          .map((id) => {
-            const sub = Object.values(subAccounts).flat().find((s) => s.id === id);
-            return sub ? sub.name : null;
-          })
-          .filter((n) => n !== null);
-      } else if (formData.accountType) {
-        // For CHAIN (single)
-        const sub = Object.values(subAccounts).flat().find((s) => s.id === formData.accountType);
-        convertedAccountType = sub ? [sub.name] : [];
-      }
-
-      console.log("🔄 Converted accountType (names):", convertedAccountType);
-
-      // ✅ Prepare submission object
-      const submissionData = {
-        regularpwpcode: formData.regularpwpcode,
-        accountType: convertedAccountType, // <-- now names, not IDs ✅
-        branchType: formData.branchType || [],
-        activity: formData.activity,
-        pwptype: formData.pwptype || "Regular",
-        notification: formData.notification,
-        objective: formData.objective,
-        promoScheme: formData.promoScheme,
-        activityDurationFrom: formData.activityDurationFrom,
-        activityDurationTo: formData.activityDurationTo,
-        isPartOfCoverPwp: formData.isPartOfCoverPwp,
-        coverPwpCode: formData.coverPwpCode,
-        distributor: distributorCode,
-        amountbadget: formData.amountbadget,
-        categoryCode: formData.categoryCode || [],
-        categoryName: formData.categoryName || [],
-        sku: formData.sku,
-        accounts: formData.accounts,
-        amount_display: formData.amount_display,
-        remarks: formData.remarks || "",
-        created_at: new Date().toISOString(),
-        createForm: createdBy,
-        credit_budget: creditBudget,
-        remaining_balance: remainingBalance,
-      };
-
-      // ✅ Insert main form
-      const { data: formInsertData, error: formInsertError } = await supabase
-        .from("regular_pwp")
-        .insert([submissionData])
-        .select();
-
-      if (formInsertError) throw new Error(`Form Insert failed: ${formInsertError.message}`);
-
-      // ✅ Insert attachments (if any)
-      if (files.length > 0) {
-        await Promise.all(
-          files.map(async (file) => {
-            const { name, type, size } = file;
-
-            const attachmentPayload = {
-              regularpwpcode: formData.regularpwpcode,
-              filename: name,
-              mimetype: type,
-              size: size,
-            };
-
-            const { error: attachmentError } = await supabase
-              .from("regular_attachments")
-              .insert([attachmentPayload])
-              .select();
-
-            if (attachmentError) {
-              throw new Error(`Attachment insert failed for ${name}: ${attachmentError.message}`);
-            }
-          })
-        );
-      }
-
-      // ✅ Reset form state
-      setFiles([]);
-      setRows([]);
-      setRowsAccounts([]);
-      setFormData({
-        regularpwpcode: "",
-        accountType: [],
-        branchType: [],
-        activity: "",
-        pwptype: "Regular",
-        notification: false,
-        objective: "",
-        promoScheme: "",
-        activityDurationFrom: new Date().toISOString().split("T")[0],
-        activityDurationTo: new Date().toISOString().split("T")[0],
-        isPartOfCoverPwp: false,
-        coverPwpCode: "",
-        distributor: "",
-        amountbadget: "0",
-        categoryCode: [],
-        categoryName: [],
-        sku: null,
-        accounts: null,
-        amount_display: null,
-        remarks: "",
-      });
-
-      console.log("✅ Form submitted successfully");
-    } catch (error) {
-      console.error("Submission Error:", error.message);
-      alert(error.message);
+    // ✅ Required validation
+    if (!formData.regularpwpcode?.trim()) {
+      throw new Error("Regular PWP Code is required.");
     }
-  };
+
+    // ✅ Validate distributor
+    let distributorCode = formData.distributor?.trim() || null;
+    if (distributorCode) {
+      const { data: distributorsData, error: distributorError } = await supabase
+        .from("distributors")
+        .select("code")
+        .eq("code", distributorCode)
+        .single();
+      if (distributorError || !distributorsData) {
+        throw new Error(`Distributor code "${distributorCode}" is invalid.`);
+      }
+    }
+
+    // ✅ Calculate budgets
+    const amountBudget = parseFloat(formData.amountbadget || 0);
+    const billingAmountSKU = rows.reduce((acc, row) => acc + (parseFloat(row.BILLING_AMOUNT) || 0), 0);
+    const totalAllocatedFromAccounts = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+    const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
+    const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
+
+    // ✅ Convert accountType IDs → names
+    let convertedAccountType = [];
+    if (Array.isArray(formData.accountType)) {
+      convertedAccountType = formData.accountType
+        .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
+        .filter(Boolean);
+    } else if (formData.accountType) {
+      const name = Object.values(subAccounts).flat().find((s) => s.id === formData.accountType)?.name;
+      convertedAccountType = name ? [name] : [];
+    }
+
+    // ✅ Prepare main submission object
+    const submissionData = {
+      regularpwpcode: formData.regularpwpcode,
+      accountType: convertedAccountType,
+      branchType: formData.branchType || [],
+      activity: formData.activity,
+      pwptype: formData.pwptype || "Regular",
+      notification: formData.notification,
+      objective: formData.objective,
+      promoScheme: formData.promoScheme,
+      activityDurationFrom: formData.activityDurationFrom,
+      activityDurationTo: formData.activityDurationTo,
+      isPartOfCoverPwp: formData.isPartOfCoverPwp,
+      coverPwpCode: formData.coverPwpCode,
+      distributor: distributorCode,
+      amountbadget: formData.amountbadget,
+      categoryCode: formData.categoryCode || [],
+      categoryName: formData.categoryName || [],
+      sku: formData.sku,
+      accounts: formData.accounts,
+      amount_display: formData.amount_display,
+      remarks: formData.remarks || "",
+      created_at: new Date().toISOString(),
+      createForm: createdBy,
+      credit_budget: creditBudget,
+      remaining_balance: remainingBalance,
+    };
+
+    // ✅ Insert main form
+    const { error: formInsertError } = await supabase.from("regular_pwp").insert([submissionData]).select();
+    if (formInsertError) throw new Error(`Form Insert failed: ${formInsertError.message}`);
+
+    // ✅ Insert attachments (Base64, downloadable later)
+    if (files.length > 0) {
+      await Promise.all(
+        files.map(async (file) => {
+          const base64String = await toBase64(file); // includes Data URL
+          const attachmentPayload = {
+            regularpwpcode: formData.regularpwpcode,
+            filename: file.name,
+            mimetype: file.type,
+            size: file.size,
+            file_data: base64String,
+          };
+          const { error: attachmentError } = await supabase
+            .from("regular_attachments")
+            .insert([attachmentPayload])
+            .select();
+          if (attachmentError) {
+            throw new Error(`Attachment insert failed for ${file.name}: ${attachmentError.message}`);
+          }
+        })
+      );
+    }
+
+    // ✅ Reset form state
+    setFiles([]);
+    setRows([]);
+    setRowsAccounts([]);
+    setFormData({
+      regularpwpcode: "",
+      accountType: [],
+      branchType: [],
+      activity: "",
+      pwptype: "Regular",
+      notification: false,
+      objective: "",
+      promoScheme: "",
+      activityDurationFrom: new Date().toISOString().split("T")[0],
+      activityDurationTo: new Date().toISOString().split("T")[0],
+      isPartOfCoverPwp: false,
+      coverPwpCode: "",
+      distributor: "",
+      amountbadget: "0",
+      categoryCode: [],
+      categoryName: [],
+      sku: null,
+      accounts: null,
+      amount_display: null,
+      remarks: "",
+    });
+
+    Swal.fire("Success!", "Form and attachments submitted successfully!", "success");
+  } catch (error) {
+    console.error("Submission Error:", error.message);
+    Swal.fire("Error", error.message, "error");
+  }
+};
+
 
 
   const saveRecentActivity = async ({ UserId }) => {
