@@ -52,7 +52,7 @@ const fetchSubAccounts = async (mother) => {
     .select(`
       id,
       mother_id,
-      bpcode,
+      dscode,
       name,
       status,
       created_at,
@@ -111,22 +111,22 @@ const fetchSubAccounts = async (mother) => {
         Swal.fire("Success", "Sub-account updated!", "success");
       } else {
         // ✅ Create new sub-account with auto BP code
-        // Step 1: Get last bpcode
+        // Step 1: Get last dscode
         const { data: existing, error: fetchError } = await supabase
           .from("sub_mother_account")
-          .select("bpcode")
+          .select("dscode")
           .order("id", { ascending: false })
           .limit(1);
 
         if (fetchError) throw fetchError;
 
         // Step 2: Determine next BP code
-        let nextBPCode = "BP100000";
-        if (existing && existing.length > 0 && existing[0].bpcode) {
-          const lastCode = existing[0].bpcode;
-          const lastNumber = parseInt(lastCode.replace("BP", ""), 10);
+        let nextdscode = "DS100000";
+        if (existing && existing.length > 0 && existing[0].dscode) {
+          const lastCode = existing[0].dscode;
+          const lastNumber = parseInt(lastCode.replace("DS", ""), 10);
           if (!isNaN(lastNumber)) {
-            nextBPCode = `BP${lastNumber + 1}`;
+            nextdscode = `DS${lastNumber + 1}`;
           }
         }
 
@@ -137,13 +137,13 @@ const fetchSubAccounts = async (mother) => {
             {
               mother_id: activeMother.id,
               name: formData.name,
-              bpcode: nextBPCode,
+              dscode: nextdscode,
               status: true,
             },
           ]);
         if (insertError) throw insertError;
 
-        Swal.fire("Success", `Sub-account created! (${nextBPCode})`, "success");
+        Swal.fire("Success", `Sub-account created! (${nextdscode})`, "success");
       }
 
       resetModal();
@@ -265,7 +265,7 @@ const fetchSubAccounts = async (mother) => {
     const header = [
       "ID",
       "Mother Code",
-      "BP Code",
+      "DS Code",
       "Sub-Mother Name",
       "Status",
       "Created At",
@@ -455,7 +455,7 @@ const fetchSubAccounts = async (mother) => {
                     <tr key={sub.id} style={trResponsive}>
                       <td style={tdStyle}>{sub.id}</td>
                       <td style={tdStyle}>{sub.mother_account?.code || "-"}</td>
-                      <td style={tdStyle}>{sub.bpcode}</td> {/* ✅ KEPT THIS LINE */}
+                      <td style={tdStyle}>{sub.dscode}</td> {/* ✅ KEPT THIS LINE */}
 
                       <td style={tdStyle}>{sub.name}</td> {/* ✅ KEPT THIS LINE */}
                       <td style={tdStyle}>{sub.status ? "Active" : "Inactive"}</td>
