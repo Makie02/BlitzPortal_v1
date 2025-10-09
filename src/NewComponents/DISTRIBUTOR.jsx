@@ -541,7 +541,7 @@ const Distributor = () => {
               <th style={thStyle}>Code</th>
               <th style={thStyle}>Name</th>
               <th style={thStyle}>Description</th>
-              <th style={thStyle}>Mother Accounts Code</th>
+              <th style={thStyle}>Mother Accounts Name</th>
               <th style={thStyle}>Actions</th>
             </tr>
           </thead>
@@ -556,7 +556,11 @@ const Distributor = () => {
                 <td style={tdStyle}>{distributor.code}</td>
                 <td style={tdStyle}>{distributor.name}</td>
                 <td style={tdStyle}>{distributor.description}</td>
-                <td style={tdStyle}>{distributor.mother_accounts_code}</td>
+                <td style={tdStyle}>
+                  {distributor.mother_accounts_name?.length > 50
+                    ? distributor.mother_accounts_name.substring(0, 50) + "..."
+                    : distributor.mother_accounts_name}
+                </td>
                 <td style={tdStyle}>
                   <button
                     style={{ ...actionBtnStyle, backgroundColor: '#007bff', padding: '6px 10px', minWidth: 'auto' }}
