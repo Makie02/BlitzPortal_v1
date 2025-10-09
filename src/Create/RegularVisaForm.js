@@ -1915,147 +1915,147 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
   };
 
 
-// Convert file to base64 string
-// Convert file to base64 string (with Data URL)
-const toBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file); // includes "data:<type>;base64,..." prefix
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-  });
-
-// Submit main form and attachments
-const handleSubmitFormAndAttachments = async () => {
-  try {
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-    const createdBy = parsedUser?.name || "Unknown";
-
-    // ✅ Required validation
-    if (!formData.regularpwpcode?.trim()) {
-      throw new Error("Regular PWP Code is required.");
-    }
-
-    // ✅ Validate distributor
-    let distributorCode = formData.distributor?.trim() || null;
-    if (distributorCode) {
-      const { data: distributorsData, error: distributorError } = await supabase
-        .from("distributors")
-        .select("code")
-        .eq("code", distributorCode)
-        .single();
-      if (distributorError || !distributorsData) {
-        throw new Error(`Distributor code "${distributorCode}" is invalid.`);
-      }
-    }
-
-    // ✅ Calculate budgets
-    const amountBudget = parseFloat(formData.amountbadget || 0);
-    const billingAmountSKU = rows.reduce((acc, row) => acc + (parseFloat(row.BILLING_AMOUNT) || 0), 0);
-    const totalAllocatedFromAccounts = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
-    const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
-    const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
-
-    // ✅ Convert accountType IDs → names
-    let convertedAccountType = [];
-    if (Array.isArray(formData.accountType)) {
-      convertedAccountType = formData.accountType
-        .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
-        .filter(Boolean);
-    } else if (formData.accountType) {
-      const name = Object.values(subAccounts).flat().find((s) => s.id === formData.accountType)?.name;
-      convertedAccountType = name ? [name] : [];
-    }
-
-    // ✅ Prepare main submission object
-    const submissionData = {
-      regularpwpcode: formData.regularpwpcode,
-      accountType: convertedAccountType,
-      branchType: formData.branchType || [],
-      activity: formData.activity,
-      pwptype: formData.pwptype || "Regular",
-      notification: formData.notification,
-      objective: formData.objective,
-      promoScheme: formData.promoScheme,
-      activityDurationFrom: formData.activityDurationFrom,
-      activityDurationTo: formData.activityDurationTo,
-      isPartOfCoverPwp: formData.isPartOfCoverPwp,
-      coverPwpCode: formData.coverPwpCode,
-      distributor: distributorCode,
-      amountbadget: formData.amountbadget,
-      categoryCode: formData.categoryCode || [],
-      categoryName: formData.categoryName || [],
-      sku: formData.sku,
-      accounts: formData.accounts,
-      amount_display: formData.amount_display,
-      remarks: formData.remarks || "",
-      created_at: new Date().toISOString(),
-      createForm: createdBy,
-      credit_budget: creditBudget,
-      remaining_balance: remainingBalance,
-    };
-
-    // ✅ Insert main form
-    const { error: formInsertError } = await supabase.from("regular_pwp").insert([submissionData]).select();
-    if (formInsertError) throw new Error(`Form Insert failed: ${formInsertError.message}`);
-
-    // ✅ Insert attachments (Base64, downloadable later)
-    if (files.length > 0) {
-      await Promise.all(
-        files.map(async (file) => {
-          const base64String = await toBase64(file); // includes Data URL
-          const attachmentPayload = {
-            regularpwpcode: formData.regularpwpcode,
-            filename: file.name,
-            mimetype: file.type,
-            size: file.size,
-            file_data: base64String,
-          };
-          const { error: attachmentError } = await supabase
-            .from("regular_attachments")
-            .insert([attachmentPayload])
-            .select();
-          if (attachmentError) {
-            throw new Error(`Attachment insert failed for ${file.name}: ${attachmentError.message}`);
-          }
-        })
-      );
-    }
-
-    // ✅ Reset form state
-    setFiles([]);
-    setRows([]);
-    setRowsAccounts([]);
-    setFormData({
-      regularpwpcode: "",
-      accountType: [],
-      branchType: [],
-      activity: "",
-      pwptype: "Regular",
-      notification: false,
-      objective: "",
-      promoScheme: "",
-      activityDurationFrom: new Date().toISOString().split("T")[0],
-      activityDurationTo: new Date().toISOString().split("T")[0],
-      isPartOfCoverPwp: false,
-      coverPwpCode: "",
-      distributor: "",
-      amountbadget: "0",
-      categoryCode: [],
-      categoryName: [],
-      sku: null,
-      accounts: null,
-      amount_display: null,
-      remarks: "",
+  // Convert file to base64 string
+  // Convert file to base64 string (with Data URL)
+  const toBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file); // includes "data:<type>;base64,..." prefix
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
     });
 
-    Swal.fire("Success!", "Form and attachments submitted successfully!", "success");
-  } catch (error) {
-    console.error("Submission Error:", error.message);
-    Swal.fire("Error", error.message, "error");
-  }
-};
+  // Submit main form and attachments
+  const handleSubmitFormAndAttachments = async () => {
+    try {
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const createdBy = parsedUser?.name || "Unknown";
+
+      // ✅ Required validation
+      if (!formData.regularpwpcode?.trim()) {
+        throw new Error("Regular PWP Code is required.");
+      }
+
+      // ✅ Validate distributor
+      let distributorCode = formData.distributor?.trim() || null;
+      if (distributorCode) {
+        const { data: distributorsData, error: distributorError } = await supabase
+          .from("distributors")
+          .select("code")
+          .eq("code", distributorCode)
+          .single();
+        if (distributorError || !distributorsData) {
+          throw new Error(`Distributor code "${distributorCode}" is invalid.`);
+        }
+      }
+
+      // ✅ Calculate budgets
+      const amountBudget = parseFloat(formData.amountbadget || 0);
+      const billingAmountSKU = rows.reduce((acc, row) => acc + (parseFloat(row.BILLING_AMOUNT) || 0), 0);
+      const totalAllocatedFromAccounts = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+      const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
+      const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
+
+      // ✅ Convert accountType IDs → names
+      let convertedAccountType = [];
+      if (Array.isArray(formData.accountType)) {
+        convertedAccountType = formData.accountType
+          .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
+          .filter(Boolean);
+      } else if (formData.accountType) {
+        const name = Object.values(subAccounts).flat().find((s) => s.id === formData.accountType)?.name;
+        convertedAccountType = name ? [name] : [];
+      }
+
+      // ✅ Prepare main submission object
+      const submissionData = {
+        regularpwpcode: formData.regularpwpcode,
+        accountType: convertedAccountType,
+        branchType: formData.branchType || [],
+        activity: formData.activity,
+        pwptype: formData.pwptype || "Regular",
+        notification: formData.notification,
+        objective: formData.objective,
+        promoScheme: formData.promoScheme,
+        activityDurationFrom: formData.activityDurationFrom,
+        activityDurationTo: formData.activityDurationTo,
+        isPartOfCoverPwp: formData.isPartOfCoverPwp,
+        coverPwpCode: formData.coverPwpCode,
+        distributor: distributorCode,
+        amountbadget: formData.amountbadget,
+        categoryCode: formData.categoryCode || [],
+        categoryName: formData.categoryName || [],
+        sku: formData.sku,
+        accounts: formData.accounts,
+        amount_display: formData.amount_display,
+        remarks: formData.remarks || "",
+        created_at: new Date().toISOString(),
+        createForm: createdBy,
+        credit_budget: creditBudget,
+        remaining_balance: remainingBalance,
+      };
+
+      // ✅ Insert main form
+      const { error: formInsertError } = await supabase.from("regular_pwp").insert([submissionData]).select();
+      if (formInsertError) throw new Error(`Form Insert failed: ${formInsertError.message}`);
+
+      // ✅ Insert attachments (Base64, downloadable later)
+      if (files.length > 0) {
+        await Promise.all(
+          files.map(async (file) => {
+            const base64String = await toBase64(file); // includes Data URL
+            const attachmentPayload = {
+              regularpwpcode: formData.regularpwpcode,
+              filename: file.name,
+              mimetype: file.type,
+              size: file.size,
+              file_data: base64String,
+            };
+            const { error: attachmentError } = await supabase
+              .from("regular_attachments")
+              .insert([attachmentPayload])
+              .select();
+            if (attachmentError) {
+              throw new Error(`Attachment insert failed for ${file.name}: ${attachmentError.message}`);
+            }
+          })
+        );
+      }
+
+      // ✅ Reset form state
+      setFiles([]);
+      setRows([]);
+      setRowsAccounts([]);
+      setFormData({
+        regularpwpcode: "",
+        accountType: [],
+        branchType: [],
+        activity: "",
+        pwptype: "Regular",
+        notification: false,
+        objective: "",
+        promoScheme: "",
+        activityDurationFrom: new Date().toISOString().split("T")[0],
+        activityDurationTo: new Date().toISOString().split("T")[0],
+        isPartOfCoverPwp: false,
+        coverPwpCode: "",
+        distributor: "",
+        amountbadget: "0",
+        categoryCode: [],
+        categoryName: [],
+        sku: null,
+        accounts: null,
+        amount_display: null,
+        remarks: "",
+      });
+
+      Swal.fire("Success!", "Form and attachments submitted successfully!", "success");
+    } catch (error) {
+      console.error("Submission Error:", error.message);
+      Swal.fire("Error", error.message, "error");
+    }
+  };
 
 
 
@@ -2237,40 +2237,39 @@ const handleSubmitFormAndAttachments = async () => {
 
   const fetchSubAccounts = async (mother) => {
     setSelectedMother(mother);
+
     if (!subAccounts[mother.id]) {
       const { data, error } = await supabase
-        .from("sub_mother_account")
-        .select("id, name")
-        .eq("mother_id", mother.id)
-        .eq("status", true)
-        .order("name");
+        .from("user_mother_account_tags")
+        .select("id, mother_account_name, mother_account_code") // include code
+        .eq("mother_account_id", mother.id) // filter by mother id
+        .order("mother_account_name");
+
       if (error) return console.error(error);
-      setSubAccounts((prev) => ({ ...prev, [mother.id]: data }));
+
+      // map data so we can use `name` in JSX
+      const formattedData = data.map((item) => ({
+        id: item.id,
+        name: item.mother_account_name,
+        code: item.mother_account_code,
+      }));
+
+      setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
     }
   };
 
-  const toggleSubAccount = (subId) => {
-    const selected = formData.accountType || [];
-    if (selected.includes(subId)) {
-      setFormData({ ...formData, accountType: selected.filter((id) => id !== subId) });
-    } else {
-      setFormData({ ...formData, accountType: [...selected, subId] });
-    }
-  };
 
-  // Fetch branches based on mother account code
-  // Fetch branches based on selected Sub Mother (from sub_3_mother_account table)
-  const fetchBranches = async (subMotherId) => {
+  const fetchBranches = async (motherAccountCode) => {
     try {
       const { data, error } = await supabase
         .from("sub_3_mother_account")
-        .select("*") // ✅ fetch full row data
-        .eq("sub_mother_id", subMotherId)
+        .select("*") // fetch full row data
+        .eq("sub_mother_dscode", motherAccountCode) // filter by mother_account_code
         .not("branch", "is", null); // exclude nulls
 
       if (error) throw error;
 
-      // ✅ Extract unique branches with full details
+      // Extract unique branches with full details
       const uniqueBranches = [];
       const seen = new Set();
 
@@ -2292,8 +2291,8 @@ const handleSubmitFormAndAttachments = async () => {
 
       setBranchTypes(uniqueBranches);
 
-      // ✅ Display everything in console clearly
-      console.group(`🏢 Branches fetched for Sub Mother ID: ${subMotherId}`);
+      // Display everything in console clearly
+      console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
       console.table(uniqueBranches);
       console.log("📋 Full Row Data:", data);
       console.groupEnd();
@@ -2301,6 +2300,8 @@ const handleSubmitFormAndAttachments = async () => {
       console.error("❌ Error fetching branches:", err.message);
     }
   };
+
+
 
 
 
@@ -3110,20 +3111,19 @@ const handleSubmitFormAndAttachments = async () => {
                                     } else {
                                       setFormData((prev) => ({ ...prev, accountType: s.id }));
                                       setShowBranchInput(true);
-                                      fetchBranches(s.id);
+                                      fetchBranches(s.code); // pass mother_account_code instead of id
+
                                     }
                                   }}
                                   id={`sub_${s.id}`}
                                   style={{ width: "18px", height: "18px", cursor: "pointer" }}
                                 />
-                                <label
-                                  htmlFor={`sub_${s.id}`}
-                                  style={{ marginLeft: "6px", cursor: "pointer" }}
-                                >
-                                  {s.name} <span style={{ color: "#888", fontSize: "12px" }}>({s.id})</span>
+                                <label htmlFor={`sub_${s.id}`} style={{ marginLeft: "6px", cursor: "pointer" }}>
+                                  {s.name} <span style={{ color: "#888", fontSize: "12px" }}>({s.code})</span>
                                 </label>
                               </div>
                             ))}
+
                         </>
                       )}
                     </Modal.Body>
@@ -3138,30 +3138,39 @@ const handleSubmitFormAndAttachments = async () => {
 
 
                 {/* Branch Selector */}
-                {showBranchInput && (
-                  <div className="col-md-4" style={{ position: "relative" }}>
-                    <label>
-                      Branch <span style={{ color: "red" }}>*</span>
-                    </label>
-                    <div
-                      className="form-control"
-                      onClick={() => {
-                        if (!formData.accountType) return alert("Select a Sub Account first");
-                        setShowModal_Branch(true);
-                        fetchBranches(formData.accountType);
-                      }}
-                      style={{
-                        cursor: "pointer",
-                        minHeight: "40px",
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "5px",
-                      }}
-                    >
-                      {getBranchNames()}
-                    </div>
-                  </div>
-                )}
+               {showBranchInput && (
+  <div className="col-md-4" style={{ position: "relative" }}>
+    <label>
+      Branch <span style={{ color: "red" }}>*</span>
+    </label>
+    <div
+      className="form-control"
+      onClick={() => {
+        if (!formData.accountType) return alert("Select a Sub Account first");
+
+        // Find the selected sub account object
+        const selectedSub = subAccounts[selectedMother.id]?.find(
+          (s) => s.id === formData.accountType
+        );
+
+        if (!selectedSub) return alert("Sub account not found!");
+
+        // Open modal and fetch branches using mother_account_code
+        setShowModal_Branch(true);
+        fetchBranches(selectedSub.code);
+      }}
+      style={{
+        cursor: "pointer",
+        minHeight: "40px",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "5px",
+      }}
+    >
+      {getBranchNames()}
+    </div>
+  </div>
+)}
 
                 {/* Branch Selector */}
                 {/* Branch Selector */}
@@ -4110,71 +4119,71 @@ const handleSubmitFormAndAttachments = async () => {
         return (
           <div>
             <Card border="primary" className="shadow">
-            {formData.isPartOfCoverPwp &&
-  formData.coverPwpCode &&
-  selectedBalance !== null && (
-    <div
-      className="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3"
-      style={{ width: "100%" }}
-    >
-      {/* ✅ Left side: Table section */}
-      <div className="flex-grow-1 w-100">
-        {/* your existing Table code here */}
-      </div>
+              {formData.isPartOfCoverPwp &&
+                formData.coverPwpCode &&
+                selectedBalance !== null && (
+                  <div
+                    className="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3"
+                    style={{ width: "100%" }}
+                  >
+                    {/* ✅ Left side: Table section */}
+                    <div className="flex-grow-1 w-100">
+                      {/* your existing Table code here */}
+                    </div>
 
-      {/* ✅ Right side: Remaining Budget Card */}
-      <div
-        className="card border-success shadow w-100 w-lg-auto"
-        style={{
-          maxWidth: "22rem",
-          flexShrink: 0,
-          alignSelf: "stretch",
-        }}
-      >
-        <div className="card-header bg-success text-white fw-bold text-center">
-          📦 Remaining SKU Budget
-        </div>
-        <div className="card-body text-center">
-          {(() => {
-            const grandTotals = calculateGrandTotals();
-            const selected = parseFloat(selectedBalance || 0);
-            const creditBudget = parseFloat(formData?.amountbadget || 0);
-            const netTotal = grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT;
-            const remainingSkuBudget = selected - netTotal - creditBudget;
+                    {/* ✅ Right side: Remaining Budget Card */}
+                    <div
+                      className="card border-success shadow w-100 w-lg-auto"
+                      style={{
+                        maxWidth: "22rem",
+                        flexShrink: 0,
+                        alignSelf: "stretch",
+                      }}
+                    >
+                      <div className="card-header bg-success text-white fw-bold text-center">
+                        📦 Remaining SKU Budget
+                      </div>
+                      <div className="card-body text-center">
+                        {(() => {
+                          const grandTotals = calculateGrandTotals();
+                          const selected = parseFloat(selectedBalance || 0);
+                          const creditBudget = parseFloat(formData?.amountbadget || 0);
+                          const netTotal = grandTotals.BILLING_AMOUNT - grandTotals.DISCOUNT;
+                          const remainingSkuBudget = selected - netTotal - creditBudget;
 
-            return (
-              <>
-                <p
-                  className="card-text"
-                  style={{
-                    fontSize: "2rem",
-                    fontWeight: "bold",
-                    color: remainingSkuBudget < 0 ? "#dc3545" : "#198754",
-                  }}
-                >
-                  ₱
-                  {remainingSkuBudget.toLocaleString("en-PH", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </p>
-                <small className="text-muted">
-                  Total Budget: ₱
-                  {selected.toLocaleString("en-PH", {
-                    minimumFractionDigits: 2,
-                  })}
-                  − SKU Net: ₱
-                  {netTotal.toLocaleString("en-PH", {
-                    minimumFractionDigits: 2,
-                  })}
-                </small>
-              </>
-            );
-          })()}
-        </div>
-      </div>
-    </div>
-  )}
+                          return (
+                            <>
+                              <p
+                                className="card-text"
+                                style={{
+                                  fontSize: "2rem",
+                                  fontWeight: "bold",
+                                  color: remainingSkuBudget < 0 ? "#dc3545" : "#198754",
+                                }}
+                              >
+                                ₱
+                                {remainingSkuBudget.toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </p>
+                              <small className="text-muted">
+                                Total Budget: ₱
+                                {selected.toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                })}
+                                − SKU Net: ₱
+                                {netTotal.toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </small>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
 
               <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
@@ -4273,147 +4282,146 @@ const handleSubmitFormAndAttachments = async () => {
 
                             </div>
 
-                       <div className="table-responsive">
-  <Table bordered hover size="sm" className="align-middle text-center">
-    <thead className="table-primary text-white">
-      <tr>
-        <th>SKU</th>
-        <th>SRP</th>
-        <th>QTY</th>
-        <th>UOM</th>
-        <th>Billing Amount</th>
-        <th>Discount %</th>
-        <th>Total Amount</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
+                            <div className="table-responsive">
+                              <Table bordered hover size="sm" className="align-middle text-center">
+                                <thead className="table-primary text-white">
+                                  <tr>
+                                    <th>SKU</th>
+                                    <th>SRP</th>
+                                    <th>QTY</th>
+                                    <th>UOM</th>
+                                    <th>Billing Amount</th>
+                                    <th>Discount %</th>
+                                    <th>Total Amount</th>
+                                    <th>Actions</th>
+                                  </tr>
+                                </thead>
 
-    <tbody>
-      {rows.map((row, idx) => {
-        const srp = Number(row.SRP || 0);
-        const qty = Number(row.QTY || 0);
-        const discountAmount = Number(row.DISCOUNT || 0);
+                                <tbody>
+                                  {rows.map((row, idx) => {
+                                    const srp = Number(row.SRP || 0);
+                                    const qty = Number(row.QTY || 0);
+                                    const discountAmount = Number(row.DISCOUNT || 0);
 
-        const totalBeforeDiscount = srp * qty;
-        const totalAmount = totalBeforeDiscount - discountAmount;
+                                    const totalBeforeDiscount = srp * qty;
+                                    const totalAmount = totalBeforeDiscount - discountAmount;
 
-        return (
-          <tr key={`${branchName}-${idx}`}>
-            <td
-              style={{
-                display: "flex",
-                alignItems: "center",
-                minWidth: "200px",
-                gap: "8px",
-              }}
-            >
-              <Form.Control
-                value={
-                  categoryListing.find((sku) => sku.sku_code === row.SKUITEM)
-                    ? `${row.SKUITEM} - ${
-                        categoryListing.find((sku) => sku.sku_code === row.SKUITEM)?.name
-                      }`
-                    : row.SKUITEM || ""
-                }
-                readOnly
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRowIndex(idx);
-                  setSelectedBranchName(branchName);
-                  setShowSkuModal(true);
-                }}
-                style={{
-                  border: "none",
-                  background: "none",
-                  cursor: "pointer",
-                  padding: "8px",
-                }}
-              >
-                <FaSearch style={{ color: "blue", fontSize: "20px" }} />
-              </button>
-            </td>
+                                    return (
+                                      <tr key={`${branchName}-${idx}`}>
+                                        <td
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            minWidth: "200px",
+                                            gap: "8px",
+                                          }}
+                                        >
+                                          <Form.Control
+                                            value={
+                                              categoryListing.find((sku) => sku.sku_code === row.SKUITEM)
+                                                ? `${row.SKUITEM} - ${categoryListing.find((sku) => sku.sku_code === row.SKUITEM)?.name
+                                                }`
+                                                : row.SKUITEM || ""
+                                            }
+                                            readOnly
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedRowIndex(idx);
+                                              setSelectedBranchName(branchName);
+                                              setShowSkuModal(true);
+                                            }}
+                                            style={{
+                                              border: "none",
+                                              background: "none",
+                                              cursor: "pointer",
+                                              padding: "8px",
+                                            }}
+                                          >
+                                            <FaSearch style={{ color: "blue", fontSize: "20px" }} />
+                                          </button>
+                                        </td>
 
-            <td>
-              <Form.Control
-                type="number"
-                step="0.01"
-                value={row.SRP || 0}
-                onChange={(e) =>
-                  handleChangeSkuForBranch(branchName, idx, "SRP", e.target.value)
-                }
-              />
-            </td>
+                                        <td>
+                                          <Form.Control
+                                            type="number"
+                                            step="0.01"
+                                            value={row.SRP || 0}
+                                            onChange={(e) =>
+                                              handleChangeSkuForBranch(branchName, idx, "SRP", e.target.value)
+                                            }
+                                          />
+                                        </td>
 
-            <td>
-              <Form.Control
-                type="number"
-                value={row.QTY || 0}
-                onChange={(e) =>
-                  handleChangeSkuForBranch(branchName, idx, "QTY", e.target.value)
-                }
-              />
-            </td>
+                                        <td>
+                                          <Form.Control
+                                            type="number"
+                                            value={row.QTY || 0}
+                                            onChange={(e) =>
+                                              handleChangeSkuForBranch(branchName, idx, "QTY", e.target.value)
+                                            }
+                                          />
+                                        </td>
 
-            <td>
-              <Form.Select
-                value={row.UOM || "PC"}
-                onChange={(e) =>
-                  handleChangeSkuForBranch(branchName, idx, "UOM", e.target.value)
-                }
-              >
-                {["PC", "CASE", "IBX", "PACK"].map((uom) => (
-                  <option key={uom} value={uom}>
-                    {uom}
-                  </option>
-                ))}
-              </Form.Select>
-            </td>
+                                        <td>
+                                          <Form.Select
+                                            value={row.UOM || "PC"}
+                                            onChange={(e) =>
+                                              handleChangeSkuForBranch(branchName, idx, "UOM", e.target.value)
+                                            }
+                                          >
+                                            {["PC", "CASE", "IBX", "PACK"].map((uom) => (
+                                              <option key={uom} value={uom}>
+                                                {uom}
+                                              </option>
+                                            ))}
+                                          </Form.Select>
+                                        </td>
 
-            <td>{totalBeforeDiscount.toFixed(2)}</td>
+                                        <td>{totalBeforeDiscount.toFixed(2)}</td>
 
-            <td>
-              <Form.Control
-                type="number"
-                step="0.01"
-                value={discountAmount}
-                onChange={(e) =>
-                  handleChangeSkuForBranch(branchName, idx, "DISCOUNT", e.target.value)
-                }
-              />
-            </td>
+                                        <td>
+                                          <Form.Control
+                                            type="number"
+                                            step="0.01"
+                                            value={discountAmount}
+                                            onChange={(e) =>
+                                              handleChangeSkuForBranch(branchName, idx, "DISCOUNT", e.target.value)
+                                            }
+                                          />
+                                        </td>
 
-            <td>{totalAmount.toFixed(2)}</td>
+                                        <td>{totalAmount.toFixed(2)}</td>
 
-            <td>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => removeSkuRowForBranch(branchName, idx)}
-              >
-                Remove
-              </Button>
-            </td>
-          </tr>
-        );
-      })}
-    </tbody>
+                                        <td>
+                                          <Button
+                                            variant="danger"
+                                            size="sm"
+                                            onClick={() => removeSkuRowForBranch(branchName, idx)}
+                                          >
+                                            Remove
+                                          </Button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
 
-    <tfoot className="table text-white">
-      <tr>
-        <td><strong>Total</strong></td>
-        <td>{totals.SRP.toFixed(2)}</td>
-        <td>{totals.QTY}</td>
-        <td></td>
-        <td>{totals.BILLING_AMOUNT.toFixed(2)}</td>
-        <td>{totals.DISCOUNT.toFixed(2)}</td>
-        <td>{totals.TOTAL_AMOUNT.toFixed(2)}</td>
-        <td>-</td>
-      </tr>
-    </tfoot>
-  </Table>
-</div>
+                                <tfoot className="table text-white">
+                                  <tr>
+                                    <td><strong>Total</strong></td>
+                                    <td>{totals.SRP.toFixed(2)}</td>
+                                    <td>{totals.QTY}</td>
+                                    <td></td>
+                                    <td>{totals.BILLING_AMOUNT.toFixed(2)}</td>
+                                    <td>{totals.DISCOUNT.toFixed(2)}</td>
+                                    <td>{totals.TOTAL_AMOUNT.toFixed(2)}</td>
+                                    <td>-</td>
+                                  </tr>
+                                </tfoot>
+                              </Table>
+                            </div>
 
                           </div>
                         );
