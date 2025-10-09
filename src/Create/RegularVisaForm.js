@@ -2235,28 +2235,34 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
     setAccountTypes(data);
   };
 
-  const fetchSubAccounts = async (mother) => {
-    setSelectedMother(mother);
+ const fetchSubAccounts = async (mother) => {
+  setSelectedMother(mother);
 
-    if (!subAccounts[mother.id]) {
-      const { data, error } = await supabase
-        .from("user_mother_account_tags")
-        .select("id, mother_account_name, mother_account_code") // include code
-        .eq("mother_account_id", mother.id) // filter by mother id
-        .order("mother_account_name");
+  if (!subAccounts[mother.id]) {
+    const { data, error } = await supabase
+      .from("user_mother_account_tags")
+      .select("id, mother_account_name, mother_account_code, UserName") // include UserName
+      .eq("mother_account_id", mother.id) // filter by mother id
+      .order("mother_account_name");
 
-      if (error) return console.error(error);
+    if (error) return console.error(error);
 
-      // map data so we can use `name` in JSX
-      const formattedData = data.map((item) => ({
-        id: item.id,
-        name: item.mother_account_name,
-        code: item.mother_account_code,
-      }));
+    const loggedInUsername = parsedUser?.name || "Unknown";
+    console.log("[DEBUG] Logged in user:", loggedInUsername);
 
-      setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
-    }
-  };
+    // Filter by logged in username
+    const filteredData = data.filter((item) => item.UserName === loggedInUsername);
+
+    // map data so we can use `name` in JSX
+    const formattedData = filteredData.map((item) => ({
+      id: item.id,
+      name: item.mother_account_name,
+      code: item.mother_account_code,
+    }));
+
+    setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
+  }
+};
 
 
   const fetchBranches = async (motherAccountCode) => {
