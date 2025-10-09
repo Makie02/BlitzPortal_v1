@@ -105,7 +105,7 @@ export default function MotherAccount() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.setAttribute("download", "mother_accounts.csv");
+  link.setAttribute("download", "Group_accounts.csv");
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -158,9 +158,9 @@ const handleImportCSV = async (e) => {
 
   return (
     <div style={containerStyle}>
-      <h2>Mother Account</h2>
+      <h2>Group Account</h2>
       <button style={addButtonStyle} onClick={handleAdd}>
-        + Add Mother Account
+        + Add Group Account
       </button>
       <div style={{ marginBottom: "20px" }}>
         <button style={{ ...addButtonStyle, marginRight: "10px" }} onClick={handleExportCSV}>
@@ -211,7 +211,7 @@ const handleImportCSV = async (e) => {
       {showModal && (
         <div style={modalOverlayStyle}>
           <div style={modalContentStyle}>
-            <h3>{formData.id ? "Edit Mother Account" : "Add Mother Account"}</h3>
+            <h3>{formData.id ? "Edit Group  Account" : "Add Group  Account"}</h3>
             <form onSubmit={handleSubmit}>
               <label>Code</label>
               <input style={inputStyle} type="text" value={formData.code} readOnly />
