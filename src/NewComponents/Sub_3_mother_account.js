@@ -19,7 +19,7 @@ function Sub_3rdmotherAccounts() {
   const importInputRef = useRef(null);
 
   // Fetch Sub Mother Accounts
-   useEffect(() => {
+  useEffect(() => {
     const fetchSubMothers = async () => {
       const batchSize = 1000;
       let allData = [];
@@ -464,6 +464,7 @@ function Sub_3rdmotherAccounts() {
       prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
     );
   };
+  const [searchTerm, setSearchTerm] = useState("");
 
 
   return (
@@ -479,33 +480,153 @@ function Sub_3rdmotherAccounts() {
             </p>
           </div>
 
-          <div style={cardContainer}>
-            {subMothers.map((sub) => (
-              <div
-                key={sub.id}
-                style={cardStyle}
-                onClick={() => fetchSub3Accounts(sub)}
+          {/* 🔍 Search Bar */}
+          <div style={{ marginTop: 15, marginBottom: 15 }}>
+            <input
+              type="text"
+              placeholder="Search Sub-Mother..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px",
+                borderRadius: "8px",
+                border: "1px solid #ccc",
+                fontSize: "14px",
+              }}
+            />
+          </div>
+
+          {/* Two main containers side-by-side */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "20px",
+              marginTop: "20px",
+            }}
+          >
+            {/* LEFT CONTAINER - DIRECT MEGASOFT */}
+            <div style={{ flex: 1 }}>
+              <h3
+                style={{
+                  color: "#0087c5",
+                  fontSize: "20px",
+                  marginBottom: "10px",
+                  textAlign: "center",
+                }}
               >
-                <div style={cardHeader}>
-                  <h3 style={{ margin: 0, color: "#fff", fontSize: 18 }}>{sub.name}</h3>
-                </div>
-                <div style={cardBody}>
-                  <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
-                    <strong>Mother:</strong> {sub.mother_account?.name || "-"}
-                  </p>
-                  <p style={{ margin: "5px 0 0 0", color: "#777", fontSize: 12 }}>
-                    <strong>Status:</strong> {sub.status ? "Active" : "Inactive"}
-                  </p>
-                  <p style={{ margin: "5px 0 0 0", color: "#999", fontSize: 12 }}>
-                    <strong>Created:</strong>{" "}
-                    {new Date(sub.created_at).toLocaleDateString()}
-                  </p>
-                </div>
+                DIRECT MEGASOFT
+              </h3>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gap: "15px",
+                }}
+              >
+                {subMothers
+                  .filter(
+                    (sub) =>
+                      sub.mother_account?.name === "DIRECT MEGASOFT" &&
+                      sub.name.toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                  .map((sub) => (
+                    <div
+                      key={sub.id}
+                      style={cardStyle}
+                      onClick={() => fetchSub3Accounts(sub)}
+                    >
+                      <div style={cardHeader}>
+                        <h3 style={{ margin: 0, color: "#fff", fontSize: 18 }}>
+                          {sub.name}
+                        </h3>
+                      </div>
+                      <div style={cardBody}>
+                        <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
+                          <strong>Mother:</strong>{" "}
+                          {sub.mother_account?.name || "-"}
+                        </p>
+                        <p
+                          style={{ margin: "5px 0 0 0", color: "#777", fontSize: 12 }}
+                        >
+                          <strong>Status:</strong>{" "}
+                          {sub.status ? "Active" : "Inactive"}
+                        </p>
+                        <p
+                          style={{ margin: "5px 0 0 0", color: "#999", fontSize: 12 }}
+                        >
+                          <strong>Created:</strong>{" "}
+                          {new Date(sub.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
               </div>
-            ))}
+            </div>
+
+            {/* RIGHT CONTAINER - DIRECT DISTRIBUTOR */}
+            <div style={{ flex: 1 }}>
+              <h3
+                style={{
+                  color: "#0087c5",
+                  fontSize: "20px",
+                  marginBottom: "10px",
+                  textAlign: "center",
+                }}
+              >
+                DIRECT DISTRIBUTOR
+              </h3>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gap: "15px",
+                }}
+              >
+                {subMothers
+                  .filter(
+                    (sub) =>
+                      sub.mother_account?.name === "DIRECT DISTRIBUTOR" &&
+                      sub.name.toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                  .map((sub) => (
+                    <div
+                      key={sub.id}
+                      style={cardStyle}
+                      onClick={() => fetchSub3Accounts(sub)}
+                    >
+                      <div style={cardHeader}>
+                        <h3 style={{ margin: 0, color: "#fff", fontSize: 18 }}>
+                          {sub.name}
+                        </h3>
+                      </div>
+                      <div style={cardBody}>
+                        <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
+                          <strong>Mother:</strong>{" "}
+                          {sub.mother_account?.name || "-"}
+                        </p>
+                        <p
+                          style={{ margin: "5px 0 0 0", color: "#777", fontSize: 12 }}
+                        >
+                          <strong>Status:</strong>{" "}
+                          {sub.status ? "Active" : "Inactive"}
+                        </p>
+                        <p
+                          style={{ margin: "5px 0 0 0", color: "#999", fontSize: 12 }}
+                        >
+                          <strong>Created:</strong>{" "}
+                          {new Date(sub.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
+
 
       {selectedSubMother && (
         <div style={tabPanel}>
