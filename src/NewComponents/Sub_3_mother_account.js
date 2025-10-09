@@ -8,7 +8,7 @@ function Sub_3rdmotherAccounts() {
   const [selectedSubMother, setSelectedSubMother] = useState(null);
   const [sub3Accounts, setSub3Accounts] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ name: "", description: "", branch: "", bp_code: "" });
+  const [formData, setFormData] = useState({ name: "", branch: "", bp_code: "" });
   const [editMode, setEditMode] = useState(false);
   const [editId, setEditId] = useState(null);
 
@@ -19,60 +19,108 @@ function Sub_3rdmotherAccounts() {
   const importInputRef = useRef(null);
 
   // Fetch Sub Mother Accounts
-  useEffect(() => {
+   useEffect(() => {
     const fetchSubMothers = async () => {
-      const { data, error } = await supabase
-        .from("sub_mother_account")
-        .select(`
-          id,
-          mother_id,
-          name,
-          status,
-          dscode,
-          created_at,
-          mother_account ( name )
-        `)
-        .order("created_at", { ascending: true });
+      const batchSize = 1000;
+      let allData = [];
+      let hasMore = true;
+      let offset = 0;
 
-      if (error) {
-        console.error(error);
-        Swal.fire("Error", "Failed to fetch sub‑mother accounts", "error");
-      } else {
-        setSubMothers(data);
+      while (hasMore) {
+        console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+        const { data, error } = await supabase
+          .from("sub_mother_account")
+          .select(`
+            id,
+            mother_id,
+            name,
+            status,
+            dscode,
+            created_at,
+            mother_account ( name )
+          `)
+          .order("created_at", { ascending: true })
+          .range(offset, offset + batchSize - 1);
+
+        console.log(
+          `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+        );
+
+        if (error) {
+          console.error(error);
+          Swal.fire("Error", "Failed to fetch sub-mother accounts", "error");
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          offset += batchSize;
+          hasMore = data.length === batchSize;
+          console.log(`📊 Total records so far: ${allData.length}`);
+        } else {
+          hasMore = false;
+        }
       }
+
+      setSubMothers(allData);
+      console.log(`🎉 Finished fetching all Sub-Mothers: ${allData.length}`);
     };
 
     fetchSubMothers();
   }, []);
 
-  // Fetch Sub‑3 Accounts for a given subMother
+  // ✅ Batched fetch for Sub-3 Accounts
   const fetchSub3Accounts = async (subMother) => {
     setSelectedSubMother(subMother);
-    setSub3SearchQuery(""); // reset search when switching
+    setSub3SearchQuery("");
 
-    const { data, error } = await supabase
-      .from("sub_3_mother_account")
-      .select(`
-      id,
-      sub_mother_id,
-      name,
-      branch,
-      bp_code,
-      sub_mother_dscode,
-      status,
-      distributor_code,
-      distributor_name,
-      sub_mother_account ( name )
-    `)
-      .eq("sub_mother_id", subMother.id)
-      .order("id", { ascending: true });
+    const batchSize = 1000;
+    let allData = [];
+    let hasMore = true;
+    let offset = 0;
 
-    if (error) {
-      console.error(error);
-      Swal.fire("Error", "Failed to fetch Sub-3 accounts", "error");
-    } else {
-      setSub3Accounts(data);
+    while (hasMore) {
+      console.log(`📥 Fetching Sub-3 batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+      const { data, error } = await supabase
+        .from("sub_3_mother_account")
+        .select(`
+          id,
+          sub_mother_id,
+          name,
+          branch,
+          bp_code,
+          sub_mother_dscode,
+          status,
+          distributor_code,
+          distributor_name,
+          sub_mother_account ( name )
+        `)
+        .eq("sub_mother_id", subMother.id)
+        .order("id", { ascending: true })
+        .range(offset, offset + batchSize - 1);
+
+      console.log(
+        `✅ Fetched Sub-3 batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+      );
+
+      if (error) {
+        console.error(error);
+        Swal.fire("Error", "Failed to fetch Sub-3 accounts", "error");
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        offset += batchSize;
+        hasMore = data.length === batchSize;
+        console.log(`📊 Total Sub-3 records so far: ${allData.length}`);
+      } else {
+        hasMore = false;
+      }
     }
+
+    setSub3Accounts(allData);
+    console.log(`🎉 Finished fetching all Sub-3 accounts: ${allData.length}`);
   };
 
 
@@ -80,13 +128,12 @@ function Sub_3rdmotherAccounts() {
   const filteredSub3 = sub3Accounts.filter((s3) => {
     const q = sub3SearchQuery.trim().toLowerCase();
     if (q === "") return true;
-    // Search against name, description, branch, status
+    // Search against name, , branch, status
     const nameMatch = s3.name?.toLowerCase().includes(q);
-    const descMatch = s3.description?.toLowerCase().includes(q);
     const branchMatch = s3.branch?.toLowerCase().includes(q);
     const statusText = s3.status ? "active" : "inactive";
     const statusMatch = statusText.includes(q);
-    return nameMatch || descMatch || branchMatch || statusMatch;
+    return nameMatch || branchMatch || statusMatch;
   });
 
   // Handle input change
@@ -139,7 +186,7 @@ function Sub_3rdmotherAccounts() {
         Swal.fire("Success", "Sub-3 account created!", "success");
       }
 
-      setFormData({ name: "", branch: "", description: "", bp_code: "" });
+      setFormData({ name: "", branch: "", bp_code: "" });
       setSelectedDistributors([]);
       setShowModal(false);
       setEditMode(false);
@@ -184,7 +231,7 @@ function Sub_3rdmotherAccounts() {
     setEditId(s3.id);
     setFormData({
       name: s3.name || "",
-      description: s3.description || "",
+
       branch: s3.branch || "",
       bp_code: s3.bp_code || "", // 🆕 load existing bp_code
 
@@ -266,7 +313,6 @@ function Sub_3rdmotherAccounts() {
           const name = row["Name"]?.trim();
           if (!name) continue;
 
-          const description = row["Description"]?.trim() || "";
           const branch = row["Branch"]?.trim() || "";
           const distributor_code = row["Distributor Codes"]?.trim() || "";
           const distributor_name = row["Distributor Names"]?.trim() || "";
@@ -287,7 +333,7 @@ function Sub_3rdmotherAccounts() {
             sub_mother_id: selectedSubMother.id,
             sub_mother_dscode: selectedSubMother.dscode,
             name,
-            description,
+
             branch,
             bp_code,
             distributor_code,
@@ -353,7 +399,7 @@ function Sub_3rdmotherAccounts() {
       "Sub-Mother ID",
       "Sub-Mother BP Code",
       "Name",
-      "Description",
+
       "Branch",
       "BP Code",
       "Distributor Codes",
@@ -366,7 +412,7 @@ function Sub_3rdmotherAccounts() {
       s3.sub_mother_id,
       s3.sub_mother_dscode || "",
       s3.name,
-      s3.description || "",
+
       s3.branch || "",
       s3.bp_code || "",
       s3.distributor_code || "",
@@ -484,7 +530,10 @@ function Sub_3rdmotherAccounts() {
             <button style={btnAdd} onClick={() => {
               setEditMode(false);
               setEditId(null);
-              setFormData({ name: "", description: "", branch: "", bp_code: "" });
+              setFormData({
+                name: "",
+                branch: "", bp_code: ""
+              });
               setShowModal(true);
             }}>
               + Add Sub-3 Account
