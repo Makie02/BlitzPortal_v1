@@ -33,7 +33,7 @@ function MotherAccountPage() {
     fetchMotherAccounts();
   }, []);
 
-  // Filter mother accounts based on search query (name or code)
+  // Filter mother accounts
   const filteredMotherAccounts = motherAccounts.filter((mother) => {
     const q = motherSearchQuery.trim().toLowerCase();
     if (q === "") return true;
@@ -42,39 +42,39 @@ function MotherAccountPage() {
     return nameMatch || codeMatch;
   });
 
-  // Fetch sub-accounts when a mother account is selected
-const fetchSubAccounts = async (mother) => {
-  setActiveMother(mother);
-  setSubAccountSearchQuery("");
+  // Fetch sub-accounts
+  const fetchSubAccounts = async (mother) => {
+    setActiveMother(mother);
+    setSubAccountSearchQuery("");
 
-  const { data, error } = await supabase
-    .from("sub_mother_account")
-    .select(`
-      id,
-      mother_id,
-      dscode,
-      name,
-      status,
-      created_at,
-      mother_account (
+    const { data, error } = await supabase
+      .from("sub_mother_account")
+      .select(`
         id,
-        code,
-        name
-      )
-    `)
-    .eq("mother_id", mother.id)
-    .order("created_at", { ascending: true });
+        mother_id,
+        dscode,
+        name,
+        status,
+        created_at,
+        group_name,
+        mother_account (
+          id,
+          code,
+          name
+        )
+      `)
+      .eq("mother_id", mother.id)
+      .order("created_at", { ascending: true });
 
-  if (error) {
-    console.error(error);
-    Swal.fire("Error", "Failed to load sub-accounts", "error");
-  } else {
-    setSubAccounts(data);
-  }
-};
+    if (error) {
+      console.error(error);
+      Swal.fire("Error", "Failed to load sub-accounts", "error");
+    } else {
+      setSubAccounts(data);
+    }
+  };
 
-
-  // Filter sub-accounts by name or status
+  // Filter sub-accounts
   const filteredSubAccounts = subAccounts.filter((sub) => {
     const q = subAccountSearchQuery.trim().toLowerCase();
     if (q === "") return true;
@@ -94,6 +94,7 @@ const fetchSubAccounts = async (mother) => {
     setShowModal(false);
   };
 
+  // ✅ Add/Edit Sub-account
   const handleAddEditSubAccount = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -102,7 +103,6 @@ const fetchSubAccounts = async (mother) => {
 
     try {
       if (editingSubAccount) {
-        // ✅ Edit existing sub-account
         const { error } = await supabase
           .from("sub_mother_account")
           .update({ name: formData.name })
@@ -110,27 +110,22 @@ const fetchSubAccounts = async (mother) => {
         if (error) throw error;
         Swal.fire("Success", "Sub-account updated!", "success");
       } else {
-        // ✅ Create new sub-account with auto BP code
-        // Step 1: Get last dscode
+        // ✅ Generate next BP code
         const { data: existing, error: fetchError } = await supabase
           .from("sub_mother_account")
           .select("dscode")
           .order("id", { ascending: false })
           .limit(1);
-
         if (fetchError) throw fetchError;
 
-        // Step 2: Determine next BP code
         let nextdscode = "DS100000";
         if (existing && existing.length > 0 && existing[0].dscode) {
           const lastCode = existing[0].dscode;
           const lastNumber = parseInt(lastCode.replace("DS", ""), 10);
-          if (!isNaN(lastNumber)) {
-            nextdscode = `DS${lastNumber + 1}`;
-          }
+          if (!isNaN(lastNumber)) nextdscode = `DS${lastNumber + 1}`;
         }
 
-        // Step 3: Insert new record
+        // ✅ Insert with group_name
         const { error: insertError } = await supabase
           .from("sub_mother_account")
           .insert([
@@ -139,6 +134,7 @@ const fetchSubAccounts = async (mother) => {
               name: formData.name,
               dscode: nextdscode,
               status: true,
+              group_name: activeMother.name, // ✅ Added here
             },
           ]);
         if (insertError) throw insertError;
@@ -164,6 +160,7 @@ const fetchSubAccounts = async (mother) => {
     if (importInputRef.current) importInputRef.current.click();
   };
 
+  // ✅ Import CSV
   const handleImportCSV = async (e) => {
     const file = e.target.files[0];
     if (!file) {
@@ -178,13 +175,10 @@ const fetchSubAccounts = async (mother) => {
         const parsedData = results.data;
         const hasName = results.meta.fields.includes("Sub-Mother Name");
         if (!hasName) {
-          Swal.fire(
-            "Error",
-            `Missing required column: "Sub-Mother Name"`,
-            "error"
-          );
+          Swal.fire("Error", 'Missing required column: "Sub-Mother Name"', "error");
           return;
         }
+
         const hasID = results.meta.fields.includes("ID");
         let existingIDs = [];
         if (hasID) {
@@ -209,6 +203,7 @@ const fetchSubAccounts = async (mother) => {
           const record = {
             name,
             mother_id: activeMother.id,
+            group_name: activeMother.name, // ✅ Added for CSV import
           };
           if (hasID && id) {
             if (existingIDs.includes(id)) {
@@ -257,6 +252,7 @@ const fetchSubAccounts = async (mother) => {
     e.target.value = null;
   };
 
+  // ✅ Export CSV
   const exportSubAccountsToCSV = (subs, motherInfo) => {
     if (subs.length === 0) {
       Swal.fire("Info", "No sub-accounts to export.", "info");
@@ -267,14 +263,16 @@ const fetchSubAccounts = async (mother) => {
       "Mother Code",
       "DS Code",
       "Sub-Mother Name",
+      "Group Name",
       "Status",
       "Created At",
     ];
     const rows = subs.map((sub) => [
       sub.id,
       sub.mother_account?.code || "",
-      sub.mother_account?.name || "",
+      sub.dscode,
       sub.name,
+      sub.group_name || motherInfo.name,
       sub.status ? "Active" : "Inactive",
       new Date(sub.created_at).toLocaleString(),
     ]);
@@ -437,7 +435,9 @@ const fetchSubAccounts = async (mother) => {
                   <th style={thStyle}>ID</th>
                   <th style={thStyle}>Mother Code</th>
                   <th style={thStyle}>BP Code</th>
-                  <th style={thStyle}>Sub-Mother Name</th> {/* <-- COLUMN HEADER for sub.name */}
+                  <th style={thStyle}>Sub-Mother Name</th>
+                  <th style={thStyle}>Group Name</th>
+
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Created At</th>
                   <th style={thStyle}>Actions</th>
@@ -458,6 +458,8 @@ const fetchSubAccounts = async (mother) => {
                       <td style={tdStyle}>{sub.dscode}</td> {/* ✅ KEPT THIS LINE */}
 
                       <td style={tdStyle}>{sub.name}</td> {/* ✅ KEPT THIS LINE */}
+                      <td style={tdStyle}>{sub.group_name}</td> {/* ✅ KEPT THIS LINE */}
+
                       <td style={tdStyle}>{sub.status ? "Active" : "Inactive"}</td>
                       <td style={tdStyle}>{new Date(sub.created_at).toLocaleString()}</td>
                       <td style={tdStyle}>
