@@ -2235,34 +2235,34 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
     setAccountTypes(data);
   };
 
- const fetchSubAccounts = async (mother) => {
-  setSelectedMother(mother);
+  const fetchSubAccounts = async (mother) => {
+    setSelectedMother(mother);
 
-  if (!subAccounts[mother.id]) {
-    const { data, error } = await supabase
-      .from("user_mother_account_tags")
-      .select("id, mother_account_name, mother_account_code, UserName") // include UserName
-      .eq("mother_account_id", mother.id) // filter by mother id
-      .order("mother_account_name");
+    if (!subAccounts[mother.id]) {
+      const { data, error } = await supabase
+        .from("user_mother_account_tags")
+        .select("id, mother_account_name, mother_account_code, UserName") // include UserName
+        .eq("mother_account_id", mother.id) // filter by mother id
+        .order("mother_account_name");
 
-    if (error) return console.error(error);
+      if (error) return console.error(error);
 
-    const loggedInUsername = parsedUser?.name || "Unknown";
-    console.log("[DEBUG] Logged in user:", loggedInUsername);
+      const loggedInUsername = parsedUser?.name || "Unknown";
+      console.log("[DEBUG] Logged in user:", loggedInUsername);
 
-    // Filter by logged in username
-    const filteredData = data.filter((item) => item.UserName === loggedInUsername);
+      // Filter by logged in username
+      const filteredData = data.filter((item) => item.UserName === loggedInUsername);
 
-    // map data so we can use `name` in JSX
-    const formattedData = filteredData.map((item) => ({
-      id: item.id,
-      name: item.mother_account_name,
-      code: item.mother_account_code,
-    }));
+      // map data so we can use `name` in JSX
+      const formattedData = filteredData.map((item) => ({
+        id: item.id,
+        name: item.mother_account_name,
+        code: item.mother_account_code,
+      }));
 
-    setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
-  }
-};
+      setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
+    }
+  };
 
 
   const fetchBranches = async (motherAccountCode) => {
@@ -3078,7 +3078,6 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                           >
                             ← Back to Mother Accounts
                           </Button>
-
                           <input
                             type="text"
                             className="form-control mb-2"
@@ -3087,15 +3086,27 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                             onChange={(e) => setSubSearchTerm(e.target.value)}
                             style={{ borderColor: "#007bff" }}
                           />
-
                           {subAccounts[selectedMother.id]
                             ?.filter((s) =>
                               s.name.toLowerCase().includes(subSearchTerm.toLowerCase())
                             )
+                            .sort((a, b) => {
+                              // Put NON CHAIN ACCT variations at the bottom
+                              const isANonChain = a.name === "NON CHAIN ACCT" || a.name === "NON CHAIN ACCT.";
+                              const isBNonChain = b.name === "NON CHAIN ACCT" || b.name === "NON CHAIN ACCT.";
+
+                              if (isANonChain && !isBNonChain) return 1;
+                              if (!isANonChain && isBNonChain) return -1;
+                              return 0;
+                            })
                             .map((s) => (
                               <div
                                 key={s.id}
-                                style={{ display: "flex", alignItems: "center", padding: "4px 0" }}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  padding: "4px 0"
+                                }}
                               >
                                 <input
                                   type="checkbox"
@@ -3112,24 +3123,34 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                       } else {
                                         updated.push(s.id);
                                       }
-                                      setFormData((prev) => ({ ...prev, accountType: updated }));
+                                      setFormData((prev) => ({
+                                        ...prev,
+                                        accountType: updated
+                                      }));
                                       setShowBranchInput(false);
                                     } else {
-                                      setFormData((prev) => ({ ...prev, accountType: s.id }));
+                                      setFormData((prev) => ({
+                                        ...prev,
+                                        accountType: s.id
+                                      }));
                                       setShowBranchInput(true);
-                                      fetchBranches(s.code); // pass mother_account_code instead of id
-
+                                      fetchBranches(s.code);
                                     }
                                   }}
                                   id={`sub_${s.id}`}
                                   style={{ width: "18px", height: "18px", cursor: "pointer" }}
                                 />
-                                <label htmlFor={`sub_${s.id}`} style={{ marginLeft: "6px", cursor: "pointer" }}>
-                                  {s.name} <span style={{ color: "#888", fontSize: "12px" }}>({s.code})</span>
+                                <label
+                                  htmlFor={`sub_${s.id}`}
+                                  style={{ marginLeft: "6px", cursor: "pointer" }}
+                                >
+                                  {s.name}{" "}
+                                  <span style={{ color: "#888", fontSize: "12px" }}>
+                                    ({s.code})
+                                  </span>
                                 </label>
                               </div>
                             ))}
-
                         </>
                       )}
                     </Modal.Body>
@@ -3144,39 +3165,39 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
 
 
                 {/* Branch Selector */}
-               {showBranchInput && (
-  <div className="col-md-4" style={{ position: "relative" }}>
-    <label>
-      Branch <span style={{ color: "red" }}>*</span>
-    </label>
-    <div
-      className="form-control"
-      onClick={() => {
-        if (!formData.accountType) return alert("Select a Sub Account first");
+                {showBranchInput && (
+                  <div className="col-md-4" style={{ position: "relative" }}>
+                    <label>
+                      Branch <span style={{ color: "red" }}>*</span>
+                    </label>
+                    <div
+                      className="form-control"
+                      onClick={() => {
+                        if (!formData.accountType) return alert("Select a Sub Account first");
 
-        // Find the selected sub account object
-        const selectedSub = subAccounts[selectedMother.id]?.find(
-          (s) => s.id === formData.accountType
-        );
+                        // Find the selected sub account object
+                        const selectedSub = subAccounts[selectedMother.id]?.find(
+                          (s) => s.id === formData.accountType
+                        );
 
-        if (!selectedSub) return alert("Sub account not found!");
+                        if (!selectedSub) return alert("Sub account not found!");
 
-        // Open modal and fetch branches using mother_account_code
-        setShowModal_Branch(true);
-        fetchBranches(selectedSub.code);
-      }}
-      style={{
-        cursor: "pointer",
-        minHeight: "40px",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "5px",
-      }}
-    >
-      {getBranchNames()}
-    </div>
-  </div>
-)}
+                        // Open modal and fetch branches using mother_account_code
+                        setShowModal_Branch(true);
+                        fetchBranches(selectedSub.code);
+                      }}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: "40px",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "5px",
+                      }}
+                    >
+                      {getBranchNames()}
+                    </div>
+                  </div>
+                )}
 
                 {/* Branch Selector */}
                 {/* Branch Selector */}
