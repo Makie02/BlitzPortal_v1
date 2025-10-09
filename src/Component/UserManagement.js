@@ -4545,16 +4545,19 @@ const UserManagement = ({ setCurrentView }) => {
                           onChange={() => handleMotherAccountToggle(acc.name)}
                         />
                         <label
-                          className="form-check-label"
+                          className="form-check-label d-flex justify-content-between"
                           htmlFor={`mother-${idx}`}
                           style={{
                             marginLeft: '8px',
                             fontSize: '15px',
-                            color: isChecked ? '#5b8fa3' : '#212529'
+                            color: isChecked ? '#5b8fa3' : '#212529',
+                            width: '100%', // make sure it spans full width
                           }}
                         >
-                          {acc.name}
+                          <span>{acc.name}</span>
+                          <span>{acc.group_name}</span>
                         </label>
+
                       </div>
                     );
                   })
