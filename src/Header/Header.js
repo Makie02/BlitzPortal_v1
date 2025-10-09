@@ -318,27 +318,34 @@ const fetchNotifications = async () => {
 
 
 
+const visaButtonRef = useRef(null);
 
 
   // Handle outside click to close dropdowns
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (
-        showNotifications &&
-        notificationsRef.current &&
-        !notificationsRef.current.contains(event.target)
-      ) {
-        setShowNotifications(false);
-      }
+function handleClickOutside(event) {
+  if (
+    showNotifications &&
+    notificationsRef.current &&
+    !notificationsRef.current.contains(event.target)
+  ) {
+    setShowNotifications(false);
+  }
 
-      if (
-        showApprovalNotifications &&
-        approvalNotificationsRef.current &&
-        !approvalNotificationsRef.current.contains(event.target)
-      ) {
-        setShowApprovalNotifications(false);
-      }
-    }
+  if (
+    showApprovalNotifications &&
+    approvalNotificationsRef.current &&
+    !approvalNotificationsRef.current.contains(event.target)
+  ) {
+    setShowApprovalNotifications(false);
+  }
+
+  // Ignore clicks on the Visa button
+  if (visaButtonRef.current && visaButtonRef.current.contains(event.target)) {
+    return;
+  }
+}
+
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -402,8 +409,9 @@ const fetchNotifications = async () => {
           fetchPermissions();
       }, [loggedInUser]);
   
-      const handleClick = (view) => {
+    const handleClick = (view) => {
           setLoadingView(view);
+          setShowVisaModal(false); // Close modal immediately
           setTimeout(() => {
               setCurrentView(view);
               setLoadingView(null);
@@ -520,7 +528,13 @@ const fetchNotifications = async () => {
         >
           <i className="fas fa-bars"></i>
         </button>
-        <CreateVisaButton onClick={() => setShowVisaModal(true)} />
+       <CreateVisaButton
+  onClick={(e) => {
+    e.stopPropagation(); // prevent the outside click handler
+    setShowVisaModal(true);
+  }}
+/>
+
       </div>
 
       {loadingView && <CustomLoader />}
