@@ -51,7 +51,7 @@ const References = ({ setCurrentView }) => {
     { id: 15, title: "CLAIMS-lISTING-ACTIVITY", flag: 'claims_listing_activity' },
     { id: 16, title: "LICENSE", flag: 'license' },
     { id: 17, title: "CUSTOMER-GROUP", flag: 'customer_group' },
-    { id: 18, title: "MONTHER-ACCOUNT", flag: 'monther_account' },
+    { id: 18, title: "GROUP-ACCOUNT", flag: 'monther_account' },
     { id: 19, title: "SUB-MOTHER-ACCOUNT", flag: 'sub_mother_account' },
     { id: 20, title: "BRANCH-ACCOUNT", flag: 'sub_3rd_mother_account' },
 
@@ -146,7 +146,7 @@ const References = ({ setCurrentView }) => {
     return (
       <div style={{ padding: '20px' }}>
         <button onClick={() => setView(null)} style={backButtonStyle}>
-          ← Back to Cards
+          ← Back 
         </button>
 
         {view === 'USER ROLE' && <UserRole />}
@@ -169,7 +169,7 @@ const References = ({ setCurrentView }) => {
         {view === 'CLAIMS-lISTING-ACTIVITY' && <ClaimsListing />}
         {view === 'LICENSE' && <LicenseSelectionPage />}
         {view === 'CUSTOMER-GROUP' && <CustomerGroup />}
-        {view === 'MONTHER-ACCOUNT' && <MotherAccount />}
+        {view === 'GROUP-ACCOUNT' && <MotherAccount />}
         {view === 'SUB-MOTHER-ACCOUNT' && <MotherAccountUI />}
         {view === 'BRANCH-LISTING' && <BranchListing />}
         {view === 'BRANCH-ACCOUNT' && <Sub_3rdmotherAccounts />}
