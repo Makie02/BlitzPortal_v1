@@ -7,7 +7,8 @@ import {
   FaUserSlash,
   FaPlus,
   FaExclamationTriangle,
-  FaDollarSign,FaKey
+  FaDollarSign, FaKey
+  , FaListAlt
 } from 'react-icons/fa';
 import Swal from 'sweetalert2';
 import { supabase } from '../supabaseClient';
@@ -373,14 +374,14 @@ const UserManagement = ({ setCurrentView }) => {
       const userFromSupabase = supaUsers[0];
 
       // Store user-related data in state
-      setSupabaseUserID(userFromSupabase.UserID);  // External Supabase UID
-      setSupabaseUserId(userFromSupabase.id);      // Local DB ID
+      setSupabaseUserID(userFromSupabase.UserID);
+      setSupabaseUserId(userFromSupabase.id);
       setOriginalSupabaseData(userFromSupabase);
       setSupabaseUsername(userFromSupabase.name);
 
       console.log('Supabase UserID:', userFromSupabase.UserID);
 
-      // Fetch full user data from Account_Users by UserID (optional)
+      // Step 2: Fetch full user data
       const { data: fullUserData, error: fullError } = await supabase
         .from('Account_Users')
         .select('*')
@@ -392,7 +393,7 @@ const UserManagement = ({ setCurrentView }) => {
         return;
       }
 
-      // Step 2: If this is the permissions modal, load the 4 boolean fields
+      // Step 3: Load permission modal booleans (optional)
       if (type === 'CreateMarketPermissions') {
         setCreateBudget(userFromSupabase.Create_Budget === true);
         setViewBudget(userFromSupabase.View_Budget === true);
@@ -400,7 +401,7 @@ const UserManagement = ({ setCurrentView }) => {
         setPreRegular(userFromSupabase.Pre_Regular === true);
       }
 
-      // Step 3: Pre-fill other editable fields (optional)
+      // Step 4: Pre-fill editable user fields
       setEditUserData({
         name: fullUserData.name || '',
         email: fullUserData.email || '',
@@ -416,6 +417,37 @@ const UserManagement = ({ setCurrentView }) => {
         isActive: fullUserData.isActive ?? true,
         PermissionRole: fullUserData.PermissionRole || '',
       });
+
+      // ✅ Step 5: Fetch this user's related Mother Accounts
+      if (type === 'MotherAccount') {
+        const { data: motherData, error: motherError } = await supabase
+          .from('sub_mother_account')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (motherError) {
+          console.error('Error fetching Mother Accounts:', motherError);
+        } else {
+          setMotherAccounts(motherData);
+          console.log('Fetched Mother Accounts:', motherData);
+        }
+
+        // Fetch saved mother accounts tied to this user
+        // Fetch saved mother accounts tied to this user
+        const { data: savedData, error: savedError } = await supabase
+          .from('user_mother_account_tags') // ✅ corrected table name
+          .select('*')
+          .eq('UserName', userFromSupabase.name); // ✅ changed condition
+
+        if (savedError) {
+          console.error('Error fetching user-saved mother accounts:', savedError);
+        } else {
+          setSavedMotherAccounts(savedData || []);
+          setSelectedMotherAccounts(savedData.map((a) => a.mother_account_name));
+          console.log('Saved Mother Accounts:', savedData);
+        }
+
+      }
 
     } catch (err) {
       console.error('Unexpected error in openModal():', err);
@@ -633,13 +665,13 @@ const UserManagement = ({ setCurrentView }) => {
     }
   };
   // Handle edit user form change
-const handleEditUserChange = (e) => {
-  const { name, value } = e.target;
-  setEditUserData(prev => ({
-    ...prev,
-    [name]: value
-  }));
-};
+  const handleEditUserChange = (e) => {
+    const { name, value } = e.target;
+    setEditUserData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
   // Handle profile picture upload for new user
   const handleNewUserImageChange = (e) => {
     const file = e.target.files[0];
@@ -995,7 +1027,7 @@ const handleEditUserChange = (e) => {
         username: editUserData.username || null,
         password: editUserData.password || null,
         PermissionRole: editUserData.PermissionRole || null,
-        };
+      };
 
 
       if (showLicenseUpdate) {
@@ -2228,6 +2260,184 @@ const handleEditUserChange = (e) => {
     setSaving(false);
   }
 
+
+
+
+
+  const [motherAccounts, setMotherAccounts] = useState([]);
+  const [selectedMotherAccounts, setSelectedMotherAccounts] = useState([]);
+  const [savedMotherAccounts, setSavedMotherAccounts] = useState([]);
+  const [stableMotherAccounts, setStableMotherAccounts] = useState([]);
+
+  // Fetch Mother Accounts from Supabase
+  useEffect(() => {
+    const fetchMotherAccounts = async () => {
+      const { data, error } = await supabase
+        .from('sub_mother_account')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching Mother Accounts:', error);
+      } else {
+        setMotherAccounts(data);
+      }
+    };
+
+    if (modalType === 'MotherAccount') {  // ✅ match modal name
+      fetchMotherAccounts();
+    }
+  }, [modalType]);
+
+
+  // Toggle selection
+  const handleMotherAccountToggle = (name) => {
+    setSelectedMotherAccounts((prev) =>
+      prev.includes(name)
+        ? prev.filter((n) => n !== name)
+        : [...prev, name]
+    );
+  };
+
+  // Fetch saved Mother Accounts for user
+  const fetchSavedMotherAccounts = async (username) => {
+    if (!username) return;
+
+    const { data, error } = await supabase
+      .from('user_mother_account_tags')
+      .select('*')
+      .eq('UserName', username)
+      .order('mother_account_name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching saved Mother Accounts:', error);
+    } else {
+      console.log('Fetched saved Mother Accounts:', data.map(d => d.mother_account_name));
+      setSavedMotherAccounts(data || []);
+
+      const savedNames = (data || []).map(d => d.mother_account_name);
+      setSelectedMotherAccounts(savedNames);
+      setStableMotherAccounts(prev => (prev.length === 0 ? data || [] : prev));
+    }
+  };
+
+  // Delete a saved Mother Account
+  const handleDeleteMotherAccount = async (id) => {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: 'Do you want to delete this Mother Account?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, delete it',
+      cancelButtonText: 'No, keep it',
+      reverseButtons: true,
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const { error } = await supabase
+          .from('user_mother_account_tags')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          console.error('Error deleting Mother Account:', error);
+          Swal.fire('Error', 'Failed to delete Mother Account', 'error');
+          return;
+        }
+
+        setSavedMotherAccounts(prev => prev.filter(d => d.id !== id));
+        const deleted = savedMotherAccounts.find(d => d.id === id);
+        if (deleted) {
+          setSelectedMotherAccounts(prev => prev.filter(name => name !== deleted.mother_account_name));
+        }
+
+        Swal.fire('Deleted!', 'Mother Account has been removed.', 'success');
+      } catch (err) {
+        console.error('Unexpected error:', err);
+        Swal.fire('Error', 'Unexpected error occurred', 'error');
+      }
+    }
+  };
+
+  // Fetch saved accounts on modal open
+  useEffect(() => {
+    if (modalType === 'MotherAccounts' && supabaseUsername) {
+      console.log('Fetching Mother Accounts for:', supabaseUsername);
+      fetchSavedMotherAccounts(supabaseUsername);
+    }
+  }, [modalType, supabaseUsername]);
+
+  useEffect(() => {
+    if (modalType === 'MotherAccounts' && selectedUser?.username) {
+      fetchSavedMotherAccounts(selectedUser.username);
+    }
+  }, [modalType, selectedUser]);
+
+  // Save selected Mother Accounts
+  const handleSaveMotherAccounts = async () => {
+    if (!supabaseUsername) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'No Supabase username!',
+        text: 'Unable to find Supabase username. Please reselect the user.',
+      });
+      return;
+    }
+
+    const selected = motherAccounts.filter((d) =>
+      selectedMotherAccounts.includes(d.name)
+    );
+
+    const alreadySavedNames = savedMotherAccounts.map(sd => sd.mother_account_name);
+
+    const newToSave = selected.filter(item =>
+      !alreadySavedNames.includes(item.name)
+    );
+
+    if (newToSave.length === 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Already Saved',
+        text: 'All selected Mother Accounts are already saved.',
+      });
+      return;
+    }
+
+    const inserts = newToSave.map((item) => ({
+      mother_account_id: item.mother_id,
+      mother_account_name: item.name,
+      mother_account_code: item.dscode,
+      UserName: supabaseUsername,
+    }));
+
+    const { error } = await supabase
+      .from('user_mother_account_tags')
+      .insert(inserts);
+
+    if (error) {
+      console.error('Error saving Mother Accounts:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Save Failed',
+        text: 'An error occurred while saving. Please try again.',
+      });
+    } else {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Mother Accounts Saved',
+        text: `${newToSave.length} new Mother Account(s) saved successfully!`,
+        confirmButtonColor: '#3085d6',
+      });
+
+      await fetchSavedMotherAccounts(supabaseUsername);
+    }
+  };
+
+  // Filter for search
+  const filteredMotherAccounts = motherAccounts.filter((acc) =>
+    acc.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
   return (
     <Container fluid className="py-4">
       <h2 className="my-4">User Management</h2>
@@ -2402,6 +2612,17 @@ const handleEditUserChange = (e) => {
                       >
                         <FaTags />
                       </Button>
+
+                      <Button
+                        variant="outline-warning"
+                        size="sm"
+                        onClick={() => openModal(user, 'MotherAccount')}
+                        title="Mother Account"
+                        className="mb-1"
+                      >
+                        <FaListAlt />
+                      </Button>
+
                       <Button
                         variant="outline-info"
                         size="sm"
@@ -4236,6 +4457,193 @@ const handleEditUserChange = (e) => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+
+
+
+      <Modal
+        show={modalType === 'MotherAccount'}
+        onHide={() => setModalType(null)}
+        centered
+        size="lg"
+      >
+        <Modal.Header
+          closeButton
+          style={{
+            backgroundColor: '#5b8fa3',
+            color: 'white',
+            borderBottom: 'none',
+            padding: '20px 24px'
+          }}
+        >
+          <Modal.Title style={{ fontSize: '20px', fontWeight: '600' }}>
+            Manage Mother Accounts for {supabaseUsername}
+          </Modal.Title>
+        </Modal.Header>
+
+        <Modal.Body style={{ padding: '24px', backgroundColor: '#f8f9fa' }}>
+          {motherAccounts.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6c757d' }}>
+              <p>No Mother Accounts found.</p>
+            </div>
+          ) : (
+            <>
+              {/* Search Bar */}
+              <div style={{ marginBottom: '20px' }}>
+                <FormControl
+                  type="text"
+                  placeholder="Search Mother Accounts..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: '15px',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '8px'
+                  }}
+                />
+              </div>
+
+              {/* Scrollable Checkbox List */}
+              <div
+                style={{
+                  maxHeight: '320px',
+                  overflowY: 'auto',
+                  border: '1px solid #dee2e6',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  backgroundColor: 'white',
+                  marginBottom: '20px'
+                }}
+              >
+                {filteredMotherAccounts.length === 0 ? (
+                  <p style={{ textAlign: 'center', color: '#6c757d', margin: '20px 0' }}>
+                    No matching Mother Accounts found.
+                  </p>
+                ) : (
+                  filteredMotherAccounts.map((acc, idx) => {
+                    const isChecked = selectedMotherAccounts.includes(acc.name);
+
+                    return (
+                      <div
+                        key={idx}
+                        className="form-check"
+                        style={{
+                          padding: '12px',
+                          marginBottom: '6px',
+                          backgroundColor: isChecked ? '#e8f4f8' : 'transparent',
+                          borderRadius: '6px',
+                          border: isChecked ? '1px solid #5b8fa3' : '1px solid transparent',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          id={`mother-${idx}`}
+                          checked={isChecked}
+                          onChange={() => handleMotherAccountToggle(acc.name)}
+                        />
+                        <label
+                          className="form-check-label"
+                          htmlFor={`mother-${idx}`}
+                          style={{
+                            marginLeft: '8px',
+                            fontSize: '15px',
+                            color: isChecked ? '#5b8fa3' : '#212529'
+                          }}
+                        >
+                          {acc.name}
+                        </label>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Saved Mother Accounts */}
+              {savedMotherAccounts.length > 0 && (
+                <div
+                  style={{
+                    backgroundColor: 'white',
+                    border: '1px solid #dee2e6',
+                    borderRadius: '8px',
+                    padding: '16px'
+                  }}
+                >
+                  <h6 style={{ fontWeight: '600', marginBottom: '12px', color: '#495057' }}>
+                    Saved Mother Accounts:
+                  </h6>
+                  <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                    {savedMotherAccounts.map((acc, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 12px',
+                          marginBottom: '8px',
+                          backgroundColor: '#f8f9fa',
+                          borderRadius: '6px',
+                          border: '1px solid #e9ecef'
+                        }}
+                      >
+                        <span style={{ fontSize: '14px', color: '#212529' }}>
+                          {acc.mother_account_name}
+                          <span style={{ color: '#6c757d', marginLeft: '8px', fontSize: '13px' }}>
+                            ({acc.mother_account_code})
+                          </span>
+                        </span>
+                        <button
+                          onClick={() => handleDeleteMotherAccount(acc.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#dc3545',
+                            cursor: 'pointer',
+                          }}
+                          title="Delete Mother Account"
+                        >
+                          <i className="fas fa-trash-alt" style={{ fontSize: '18px' }}></i>
+                        </button>
+
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Modal.Body>
+
+        <Modal.Footer
+          style={{
+            padding: '16px 24px',
+            backgroundColor: '#f8f9fa',
+            borderTop: '1px solid #dee2e6'
+          }}
+        >
+          <Button variant="secondary" onClick={() => setModalType(null)}>
+            Close
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveMotherAccounts}
+            disabled={selectedMotherAccounts.length === 0}
+            style={{
+              backgroundColor:
+                selectedMotherAccounts.length === 0 ? '#6c757d' : '#5b8fa3',
+              border: 'none'
+            }}
+          >
+            Save Changes
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+
+
 
 
       <Modal show={modalType === "deactivate" ? true : undefined} onHide={() => setModalType(null)} centered>
