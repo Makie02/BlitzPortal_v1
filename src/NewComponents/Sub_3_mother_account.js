@@ -437,7 +437,62 @@ function Sub_3rdmotherAccounts() {
   };
 
 
+  // ========== ADD THESE STYLES ==========
+  // Add these style objects at the bottom with your other styles
 
+  const paginationContainer = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: "20px",
+    padding: "15px",
+    borderTop: "1px solid #ddd",
+    flexWrap: "wrap",
+    gap: "10px",
+  };
+
+  const paginationInfo = {
+    fontSize: "14px",
+    color: "#555",
+  };
+
+  const paginationControls = {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexWrap: "wrap",
+  };
+
+  const paginationSelect = {
+    padding: "6px 10px",
+    borderRadius: "4px",
+    border: "1px solid #ccc",
+    fontSize: "14px",
+    cursor: "pointer",
+  };
+
+  const paginationBtn = {
+    padding: "6px 12px",
+    background: "#0087c5",
+    color: "#fff",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
+    transition: "background-color 0.2s",
+  };
+
+  const paginationBtnDisabled = {
+    background: "#ccc",
+    cursor: "not-allowed",
+  };
+
+  const paginationPageInfo = {
+    padding: "0 10px",
+    fontSize: "14px",
+    fontWeight: "bold",
+    color: "#333",
+  };
 
   const [distributors, setDistributors] = useState([]);
   const [selectedDistributors, setSelectedDistributors] = useState([]);
@@ -466,6 +521,23 @@ function Sub_3rdmotherAccounts() {
   };
   const [searchTerm, setSearchTerm] = useState("");
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(7);
+
+  // ========== ADD THESE CALCULATIONS ==========
+  // Add these after your filteredSub3 definition
+
+  // Pagination calculations
+  const totalItems = filteredSub3.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedSub3 = filteredSub3.slice(startIndex, endIndex);
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sub3SearchQuery]);
 
   return (
     <div style={{ padding: 20, fontFamily: "Arial" }}>
@@ -680,7 +752,7 @@ function Sub_3rdmotherAccounts() {
             />
           </div>
 
-          <div style={{ ...responsiveTableWrapper, maxHeight: "480px", overflowY: "auto" }}>
+          <div style={{ ...responsiveTableWrapper, maxHeight: "380px", overflowY: "auto" }}>
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -697,14 +769,14 @@ function Sub_3rdmotherAccounts() {
               </thead>
 
               <tbody>
-                {filteredSub3.length === 0 ? (
+                {paginatedSub3.length === 0 ? (
                   <tr>
                     <td colSpan={11} style={{ textAlign: "center", padding: 10 }}>
                       No Sub-3 accounts found.
                     </td>
                   </tr>
                 ) : (
-                  filteredSub3.map((s3) => (
+                  paginatedSub3.map((s3) => (
                     <tr key={s3.id} style={trResponsive}>
                       <td style={tdStyle}>{s3.id}</td>
                       <td style={tdStyle}>{s3.sub_mother_account?.name || "-"}</td>
@@ -727,6 +799,70 @@ function Sub_3rdmotherAccounts() {
 
         </div>
       )}
+
+      {/* Pagination Controls */}
+      {totalItems > 0 && (
+        <div style={paginationContainer}>
+          <div style={paginationInfo}>
+            Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} entries
+          </div>
+
+          <div style={paginationControls}>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              style={paginationSelect}
+            >
+              <option value={7}>7 per page</option>
+
+              <option value={25}>25 per page</option>
+              <option value={50}>50 per page</option>
+              <option value={100}>100 per page</option>
+              <option value={200}>200 per page</option>
+            </select>
+
+            <button
+              style={{ ...paginationBtn, ...(currentPage === 1 ? paginationBtnDisabled : {}) }}
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              First
+            </button>
+
+            <button
+              style={{ ...paginationBtn, ...(currentPage === 1 ? paginationBtnDisabled : {}) }}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </button>
+
+            <span style={paginationPageInfo}>
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <button
+              style={{ ...paginationBtn, ...(currentPage === totalPages ? paginationBtnDisabled : {}) }}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </button>
+
+            <button
+              style={{ ...paginationBtn, ...(currentPage === totalPages ? paginationBtnDisabled : {}) }}
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              Last
+            </button>
+          </div>
+        </div>
+      )}
+
 
       {showModal && (
         <div style={styles.modalOverlay}>
