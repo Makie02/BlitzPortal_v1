@@ -8,9 +8,11 @@ import {
   FaPlus,
   FaExclamationTriangle,
   FaDollarSign, FaKey
-  , FaListAlt
+  , FaListAlt,
 } from 'react-icons/fa';
 import Swal from 'sweetalert2';
+import { FaFolderTree } from "react-icons/fa6";
+
 import { supabase } from '../supabaseClient';
 import '../App.css'; // or wherever your CSS is defined
 import { getDoc, setDoc } from "firebase/firestore";
@@ -445,6 +447,30 @@ const UserManagement = ({ setCurrentView }) => {
           setSavedMotherAccounts(savedData || []);
           setSelectedMotherAccounts(savedData.map((a) => a.mother_account_name));
           console.log('Saved Mother Accounts:', savedData);
+        }
+
+        if (type === 'Mother') {
+          const { data: motherData, error: motherError } = await supabase
+            .from('sub_mother_account')
+            .select('*')
+            .order('name', { ascending: true });
+
+          if (motherError) {
+            console.error('Error fetching Mother Accounts:', motherError);
+          } else {
+            setMother(motherData || []); // ✅ make sure you use this state
+          }
+
+          const { data: savedData, error: savedError } = await supabase
+            .from('user_savemotheraccount_link')
+            .select('*')
+            .eq('UserName', userFromSupabase.name);
+
+          if (savedError) {
+            console.error('Error fetching user-saved mother accounts:', savedError);
+          } else {
+            setSavedMother(savedData || []); // ✅ and this one
+          }
         }
 
       }
@@ -2307,6 +2333,7 @@ const UserManagement = ({ setCurrentView }) => {
       .from('user_mother_account_tags')
       .select('*')
       .eq('UserName', username)
+
       .order('mother_account_name', { ascending: true });
 
     if (error) {
@@ -2438,6 +2465,152 @@ const UserManagement = ({ setCurrentView }) => {
   const filteredMotherAccounts = motherAccounts.filter((acc) =>
     acc.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+
+
+
+  // ✅ Move all useState hooks to the top
+  const [mother, setMother] = useState([]);
+  const [savedMother, setSavedMother] = useState([]);
+  const [selectedMother, setSelectedMother] = useState([]);
+
+  // Fetch all active Mother records
+  const fetchMother = async () => {
+    const { data, error } = await supabase
+      .from('mother_account')
+      .select('id, code, name')
+      .eq('status', true)
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching Mother:', error);
+    } else {
+      setMother(data || []);
+    }
+  };
+
+  // Toggle checkbox selection
+  const handleMotherToggle = (name) => {
+    setSelectedMother((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
+  };
+
+  // Fetch saved Mother linked to a user
+  const fetchSavedMother = async (username) => {
+    if (!username) return;
+
+    const { data, error } = await supabase
+      .from('user_savemotheraccount_link')
+      .select('*')
+      .eq('username', username)
+      .order('mother_account_name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching saved Mother:', error);
+    } else {
+      setSavedMother(data || []);
+      const savedNames = (data || []).map(d => d.mother_account_name);
+      setSelectedMother(savedNames);
+    }
+  };
+
+  // Delete saved Mother
+  const handleDeleteMother = async (id) => {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: 'Do you want to delete this Mother?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, delete it',
+      cancelButtonText: 'No, keep it',
+      reverseButtons: true,
+    });
+
+    if (result.isConfirmed) {
+      const { error } = await supabase
+        .from('user_savemotheraccount_link')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error deleting Mother:', error);
+        Swal.fire('Error', 'Failed to delete Mother', 'error');
+      } else {
+        setSavedMother(prev => prev.filter(d => d.id !== id));
+        Swal.fire('Deleted!', 'Mother has been removed.', 'success');
+      }
+    }
+  };
+
+  // Save selected Mother to link table
+  const handleSaveMother = async () => {
+    if (!supabaseUsername) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'No username found!',
+        text: 'Please reselect the user before saving.',
+      });
+      return;
+    }
+
+    const selected = mother.filter((d) => selectedMother.includes(d.name));
+    const alreadySavedNames = savedMother.map((sd) => sd.mother_account_name);
+
+    const newToSave = selected.filter(item => !alreadySavedNames.includes(item.name));
+
+    if (newToSave.length === 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Already Saved',
+        text: 'All selected Mother are already saved.',
+      });
+      return;
+    }
+
+    const inserts = newToSave.map((item) => ({
+      mother_account_name: item.name,
+      mother_account_code: item.code,
+      username: supabaseUsername,
+    }));
+
+    const { error } = await supabase
+      .from('user_savemotheraccount_link')
+      .insert(inserts);
+
+    if (error) {
+      console.error('Error saving Mother:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Save Failed',
+        text: 'An error occurred while saving. Please try again.',
+      });
+    } else {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Mother Saved',
+        text: `${newToSave.length} new Mother record(s) saved successfully!`,
+        confirmButtonColor: '#3085d6',
+      });
+      await fetchSavedMother(supabaseUsername);
+    }
+  };
+
+  // Run fetch when modal opens
+  useEffect(() => {
+    if (modalType === 'Mother' && supabaseUsername) {
+      fetchMother();
+      fetchSavedMother(supabaseUsername);
+    }
+  }, [modalType, supabaseUsername]);
+
+  // Search filter
+  const filteredMother = mother.filter((acc) =>
+    acc.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+
+
   return (
     <Container fluid className="py-4">
       <h2 className="my-4">User Management</h2>
@@ -2612,12 +2785,21 @@ const UserManagement = ({ setCurrentView }) => {
                       >
                         <FaTags />
                       </Button>
+                      <Button
+                        variant="outline-warning"
+                        size="sm"
+                        onClick={() => openModal(user, 'Mother')}
+                        title="Mother Account"
+                        className="mb-1"
+                      >
+                        <FaFolderTree />
+                      </Button>
 
                       <Button
                         variant="outline-warning"
                         size="sm"
                         onClick={() => openModal(user, 'MotherAccount')}
-                        title="Mother Account"
+                        title="Sub Mother  Account"
                         className="mb-1"
                       >
                         <FaListAlt />
@@ -4646,6 +4828,252 @@ const UserManagement = ({ setCurrentView }) => {
       </Modal>
 
 
+
+
+
+
+      <Modal
+        show={modalType === 'Mother'}
+        onHide={() => setModalType(null)}
+        centered
+        size="lg"
+      >
+        <Modal.Header
+          closeButton
+          style={{
+            backgroundColor: '#5b8fa3',
+            color: 'white',
+            borderBottom: 'none',
+            padding: '20px 24px'
+          }}
+        >
+          <Modal.Title style={{ fontSize: '20px', fontWeight: '600' }}>
+            Manage Mother for {supabaseUsername}
+          </Modal.Title>
+        </Modal.Header>
+
+        <Modal.Body style={{ padding: '24px', backgroundColor: '#f8f9fa' }}>
+          {mother.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6c757d' }}>
+              <p>No Mother found.</p>
+            </div>
+          ) : (
+            <>
+              {/* Search Bar */}
+              <div style={{ marginBottom: '20px' }}>
+                <FormControl
+                  type="text"
+                  placeholder="Search Mother..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: '15px',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '8px'
+                  }}
+                />
+              </div>
+
+              {/* Scrollable Checkbox List */}
+              <div
+                style={{
+                  maxHeight: '320px',
+                  overflowY: 'auto',
+                  border: '1px solid #dee2e6',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  backgroundColor: 'white',
+                  marginBottom: '20px'
+                }}
+              >
+                {filteredMother.length === 0 ? (
+                  <p style={{ textAlign: 'center', color: '#6c757d', margin: '20px 0' }}>
+                    No matching Mother found.
+                  </p>
+                ) : (
+                  filteredMother.map((acc, idx) => {
+                    const isChecked = selectedMother.includes(acc.name);
+                    return (
+                      <div
+                        key={idx}
+                        className="form-check"
+                        style={{
+                          padding: '12px',
+                          marginBottom: '6px',
+                          backgroundColor: isChecked ? '#e8f4f8' : 'transparent',
+                          borderRadius: '6px',
+                          border: isChecked ? '1px solid #5b8fa3' : '1px solid transparent',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          id={`mother-${idx}`}
+                          checked={isChecked}
+                          onChange={() => handleMotherToggle(acc.name)}
+                        />
+                        <label
+                          className="form-check-label d-flex justify-content-between"
+                          htmlFor={`mother-${idx}`}
+                          style={{
+                            marginLeft: '8px',
+                            fontSize: '15px',
+                            color: isChecked ? '#5b8fa3' : '#212529',
+                            width: '100%',
+                          }}
+                        >
+                          <span>{acc.name}</span>
+                          <span>{acc.code}</span>
+                        </label>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Saved Mother */}
+              {savedMother.length > 0 && (
+                <div
+                  style={{
+                    backgroundColor: 'white',
+                    border: '1px solid #dee2e6',
+                    borderRadius: '8px',
+                    padding: '16px'
+                  }}
+                >
+                  <h6 style={{ fontWeight: '600', marginBottom: '12px', color: '#495057' }}>
+                    Saved Mother:
+                  </h6>
+                  <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                    {savedMother.map((acc, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 12px',
+                          marginBottom: '8px',
+                          backgroundColor: '#f8f9fa',
+                          borderRadius: '6px',
+                          border: '1px solid #e9ecef'
+                        }}
+                      >
+                        <span style={{ fontSize: '14px', color: '#212529' }}>
+                          {acc.mother_account_name}
+                          <span style={{ color: '#6c757d', marginLeft: '8px', fontSize: '13px' }}>
+                            ({acc.mother_account_code})
+                          </span>
+                        </span>
+                        <button
+                          onClick={() => handleDeleteMother(acc.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#dc3545',
+                            cursor: 'pointer',
+                          }}
+                          title="Delete Mother"
+                        >
+                          <i className="fas fa-trash-alt" style={{ fontSize: '18px' }}></i>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Modal.Body>
+
+        <Modal.Footer
+          style={{
+            padding: '16px 24px',
+            backgroundColor: '#f8f9fa',
+            borderTop: '1px solid #dee2e6',
+            flexDirection: 'column',
+            alignItems: 'stretch'
+          }}
+        >
+          {/* Selected Mothers Display */}
+          {selectedMother.length > 0 && (
+            <div
+              style={{
+                width: '100%',
+                backgroundColor: 'white',
+                border: '1px solid #dee2e6',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                marginBottom: '12px',
+                maxHeight: '120px',
+                overflowY: 'auto',
+              }}
+            >
+              <h6 style={{ fontWeight: '600', marginBottom: '8px', color: '#495057' }}>
+                Selected Mother:
+              </h6>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {selectedMother.map((name, idx) => (
+                  <span
+                    key={idx}
+                    style={{
+                      backgroundColor: '#e8f4f8',
+                      color: '#5b8fa3',
+                      border: '1px solid #5b8fa3',
+                      borderRadius: '16px',
+                      padding: '6px 12px',
+                      fontSize: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    {name}
+                    <button
+                      onClick={() => handleMotherToggle(name)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#dc3545',
+                        cursor: 'pointer',
+                        padding: '0',
+                        marginLeft: '4px',
+                        fontSize: '14px',
+                        lineHeight: 1,
+                      }}
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Footer Buttons */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+            <Button variant="secondary" onClick={() => setModalType(null)}>
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSaveMother}
+              disabled={selectedMother.length === 0}
+              style={{
+                backgroundColor: selectedMother.length === 0 ? '#6c757d' : '#5b8fa3',
+                border: 'none',
+                marginLeft: '10px'
+              }}
+            >
+              Save Changes
+            </Button>
+          </div>
+        </Modal.Footer>
+
+      </Modal>
 
 
 
