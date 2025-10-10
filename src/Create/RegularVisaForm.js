@@ -2224,16 +2224,47 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
   useEffect(() => {
     if (showModal_Account) fetchAccounts();
   }, [showModal_Account]);
-
-  const fetchAccounts = async () => {
+const fetchAccounts = async () => {
+  try {
+    // Fetch all data from user_savemotheraccount_link
     const { data, error } = await supabase
-      .from("mother_account")
-      .select("id, code, name")
-      .eq("status", true)
-      .order("name");
-    if (error) return console.error(error);
-    setAccountTypes(data);
-  };
+      .from("user_savemotheraccount_link")
+      .select("mother_account_id, mother_account_code, mother_account_name, username")
+      .order("mother_account_name", { ascending: true });
+
+    if (error) throw error;
+
+    // Get logged-in user
+    const loggedInUsername = parsedUser?.name || "Unknown";
+    console.log("[DEBUG] Logged in user:", loggedInUsername);
+
+    // Filter results by username
+    const filteredData = data.filter(
+      (item) => item.username === loggedInUsername
+    );
+
+    // Format to match your UI structure
+    const formattedData = filteredData.map((item) => ({
+      id: item.mother_account_id, // ✅ use mother_account_id as ID
+      code: item.mother_account_code,
+      name: item.mother_account_name,
+    }));
+
+    // Save to state for display
+    setAccountTypes(formattedData);
+
+    console.log("✅ Mother Accounts for user:", loggedInUsername);
+    console.table(
+      formattedData.map((item) => ({
+        ID: item.id,
+        Code: item.code,
+        Name: item.name,
+      }))
+    );
+  } catch (err) {
+    console.error("❌ Error fetching accounts:", err.message);
+  }
+};
 
   const fetchSubAccounts = async (mother) => {
     setSelectedMother(mother);
