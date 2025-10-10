@@ -132,12 +132,12 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                         };
 
                         console.log("✅ Fresh user data from Supabase:", updatedUser);
-                        
+
                         setLocalUser(updatedUser);
                         setAvatar(updatedUser.profilePicture);
                         // Update localStorage with fresh data
                         localStorage.setItem('user', JSON.stringify(updatedUser));
-                        
+
                         if (updatedUser.PermissionRole) {
                             await fetchRolePermissions(updatedUser.PermissionRole);
                         }
@@ -287,6 +287,40 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
         return !!rolePermissions[view];
     };
 
+
+
+
+    const [departmentName, setDepartmentName] = useState(null);
+
+    // Fetch department name by code
+    const fetchDepartmentName = async (code) => {
+        if (!code) {
+            setDepartmentName('N/A');
+            return;
+        }
+
+        const { data, error } = await supabase
+            .from('department')
+            .select('name')
+            .eq('code', code)
+            .single(); // since code is unique
+
+        if (error) {
+            console.error('Error fetching department name:', error);
+            setDepartmentName('N/A');
+        } else {
+            setDepartmentName(data?.name || 'N/A');
+        }
+    };
+
+    // Run when user.department changes
+    useEffect(() => {
+        if (user?.department) {
+            fetchDepartmentName(user.department);
+        } else {
+            setDepartmentName('N/A');
+        }
+    }, [user?.department]);
     const menuItems = [
         {
             key: "dashboard",
@@ -416,8 +450,9 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                         </span>
                         <br />
                         <span className="user-id" style={{ fontSize: '0.8rem', color: '#bbb' }}>
-                            ID: {user?.UserID || 'N/A'}
+                           {departmentName || 'N/A'}
                         </span>
+
                         <br />
                         <span className="user-status">
                             <i className="fa fa-circle" style={{ color: '#4caf50', marginRight: '5px' }}></i> Online
