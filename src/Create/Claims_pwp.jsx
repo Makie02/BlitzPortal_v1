@@ -1769,136 +1769,119 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
     }, [showModal_Account]);
 
     const fetchAccounts = async () => {
-        // Make sure a distributor is selected
-        if (!formData.distributor) {
-            console.warn("⚠️ No distributor selected — hiding all mother accounts");
-            setAccountTypes([]);
-            return;
+        try {
+            // Fetch all data from user_savemotheraccount_link
+            const { data, error } = await supabase
+                .from("user_savemotheraccount_link")
+                .select("mother_account_id, mother_account_code, mother_account_name, username")
+                .order("mother_account_name", { ascending: true });
+
+            if (error) throw error;
+
+            // Get logged-in user
+            const loggedInUsername = parsedUser?.name || "Unknown";
+            console.log("[DEBUG] Logged in user:", loggedInUsername);
+
+            // Filter results by username
+            const filteredData = data.filter(
+                (item) => item.username === loggedInUsername
+            );
+
+            // Format to match your UI structure
+            const formattedData = filteredData.map((item) => ({
+                id: item.mother_account_id, // ✅ use mother_account_id as ID
+                code: item.mother_account_code,
+                name: item.mother_account_name,
+            }));
+
+            // Save to state for display
+            setAccountTypes(formattedData);
+
+            console.log("✅ Mother Accounts for user:", loggedInUsername);
+            console.table(
+                formattedData.map((item) => ({
+                    ID: item.id,
+                    Code: item.code,
+                    Name: item.name,
+                }))
+            );
+        } catch (err) {
+            console.error("❌ Error fetching accounts:", err.message);
         }
-
-        // Find the distributor by its code
-        const selectedDistributor = distributors.find(
-            (d) => String(d.code) === String(formData.distributor)
-        );
-
-        if (!selectedDistributor) {
-            console.warn("⚠️ Distributor not found — hiding all mother accounts");
-            setAccountTypes([]);
-            return;
-        }
-
-        // 🧾 Convert the mother_accounts_code string into an array of codes
-        const rawCodes = selectedDistributor.mother_accounts_code || "";
-        const allowedCodes = rawCodes
-            .toString()
-            .split(",")
-            .map((c) => c.trim())
-            .filter((c) => c.length > 0);
-
-        console.log("✅ Allowed Mother Account Codes:", allowedCodes);
-
-        // If there are no allowed codes, hide all accounts
-        if (allowedCodes.length === 0) {
-            console.warn("⚠️ No allowed codes — hiding all mother accounts");
-            setAccountTypes([]);
-            return;
-        }
-
-        // ✅ Fetch all active mother accounts
-        const { data, error } = await supabase
-            .from("mother_account")
-            .select("id, code, name")
-            .eq("status", true)
-            .order("name");
-
-        if (error) {
-            console.error("❌ Error fetching mother accounts:", error);
-            return;
-        }
-
-        // ✅ Filter only those allowed
-        const filtered = data.filter((acc) =>
-            allowedCodes.includes(String(acc.code))
-        );
-
-        console.log("📊 Filtered mother accounts:", filtered);
-
-        // ✅ Update state with filtered list
-        setAccountTypes(filtered);
     };
 
 
-const fetchSubAccounts = async (mother) => {
-    setSelectedMother(mother);
+    const fetchSubAccounts = async (mother) => {
+        setSelectedMother(mother);
 
-    if (!subAccounts[mother.id]) {
-      const { data, error } = await supabase
-        .from("user_mother_account_tags")
-        .select("id, mother_account_name, mother_account_code, UserName") // include UserName
-        .eq("mother_account_id", mother.id) // filter by mother id
-        .order("mother_account_name");
+        if (!subAccounts[mother.id]) {
+            const { data, error } = await supabase
+                .from("user_mother_account_tags")
+                .select("id, mother_account_name, mother_account_code, UserName") // include UserName
+                .eq("mother_account_id", mother.id) // filter by mother id
+                .order("mother_account_name");
 
-      if (error) return console.error(error);
+            if (error) return console.error(error);
 
-      const loggedInUsername = parsedUser?.name || "Unknown";
-      console.log("[DEBUG] Logged in user:", loggedInUsername);
+            const loggedInUsername = parsedUser?.name || "Unknown";
+            console.log("[DEBUG] Logged in user:", loggedInUsername);
 
-      // Filter by logged in username
-      const filteredData = data.filter((item) => item.UserName === loggedInUsername);
+            // Filter by logged in username
+            const filteredData = data.filter((item) => item.UserName === loggedInUsername);
 
-      // map data so we can use `name` in JSX
-      const formattedData = filteredData.map((item) => ({
-        id: item.id,
-        name: item.mother_account_name,
-        code: item.mother_account_code,
-      }));
+            // map data so we can use `name` in JSX
+            const formattedData = filteredData.map((item) => ({
+                id: item.id,
+                name: item.mother_account_name,
+                code: item.mother_account_code,
+            }));
 
-      setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
-    }
-  };
-
-
-  const fetchBranches = async (motherAccountCode) => {
-    try {
-      const { data, error } = await supabase
-        .from("sub_3_mother_account")
-        .select("*") // fetch full row data
-        .eq("sub_mother_dscode", motherAccountCode) // filter by mother_account_code
-        .not("branch", "is", null); // exclude nulls
-
-      if (error) throw error;
-
-      // Extract unique branches with full details
-      const uniqueBranches = [];
-      const seen = new Set();
-
-      data.forEach((row) => {
-        const branchName = row.branch?.trim();
-        if (branchName && !seen.has(branchName)) {
-          seen.add(branchName);
-          uniqueBranches.push({
-            id: row.id,
-            name: branchName,
-            description: row.description || "",
-            status: row.status,
-            distributor_code: row.distributor_code,
-            distributor_name: row.distributor_name,
-            created_at: row.created_at,
-          });
+            setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
         }
-      });
+    };
 
-      setBranchTypes(uniqueBranches);
 
-      // Display everything in console clearly
-      console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
-      console.table(uniqueBranches);
-      console.log("📋 Full Row Data:", data);
-      console.groupEnd();
-    } catch (err) {
-      console.error("❌ Error fetching branches:", err.message);
-    }
-  };
+    const fetchBranches = async (motherAccountCode) => {
+        try {
+            const { data, error } = await supabase
+                .from("sub_3_mother_account")
+                .select("*") // fetch full row data
+                .eq("sub_mother_dscode", motherAccountCode) // filter by mother_account_code
+                .not("branch", "is", null); // exclude nulls
+
+            if (error) throw error;
+
+            // Extract unique branches with full details
+            const uniqueBranches = [];
+            const seen = new Set();
+
+            data.forEach((row) => {
+                const branchName = row.branch?.trim();
+                if (branchName && !seen.has(branchName)) {
+                    seen.add(branchName);
+                    uniqueBranches.push({
+                        id: row.id,
+                        name: branchName,
+                        description: row.description || "",
+                        status: row.status,
+                        distributor_code: row.distributor_code,
+                        distributor_name: row.distributor_name,
+                        created_at: row.created_at,
+                    });
+                }
+            });
+
+            setBranchTypes(uniqueBranches);
+
+            // Display everything in console clearly
+            console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
+            console.table(uniqueBranches);
+            console.log("📋 Full Row Data:", data);
+            console.groupEnd();
+        } catch (err) {
+            console.error("❌ Error fetching branches:", err.message);
+        }
+    };
 
 
 
@@ -1970,7 +1953,6 @@ const fetchSubAccounts = async (mother) => {
                 </span>
             ));
     };
-
 
 
     const [showBranchInput, setShowBranchInput] = useState(true);
@@ -2649,20 +2631,22 @@ const fetchSubAccounts = async (mother) => {
                                         Branch <span style={{ color: "red" }}>*</span>
                                     </label>
 
+                                    {/* Branch Selector Box */}
                                     <div
                                         className="form-control"
                                         onClick={() => {
-                                            if (!formData.accountType || (Array.isArray(formData.accountType) && formData.accountType.length === 0)) {
-                                                return alert("Select a Sub Account first");
-                                            }
-                                            setShowModal_Branch(true);
+                                            if (!formData.accountType) return alert("Select a Sub Account first");
 
-                                            // Fetch branches based on selected sub-account(s)
-                                            if (Array.isArray(formData.accountType)) {
-                                                formData.accountType.forEach((subId) => fetchBranches(subId));
-                                            } else {
-                                                fetchBranches(formData.accountType);
-                                            }
+                                            // Find the selected sub account object
+                                            const selectedSub = subAccounts[selectedMother.id]?.find(
+                                                (s) => s.id === formData.accountType
+                                            );
+
+                                            if (!selectedSub) return alert("Sub account not found!");
+
+                                            // Open modal and fetch branches using mother_account_code
+                                            setShowModal_Branch(true);
+                                            fetchBranches(selectedSub.code);
                                         }}
                                         style={{
                                             cursor: "pointer",
@@ -2679,7 +2663,7 @@ const fetchSubAccounts = async (mother) => {
                                                     style={{
                                                         display: "inline-flex",
                                                         alignItems: "center",
-                                                        backgroundColor: "#0050a5ff",
+                                                        backgroundColor: "#0050a5",
                                                         color: "#fff",
                                                         padding: "3px 8px",
                                                         borderRadius: "5px",
@@ -2721,18 +2705,31 @@ const fetchSubAccounts = async (mother) => {
                                     </div>
                                 </div>
 
-                                {/* Branch Selection Modal */}
+                                {/* ✅ Branch Selection Modal */}
                                 <Modal
                                     show={showModal_Branch}
                                     onHide={() => setShowModal_Branch(false)}
                                     centered
                                     size="lg"
                                 >
-                                    <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
-                                        <Modal.Title style={{ width: "100%", textAlign: "center" }}>Select Branch</Modal.Title>
+                                    <Modal.Header
+                                        closeButton
+                                        style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                                    >
+                                        <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                            Select Branch
+                                        </Modal.Title>
                                     </Modal.Header>
 
-                                    <Modal.Body style={{ maxHeight: "400px", display: "flex", flexDirection: "column", padding: "1rem" }}>
+                                    <Modal.Body
+                                        style={{
+                                            maxHeight: "400px",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            padding: "1rem",
+                                        }}
+                                    >
+                                        {/* Search Bar */}
                                         <input
                                             type="text"
                                             className="form-control mb-3"
@@ -2741,26 +2738,49 @@ const fetchSubAccounts = async (mother) => {
                                             onChange={(e) => setBranchSearchTerm(e.target.value)}
                                             style={{ borderColor: "#007bff", flexShrink: 0 }}
                                         />
+
+                                        {/* ✅ Branch List */}
                                         <div style={{ overflowY: "auto", flexGrow: 1 }}>
-                                            {branchTypes
-                                                .filter((b) => b.name.toLowerCase().includes(branchSearchTerm.toLowerCase()))
-                                                .map((b) => (
-                                                    <div
-                                                        key={b.id}
-                                                        style={{ display: "flex", alignItems: "center", padding: "6px 0", marginLeft: "10px" }}
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={formData.branchType.includes(b.name)}
-                                                            onChange={() => toggleBranchType(b.name)}
-                                                            id={`branch-${b.id}`}
-                                                            style={{ width: "20px", height: "20px", transform: "scale(1.3)", cursor: "pointer" }}
-                                                        />
-                                                        <label htmlFor={`branch-${b.id}`} style={{ marginLeft: "8px", cursor: "pointer" }}>
-                                                            {b.name}
-                                                        </label>
-                                                    </div>
-                                                ))}
+                                            {branchTypes.length === 0 ? (
+                                                <div style={{ textAlign: "center", color: "#999", marginTop: "20px" }}>
+                                                    No branches found for the selected Sub Account.
+                                                </div>
+                                            ) : (
+                                                branchTypes
+                                                    .filter((b) =>
+                                                        b.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+                                                    )
+                                                    .map((b) => (
+                                                        <div
+                                                            key={b.id}
+                                                            style={{
+                                                                display: "flex",
+                                                                alignItems: "center",
+                                                                padding: "6px 0",
+                                                                marginLeft: "10px",
+                                                            }}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.branchType.includes(b.name)}
+                                                                onChange={() => toggleBranchType(b.name)}
+                                                                id={`branch-${b.id}`}
+                                                                style={{
+                                                                    width: "20px",
+                                                                    height: "20px",
+                                                                    transform: "scale(1.3)",
+                                                                    cursor: "pointer",
+                                                                }}
+                                                            />
+                                                            <label
+                                                                htmlFor={`branch-${b.id}`}
+                                                                style={{ marginLeft: "8px", cursor: "pointer" }}
+                                                            >
+                                                                {b.name}
+                                                            </label>
+                                                        </div>
+                                                    ))
+                                            )}
                                         </div>
                                     </Modal.Body>
 
@@ -2777,7 +2797,15 @@ const fetchSubAccounts = async (mother) => {
                                             >
                                                 Select All
                                             </Button>
-                                            <Button variant="warning" onClick={() => setFormData((prev) => ({ ...prev, branchType: [] }))}>
+                                            <Button
+                                                variant="warning"
+                                                onClick={() =>
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        branchType: [],
+                                                    }))
+                                                }
+                                            >
                                                 Clear All
                                             </Button>
                                         </div>
@@ -2786,7 +2814,6 @@ const fetchSubAccounts = async (mother) => {
                                         </Button>
                                     </Modal.Footer>
                                 </Modal>
-
 
 
 
