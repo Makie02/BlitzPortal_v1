@@ -2569,6 +2569,8 @@ const UserManagement = ({ setCurrentView }) => {
     }
 
     const inserts = newToSave.map((item) => ({
+      mother_account_id: item.id,
+
       mother_account_name: item.name,
       mother_account_code: item.code,
       username: supabaseUsername,
@@ -4924,7 +4926,7 @@ const UserManagement = ({ setCurrentView }) => {
                             width: '100%',
                           }}
                         >
-                          <span>{acc.name}</span>
+                          <span>{acc.id}-{acc.name}</span>
                           <span>{acc.code}</span>
                         </label>
                       </div>
