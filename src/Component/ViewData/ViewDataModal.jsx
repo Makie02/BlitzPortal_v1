@@ -847,7 +847,6 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                         >
                             <thead>
                                 <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
-                                    <th style={{ padding: '10px' }}>Account Code</th>
                                     <th style={{ padding: '10px' }}>Account Name</th>
                                     <th style={{ padding: '10px' }}>Budget</th>
                                 </tr>
@@ -855,7 +854,6 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                             <tbody>
                                 {accountsBudgetList.map((row) => (
                                     <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
-                                        <td style={{ padding: '8px' }}>{row.account_code}</td>
                                         <td style={{ padding: '8px' }}>{row.account_name}</td>
                                         <td style={{ padding: '8px' }}>{Number(row.budget).toLocaleString()}</td>
                                     </tr>
