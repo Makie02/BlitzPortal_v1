@@ -848,6 +848,10 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
             sku: newForm.sku,
             accounts: newForm.accounts,
             amount_display: newForm.amount_display,
+            various: newForm.various,
+
+            walk_in: newForm.walk_in,
+
           });
         }
       }
@@ -963,45 +967,45 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
 
 
   const getFilteredBranchesWithExtras = () => {
-  let filtered = branchTypes
-    .filter((opt) =>
-      opt.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
-    )
-    .filter((opt) => {
-      if (!formData.distributor) return false;
+    let filtered = branchTypes
+      .filter((opt) =>
+        opt.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+      )
+      .filter((opt) => {
+        if (!formData.distributor) return false;
 
-      const distributorCodes = opt.distributor_code
-        ? opt.distributor_code.split(",").map((code) => code.trim()).filter(Boolean)
-        : [];
+        const distributorCodes = opt.distributor_code
+          ? opt.distributor_code.split(",").map((code) => code.trim()).filter(Boolean)
+          : [];
 
-      if (Array.isArray(formData.distributor)) {
-        return formData.distributor.some((d) => distributorCodes.includes(d));
-      }
-      return distributorCodes.includes(formData.distributor);
-    });
+        if (Array.isArray(formData.distributor)) {
+          return formData.distributor.some((d) => distributorCodes.includes(d));
+        }
+        return distributorCodes.includes(formData.distributor);
+      });
 
-  // ✅ Add "Various" and "Walk In" if enabled in formData
-  if (formData.various) {
-    filtered.push({
-      id: "various",
-      name: "Various",
-      distributor_code: "N/A",
-    });
-  }
+    // ✅ Add "Various" and "Walk In" if enabled in formData
+    if (formData.various) {
+      filtered.push({
+        id: "various",
+        name: "Various",
+        distributor_code: "N/A",
+      });
+    }
 
-  if (formData.walk_in) {
-    filtered.push({
-      id: "walk_in",
-      name: "Walk In",
-      distributor_code: "N/A",
-    });
-  }
+    if (formData.walk_in) {
+      filtered.push({
+        id: "walk_in",
+        name: "Walk In",
+        distributor_code: "N/A",
+      });
+    }
 
-  // ✅ Sort alphabetically
-  return filtered.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-  );
-};
+    // ✅ Sort alphabetically
+    return filtered.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+  };
 
   const [rawAmount, setRawAmount] = React.useState(formData.amountbadget || "");
 
@@ -3358,49 +3362,49 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                     />
 
                     <div style={{ overflowY: "auto", flexGrow: 1 }}>
-              {(() => {
-  const filteredBranches = getFilteredBranchesWithExtras();
+                      {(() => {
+                        const filteredBranches = getFilteredBranchesWithExtras();
 
-  return (
-    <>
-      <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
-        Showing {filteredBranches.length} branch
-        {filteredBranches.length !== 1 ? "es" : ""}
-      </p>
+                        return (
+                          <>
+                            <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
+                              Showing {filteredBranches.length} branch
+                              {filteredBranches.length !== 1 ? "es" : ""}
+                            </p>
 
-      {filteredBranches.map((opt) => (
-        <div
-          key={opt.id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            padding: "6px 0",
-            marginLeft: "10px",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={formData.branchType.includes(opt.name)}
-            onChange={() => toggleBranchType(opt.name)}
-            id={`branchType-${opt.id}`}
-            style={{
-              width: "20px",
-              height: "20px",
-              transform: "scale(1.3)",
-              cursor: "pointer",
-            }}
-          />
-          <label
-            htmlFor={`branchType-${opt.id}`}
-            style={{ marginLeft: "8px", cursor: "pointer" }}
-          >
-            {opt.name}
-          </label>
-        </div>
-      ))}
-    </>
-  );
-})()}
+                            {filteredBranches.map((opt) => (
+                              <div
+                                key={opt.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  padding: "6px 0",
+                                  marginLeft: "10px",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={formData.branchType.includes(opt.name)}
+                                  onChange={() => toggleBranchType(opt.name)}
+                                  id={`branchType-${opt.id}`}
+                                  style={{
+                                    width: "20px",
+                                    height: "20px",
+                                    transform: "scale(1.3)",
+                                    cursor: "pointer",
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`branchType-${opt.id}`}
+                                  style={{ marginLeft: "8px", cursor: "pointer" }}
+                                >
+                                  {opt.name}
+                                </label>
+                              </div>
+                            ))}
+                          </>
+                        );
+                      })()}
 
                     </div>
                   </Modal.Body>
@@ -5069,11 +5073,11 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                         </tr>
                       </thead>
                       <tbody>
-                        {branchTypes
-                          .filter((branch) => formData.branchType.includes(branch.name)) // ✅ Compare by name now
+                        {getFilteredBranchesWithExtras()
+                          .filter((branch) => formData.branchType.includes(branch.name)) // ✅ Filter selected branches
                           .map((branch) => {
                             const existingRow =
-                              rowsAccounts.find((r) => r.account_code === branch.name) || {}; // ✅ Match by name too
+                              rowsAccounts.find((r) => r.account_code === branch.name) || {};
                             const budgetValue =
                               existingRow.budget !== undefined ? existingRow.budget : "";
 
