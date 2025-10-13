@@ -70,58 +70,60 @@ function Sub_3rdmotherAccounts() {
   }, []);
 
   // ✅ Batched fetch for Sub-3 Accounts
-  const fetchSub3Accounts = async (subMother) => {
-    setSelectedSubMother(subMother);
-    setSub3SearchQuery("");
+const fetchSub3Accounts = async (subMother) => {
+  setSelectedSubMother(subMother);
+  setSub3SearchQuery("");
 
-    const batchSize = 1000;
-    let allData = [];
-    let hasMore = true;
-    let offset = 0;
+  const batchSize = 1000;
+  let allData = [];
+  let hasMore = true;
+  let offset = 0;
 
-    while (hasMore) {
-      console.log(`📥 Fetching Sub-3 batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
-      const { data, error } = await supabase
-        .from("sub_3_mother_account")
-        .select(`
-          id,
-          sub_mother_id,
-          name,
-          branch,
-          bp_code,
-          sub_mother_dscode,
-          status,
-          distributor_code,
-          distributor_name,
-          sub_mother_account ( name )
-        `)
-        .eq("sub_mother_id", subMother.id)
-        .order("id", { ascending: true })
-        .range(offset, offset + batchSize - 1);
+  while (hasMore) {
+    console.log(`📥 Fetching Sub-3 batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+    const { data, error } = await supabase
+      .from("sub_3_mother_account")
+      .select(`
+        id,
+        sub_mother_id,
+        name,
+        branch,
+        bp_code,
+        sub_mother_dscode,
+        status,
+        distributor_code,
+        distributor_name,
+        sub_mother_account ( name )
+      `)
+      .eq("sub_mother_id", subMother.id)
+      .order("id", { ascending: true })
+      .range(offset, offset + batchSize - 1);
 
-      console.log(
-        `✅ Fetched Sub-3 batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
-      );
+    console.log(
+      `✅ Fetched Sub-3 batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+    );
 
-      if (error) {
-        console.error(error);
-        Swal.fire("Error", "Failed to fetch Sub-3 accounts", "error");
-        break;
-      }
-
-      if (data && data.length > 0) {
-        allData = [...allData, ...data];
-        offset += batchSize;
-        hasMore = data.length === batchSize;
-        console.log(`📊 Total Sub-3 records so far: ${allData.length}`);
-      } else {
-        hasMore = false;
-      }
+    if (error) {
+      console.error(error);
+      Swal.fire("Error", "Failed to fetch Sub-3 accounts", "error");
+      break;
     }
 
-    setSub3Accounts(allData);
-    console.log(`🎉 Finished fetching all Sub-3 accounts: ${allData.length}`);
-  };
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      offset += batchSize;
+      hasMore = data.length === batchSize;
+      console.log(`📊 Total Sub-3 records so far: ${allData.length}`);
+    } else {
+      hasMore = false;
+    }
+  }
+
+  // ✅ Automatically remove duplicates before setting state
+  const cleanedData = await autoRemoveDuplicatesOnLoad(allData);
+  setSub3Accounts(cleanedData);
+  console.log(`🎉 Finished fetching all Sub-3 accounts: ${cleanedData.length}`);
+};
 
 
   // Filtered sub3 accounts based on search
@@ -257,106 +259,179 @@ function Sub_3rdmotherAccounts() {
   // Export filteredSub3 to CSV
   // Export filteredSub3 to CSV (includes distributor fields)
 
+// Add this function after fetchSub3Accounts
+const autoRemoveDuplicatesOnLoad = async (data) => {
+  if (!data || data.length === 0) return data;
 
+  const seen = {};
+  const toDelete = [];
+  const uniqueRecords = [];
 
+  for (const record of data) {
+    // Skip if both bp_code and branch are empty
+    if (!record.bp_code && !record.branch) {
+      uniqueRecords.push(record);
+      continue;
+    }
+
+    const key = `${record.bp_code || ""}|${record.branch || ""}`;
+
+    if (seen[key]) {
+      // Duplicate found - mark for deletion
+      toDelete.push(record.id);
+      console.log(`🗑️ Duplicate detected: ID ${record.id} (BP: ${record.bp_code}, Branch: ${record.branch})`);
+    } else {
+      // First occurrence - keep it
+      seen[key] = true;
+      uniqueRecords.push(record);
+    }
+  }
+
+  // Delete duplicates from database
+  if (toDelete.length > 0) {
+    console.log(`🔄 Attempting to delete ${toDelete.length} duplicate(s)...`);
+    
+    try {
+      // Delete all at once using .in() instead of loop
+      const { data: deletedData, error: deleteError } = await supabase
+        .from("sub_3_mother_account")
+        .delete()
+        .in("id", toDelete);
+
+      if (deleteError) {
+        console.error("❌ Delete error:", deleteError);
+        throw deleteError;
+      }
+
+      console.log(`✅ Successfully deleted ${toDelete.length} duplicate(s)`);
+      
+      // Show notification to user
+      Swal.fire({
+        icon: "info",
+        title: "Duplicates Removed",
+        text: `${toDelete.length} duplicate record(s) were automatically deleted.`,
+        timer: 3000,
+        showConfirmButton: false,
+      });
+
+    } catch (err) {
+    }
+  } else {
+    console.log("✅ No duplicates found");
+  }
+
+  return uniqueRecords;
+};
   // Import CSV for Sub-3 accounts
   const triggerImportClick = () => {
     if (importInputRef.current) importInputRef.current.click();
   };
 
   // ---------- Import CSV function enhancement ----------
-  const handleImportCSV = (e) => {
-    const file = e.target.files[0];
-    if (!file) {
-      Swal.fire("Warning", "No file selected.", "warning");
-      return;
-    }
+const handleImportCSV = (e) => {
+  const file = e.target.files[0];
+  if (!file) {
+    Swal.fire("Warning", "No file selected.", "warning");
+    return;
+  }
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        const parsedData = results.data;
-        const fields = results.meta.fields;
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: async (results) => {
+      const parsedData = results.data;
+      const fields = results.meta.fields;
 
-        // ✅ Validate required columns
-        if (!fields.includes("Name")) {
-          Swal.fire("Error", 'Missing required column: "Name"', "error");
-          return;
+      // ✅ Validate required columns
+      if (!fields.includes("Name")) {
+        Swal.fire("Error", 'Missing required column: "Name"', "error");
+        return;
+      }
+
+      if (!selectedSubMother) {
+        Swal.fire("Error", "No Sub-Mother selected.", "error");
+        return;
+      }
+
+      // ✅ Fetch existing data for comparison
+      let existingData = [];
+      try {
+        const { data: existing, error } = await supabase
+          .from("sub_3_mother_account")
+          .select("id, bp_code, name")
+          .eq("sub_mother_id", selectedSubMother.id); // ✅ Only fetch for current sub-mother
+
+        if (error) throw error;
+        existingData = existing || [];
+      } catch (err) {
+        console.error(err);
+        Swal.fire("Error", "Failed to fetch existing Sub-3 accounts", "error");
+        return;
+      }
+
+      const toInsert = [];
+      const toUpdate = [];
+
+      // ✅ Parse and classify data
+      for (const row of parsedData) {
+        const name = row["Name"]?.trim();
+        if (!name) continue;
+
+        const branch = row["Branch"]?.trim() || "";
+        const distributor_code = row["Distributor Codes"]?.trim() || "";
+        const distributor_name = row["Distributor Names"]?.trim() || "";
+        const statusRaw = row["Status"]?.trim().toLowerCase() || "";
+        const status =
+          statusRaw === "inactive" || statusRaw === "false" ? false : true;
+
+        let bp_code = row["BP Code"]?.trim() || "";
+        const csvId = row["ID"] ? Number(row["ID"]) : null;
+
+        // ✅ Find existing record by ID OR BP Code
+        const existing = existingData.find((d) => {
+          // Match by ID first (if provided in CSV)
+          if (csvId && d.id === csvId) return true;
+          // Match by BP Code (if both exist and match)
+          if (bp_code && d.bp_code && d.bp_code === bp_code) return true;
+          return false;
+        });
+
+        const record = {
+          sub_mother_id: selectedSubMother.id,
+          sub_mother_dscode: selectedSubMother.dscode,
+          name,
+          branch,
+          bp_code: bp_code || null,
+          distributor_code: distributor_code || null,
+          distributor_name: distributor_name || null,
+          status,
+        };
+
+        if (existing) {
+          // ✅ UPDATE existing record
+          toUpdate.push({ ...record, id: existing.id });
+        } else {
+          // ✅ INSERT new record
+          toInsert.push(record);
         }
+      }
 
-        if (!selectedSubMother) {
-          Swal.fire("Error", "No Sub-Mother selected.", "error");
-          return;
-        }
+      // ✅ Execute operations
+      try {
+        let insertCount = 0;
+        let updateCount = 0;
 
-        // ✅ Fetch existing data for comparison
-        let existingData = [];
-        try {
-          const { data: existing, error } = await supabase
+        // Insert new records
+        if (toInsert.length > 0) {
+          const { error: insertErr } = await supabase
             .from("sub_3_mother_account")
-            .select("id, bp_code");
-
-          if (error) throw error;
-          existingData = existing || [];
-        } catch (err) {
-          console.error(err);
-          Swal.fire("Error", "Failed to fetch existing Sub-3 accounts", "error");
-          return;
+            .insert(toInsert);
+          if (insertErr) throw insertErr;
+          insertCount = toInsert.length;
         }
 
-        const toInsert = [];
-        const toUpdate = [];
-
-        // ✅ Parse and classify data
-        for (const row of parsedData) {
-          const name = row["Name"]?.trim();
-          if (!name) continue;
-
-          const branch = row["Branch"]?.trim() || "";
-          const distributor_code = row["Distributor Codes"]?.trim() || "";
-          const distributor_name = row["Distributor Names"]?.trim() || "";
-          const statusRaw = row["Status"]?.trim().toLowerCase() || "";
-          const status =
-            statusRaw === "inactive" || statusRaw === "false" ? false : true;
-
-          let bp_code = row["BP Code"]?.trim();
-          if (!bp_code) bp_code = ""; // leave empty if not provided
-
-          const existing = existingData.find(
-            (d) =>
-              d.id === Number(row["ID"]) ||
-              (d.bp_code && d.bp_code === bp_code)
-          );
-
-          const record = {
-            sub_mother_id: selectedSubMother.id,
-            sub_mother_dscode: selectedSubMother.dscode,
-            name,
-
-            branch,
-            bp_code,
-            distributor_code,
-            distributor_name,
-            status,
-          };
-
-          if (existing) {
-            toUpdate.push({ ...record, id: existing.id });
-          } else {
-            toInsert.push(record);
-          }
-        }
-
-        // ✅ Execute insert/update operations
-        try {
-          if (toInsert.length > 0) {
-            const { error: insertErr } = await supabase
-              .from("sub_3_mother_account")
-              .insert(toInsert);
-            if (insertErr) throw insertErr;
-          }
-
+        // Update existing records
+        if (toUpdate.length > 0) {
           for (const upd of toUpdate) {
             const { id, ...fields } = upd;
             const { error: updateErr } = await supabase
@@ -365,23 +440,28 @@ function Sub_3rdmotherAccounts() {
               .eq("id", id);
             if (updateErr) throw updateErr;
           }
-
-          Swal.fire("Success", "Import complete!", "success");
-          fetchSub3Accounts(selectedSubMother);
-        } catch (err) {
-          console.error(err);
-          Swal.fire("Error", err.message, "error");
+          updateCount = toUpdate.length;
         }
-      },
-      error: (err) => {
+
+        Swal.fire(
+          "Success",
+          `Import complete! ${insertCount} inserted, ${updateCount} updated.`,
+          "success"
+        );
+        fetchSub3Accounts(selectedSubMother);
+      } catch (err) {
         console.error(err);
-        Swal.fire("Error", "Failed to parse CSV", "error");
-      },
-    });
+        Swal.fire("Error", err.message, "error");
+      }
+    },
+    error: (err) => {
+      console.error(err);
+      Swal.fire("Error", "Failed to parse CSV", "error");
+    },
+  });
 
-    e.target.value = null; // reset input
-  };
-
+  e.target.value = null; // reset input
+};
   // ---------- Export CSV ----------
   const exportSub3ToCSV = (subs) => {
     if (!selectedSubMother) {
@@ -539,6 +619,72 @@ function Sub_3rdmotherAccounts() {
     setCurrentPage(1);
   }, [sub3SearchQuery]);
 
+
+  // Add this function after handleImportCSV
+const removeDuplicates = async () => {
+  if (!selectedSubMother) return;
+
+  try {
+    // Fetch all sub-3 accounts for current sub-mother
+    const { data: allRecords, error: fetchError } = await supabase
+      .from("sub_3_mother_account")
+      .select("id, bp_code, branch")
+      .eq("sub_mother_id", selectedSubMother.id)
+      .order("id", { ascending: true });
+
+    if (fetchError) throw fetchError;
+
+    if (!allRecords || allRecords.length === 0) return;
+
+    // Group by bp_code + branch combination
+    const duplicateMap = {};
+    const toDelete = [];
+
+    for (const record of allRecords) {
+      const key = `${record.bp_code || ""}|${record.branch || ""}`;
+      
+      // Skip if both bp_code and branch are empty
+      if (!record.bp_code && !record.branch) continue;
+
+      if (duplicateMap[key]) {
+        // This is a duplicate - mark for deletion
+        toDelete.push(record.id);
+        console.log(`🗑️ Duplicate found: ID ${record.id} (BP: ${record.bp_code}, Branch: ${record.branch})`);
+      } else {
+        // First occurrence - keep it
+        duplicateMap[key] = record.id;
+      }
+    }
+
+    // Delete duplicates
+    if (toDelete.length > 0) {
+      console.log(`Deleting ${toDelete.length} duplicate(s)...`);
+      
+      for (const id of toDelete) {
+        const { error: deleteError } = await supabase
+          .from("sub_3_mother_account")
+          .delete()
+          .eq("id", id);
+
+        if (deleteError) {
+          console.error(`Failed to delete ID ${id}:`, deleteError);
+        }
+      }
+
+      Swal.fire(
+        "Duplicates Removed",
+        `${toDelete.length} duplicate record(s) were deleted.`,
+        "success"
+      );
+    } else {
+      console.log("✅ No duplicates found");
+    }
+
+  } catch (err) {
+    console.error("Error removing duplicates:", err);
+    Swal.fire("Error", "Failed to remove duplicates", "error");
+  }
+};
   return (
     <div style={{ padding: 20, fontFamily: "Arial" }}>
       {!selectedSubMother && (
