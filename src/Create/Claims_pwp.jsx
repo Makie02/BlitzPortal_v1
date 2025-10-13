@@ -1842,75 +1842,75 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
 
 
     const fetchBranches = async (motherAccountCode) => {
-      try {
-        const batchSize = 1000;
-        let allData = [];
-        let hasMore = true;
-        let offset = 0;
-    
-        while (hasMore) {
-          console.log(`📥 Fetching branches batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
-          
-          const { data, error } = await supabase
-            .from("sub_3_mother_account")
-            .select("*") // fetch full row data
-            .eq("sub_mother_dscode", motherAccountCode) // filter by mother_account_code
-            .not("branch", "is", null) // exclude nulls
-            .range(offset, offset + batchSize - 1);
-    
-          console.log(
-            `✅ Fetched branches batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
-          );
-    
-          if (error) {
-            console.error(error);
-            Swal.fire("Error", "Failed to fetch branches", "error");
-            break;
-          }
-    
-          if (data && data.length > 0) {
-            allData = [...allData, ...data];
-            offset += batchSize;
-            hasMore = data.length === batchSize;
-            console.log(`📊 Total branch records so far: ${allData.length}`);
-          } else {
-            hasMore = false;
-          }
-        }
-    
-        // Extract unique branches with full details
-        const uniqueBranches = [];
-        const seen = new Set();
-    
-        allData.forEach((row) => {
-          const branchName = row.branch?.trim();
-          if (branchName && !seen.has(branchName)) {
-            seen.add(branchName);
-            uniqueBranches.push({
-              id: row.id,
-              name: branchName,
-              description: row.description || "",
-              status: row.status,
-              distributor_code: row.distributor_code,
-              distributor_name: row.distributor_name,
-              created_at: row.created_at,
+        try {
+            const batchSize = 1000;
+            let allData = [];
+            let hasMore = true;
+            let offset = 0;
+
+            while (hasMore) {
+                console.log(`📥 Fetching branches batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+
+                const { data, error } = await supabase
+                    .from("sub_3_mother_account")
+                    .select("*") // fetch full row data
+                    .eq("sub_mother_dscode", motherAccountCode) // filter by mother_account_code
+                    .not("branch", "is", null) // exclude nulls
+                    .range(offset, offset + batchSize - 1);
+
+                console.log(
+                    `✅ Fetched branches batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+                );
+
+                if (error) {
+                    console.error(error);
+                    Swal.fire("Error", "Failed to fetch branches", "error");
+                    break;
+                }
+
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize;
+                    console.log(`📊 Total branch records so far: ${allData.length}`);
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            // Extract unique branches with full details
+            const uniqueBranches = [];
+            const seen = new Set();
+
+            allData.forEach((row) => {
+                const branchName = row.branch?.trim();
+                if (branchName && !seen.has(branchName)) {
+                    seen.add(branchName);
+                    uniqueBranches.push({
+                        id: row.id,
+                        name: branchName,
+                        description: row.description || "",
+                        status: row.status,
+                        distributor_code: row.distributor_code,
+                        distributor_name: row.distributor_name,
+                        created_at: row.created_at,
+                    });
+                }
             });
-          }
-        });
-    
-        setBranchTypes(uniqueBranches);
-    
-        // Display everything in console clearly
-        console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
-        console.log(`🎉 Finished fetching all branches: ${allData.length} total records`);
-        console.log(`✨ Unique branches: ${uniqueBranches.length}`);
-        console.table(uniqueBranches);
-        console.log("📋 Full Row Data:", allData);
-        console.groupEnd();
-      } catch (err) {
-        console.error("❌ Error fetching branches:", err.message);
-        Swal.fire("Error", err.message, "error");
-      }
+
+            setBranchTypes(uniqueBranches);
+
+            // Display everything in console clearly
+            console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
+            console.log(`🎉 Finished fetching all branches: ${allData.length} total records`);
+            console.log(`✨ Unique branches: ${uniqueBranches.length}`);
+            console.table(uniqueBranches);
+            console.log("📋 Full Row Data:", allData);
+            console.groupEnd();
+        } catch (err) {
+            console.error("❌ Error fetching branches:", err.message);
+            Swal.fire("Error", err.message, "error");
+        }
     };
 
 
@@ -2768,64 +2768,92 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                             style={{ borderColor: "#007bff", flexShrink: 0 }}
                                         />
 
-                                        {/* ✅ Branch List */}
                                         <div style={{ overflowY: "auto", flexGrow: 1 }}>
-                                            {branchTypes.length === 0 ? (
-                                                <div style={{ textAlign: "center", color: "#999", marginTop: "20px" }}>
-                                                    No branches found for the selected Sub Account.
-                                                </div>
-                                            ) : (
-                                                branchTypes
+                                            {(() => {
+                                                // ✅ Filter and sort branches alphabetically
+                                                const filteredBranches = branchTypes
                                                     .filter((b) =>
                                                         b.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
                                                     )
-                                                    .map((b) => (
-                                                        <div
-                                                            key={b.id}
-                                                            style={{
-                                                                display: "flex",
-                                                                alignItems: "center",
-                                                                padding: "6px 0",
-                                                                marginLeft: "10px",
-                                                            }}
-                                                        >
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={formData.branchType.includes(b.name)}
-                                                                onChange={() => toggleBranchType(b.name)}
-                                                                id={`branch-${b.id}`}
-                                                                style={{
-                                                                    width: "20px",
-                                                                    height: "20px",
-                                                                    transform: "scale(1.3)",
-                                                                    cursor: "pointer",
-                                                                }}
-                                                            />
-                                                            <label
-                                                                htmlFor={`branch-${b.id}`}
-                                                                style={{ marginLeft: "8px", cursor: "pointer" }}
-                                                            >
-                                                                {b.name}
-                                                            </label>
+                                                    .sort((a, b) =>
+                                                        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+                                                    );
+
+                                                // ✅ If none, show empty state
+                                                if (filteredBranches.length === 0) {
+                                                    return (
+                                                        <div style={{ textAlign: "center", color: "#999", marginTop: "20px" }}>
+                                                            No branches found for the selected Sub Account.
                                                         </div>
-                                                    ))
-                                            )}
+                                                    );
+                                                }
+
+                                                return (
+                                                    <>
+                                                        {/* ✅ Display total filtered count */}
+                                                        <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
+                                                            Showing {filteredBranches.length} branch
+                                                            {filteredBranches.length !== 1 ? "es" : ""}
+                                                        </p>
+
+                                                        {/* ✅ Render filtered & sorted list */}
+                                                        {filteredBranches.map((b) => (
+                                                            <div
+                                                                key={b.id}
+                                                                style={{
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    padding: "6px 0",
+                                                                    marginLeft: "10px",
+                                                                }}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={formData.branchType.includes(b.name)}
+                                                                    onChange={() => toggleBranchType(b.name)}
+                                                                    id={`branch-${b.id}`}
+                                                                    style={{
+                                                                        width: "20px",
+                                                                        height: "20px",
+                                                                        transform: "scale(1.3)",
+                                                                        cursor: "pointer",
+                                                                    }}
+                                                                />
+                                                                <label
+                                                                    htmlFor={`branch-${b.id}`}
+                                                                    style={{ marginLeft: "8px", cursor: "pointer" }}
+                                                                >
+                                                                    {b.name}
+                                                                </label>
+                                                            </div>
+                                                        ))}
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
                                     </Modal.Body>
 
                                     <Modal.Footer style={{ display: "flex", justifyContent: "space-between" }}>
                                         <div style={{ display: "flex", gap: "8px" }}>
+                                            {/* ✅ Select All only from filtered list */}
                                             <Button
                                                 variant="success"
-                                                onClick={() =>
-                                                    setFormData((prev) => ({
-                                                        ...prev,
-                                                        branchType: branchTypes.map((b) => b.name),
-                                                    }))
-                                                }
+                                                onClick={() => {
+                                                    const filteredBranches = branchTypes
+                                                        .filter((b) =>
+                                                            b.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+                                                        )
+                                                        .sort((a, b) =>
+                                                            a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+                                                        );
+
+                                                    const names = filteredBranches.map((b) => b.name);
+                                                    setFormData((prev) => ({ ...prev, branchType: names }));
+                                                }}
                                             >
                                                 Select All
                                             </Button>
+
                                             <Button
                                                 variant="warning"
                                                 onClick={() =>
@@ -2838,6 +2866,7 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                                 Clear All
                                             </Button>
                                         </div>
+
                                         <Button variant="light" onClick={() => setShowModal_Branch(false)}>
                                             Close
                                         </Button>
