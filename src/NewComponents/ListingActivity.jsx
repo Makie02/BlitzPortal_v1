@@ -14,7 +14,9 @@ export default function ListingActivity() {
     'accounts',
     'amount_display',
     'distributor',
-    'claims'
+    'claims',
+    'various',
+    'walk_in'
   ];
 
   // Fetch activities and settings
@@ -91,38 +93,50 @@ export default function ListingActivity() {
   };
 
   return (
-    <Container className="my-5">
+    <div style={{ width: '100%', padding: '1rem' }}>
       <Card>
         <Card.Header className="bg-primary text-white">
           <h4 className="mb-0">Activity Listing</h4>
         </Card.Header>
-        <Card.Body>
+        <Card.Body style={{ padding: 0 }}>
           {loading ? (
-            <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
+            <div
+              className="d-flex justify-content-center align-items-center"
+              style={{ height: '200px' }}
+            >
               <Spinner animation="border" variant="primary" />
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <Table striped bordered hover responsive className="align-middle text-center">
+              <Table
+                striped
+                bordered
+                hover
+                responsive
+                className="align-middle text-center"
+                style={{ width: '100%' }}
+              >
                 <thead className="table-primary">
                   <tr>
                     <th>Code</th>
                     <th>Name</th>
                     <th>Description</th>
-                    {settingFields.map(field => (
-                      <th key={field} className="text-capitalize">{field.replace('_', ' ')}</th>
+                    {settingFields.map((field) => (
+                      <th key={field} className="text-capitalize">
+                        {field.replace('_', ' ')}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {activities.map(activity => {
+                  {activities.map((activity) => {
                     const setting = settings[activity.code] || {};
                     return (
                       <tr key={activity.code}>
                         <td className="text-start">{activity.code}</td>
                         <td className="text-start">{activity.name}</td>
                         <td className="text-start">{activity.description}</td>
-                        {settingFields.map(field => (
+                        {settingFields.map((field) => (
                           <td key={field} style={{ verticalAlign: 'middle' }}>
                             <Form.Check
                               type="checkbox"
@@ -141,6 +155,7 @@ export default function ListingActivity() {
           )}
         </Card.Body>
       </Card>
-    </Container>
+    </div>
+
   );
 }
