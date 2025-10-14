@@ -8,7 +8,7 @@ function Sub_3rdmotherAccounts() {
   const [selectedSubMother, setSelectedSubMother] = useState(null);
   const [sub3Accounts, setSub3Accounts] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ name: "", branch: "", bp_code: "" });
+  const [formData, setFormData] = useState({ name: "", branch: "", bp_code: "", status: true, });
   const [editMode, setEditMode] = useState(false);
   const [editId, setEditId] = useState(null);
 
@@ -68,111 +68,111 @@ function Sub_3rdmotherAccounts() {
 
     fetchSubMothers();
   }, []);
-// ✅ Removes duplicates based on bp_code + branch
-const autoRemoveDuplicatesOnLoad = async (data) => {
-  if (!Array.isArray(data) || data.length === 0) return [];
+  // ✅ Removes duplicates based on bp_code + branch
+  const autoRemoveDuplicatesOnLoad = async (data) => {
+    if (!Array.isArray(data) || data.length === 0) return [];
 
-  const seen = {};
-  const toDelete = [];
-  const uniqueRecords = [];
+    const seen = {};
+    const toDelete = [];
+    const uniqueRecords = [];
 
-  for (const record of data) {
-    const key = `${record.bp_code || ""}|${record.branch || ""}`;
+    for (const record of data) {
+      const key = `${record.bp_code || ""}|${record.branch || ""}`;
 
-    // If bp_code & branch both missing, include it (can't compare)
-    if (!record.bp_code && !record.branch) {
-      uniqueRecords.push(record);
-      continue;
-    }
-
-    if (seen[key]) {
-      if (record.id) toDelete.push(record.id); // Ensure ID exists
-    } else {
-      seen[key] = true;
-      uniqueRecords.push(record);
-    }
-  }
-
-  if (toDelete.length > 0) {
-    console.log(`🧹 Attempting to remove ${toDelete.length} duplicate(s)...`);
-    console.log("IDs to delete:", toDelete);
-
-    try {
-      const chunkSize = 500; // Safely batch
-      let totalDeleted = 0;
-
-      for (let i = 0; i < toDelete.length; i += chunkSize) {
-        const chunk = toDelete.slice(i, i + chunkSize);
-
-        const { error: deleteError } = await supabase
-          .from("sub_3_mother_account")
-          .delete()
-          .in("id", chunk);
-
-        if (deleteError) {
-          console.warn(`⚠️ Chunk batch delete failed at index ${i}:`, deleteError);
-          // Optionally fallback to individual deletes per chunk
-          for (const id of chunk) {
-            const { error } = await supabase
-              .from("sub_3_mother_account")
-              .delete()
-              .eq("id", id);
-            if (!error) totalDeleted++;
-          }
-        } else {
-          totalDeleted += chunk.length;
-        }
+      // If bp_code & branch both missing, include it (can't compare)
+      if (!record.bp_code && !record.branch) {
+        uniqueRecords.push(record);
+        continue;
       }
 
-      Swal.fire({
-        icon: "success",
-        title: "Duplicate Cleanup",
-        text: `Deleted ${totalDeleted}/${toDelete.length} duplicates.`,
-        timer: 2000,
-        showConfirmButton: false,
-      });
-
-    } catch (err) {
-      console.error("❌ Error during duplicate deletion:", err);
-      Swal.fire("Error", "An unexpected error occurred during deletion.", "error");
+      if (seen[key]) {
+        if (record.id) toDelete.push(record.id); // Ensure ID exists
+      } else {
+        seen[key] = true;
+        uniqueRecords.push(record);
+      }
     }
-  } else {
-    console.log("✅ No duplicates found.");
-  }
 
-  return uniqueRecords;
-};
+    if (toDelete.length > 0) {
+      console.log(`🧹 Attempting to remove ${toDelete.length} duplicate(s)...`);
+      console.log("IDs to delete:", toDelete);
+
+      try {
+        const chunkSize = 500; // Safely batch
+        let totalDeleted = 0;
+
+        for (let i = 0; i < toDelete.length; i += chunkSize) {
+          const chunk = toDelete.slice(i, i + chunkSize);
+
+          const { error: deleteError } = await supabase
+            .from("sub_3_mother_account")
+            .delete()
+            .in("id", chunk);
+
+          if (deleteError) {
+            console.warn(`⚠️ Chunk batch delete failed at index ${i}:`, deleteError);
+            // Optionally fallback to individual deletes per chunk
+            for (const id of chunk) {
+              const { error } = await supabase
+                .from("sub_3_mother_account")
+                .delete()
+                .eq("id", id);
+              if (!error) totalDeleted++;
+            }
+          } else {
+            totalDeleted += chunk.length;
+          }
+        }
+
+        Swal.fire({
+          icon: "success",
+          title: "Duplicate Cleanup",
+          text: `Deleted ${totalDeleted}/${toDelete.length} duplicates.`,
+          timer: 2000,
+          showConfirmButton: false,
+        });
+
+      } catch (err) {
+        console.error("❌ Error during duplicate deletion:", err);
+        Swal.fire("Error", "An unexpected error occurred during deletion.", "error");
+      }
+    } else {
+      console.log("✅ No duplicates found.");
+    }
+
+    return uniqueRecords;
+  };
 
 
-const autoRemoveAllDuplicates = async () => {
-  const { data, error } = await supabase
-    .from("sub_3_mother_account")
-    .select("id, bp_code, branch");
-
-  if (error) {
-    console.error("❌ Failed to fetch records for global cleanup:", error);
-    Swal.fire("Error", "Failed to fetch records for cleanup", "error");
-    return;
-  }
-
-  await autoRemoveDuplicatesOnLoad(data);
-};
-
-// ✅ Fetches sub-3 accounts for a specific subMother, cleans duplicates
-const fetchSub3Accounts = async (subMother) => {
-  setSelectedSubMother(subMother);
-  setSub3SearchQuery("");
-  setSub3Accounts([]);
-
-  const batchSize = 1000;
-  let allData = [];
-  let offset = 0;
-  let hasMore = true;
-
-  while (hasMore) {
+  const autoRemoveAllDuplicates = async () => {
     const { data, error } = await supabase
       .from("sub_3_mother_account")
-      .select(`
+      .select("id, bp_code, branch");
+
+    if (error) {
+      console.error("❌ Failed to fetch records for global cleanup:", error);
+      Swal.fire("Error", "Failed to fetch records for cleanup", "error");
+      return;
+    }
+
+    await autoRemoveDuplicatesOnLoad(data);
+  };
+
+  // ✅ Fetches sub-3 accounts for a specific subMother, cleans duplicates
+  const fetchSub3Accounts = async (subMother) => {
+    setSelectedSubMother(subMother);
+    setSub3SearchQuery("");
+    setSub3Accounts([]);
+
+    const batchSize = 1000;
+    let allData = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from("sub_3_mother_account")
+        .select(`
         id,
         sub_mother_id,
         name,
@@ -184,32 +184,32 @@ const fetchSub3Accounts = async (subMother) => {
         distributor_name,
         sub_mother_account ( name )
       `)
-      .eq("sub_mother_id", subMother.id)
-      .order("id", { ascending: true })
-      .range(offset, offset + batchSize - 1);
+        .eq("sub_mother_id", subMother.id)
+        .order("id", { ascending: true })
+        .range(offset, offset + batchSize - 1);
 
-    if (error) {
-      console.error("❌ Error fetching Sub-3 accounts:", error);
-      Swal.fire("Error", "Failed to fetch Sub-3 accounts", "error");
-      break;
+      if (error) {
+        console.error("❌ Error fetching Sub-3 accounts:", error);
+        Swal.fire("Error", "Failed to fetch Sub-3 accounts", "error");
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        offset += batchSize;
+        hasMore = data.length === batchSize;
+      } else {
+        hasMore = false;
+      }
     }
 
-    if (data && data.length > 0) {
-      allData = [...allData, ...data];
-      offset += batchSize;
-      hasMore = data.length === batchSize;
-    } else {
-      hasMore = false;
-    }
-  }
+    // 🧹 Clean duplicates and update display
+    console.log("🔍 Checking for duplicates...");
+    const cleaned = await autoRemoveDuplicatesOnLoad(allData);
 
-  // 🧹 Clean duplicates and update display
-  console.log("🔍 Checking for duplicates...");
-  const cleaned = await autoRemoveDuplicatesOnLoad(allData);
-
-  setSub3Accounts(cleaned);
-  console.log(`✅ Loaded Sub-3 accounts: ${cleaned.length}`);
-};
+    setSub3Accounts(cleaned);
+    console.log(`✅ Loaded Sub-3 accounts: ${cleaned.length}`);
+  };
 
 
 
@@ -259,6 +259,8 @@ const fetchSub3Accounts = async (subMother) => {
             branch: formData.branch,
             distributor_code: distributorCodes || null,
             distributor_name: distributorNames || null,
+            status: formData.status, // ✅ include status
+
             sub_mother_dscode: selectedSubMother.dscode || null,
           })
           .eq("id", editId);
@@ -271,6 +273,8 @@ const fetchSub3Accounts = async (subMother) => {
             sub_mother_dscode: selectedSubMother.dscode,
             name: formData.name,
             branch: formData.branch,
+            status: formData.status, // ✅ include status
+
             bp_code: formData.bp_code || null, // 🆕 use manual input
             distributor_code: distributorCodes || null,
             distributor_name: distributorNames || null,
@@ -324,23 +328,25 @@ const fetchSub3Accounts = async (subMother) => {
   const handleEdit = (s3) => {
     setEditMode(true);
     setEditId(s3.id);
+
     setFormData({
       name: s3.name || "",
-
       branch: s3.branch || "",
-      bp_code: s3.bp_code || "", // 🆕 load existing bp_code
-
+      bp_code: s3.bp_code || "",
+      status: s3.status ?? true,
     });
 
-    // Preselect distributors if data exists
     const codes =
       s3.distributor_code && typeof s3.distributor_code === "string"
-        ? s3.distributor_code.split(",").map((c) => c.trim())
+        ? s3.distributor_code.split(",").map((c) => c.trim().toString()) // ensure string
         : [];
+
     setSelectedDistributors(codes);
 
-    setShowModal(true);
+    // Wait for state to update before showing modal (optional safety)
+    setTimeout(() => setShowModal(true), 50);
   };
+
 
 
   // Back to selecting subMother
@@ -400,14 +406,14 @@ const fetchSub3Accounts = async (subMother) => {
         try {
           const { data: existing, error } = await supabase
             .from("sub_3_mother_account")
-            .select("id, bp_code, name")
+            .select("id, bp_code, name, branch, distributor_code, distributor_name, status") // ✅ Include all updatable fields
             .eq("sub_mother_id", selectedSubMother.id);
 
           if (error) throw error;
           existingData = existing || [];
         } catch (err) {
           clearInterval(timer);
-          console.error(err);
+          console.error("Fetch error:", err);
           setIsImporting(false);
           Swal.fire("Error", "Failed to fetch existing Sub-3 accounts", "error");
           return;
@@ -424,17 +430,13 @@ const fetchSub3Accounts = async (subMother) => {
           const distributor_code = row["Distributor Codes"]?.trim() || "";
           const distributor_name = row["Distributor Names"]?.trim() || "";
           const statusRaw = row["Status"]?.trim().toLowerCase() || "";
-          const status =
-            statusRaw === "inactive" || statusRaw === "false" ? false : true;
+          const status = statusRaw === "inactive" || statusRaw === "false" ? false : true;
 
           let bp_code = row["BP Code"]?.trim() || "";
           const csvId = row["ID"] ? Number(row["ID"]) : null;
 
-          const existing = existingData.find((d) => {
-            if (csvId && d.id === csvId) return true;
-            if (bp_code && d.bp_code && d.bp_code === bp_code) return true;
-            return false;
-          });
+          // ✅ Only match on ID, not BP Code
+          const existing = existingData.find((d) => csvId && d.id === csvId);
 
           const record = {
             sub_mother_id: selectedSubMother.id,
@@ -471,6 +473,7 @@ const fetchSub3Accounts = async (subMother) => {
             const { error: insertErr } = await supabase
               .from("sub_3_mother_account")
               .insert(toInsert);
+
             if (insertErr) throw insertErr;
 
             insertCount = toInsert.length;
@@ -480,12 +483,17 @@ const fetchSub3Accounts = async (subMother) => {
 
           for (const upd of toUpdate) {
             const { id, ...fields } = upd;
+
             const { error: updateErr } = await supabase
               .from("sub_3_mother_account")
               .update(fields)
               .eq("id", id);
 
-            if (updateErr) throw updateErr;
+            if (updateErr) {
+              console.error("Update error for ID", id, updateErr);
+              throw updateErr;
+            }
+
             updateCount++;
             updateProgress();
           }
@@ -511,12 +519,12 @@ const fetchSub3Accounts = async (subMother) => {
         } catch (err) {
           clearInterval(timer);
           setIsImporting(false);
-          console.error(err);
-          Swal.fire("Error", err.message, "error");
+          console.error("Processing error:", err);
+          Swal.fire("Error", err.message || "Unknown error during import", "error");
         }
       },
       error: (err) => {
-        console.error(err);
+        console.error("CSV Parse Error:", err);
         setIsImporting(false);
         Swal.fire("Error", "Failed to parse CSV", "error");
       },
@@ -883,7 +891,7 @@ const fetchSub3Accounts = async (subMother) => {
             }}>
               + Add Sub-3 Account
             </button>
-   
+
 
             <button
               style={{ ...btnAdd, marginLeft: 10, backgroundColor: "#6c757d" }}
@@ -911,13 +919,12 @@ const fetchSub3Accounts = async (subMother) => {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={thStyle}>ID</th>
                   <th style={thStyle}>Sub Mother</th>
                   <th style={thStyle}>Sub Mother DS Code</th> {/* ✅ added */}
                   <th style={thStyle}>BP Code</th> {/* ✅ added */}
                   <th style={thStyle}>Name</th>
                   <th style={thStyle}>Branch</th>
-                  <th style={thStyle}>Distributor Names</th>
+                  <th style={thStyle}>Distributor</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
@@ -930,25 +937,31 @@ const fetchSub3Accounts = async (subMother) => {
                         <div style={{ fontSize: 18, marginBottom: 10 }}>
                           ⏳ <strong>Importing CSV...</strong>
                         </div>
-                        <div style={{
-                          backgroundColor: "#e0e0e0",
-                          height: "20px",
-                          borderRadius: "5px",
-                          overflow: "hidden",
-                          marginBottom: 10
-                        }}>
-                          <div style={{
-                            width: `${importProgress}%`,
-                            backgroundColor: "#28a745",
-                            height: "100%",
-                            transition: "width 0.3s ease-in-out"
-                          }}></div>
+                        <div
+                          style={{
+                            backgroundColor: "#e0e0e0",
+                            height: "20px",
+                            borderRadius: "5px",
+                            overflow: "hidden",
+                            marginBottom: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${importProgress}%`,
+                              backgroundColor: "#28a745",
+                              height: "100%",
+                              transition: "width 0.3s ease-in-out",
+                            }}
+                          ></div>
                         </div>
                         <div>
-                          📊 <strong>{importProgress}%</strong> complete<br />
-                          ⏱️ Time elapsed: <strong>
-                            {String(Math.floor(importElapsedTime / 60)).padStart(2, '0')}m{" "}
-                            {String(importElapsedTime % 60).padStart(2, '0')}s
+                          📊 <strong>{importProgress}%</strong> complete
+                          <br />
+                          ⏱️ Time elapsed:{" "}
+                          <strong>
+                            {String(Math.floor(importElapsedTime / 60)).padStart(2, "0")}m{" "}
+                            {String(importElapsedTime % 60).padStart(2, "0")}s
                           </strong>
                         </div>
                       </div>
@@ -962,18 +975,36 @@ const fetchSub3Accounts = async (subMother) => {
                   </tr>
                 ) : (
                   paginatedSub3.map((s3) => (
-                    <tr key={s3.id} style={trResponsive}>
-                      <td style={tdStyle}>{s3.id}</td>
+                    <tr
+                      key={s3.id}
+                      style={{
+                        ...trResponsive,
+                        backgroundColor: s3.status ? "transparent" : "#ffe6e6", // 🔴 red bg if inactive
+                        color: s3.status ? "inherit" : "#a00", // 🔴 darker red text if inactive
+                      }}
+                    >
                       <td style={tdStyle}>{s3.sub_mother_account?.name || "-"}</td>
                       <td style={tdStyle}>{s3.sub_mother_dscode || "-"}</td>
                       <td style={tdStyle}>{s3.bp_code || "-"}</td>
-                      <td style={tdStyle}>{s3.name}</td>
-                      <td style={tdStyle}>{s3.branch}</td>
-                      <td style={tdStyle}>{s3.distributor_name || "-"}</td>
-                      <td style={tdStyle}>{s3.status ? "Active" : "Inactive"}</td>
                       <td style={tdStyle}>
-                        <button style={actionBtn} onClick={() => handleEdit(s3)}>✏️ Edit</button>
-                        <button style={deleteBtn} onClick={() => handleDelete(s3.id)}>🗑 Delete</button>
+                        <span style={{ textDecoration: s3.status ? "none" : "line-through" }}>
+                          {s3.name}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>{s3.branch}</td>
+                      <td style={tdStyle}>{s3.distributor_code || "-"}</td>
+                      <td style={tdStyle}>
+                        <span style={{ fontStyle: s3.status ? "normal" : "italic" }}>
+                          {s3.status ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        <button style={actionBtn} onClick={() => handleEdit(s3)}>
+                          ✏️ Edit
+                        </button>
+                        <button style={deleteBtn} onClick={() => handleDelete(s3.id)}>
+                          🗑 Delete
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -981,12 +1012,180 @@ const fetchSub3Accounts = async (subMother) => {
               </tbody>
 
 
+
             </table>
           </div>
 
         </div>
       )}
+      {showModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            {/* Header */}
+            <h3 style={styles.header}>
+              {editMode
+                ? `Edit Sub-3 Account (${selectedSubMother.name})`
+                : `Create Sub-3 Account for ${selectedSubMother.name}`}
+            </h3>
 
+            {/* Close Button */}
+            <button style={styles.closeBtn} onClick={() => setShowModal(false)}>
+              &times;
+            </button>
+
+            {/* Form */}
+            <form onSubmit={handleSaveSub3Account} style={styles.form}>
+
+              {/* Input Fields */}
+              <input
+                type="text"
+                name="bp_code"
+                value={formData.bp_code}
+                onChange={handleInputChange}
+                placeholder="BP Code"
+                style={styles.inputStyle}
+              />
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                placeholder="Sub-3 account name"
+                style={styles.inputStyle}
+                required
+              />
+              <input
+                type="text"
+                name="branch"
+                value={formData.branch}
+                onChange={handleInputChange}
+                placeholder="Branch"
+                style={styles.inputStyle}
+              />
+              {/* Status Toggle */}
+              <div style={{ marginTop: 15 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    name="status"
+                    checked={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.checked })}
+                  />
+                  {formData.status ? "Active ✅" : "Inactive ❌"}
+                </label>
+              </div>
+
+              {/* Distributor Selection Section */}
+              {/* Distributor Selection Section */}
+              <div style={styles.distributorSection}>
+                <label style={styles.distributorLabel}>
+                  Select Distributors: 📦
+                </label>
+
+                {/* Search Bar */}
+                <input
+                  type="text"
+                  placeholder="Search distributors by name or code..."
+                  value={distributorSearch}
+                  onChange={(e) => setDistributorSearch(e.target.value)}
+                  style={styles.searchBar}
+                />
+
+                {/* Distributor List Container */}
+                <div style={styles.distributorListContainer}>
+                  {distributors.length === 0 ? (
+                    <p style={{ padding: "10px", color: "#999" }}>Loading distributors...</p>
+                  ) : (
+                    (() => {
+                      const filtered = distributors.filter((dist) =>
+                        (dist.name || "").toLowerCase().includes(distributorSearch.toLowerCase()) ||
+                        (dist.code || "").toString().toLowerCase().includes(distributorSearch.toLowerCase())
+                      );
+
+                      return filtered.length === 0 ? (
+                        <p style={{ padding: "10px", color: "#999" }}>No distributors found.</p>
+                      ) : (
+                        filtered.map((dist) => {
+                          const distCode = String(dist.code);
+                          const isSelected = selectedDistributors.includes(distCode);
+
+                          return (
+                            <label
+                              key={distCode}
+                              style={{
+                                ...styles.distributorItem,
+                                backgroundColor: isSelected ? "#d0ebff" : "transparent",
+                                cursor: "pointer",
+                                padding: "5px 8px",
+                                borderRadius: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                                marginBottom: "4px",
+                                userSelect: "none",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleDistributorToggle(distCode)}
+                                style={{
+                                  display: "none", // hide native checkbox
+                                }}
+                                id={`checkbox-${distCode}`}
+                              />
+                              <span
+                                onClick={() => handleDistributorToggle(distCode)}
+                                style={{
+                                  width: "24px",
+                                  height: "24px",
+                                  border: "2px solid #007BFF",
+                                  borderRadius: "4px",
+                                  marginRight: "12px",
+                                  display: "inline-block",
+                                  position: "relative",
+                                  backgroundColor: isSelected ? "#007BFF" : "transparent",
+                                  transition: "background-color 0.2s, border-color 0.2s",
+                                }}
+                              >
+                                {isSelected && (
+                                  <svg
+                                    style={{
+                                      position: "absolute",
+                                      top: "2px",
+                                      left: "6px",
+                                      width: "10px",
+                                      height: "16px",
+                                      fill: "none",
+                                      stroke: "white",
+                                      strokeWidth: 3,
+                                    }}
+                                    viewBox="0 0 12 16"
+                                  >
+                                    <polyline points="1 8 4 12 11 3" />
+                                  </svg>
+                                )}
+                              </span>
+                              {dist.name}
+                            </label>
+
+                          );
+                        })
+                      );
+                    })()
+                  )}
+                </div>
+
+              </div>
+
+
+              {/* Save/Update Button */}
+              <button type="submit" style={styles.btnSave}>
+                {editMode ? "Update Account" : "Create Account"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
       {/* Pagination Controls */}
       {totalItems > 0 && (
         <div style={paginationContainer}>
@@ -1051,96 +1250,7 @@ const fetchSub3Accounts = async (subMother) => {
       )}
 
 
-      {showModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalContent}>
-            {/* Header */}
-            <h3 style={styles.header}>
-              {editMode
-                ? `Edit Sub-3 Account (${selectedSubMother.name})`
-                : `Create Sub-3 Account for ${selectedSubMother.name}`}
-            </h3>
 
-            {/* Close Button */}
-            <button style={styles.closeBtn} onClick={() => setShowModal(false)}>
-              &times;
-            </button>
-
-            {/* Form */}
-            <form onSubmit={handleSaveSub3Account} style={styles.form}>
-
-              {/* Input Fields */}
-              <input
-                type="text"
-                name="bp_code"
-                value={formData.bp_code}
-                onChange={handleInputChange}
-                placeholder="BP Code"
-                style={styles.inputStyle}
-              />
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="Sub-3 account name"
-                style={styles.inputStyle}
-                required
-              />
-              <input
-                type="text"
-                name="branch"
-                value={formData.branch}
-                onChange={handleInputChange}
-                placeholder="Branch"
-                style={styles.inputStyle}
-              />
-
-              {/* Distributor Selection Section */}
-              <div style={styles.distributorSection}>
-                <label style={styles.distributorLabel}>
-                  Select Distributors: 📦
-                </label>
-
-                {/* Search Bar */}
-                <input
-                  type="text"
-                  placeholder="Search distributors by name or code..."
-                  value={distributorSearch}
-                  onChange={(e) => setDistributorSearch(e.target.value)}
-                  style={styles.searchBar}
-                />
-
-                {/* Distributor List Container */}
-                <div style={styles.distributorListContainer}>
-                  {distributors
-                    .filter((dist) =>
-                      (dist.name || "").toLowerCase().includes(distributorSearch.toLowerCase()) ||
-                      (dist.code || "").toString().toLowerCase().includes(distributorSearch.toLowerCase())
-                    )
-                    .map((dist) => (
-                      <label key={dist.code} style={styles.distributorItem}>
-                        <input
-                          type="checkbox"
-                          checked={selectedDistributors.includes(dist.code)}
-                          onChange={() => handleDistributorToggle(dist.code)}
-                          style={{ marginRight: '6px' }}
-                        />
-                        {dist.name}
-                      </label>
-                    ))}
-                </div>
-
-              </div>
-
-              {/* Save/Update Button */}
-              <button type="submit" style={styles.btnSave}>
-                {editMode ? "Update Account" : "Create Account"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1167,7 +1277,7 @@ const styles = {
     padding: '30px',
     borderRadius: '10px', // Smoother corners
     width: '90%',
-    maxWidth: '550px', // A good standard width for forms
+    maxWidth: '650px', // A good standard width for forms
     boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)', // Stronger shadow
     position: 'relative',
     maxHeight: '90vh', // Prevent content from going off-screen
