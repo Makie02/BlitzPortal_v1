@@ -3378,30 +3378,44 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                 style={{
                                   display: "flex",
                                   alignItems: "center",
-                                  padding: "6px 0",
-                                  marginLeft: "10px",
+                                  justifyContent: "space-between", // ✅ Push status to the right
+                                  padding: "6px 10px",
                                 }}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={formData.branchType.includes(opt.name)}
-                                  onChange={() => toggleBranchType(opt.name)}
-                                  id={`branchType-${opt.id}`}
+                                <div style={{ display: "flex", alignItems: "center" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={formData.branchType.includes(opt.name)}
+                                    onChange={() => toggleBranchType(opt.name)}
+                                    id={`branchType-${opt.id}`}
+                                    style={{
+                                      width: "20px",
+                                      height: "20px",
+                                      transform: "scale(1.3)",
+                                      cursor: "pointer",
+                                    }}
+                                  />
+                                  <label
+                                    htmlFor={`branchType-${opt.id}`}
+                                    style={{ marginLeft: "8px", cursor: "pointer" }}
+                                  >
+                                    {opt.name}
+                                  </label>
+                                </div>
+
+                                {/* ✅ Status shown here */}
+                                <span
                                   style={{
-                                    width: "20px",
-                                    height: "20px",
-                                    transform: "scale(1.3)",
-                                    cursor: "pointer",
+                                    fontSize: "0.9rem",
+                                    fontWeight: 500,
+                                    color: opt.status ? "#28a745" : "#dc3545", // ✅ Green if active, red if inactive
                                   }}
-                                />
-                                <label
-                                  htmlFor={`branchType-${opt.id}`}
-                                  style={{ marginLeft: "8px", cursor: "pointer" }}
                                 >
-                                  {opt.name}
-                                </label>
+                                  {opt.status ? "Active " : "Inactive ❌"}
+                                </span>
                               </div>
                             ))}
+
                           </>
                         );
                       })()}
