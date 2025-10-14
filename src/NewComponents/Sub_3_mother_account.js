@@ -244,9 +244,16 @@ function Sub_3rdmotherAccounts() {
 
   const handleSaveSub3Account = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) return Swal.fire("Warning", "Sub-3 account name is required", "warning");
+    if (!formData.name.trim()) {
+      return Swal.fire("Warning", "Sub-3 account name is required", "warning");
+    }
 
-    const selectedDistObjects = distributors.filter((d) => selectedDistributors.includes(d.code));
+    // Filter distributors by matching string codes exactly
+    const selectedDistObjects = distributors.filter((d) =>
+      selectedDistributors.includes(String(d.code))
+    );
+
+    // Get names and codes to post as comma separated strings
     const distributorNames = selectedDistObjects.map((d) => d.name).join(", ");
     const distributorCodes = selectedDistObjects.map((d) => d.code).join(", ");
 
@@ -259,12 +266,13 @@ function Sub_3rdmotherAccounts() {
             branch: formData.branch,
             distributor_code: distributorCodes || null,
             distributor_name: distributorNames || null,
-            status: formData.status, // ✅ include status
-
+            status: formData.status,
             sub_mother_dscode: selectedSubMother.dscode || null,
           })
           .eq("id", editId);
+
         if (error) throw error;
+
         Swal.fire("Updated", "Sub-3 account updated!", "success");
       } else {
         const { error } = await supabase.from("sub_3_mother_account").insert([
@@ -273,19 +281,20 @@ function Sub_3rdmotherAccounts() {
             sub_mother_dscode: selectedSubMother.dscode,
             name: formData.name,
             branch: formData.branch,
-            status: formData.status, // ✅ include status
-
-            bp_code: formData.bp_code || null, // 🆕 use manual input
+            status: formData.status,
+            bp_code: formData.bp_code || null,
             distributor_code: distributorCodes || null,
             distributor_name: distributorNames || null,
           },
         ]);
 
         if (error) throw error;
+
         Swal.fire("Success", "Sub-3 account created!", "success");
       }
 
-      setFormData({ name: "", branch: "", bp_code: "" });
+      // Reset form and states
+      setFormData({ name: "", branch: "", bp_code: "", status: true });
       setSelectedDistributors([]);
       setShowModal(false);
       setEditMode(false);
@@ -666,11 +675,16 @@ function Sub_3rdmotherAccounts() {
     };
     fetchDistributors();
   }, []);
-  const handleDistributorToggle = (code) => {
-    setSelectedDistributors((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-    );
+  const handleDistributorToggle = (distCode) => {
+    setSelectedDistributors((prevSelected) => {
+      if (prevSelected.includes(distCode)) {
+        return prevSelected.filter((code) => code !== distCode);
+      } else {
+        return [...prevSelected, distCode];
+      }
+    });
   };
+
   const [searchTerm, setSearchTerm] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -1095,84 +1109,79 @@ function Sub_3rdmotherAccounts() {
                 <div style={styles.distributorListContainer}>
                   {distributors.length === 0 ? (
                     <p style={{ padding: "10px", color: "#999" }}>Loading distributors...</p>
-                  ) : (
-                    (() => {
-                      const filtered = distributors.filter((dist) =>
-                        (dist.name || "").toLowerCase().includes(distributorSearch.toLowerCase()) ||
-                        (dist.code || "").toString().toLowerCase().includes(distributorSearch.toLowerCase())
-                      );
+                  ) : (() => {
+                    const filtered = distributors.filter((dist) =>
+                      (dist.name || "").toLowerCase().includes(distributorSearch.toLowerCase()) ||
+                      String(dist.code).toLowerCase().includes(distributorSearch.toLowerCase())
+                    );
 
-                      return filtered.length === 0 ? (
-                        <p style={{ padding: "10px", color: "#999" }}>No distributors found.</p>
-                      ) : (
-                        filtered.map((dist) => {
-                          const distCode = String(dist.code);
-                          const isSelected = selectedDistributors.includes(distCode);
+                    if (filtered.length === 0) {
+                      return <p style={{ padding: "10px", color: "#999" }}>No distributors found.</p>;
+                    }
 
-                          return (
-                            <label
-                              key={distCode}
-                              style={{
-                                ...styles.distributorItem,
-                                backgroundColor: isSelected ? "#d0ebff" : "transparent",
-                                cursor: "pointer",
-                                padding: "5px 8px",
-                                borderRadius: "4px",
-                                display: "flex",
-                                alignItems: "center",
-                                marginBottom: "4px",
-                                userSelect: "none",
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => handleDistributorToggle(distCode)}
+                    return filtered.map((dist) => {
+                      const distCode = String(dist.code);
+                      const isSelected = selectedDistributors.includes(distCode);
+
+                      return (
+                        <label
+                          key={distCode}
+                          style={{
+                            ...styles.distributorItem,
+                            backgroundColor: isSelected ? "#d0ebff" : "transparent",
+                            cursor: "pointer",
+                            padding: "5px 8px",
+                            borderRadius: "4px",
+                            display: "flex",
+                            alignItems: "center",
+                            marginBottom: "4px",
+                            userSelect: "none",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleDistributorToggle(distCode)}
+                            style={{ display: "none" }}
+                            id={`checkbox-${distCode}`}
+                          />
+                          <span
+                            onClick={() => handleDistributorToggle(distCode)}
+                            style={{
+                              width: "24px",
+                              height: "24px",
+                              border: "2px solid #007BFF",
+                              borderRadius: "4px",
+                              marginRight: "12px",
+                              display: "inline-block",
+                              position: "relative",
+                              backgroundColor: isSelected ? "#007BFF" : "transparent",
+                              transition: "background-color 0.2s, border-color 0.2s",
+                            }}
+                          >
+                            {isSelected && (
+                              <svg
                                 style={{
-                                  display: "none", // hide native checkbox
+                                  position: "absolute",
+                                  top: "2px",
+                                  left: "6px",
+                                  width: "10px",
+                                  height: "16px",
+                                  fill: "none",
+                                  stroke: "white",
+                                  strokeWidth: 3,
                                 }}
-                                id={`checkbox-${distCode}`}
-                              />
-                              <span
-                                onClick={() => handleDistributorToggle(distCode)}
-                                style={{
-                                  width: "24px",
-                                  height: "24px",
-                                  border: "2px solid #007BFF",
-                                  borderRadius: "4px",
-                                  marginRight: "12px",
-                                  display: "inline-block",
-                                  position: "relative",
-                                  backgroundColor: isSelected ? "#007BFF" : "transparent",
-                                  transition: "background-color 0.2s, border-color 0.2s",
-                                }}
+                                viewBox="0 0 12 16"
                               >
-                                {isSelected && (
-                                  <svg
-                                    style={{
-                                      position: "absolute",
-                                      top: "2px",
-                                      left: "6px",
-                                      width: "10px",
-                                      height: "16px",
-                                      fill: "none",
-                                      stroke: "white",
-                                      strokeWidth: 3,
-                                    }}
-                                    viewBox="0 0 12 16"
-                                  >
-                                    <polyline points="1 8 4 12 11 3" />
-                                  </svg>
-                                )}
-                              </span>
-                              {dist.name}
-                            </label>
-
-                          );
-                        })
+                                <polyline points="1 8 4 12 11 3" />
+                              </svg>
+                            )}
+                          </span>
+                          {dist.name}
+                        </label>
                       );
-                    })()
-                  )}
+                    });
+                  })()}
                 </div>
 
               </div>
