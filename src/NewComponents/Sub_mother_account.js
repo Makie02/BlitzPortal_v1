@@ -459,7 +459,7 @@ function MotherAccountPage() {
             ← Back to Mother Accounts
           </button>
 
-          <h2>Sub-Mother Accounts for {activeMother.name}</h2>
+          <h2>Mother Accounts for {activeMother.name}</h2>
 
           {/* Search bar for sub-accounts */}
           <div style={{ marginBottom: 10, width: "300px" }}>
