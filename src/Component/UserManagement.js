@@ -655,7 +655,82 @@ const UserManagement = ({ setCurrentView }) => {
       fetchSavedApprovals();
     }
   };
-  const openCreateModal = () => {
+
+
+const [showPasswordConfirmModal, setShowPasswordConfirmModal] = useState(false);
+const [confirmPassword, setConfirmPassword] = useState('');
+const [passwordError, setPasswordError] = useState('');
+
+
+ let attemptCount = 0;
+let lockoutUntil = null;
+
+const openCreateModal = async () => {
+  const now = new Date().getTime();
+
+  // Lockout check
+  if (lockoutUntil && now < lockoutUntil) {
+    const secondsLeft = Math.ceil((lockoutUntil - now) / 1000);
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Too many attempts',
+      html: `Please wait <b>${secondsLeft}</b> seconds before trying again.`,
+    });
+    return;
+  }
+
+  // Reset lockout if time passed
+  if (lockoutUntil && now >= lockoutUntil) {
+    attemptCount = 0;
+    lockoutUntil = null;
+  }
+
+  let passwordVisible = false;
+
+  const { value: password } = await Swal.fire({
+    title: 'Enter Password',
+    html: `
+      <div style="display: flex; align-items: center; position: relative;">
+        <input id="swal-password-input" type="password" class="swal2-input" placeholder="Enter password" style="padding-right: 40px;" />
+        <span id="toggle-password-icon"
+              style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer;">
+          👁️
+        </span>
+      </div>
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: 'Confirm',
+    cancelButtonText: 'Cancel',
+    preConfirm: () => {
+      const input = document.getElementById('swal-password-input').value;
+      if (!input) {
+        Swal.showValidationMessage('Please enter a password');
+        return;
+      }
+      return input;
+    },
+    didOpen: () => {
+      const input = document.getElementById('swal-password-input');
+      const toggleIcon = document.getElementById('toggle-password-icon');
+
+      toggleIcon.addEventListener('click', () => {
+        passwordVisible = !passwordVisible;
+        input.type = passwordVisible ? 'text' : 'password';
+        toggleIcon.textContent = passwordVisible ? '🙈' : '👁️';
+      });
+
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          Swal.clickConfirm();
+        }
+      });
+    },
+  });
+
+  if (!password) return; // Cancelled
+
+  if (password === 'QSIT') { // <-- Change your correct password here
     setNewUserData({
       name: '',
       role: '',
@@ -671,7 +746,29 @@ const UserManagement = ({ setCurrentView }) => {
       PermissionRole: '',
     });
     setModalType('create');
-  };
+    attemptCount = 0; // reset attempts on success
+  } else {
+    attemptCount++;
+    if (attemptCount >= 5) {
+      lockoutUntil = new Date().getTime() + 60 * 1000; // lockout 1 minute
+      await Swal.fire({
+        icon: 'error',
+        title: 'Too many failed attempts',
+        text: 'You are locked out for 1 minute.',
+      });
+    } else {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Incorrect password',
+        text: `Please try again. (${5 - attemptCount} attempt(s) left)`,
+      });
+      openCreateModal(); // Retry modal
+    }
+  }
+};
+
+
+
   // Handle new user form input change
   const handleNewUserChange = (e) => {
     const { name, value } = e.target;
@@ -2452,10 +2549,11 @@ const UserManagement = ({ setCurrentView }) => {
     } else {
       await Swal.fire({
         icon: 'success',
-        title: 'Mother Accounts Saved',
+        title: 'Mother Group Saved',
         text: `${newToSave.length} new Mother Account(s) saved successfully!`,
         confirmButtonColor: '#3085d6',
       });
+      setModalType(null);
 
       await fetchSavedMotherAccounts(supabaseUsername);
     }
@@ -2570,7 +2668,6 @@ const UserManagement = ({ setCurrentView }) => {
 
     const inserts = newToSave.map((item) => ({
       mother_account_id: item.id,
-
       mother_account_name: item.name,
       mother_account_code: item.code,
       username: supabaseUsername,
@@ -2594,6 +2691,10 @@ const UserManagement = ({ setCurrentView }) => {
         text: `${newToSave.length} new Mother record(s) saved successfully!`,
         confirmButtonColor: '#3085d6',
       });
+
+      // 🔽 Close the modal after success and confirmation
+      setModalType(null);
+
       await fetchSavedMother(supabaseUsername);
     }
   };
@@ -2887,6 +2988,11 @@ const UserManagement = ({ setCurrentView }) => {
           Next
         </Button>
       </footer>
+
+
+
+
+  
 
       {/* Create Modals */}
 
@@ -4661,7 +4767,7 @@ const UserManagement = ({ setCurrentView }) => {
           }}
         >
           <Modal.Title style={{ fontSize: '20px', fontWeight: '600' }}>
-            Manage Mother Accounts for {supabaseUsername}
+            Manage Group Accounts for {supabaseUsername}
           </Modal.Title>
         </Modal.Header>
 
@@ -4850,7 +4956,7 @@ const UserManagement = ({ setCurrentView }) => {
           }}
         >
           <Modal.Title style={{ fontSize: '20px', fontWeight: '600' }}>
-            Manage Mother for {supabaseUsername}
+            Manage Mother Group for {supabaseUsername}
           </Modal.Title>
         </Modal.Header>
 
