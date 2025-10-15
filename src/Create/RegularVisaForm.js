@@ -2948,13 +2948,15 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                           height: "20px",
                                           transform: "scale(1.3)",
                                           cursor: "pointer",
+                                      
                                         }}
                                       />
                                       <label
                                         className="form-check-label"
                                         htmlFor={`cat-check-${cat.id}`}
+                                        style={{    marginLeft:'5px'}}
                                       >
-                                        <strong>{cat.code}</strong> - {cat.name}
+                                        {cat.name} <strong style={{color:'#fff'}}>{cat.code}</strong> 
                                       </label>
                                     </div>
                                   </li>
@@ -3187,7 +3189,7 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                   }
                                 }}
                               >
-                                <span>({opt.code}) - {opt.name}</span>
+                                <span> {opt.name}</span> <strong style={{color:'#ffff'}}>({opt.code}) </strong>
                                 <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
                               </div>
                             ))}
@@ -3271,7 +3273,7 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                   style={{ marginLeft: "6px", cursor: "pointer" }}
                                 >
                                   {s.name}{" "}
-                                  <span style={{ color: "#888", fontSize: "12px" }}>
+                                  <span style={{ color: "#ffffffff", fontSize: "12px" }}>
                                     ({s.code})
                                   </span>
                                 </label>
