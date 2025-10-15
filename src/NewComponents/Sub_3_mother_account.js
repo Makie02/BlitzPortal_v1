@@ -242,70 +242,71 @@ function Sub_3rdmotherAccounts() {
 
 
 
-  const handleSaveSub3Account = async (e) => {
-    e.preventDefault();
-    if (!formData.name.trim()) {
-      return Swal.fire("Warning", "Sub-3 account name is required", "warning");
+ const handleSaveSub3Account = async (e) => {
+  e.preventDefault();
+
+  if (!formData.name.trim()) {
+    return Swal.fire("Warning", "Sub-3 account name is required", "warning");
+  }
+
+  // Filter distributors by matching string codes exactly
+  const selectedDistObjects = distributors.filter((d) =>
+    selectedDistributors.includes(String(d.code))
+  );
+
+  // Get names and codes to post as comma separated strings
+  const distributorNames = selectedDistObjects.map((d) => d.name).join(", ");
+  const distributorCodes = selectedDistObjects.map((d) => d.code).join(", ");
+
+  try {
+    if (editMode) {
+      const { error } = await supabase
+        .from("sub_3_mother_account")
+        .update({
+          name: formData.name,
+          branch: formData.branch,
+          bp_code: formData.bp_code || null, // ✅ Include bp_code here
+          distributor_code: distributorCodes || null,
+          distributor_name: distributorNames || null,
+          status: formData.status,
+          sub_mother_dscode: selectedSubMother.dscode || null,
+        })
+        .eq("id", editId);
+
+      if (error) throw error;
+
+      Swal.fire("Updated", "Sub-3 account updated!", "success");
+    } else {
+      const { error } = await supabase.from("sub_3_mother_account").insert([
+        {
+          sub_mother_id: selectedSubMother.id,
+          sub_mother_dscode: selectedSubMother.dscode,
+          name: formData.name,
+          branch: formData.branch,
+          bp_code: formData.bp_code || null,
+          status: formData.status,
+          distributor_code: distributorCodes || null,
+          distributor_name: distributorNames || null,
+        },
+      ]);
+
+      if (error) throw error;
+
+      Swal.fire("Success", "Created!", "success");
     }
 
-    // Filter distributors by matching string codes exactly
-    const selectedDistObjects = distributors.filter((d) =>
-      selectedDistributors.includes(String(d.code))
-    );
-
-    // Get names and codes to post as comma separated strings
-    const distributorNames = selectedDistObjects.map((d) => d.name).join(", ");
-    const distributorCodes = selectedDistObjects.map((d) => d.code).join(", ");
-
-    try {
-      if (editMode) {
-        const { error } = await supabase
-          .from("sub_3_mother_account")
-          .update({
-            name: formData.name,
-            branch: formData.branch,
-            distributor_code: distributorCodes || null,
-            distributor_name: distributorNames || null,
-            status: formData.status,
-            sub_mother_dscode: selectedSubMother.dscode || null,
-          })
-          .eq("id", editId);
-
-        if (error) throw error;
-
-        Swal.fire("Updated", "Sub-3 account updated!", "success");
-      } else {
-        const { error } = await supabase.from("sub_3_mother_account").insert([
-          {
-            sub_mother_id: selectedSubMother.id,
-            sub_mother_dscode: selectedSubMother.dscode,
-            name: formData.name,
-            branch: formData.branch,
-            status: formData.status,
-            bp_code: formData.bp_code || null,
-            distributor_code: distributorCodes || null,
-            distributor_name: distributorNames || null,
-          },
-        ]);
-
-        if (error) throw error;
-
-        Swal.fire("Success", "Created!", "success");
-      }
-
-      // Reset form and states
-      setFormData({ name: "", branch: "", bp_code: "", status: true });
-      setSelectedDistributors([]);
-      setShowModal(false);
-      setEditMode(false);
-      setEditId(null);
-      fetchSub3Accounts(selectedSubMother);
-    } catch (err) {
-      console.error(err);
-      Swal.fire("Error", err.message, "error");
-    }
-  };
-
+    // Reset form and states
+    setFormData({ name: "", branch: "", bp_code: "", status: true });
+    setSelectedDistributors([]);
+    setShowModal(false);
+    setEditMode(false);
+    setEditId(null);
+    fetchSub3Accounts(selectedSubMother);
+  } catch (err) {
+    console.error(err);
+    Swal.fire("Error", err.message, "error");
+  }
+};
 
 
 
