@@ -290,7 +290,7 @@ function Sub_3rdmotherAccounts() {
 
         if (error) throw error;
 
-        Swal.fire("Success", "Sub-3 account created!", "success");
+        Swal.fire("Success", "Created!", "success");
       }
 
       // Reset form and states
@@ -374,6 +374,12 @@ function Sub_3rdmotherAccounts() {
     if (importInputRef.current) importInputRef.current.click();
   };
 
+
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0); // Progress bar
+  const [importCountdown, setImportCountdown] = useState(0); // Countdown timer in seconds
+
   // ---------- Import CSV function enhancement ----------
   const handleImportCSV = (e) => {
     const file = e.target.files[0];
@@ -388,24 +394,17 @@ function Sub_3rdmotherAccounts() {
       complete: async (results) => {
         setIsImporting(true);
         setImportProgress(0);
-        setImportElapsedTime(0);
-
-        const timer = setInterval(() => {
-          setImportElapsedTime((prev) => prev + 1);
-        }, 1000);
 
         const parsedData = results.data;
         const fields = results.meta.fields;
 
         if (!fields.includes("Name")) {
-          clearInterval(timer);
           setIsImporting(false);
           Swal.fire("Error", 'Missing required column: "Name"', "error");
           return;
         }
 
         if (!selectedSubMother) {
-          clearInterval(timer);
           setIsImporting(false);
           Swal.fire("Error", "No Sub-Mother selected.", "error");
           return;
@@ -415,19 +414,19 @@ function Sub_3rdmotherAccounts() {
         try {
           const { data: existing, error } = await supabase
             .from("sub_3_mother_account")
-            .select("id, bp_code, name, branch, distributor_code, distributor_name, status") // ✅ Include all updatable fields
+            .select("id")
             .eq("sub_mother_id", selectedSubMother.id);
 
           if (error) throw error;
           existingData = existing || [];
         } catch (err) {
-          clearInterval(timer);
-          console.error("Fetch error:", err);
           setIsImporting(false);
+          console.error("Fetch error:", err);
           Swal.fire("Error", "Failed to fetch existing Sub-3 accounts", "error");
           return;
         }
 
+        const existingIds = new Set(existingData.map((d) => d.id));
         const toInsert = [];
         const toUpdate = [];
 
@@ -441,32 +440,43 @@ function Sub_3rdmotherAccounts() {
           const statusRaw = row["Status"]?.trim().toLowerCase() || "";
           const status = statusRaw === "inactive" || statusRaw === "false" ? false : true;
 
-          let bp_code = row["BP Code"]?.trim() || "";
+          const bp_code = row["BP Code"]?.trim() || "";
           const csvId = row["ID"] ? Number(row["ID"]) : null;
 
-          // ✅ Only match on ID, not BP Code
-          const existing = existingData.find((d) => csvId && d.id === csvId);
-
-          const record = {
-            sub_mother_id: selectedSubMother.id,
-            sub_mother_dscode: selectedSubMother.dscode,
-            name,
-            branch,
-            bp_code: bp_code || null,
-            distributor_code: distributor_code || null,
-            distributor_name: distributor_name || null,
-            status,
-          };
-
-          if (existing) {
-            toUpdate.push({ ...record, id: existing.id });
+          if (csvId && existingIds.has(csvId)) {
+            // ✅ Only update status
+            toUpdate.push({ id: csvId, status });
           } else {
+            // ✅ Insert full record
+            const record = {
+              sub_mother_id: selectedSubMother.id,
+              sub_mother_dscode: selectedSubMother.dscode,
+              name,
+              branch,
+              bp_code: bp_code || null,
+              distributor_code: distributor_code || null,
+              distributor_name: distributor_name || null,
+              status,
+            };
             toInsert.push(record);
           }
         }
 
         const totalRecords = toInsert.length + toUpdate.length;
         let processed = 0;
+
+        const estimatedSeconds = Math.max(10, Math.round(totalRecords * 0.5));
+        setImportCountdown(estimatedSeconds);
+
+        const countdownTimer = setInterval(() => {
+          setImportCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(countdownTimer);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
 
         const updateProgress = () => {
           processed++;
@@ -486,16 +496,15 @@ function Sub_3rdmotherAccounts() {
             if (insertErr) throw insertErr;
 
             insertCount = toInsert.length;
-            processed += toInsert.length;
-            updateProgress();
+            for (let i = 0; i < insertCount; i++) updateProgress();
           }
 
           for (const upd of toUpdate) {
-            const { id, ...fields } = upd;
+            const { id, status } = upd;
 
             const { error: updateErr } = await supabase
               .from("sub_3_mother_account")
-              .update(fields)
+              .update({ status })
               .eq("id", id);
 
             if (updateErr) {
@@ -507,26 +516,23 @@ function Sub_3rdmotherAccounts() {
             updateProgress();
           }
 
-          clearInterval(timer);
-          setIsImporting(false);
+          clearInterval(countdownTimer);
           setImportProgress(100);
-
-          const minutes = Math.floor(importElapsedTime / 60);
-          const seconds = importElapsedTime % 60;
+          setIsImporting(false);
 
           Swal.fire({
             icon: "success",
             title: "Import complete!",
             html: `
             ✅ <strong>${insertCount}</strong> inserted<br>
-            🔁 <strong>${updateCount}</strong> updated<br>
-            ⏱️ <strong>${minutes}m ${seconds}s</strong> elapsed
+            🔁 <strong>${updateCount}</strong> status updated<br>
+            ⏱️ <strong>~${estimatedSeconds}s</strong> estimated time
           `,
           });
 
           fetchSub3Accounts(selectedSubMother);
         } catch (err) {
-          clearInterval(timer);
+          clearInterval(countdownTimer);
           setIsImporting(false);
           console.error("Processing error:", err);
           Swal.fire("Error", err.message || "Unknown error during import", "error");
@@ -541,6 +547,8 @@ function Sub_3rdmotherAccounts() {
 
     e.target.value = null;
   };
+
+
 
 
   // ---------- Export CSV ----------
@@ -709,8 +717,7 @@ function Sub_3rdmotherAccounts() {
   // Add this function after handleImportCSV
 
 
-  const [isImporting, setIsImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState(0); // Percentage
+
   const [importElapsedTime, setImportElapsedTime] = useState(0); // In seconds
 
   return (
@@ -722,7 +729,7 @@ function Sub_3rdmotherAccounts() {
               Branch Accounts
             </h1>
             <p style={{ margin: "5px 0 0 0", color: "#666", fontSize: "14px" }}>
-              Select a Sub-Mother account to manage its Branch Accounts
+              Select a Mother account to manage its Branch Accounts
             </p>
           </div>
 
@@ -899,7 +906,7 @@ function Sub_3rdmotherAccounts() {
               setEditId(null);
               setFormData({
                 name: "",
-                branch: "", bp_code: ""
+                branch: "", bp_code: "", status: true,
               });
               setShowModal(true);
             }}>
@@ -972,10 +979,10 @@ function Sub_3rdmotherAccounts() {
                         <div>
                           📊 <strong>{importProgress}%</strong> complete
                           <br />
-                          ⏱️ Time elapsed:{" "}
+                          ⏳ Time remaining:{" "}
                           <strong>
-                            {String(Math.floor(importElapsedTime / 60)).padStart(2, "0")}m{" "}
-                            {String(importElapsedTime % 60).padStart(2, "0")}s
+                            {String(Math.floor(importCountdown / 60)).padStart(2, "0")}m{" "}
+                            {String(importCountdown % 60).padStart(2, "0")}s
                           </strong>
                         </div>
                       </div>
@@ -993,8 +1000,8 @@ function Sub_3rdmotherAccounts() {
                       key={s3.id}
                       style={{
                         ...trResponsive,
-                        backgroundColor: s3.status ? "transparent" : "#ffe6e6", // 🔴 red bg if inactive
-                        color: s3.status ? "inherit" : "#a00", // 🔴 darker red text if inactive
+                        backgroundColor: s3.status ? "transparent" : "#ffe6e6",
+                        color: s3.status ? "inherit" : "#a00",
                       }}
                     >
                       <td style={tdStyle}>{s3.sub_mother_account?.name || "-"}</td>
@@ -1013,16 +1020,13 @@ function Sub_3rdmotherAccounts() {
                         </span>
                       </td>
                       <td style={tdStyle}>
-                        <button style={actionBtn} onClick={() => handleEdit(s3)}>
-                          ✏️ Edit
-                        </button>
-                        <button style={deleteBtn} onClick={() => handleDelete(s3.id)}>
-                          🗑 Delete
-                        </button>
+                        <button style={actionBtn} onClick={() => handleEdit(s3)}>✏️ Edit</button>
+                        <button style={deleteBtn} onClick={() => handleDelete(s3.id)}>🗑 Delete</button>
                       </td>
                     </tr>
                   ))
                 )}
+
               </tbody>
 
 
