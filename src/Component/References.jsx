@@ -52,10 +52,9 @@ const References = ({ setCurrentView }) => {
     { id: 16, title: "LICENSE", flag: 'license' },
     { id: 17, title: "CUSTOMER-GROUP", flag: 'customer_group' },
     { id: 18, title: "GROUP-ACCOUNT", flag: 'monther_account' },
-    { id: 19, title: "SUB-MOTHER-ACCOUNT", flag: 'sub_mother_account' },
+    { id: 19, title: "MOTHER-ACCOUNT", flag: 'sub_mother_account' },
     { id: 20, title: "BRANCH-ACCOUNT", flag: 'sub_3rd_mother_account' },
 
-    { id: 21, title: "BRANCH-LISTING", flag: 'branch_listing' },
   ];
 
   useEffect(() => {
@@ -170,7 +169,7 @@ const References = ({ setCurrentView }) => {
         {view === 'LICENSE' && <LicenseSelectionPage />}
         {view === 'CUSTOMER-GROUP' && <CustomerGroup />}
         {view === 'GROUP-ACCOUNT' && <MotherAccount />}
-        {view === 'SUB-MOTHER-ACCOUNT' && <MotherAccountUI />}
+        {view === 'MOTHER-ACCOUNT' && <MotherAccountUI />}
         {view === 'BRANCH-LISTING' && <BranchListing />}
         {view === 'BRANCH-ACCOUNT' && <Sub_3rdmotherAccounts />}
       </div>
