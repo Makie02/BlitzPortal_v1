@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+	import React, { useState, useEffect } from 'react';
 import { Button, Collapse, Spinner, Alert } from 'react-bootstrap';
 import './RolePermissionForm.css';
 import { supabase } from '../supabaseClient';
@@ -55,9 +55,17 @@ export default function RolePermissionForm({ onSubmit }) {
       try {
         setLoading(true);
         
-        // Extract unique role names from userRoles.description
-        const uniqueRoleNames = [...new Set(userRoles.map(r => r.description?.trim()).filter(Boolean))];
+        // Use role field for matching, keep description for display
+        const roleMapping = userRoles.reduce((acc, r) => {
+          if (r.role?.trim()) {
+            acc[r.role.trim()] = r.description?.trim() || r.role.trim();
+          }
+          return acc;
+        }, {});
+        const uniqueRoleNames = Object.keys(roleMapping);
+        
         console.log("📋 Unique roles from user_role table:", uniqueRoleNames);
+        console.log("📋 Role mapping (role -> description):", roleMapping);
 
         if (uniqueRoleNames.length === 0) {
           console.warn("⚠️ No roles found in user_role table");
@@ -95,7 +103,7 @@ export default function RolePermissionForm({ onSubmit }) {
         // Store original permissions for comparison
         setOriginalPermissions(originalMap);
 
-        // Create roles array - include ALL roles from user_role table
+        // Create roles array with both role and displayName
         const loadedRoles = uniqueRoleNames.map(roleName => {
           const existingPermissions = permissionMap[roleName] || [];
           
@@ -108,7 +116,8 @@ export default function RolePermissionForm({ onSubmit }) {
           }
           
           return {
-            name: roleName,
+            name: roleName,  // Role 1, Role 2, etc (for matching database)
+            displayName: roleMapping[roleName],  // ADMIN, Accounting, etc (for display)
             selected: existingPermissions,
             open: false
           };
@@ -452,7 +461,7 @@ export default function RolePermissionForm({ onSubmit }) {
           <div key={index} className="role-card fade-in mb-3">
             <div className="role-header mb-3 d-flex justify-content-between align-items-center">
               <h5 className="mb-0">
-                {role.name}
+                {role.displayName}
                 <span className="ms-2 text-muted" style={{ fontSize: '0.875rem' }}>
                   ({role.selected.length}/{roleCategories.length} selected)
                 </span>
@@ -530,7 +539,7 @@ export default function RolePermissionForm({ onSubmit }) {
                         Saving...
                       </>
                     ) : (
-                      <>💾 Save {role.name} Permissions</>
+                      <>💾 Save {role.displayName} Permissions</>
                     )}
                   </Button>
                 </div>
