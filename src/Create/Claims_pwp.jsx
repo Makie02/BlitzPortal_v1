@@ -1812,106 +1812,194 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
 
 
     const fetchSubAccounts = async (mother) => {
-        setSelectedMother(mother);
-
-        if (!subAccounts[mother.id]) {
-            const { data, error } = await supabase
-                .from("user_mother_account_tags")
-                .select("id, mother_account_name, mother_account_code, UserName") // include UserName
-                .eq("mother_account_id", mother.id) // filter by mother id
-                .order("mother_account_name");
-
-            if (error) return console.error(error);
-
-            const loggedInUsername = parsedUser?.name || "Unknown";
-            console.log("[DEBUG] Logged in user:", loggedInUsername);
-
-            // Filter by logged in username
-            const filteredData = data.filter((item) => item.UserName === loggedInUsername);
-
-            // map data so we can use `name` in JSX
-            const formattedData = filteredData.map((item) => ({
-                id: item.id,
-                name: item.mother_account_name,
-                code: item.mother_account_code,
-            }));
-
-            setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
-        }
-    };
-
-
-    const fetchBranches = async (motherAccountCode) => {
         try {
+            setSelectedMother(mother);
+
+            // prevent duplicate fetch
+            if (subAccounts[mother.id]) return;
+
+            console.log("🟡 Fetching sub-accounts for mother:", mother);
+
             const batchSize = 1000;
             let allData = [];
             let hasMore = true;
             let offset = 0;
 
+            // 🔁 Fetch all batches
             while (hasMore) {
-                console.log(`📥 Fetching branches batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
-
-                const { data, error } = await supabase
-                    .from("sub_3_mother_account")
-                    .select("*") // fetch full row data
-                    .eq("sub_mother_dscode", motherAccountCode) // filter by mother_account_code
-                    .not("branch", "is", null) // exclude nulls
-                    .range(offset, offset + batchSize - 1);
-
                 console.log(
-                    `✅ Fetched branches batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+                    `📥 Fetching master_data_list batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
                 );
 
+                const { data, error } = await supabase
+                    .from("master_data_list")
+                    .select(
+                        `id, mother_acct, mother_code, group_code, agent_name, agent_code, distributor_name, distributor_code`
+                    )
+                    .eq("group_code", mother.code)
+                    .order("mother_acct")
+                    .range(offset, offset + batchSize - 1);
+
                 if (error) {
-                    console.error(error);
-                    Swal.fire("Error", "Failed to fetch branches", "error");
+                    console.error("❌ Supabase error:", error);
+                    Swal.fire("Error", "Failed to fetch master data list", "error");
                     break;
                 }
+
+                console.log(
+                    `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0
+                    } records`
+                );
 
                 if (data && data.length > 0) {
                     allData = [...allData, ...data];
                     offset += batchSize;
                     hasMore = data.length === batchSize;
-                    console.log(`📊 Total branch records so far: ${allData.length}`);
+                    console.log(`📊 Total records so far: ${allData.length}`);
                 } else {
                     hasMore = false;
                 }
             }
 
-            // Extract unique branches with full details
-            const uniqueBranches = [];
-            const seen = new Set();
+            if (!allData.length) {
+                console.warn(`⚠️ No records found for group_code ${mother.code}`);
+                return;
+            }
 
-            allData.forEach((row) => {
-                const branchName = row.branch?.trim();
-                if (branchName && !seen.has(branchName)) {
-                    seen.add(branchName);
-                    uniqueBranches.push({
-                        id: row.id,
-                        name: branchName,
-                        description: row.description || "",
-                        status: row.status,
-                        distributor_code: row.distributor_code,
-                        distributor_name: row.distributor_name,
-                        created_at: row.created_at,
-                    });
-                }
+            // --- clean + normalize strings safely ---
+            const safeLower = (val) =>
+                typeof val === "string" ? val.trim().toLowerCase() : String(val ?? "").toLowerCase();
+
+            const loggedInUsername = safeLower(parsedUser?.name);
+            const loggedInUserID = safeLower(parsedUser?.UserID);
+            const selectedDistributorName = safeLower(selectedDistributor?.name);
+            const selectedDistributorCode = safeLower(selectedDistributor?.code);
+
+            console.log("[DEBUG] Logged in user:", loggedInUsername);
+            console.log("[DEBUG] Logged in UserID:", loggedInUserID);
+            console.log("Distributor_Name:", selectedDistributorName);
+            console.log("Distributor_Code:", selectedDistributorCode);
+
+            // ✅ Filter by distributor + agent
+            const filteredData = allData.filter((item) => {
+                const distributorName = safeLower(item.distributor_name);
+                const distributorCode = safeLower(item.distributor_code);
+                const agentName = safeLower(item.agent_name);
+                const agentCode = safeLower(item.agent_code);
+
+                const distributorMatch =
+                    distributorName === selectedDistributorName ||
+                    distributorCode === selectedDistributorCode;
+
+                const agentMatch =
+                    agentName === loggedInUsername || agentCode === loggedInUserID;
+
+                return distributorMatch && agentMatch;
             });
 
-            setBranchTypes(uniqueBranches);
+            if (filteredData.length === 0) {
+                console.warn("⚠️ No matching data for this distributor and user.");
+                console.table(allData);
+                return;
+            }
 
-            // Display everything in console clearly
-            console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
-            console.log(`🎉 Finished fetching all branches: ${allData.length} total records`);
-            console.log(`✨ Unique branches: ${uniqueBranches.length}`);
-            console.table(uniqueBranches);
-            console.log("📋 Full Row Data:", allData);
-            console.groupEnd();
+            // ✅ Remove duplicates (unique mother_acct + mother_code)
+            const uniqueData = Array.from(
+                new Map(
+                    filteredData.map((item) => [
+                        `${safeLower(item.mother_acct)}_${safeLower(item.mother_code)}`,
+                        item,
+                    ])
+                ).values()
+            );
+
+            // ✅ Format for display
+            const formattedData = uniqueData.map((item) => ({
+                id: item.id,
+                name: `${item.mother_acct ?? ""} (${item.mother_code ?? ""})`,
+                code: item.mother_code ?? "",
+            }));
+
+            console.log(`[✅ INFO] Displaying ${formattedData.length} master_data_list record(s):`);
+            console.table(formattedData);
+
+            setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
         } catch (err) {
-            console.error("❌ Error fetching branches:", err.message);
-            Swal.fire("Error", err.message, "error");
+            console.error("❌ Unexpected error fetching master_data_list:", err);
         }
     };
+
+
+   const fetchBranches = async (motherAccountCode) => {
+     try {
+       console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
+ 
+       const batchSize = 1000;
+       let allData = [];
+       let hasMore = true;
+       let offset = 0;
+ 
+       while (hasMore) {
+         console.log(`📥 Fetching branches batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+ 
+         const { data, error } = await supabase
+           .from("master_data_list")
+           .select("*")
+           .eq("mother_code", motherAccountCode) // ✅ Match mother_code column
+           .not("bp_name", "is", null) // Filter only records with bp_name
+           .range(offset, offset + batchSize - 1);
+ 
+         console.log(`✅ Fetched branches batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`);
+ 
+         if (error) {
+           console.error("❌ Supabase error:", error);
+           Swal.fire("Error", "Failed to fetch branches", "error");
+           break;
+         }
+ 
+         if (data && data.length > 0) {
+           allData = [...allData, ...data];
+           offset += batchSize;
+           hasMore = data.length === batchSize;
+           console.log(`📊 Total branch records so far: ${allData.length}`);
+         } else {
+           hasMore = false;
+         }
+       }
+ 
+       // Extract unique branches based on bp_name
+       const uniqueBranches = [];
+       const seen = new Set();
+ 
+       allData.forEach((row) => {
+         const branchName = row.bp_name?.trim();
+         if (branchName && !seen.has(branchName)) {
+           seen.add(branchName);
+           uniqueBranches.push({
+             id: row.id,
+             name: branchName,
+             code: row.bp_code || "",
+             description: row.bp_code || "",
+             status: row.status,
+             distributor_code: row.distributor_code,
+             created_at: row.created_at,
+           });
+         }
+       });
+ 
+       setBranchTypes(uniqueBranches);
+ 
+       console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
+       console.log(`🎉 Finished fetching all branches: ${allData.length} total records`);
+       console.log(`✨ Unique branches (bp_name): ${uniqueBranches.length}`);
+       console.table(uniqueBranches);
+       console.groupEnd();
+     } catch (err) {
+       console.error("❌ Error fetching branches:", err.message);
+       Swal.fire("Error", err.message, "error");
+     }
+   };
+ 
 
 
     const toggleBranchType = (code) => {
@@ -2083,8 +2171,16 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
                                             } else {
                                                 console.log("⚠️ No distributor selected or found.");
                                             }
-                                        }}
 
+                                            // ✅ Reset related data when distributor changes
+                                            setSelectedMother(null);
+                                            setFormData((prev) => ({
+                                                ...prev,
+                                                accountType: selectedMother?.name === "NON-CHAIN" ? [] : null,
+                                            }));
+                                            setShowBranchInput(false);
+                                            setSubAccounts({});
+                                        }}
                                         style={{
                                             paddingRight: "30px",
                                             borderColor: formData.distributor ? "green" : "",
