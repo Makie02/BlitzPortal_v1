@@ -2181,6 +2181,17 @@ const openCreateModal = async () => {
     );
   };
 
+  const handleSelectAll = () => {
+  // Select all filtered distributors
+  const allFilteredNames = filteredDistributors.map(d => d.name);
+  setSelectedDistributors(allFilteredNames);
+};
+
+const handleClearAll = () => {
+  // Clear all selections
+  setSelectedDistributors([]);
+};
+
   const [savedDistributors, setSavedDistributors] = useState([]);
 
   const [stableDistributors, setStableDistributors] = useState([]);
@@ -2323,6 +2334,7 @@ const openCreateModal = async () => {
         text: `${newDistributorsToSave.length} new distributor(s) saved successfully!`,
         confirmButtonColor: '#3085d6',
       });
+    setModalType(null);
 
       // Refresh saved distributors list
       await fetchSavedDistributors(supabaseUsername);
@@ -4719,33 +4731,65 @@ const openCreateModal = async () => {
           )}
         </Modal.Body>
 
-        <Modal.Footer style={{ padding: '16px 24px', backgroundColor: '#f8f9fa', borderTop: '1px solid #dee2e6' }}>
-          <Button
-            variant="secondary"
-            onClick={() => setModalType(null)}
-            style={{
-              padding: '10px 24px',
-              borderRadius: '6px',
-              fontWeight: '500'
-            }}
-          >
-            Close
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSaveDistributors}
-            disabled={selectedDistributors.length === 0}
-            style={{
-              padding: '10px 24px',
-              borderRadius: '6px',
-              fontWeight: '500',
-              backgroundColor: selectedDistributors.length === 0 ? '#6c757d' : '#5b8fa3',
-              border: 'none'
-            }}
-          >
-            Save Changes
-          </Button>
-        </Modal.Footer>
+<Modal.Footer style={{ padding: '16px 24px', backgroundColor: '#f8f9fa', borderTop: '1px solid #dee2e6' }}>
+  <div className="d-flex justify-content-between align-items-center w-100">
+    <div className="d-flex gap-2">
+      <Button
+        variant="success"
+        onClick={handleSelectAll}
+        style={{
+          padding: '10px 24px',
+          borderRadius: '6px',
+          fontWeight: '500'
+        }}
+      >
+        ✓ Select All
+      </Button>
+      <Button
+        variant="danger"
+        onClick={handleClearAll}
+        style={{
+          padding: '10px 24px',
+          borderRadius: '6px',
+          fontWeight: '500'
+        }}
+      >
+        ✗ Clear All
+      </Button>
+      <span className="ms-3 align-self-center text-muted">
+        Selected: {selectedDistributors.length} / {filteredDistributors.length}
+      </span>
+    </div>
+    
+    <div className="d-flex gap-2">
+      <Button
+        variant="secondary"
+        onClick={() => setModalType(null)}
+        style={{
+          padding: '10px 24px',
+          borderRadius: '6px',
+          fontWeight: '500'
+        }}
+      >
+        Close
+      </Button>
+      <Button
+        variant="primary"
+        onClick={handleSaveDistributors}
+        disabled={selectedDistributors.length === 0}
+        style={{
+          padding: '10px 24px',
+          borderRadius: '6px',
+          fontWeight: '500',
+          backgroundColor: selectedDistributors.length === 0 ? '#6c757d' : '#5b8fa3',
+          border: 'none'
+        }}
+      >
+        Save Changes
+      </Button>
+    </div>
+  </div>
+</Modal.Footer>
       </Modal>
 
 
