@@ -25,6 +25,8 @@ import MotherAccount from '../NewComponents/MotherAccount.js';
 import MotherAccountUI from '../NewComponents/Sub_mother_account.js';
 import BranchListing from '../NewComponents/BranchListing.jsx';
 import Sub_3rdmotherAccounts from '../NewComponents/Sub_3_mother_account.js';
+import UserList from '../NewComponents/UserList.jsx';
+import MasterDataBranch from '../NewComponents/MasterdataBranch.jsx';
 
 const References = ({ setCurrentView }) => {
   const [view, setView] = useState(null); // selected view
@@ -53,8 +55,13 @@ const References = ({ setCurrentView }) => {
     { id: 17, title: "CUSTOMER-GROUP", flag: 'customer_group' },
     { id: 18, title: "GROUP-ACCOUNT", flag: 'monther_account' },
     { id: 19, title: "MOTHER-ACCOUNT", flag: 'sub_mother_account' },
-    { id: 20, title: "BRANCH-ACCOUNT", flag: 'sub_3rd_mother_account' },
+    { id: 20, title: "BP-ACCOUNT", flag: 'sub_3rd_mother_account' },
+    { id: 21, title: "USER-LIST", flag: 'userList' },
+    { id: 22, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch' },
 
+
+
+    
   ];
 
   useEffect(() => {
@@ -145,7 +152,7 @@ const References = ({ setCurrentView }) => {
     return (
       <div style={{ padding: '20px' }}>
         <button onClick={() => setView(null)} style={backButtonStyle}>
-          ← Back 
+          ← Back
         </button>
 
         {view === 'USER ROLE' && <UserRole />}
@@ -171,7 +178,13 @@ const References = ({ setCurrentView }) => {
         {view === 'GROUP-ACCOUNT' && <MotherAccount />}
         {view === 'MOTHER-ACCOUNT' && <MotherAccountUI />}
         {view === 'BRANCH-LISTING' && <BranchListing />}
-        {view === 'BRANCH-ACCOUNT' && <Sub_3rdmotherAccounts />}
+        {view === 'BP-ACCOUNT' && <Sub_3rdmotherAccounts />}
+        {view === 'USER-LIST' && <UserList />}
+        {view === 'LIST-BP_ACCOUNT' && <MasterDataBranch />}
+
+        
+
+
       </div>
     );
   }
