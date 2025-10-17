@@ -1080,6 +1080,6 @@ const ViewDataModal = ({ visaCode, onClose }) => {
             </div >
         </div >
     );
-};
+}; 
 
 export default ViewDataModal;
