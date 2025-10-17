@@ -15,9 +15,9 @@ const CoverVisa = () => {
     createForm: "",
     Notification: false,
   });
-const [searchTerm, setSearchTerm] = useState('');
-const [isOpen, setIsOpen] = useState(false);
-const dropdownRef = useRef(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedDistributorUsername, setSelectedDistributorUsername] = useState("");
   const [selectedUsername, setSelectedUsername] = useState('');
@@ -324,7 +324,7 @@ const dropdownRef = useRef(null);
       // Fetch users for name lookup
       const { data: usersData, error: usersError } = await supabase
         .from("Account_Users")
-        .select( "name");
+        .select("name");
 
       if (approvalsError)
         console.error("Error fetching approvals:", approvalsError);
@@ -364,7 +364,7 @@ const dropdownRef = useRef(null);
     setTotalRemaining(total);
   }, []);
 
-React.useEffect(() => {
+  React.useEffect(() => {
     const storedUser = JSON.parse(localStorage.getItem("loggedInUser"));
     if (!storedUser || !storedUser.id) return;
 
@@ -510,142 +510,137 @@ React.useEffect(() => {
 
 
 
-// 🔹 Utility function to convert files to Base64 with prefix
-const toBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file); // includes "data:<type>;base64,..." prefix
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-  });
-
-const handleSubmits = async (e) => {
-  e.preventDefault();
-
-  if (
-    !formData.coverCode ||
-    !formData.distributor ||
-    !formData.amountbadget ||
-    !formData.createForm
-  ) {
-    await Swal.fire({
-      icon: "warning",
-      title: "Missing fields",
-      text: "Please fill in all required fields including Assign Name.",
-      confirmButtonText: "OK",
+  // 🔹 Utility function to convert files to Base64 with prefix
+  const toBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file); // includes "data:<type>;base64,..." prefix
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
     });
-    return;
-  }
 
-  try {
-    // ✅ Get logged-in user from localStorage
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+  const handleSubmits = async (e) => {
+    e.preventDefault();
 
-    if (!parsedUser) {
+    if (
+      !formData.coverCode ||
+      !formData.distributor ||
+      !formData.amountbadget ||
+      !formData.createForm
+    ) {
       await Swal.fire({
-        icon: "error",
-        title: "Login Required",
-        text: "You must be logged in to submit.",
+        icon: "warning",
+        title: "Missing fields",
+        text: "Please fill in all required fields including Assign Name.",
         confirmButtonText: "OK",
       });
       return;
     }
 
-    // ✅ Fetch the user ID for the selected username from formData.createForm
-    const { data: selectedUserData, error: userError } = await supabase
-      .from("Account_Users")
-      .select("UserID")
-      .eq("name", formData.createForm)
-      .single();
+    try {
+      // ✅ Get logged-in user from localStorage
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
 
-    if (userError || !selectedUserData) {
-      await Swal.fire({
-        icon: "error",
-        title: "User Not Found",
-        text: "Could not find user ID for the selected name.",
-        confirmButtonText: "OK",
-      });
-      return;
-    }
-
-    const selectedUserId = selectedUserData.UserID;
-    const accountCodes = formData.accountType; // array of codes
-
-    // ✅ Insert into main cover_pwp
-    const dataToInsert = {
-      cover_code: formData.coverCode,
-      distributor_code: formData.distributor,
-      account_type: accountCodes.join(","),
-      amount_badget: parseFloat(formData.amountbadget),
-      pwp_type: formData.coverType || "COVER_PWP",
-      objective: formData.objective,
-      promo_scheme: formData.promoScheme,
-      details: formData.details,
-      remarks: formData.remarks,
-      notification: false,
-      createForm: selectedUserId, // save user ID
-    };
-
-    const { error: mainError } = await supabase
-      .from("cover_pwp")
-      .insert([dataToInsert]);
-    if (mainError) throw mainError;
-
-    // ✅ Insert into amount_badget
-    const { error: budgetError } = await supabase.from("amount_badget").insert([
-      {
-        pwp_code: formData.coverCode,
-        amountbadget: parseFloat(formData.amountbadget),
-        createduser: selectedUserId,
-        distributor: formData.distributor,
-        remainingbalance: parseFloat(formData.amountbadget),
-        Approved: false,
-      },
-    ]);
-    if (budgetError) throw budgetError;
-
-    // ✅ Handle file attachments with Base64 (with prefix)
-    if (files.length > 0) {
-      const attachmentInserts = [];
-
-      for (const file of files) {
-        const base64Data = await toBase64(file);
-        attachmentInserts.push({
-          cover_code: formData.coverCode,
-          file_name: file.name,
-          file_type: file.type || null,
-          file_size: file.size || null,
-          file_data: base64Data, // ✅ full Base64 string with prefix
+      if (!parsedUser) {
+        await Swal.fire({
+          icon: "error",
+          title: "Login Required",
+          text: "You must be logged in to submit.",
+          confirmButtonText: "OK",
         });
+        return;
       }
 
-      const { error: attachmentError } = await supabase
-        .from("cover_attachments")
-        .insert(attachmentInserts);
+      // ✅ Fetch the user ID for the selected username from formData.createForm
+      const { data: selectedUserData, error: userError } = await supabase
+        .from("Account_Users")
+        .select("UserID")
+        .eq("name", formData.createForm)
+        .single();
 
-      if (attachmentError) throw attachmentError;
+      if (userError || !selectedUserData) {
+        await Swal.fire({
+          icon: "error",
+          title: "User Not Found",
+          text: "Could not find user ID for the selected name.",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      const selectedUserId = selectedUserData.UserID;
+
+      // ✅ Insert into main cover_pwp
+      const dataToInsert = {
+        cover_code: formData.coverCode,
+        distributor_code: formData.distributor,
+        amount_badget: parseFloat(formData.amountbadget),
+        pwp_type: formData.coverType || "COVER_PWP",
+        remarks: formData.remarks,
+        notification: false,
+        createForm: selectedUserId, // save user ID
+      };
+
+      const { error: mainError } = await supabase
+        .from("cover_pwp")
+        .insert([dataToInsert]);
+      if (mainError) throw mainError;
+
+      // ✅ Insert into amount_badget
+      const { error: budgetError } = await supabase.from("amount_badget").insert([
+        {
+          pwp_code: formData.coverCode,
+          amountbadget: parseFloat(formData.amountbadget),
+          createduser: selectedUserId,
+          distributor: formData.distributor,
+          remainingbalance: parseFloat(formData.amountbadget),
+          Approved: false,
+        },
+      ]);
+      if (budgetError) throw budgetError;
+
+      // ✅ Handle file attachments with Base64 (with prefix)
+      if (files.length > 0) {
+        const attachmentInserts = [];
+
+        for (const file of files) {
+          const base64Data = await toBase64(file);
+          attachmentInserts.push({
+            cover_code: formData.coverCode,
+            file_name: file.name,
+            file_type: file.type || null,
+            file_size: file.size || null,
+            file_data: base64Data, // ✅ full Base64 string with prefix
+          });
+        }
+
+        const { error: attachmentError } = await supabase
+          .from("cover_attachments")
+          .insert(attachmentInserts);
+
+        if (attachmentError) throw attachmentError;
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: "Success!",
+        text: "Form and attachments submitted successfully!",
+        confirmButtonText: "Great",
+      });
+
+      window.location.reload();
+      setCurrentStep(2);
+    } catch (err) {
+      console.error("Unexpected error during submit:", err);
+      await Swal.fire({
+        icon: "error",
+        title: "Unexpected Error",
+        text: "Something went wrong. See console for details.",
+        confirmButtonText: "OK",
+      });
     }
-
-    await Swal.fire({
-      icon: "success",
-      title: "Success!",
-      text: "Form and attachments submitted successfully!",
-      confirmButtonText: "Great",
-    });
-
-    window.location.reload();
-    setCurrentStep(2);
-  } catch (err) {
-    console.error("Unexpected error during submit:", err);
-    await Swal.fire({
-      icon: "error",
-      title: "Unexpected Error",
-      text: "Something went wrong. See console for details.",
-      confirmButtonText: "OK",
-    });
-  }
-};
+  };
 
 
   const storedUser = localStorage.getItem("loggedInUser");
@@ -744,38 +739,38 @@ const handleSubmits = async (e) => {
 
     fetchUsernames();
   }, []);
-useEffect(() => {
-  function handleClickOutside(event) {
-    if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-      setIsOpen(false);
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
     }
-  }
-  document.addEventListener('mousedown', handleClickOutside);
-  return () => document.removeEventListener('mousedown', handleClickOutside);
-}, []);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-const filteredUsernames = usernames.filter(username =>
-  username.toLowerCase().includes(searchTerm.toLowerCase())
-);
+  const filteredUsernames = usernames.filter(username =>
+    username.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-const handleSelectUsername = (username) => {
-  setSelectedUsername(username);
-  setFormData({ ...formData, createForm: username });
-  setSearchTerm(username);
-  setIsOpen(false);
-  
-  // Trigger the existing handleFormChange logic
-  handleFormChange({ target: { name: 'createForm', value: username } });
-};
+  const handleSelectUsername = (username) => {
+    setSelectedUsername(username);
+    setFormData({ ...formData, createForm: username });
+    setSearchTerm(username);
+    setIsOpen(false);
 
-const handleInputChange = (e) => {
-  setSearchTerm(e.target.value);
-  setIsOpen(true);
-  if (!e.target.value) {
-    setSelectedUsername('');
-    setFormData({ ...formData, createForm: '' });
-  }
-};
+    // Trigger the existing handleFormChange logic
+    handleFormChange({ target: { name: 'createForm', value: username } });
+  };
+
+  const handleInputChange = (e) => {
+    setSearchTerm(e.target.value);
+    setIsOpen(true);
+    if (!e.target.value) {
+      setSelectedUsername('');
+      setFormData({ ...formData, createForm: '' });
+    }
+  };
   return (
     <div style={{ padding: "30px", height: "90vh" }} className="containers">
       <div className="row align-items-center mb-4">
@@ -868,87 +863,87 @@ const handleInputChange = (e) => {
             </h2>
           </h2>
           <div className="row g-3">
-            
+
             {/* ADD THIS NEW USERNAME FIELD: */}
-    <div className="col-md-3" style={{ position: "relative", width: "550px" }} ref={dropdownRef}>
-  <label className="form-label">
-    Assign Name <span style={{ color: "red" }}>*</span>
-  </label>
-  
-  <div style={{ position: "relative" }}>
-    <input
-      type="text"
-      className="form-control"
-      placeholder="Search or select username"
-      value={searchTerm}
-      onChange={handleInputChange}
-      onFocus={() => setIsOpen(true)}
-      style={{
-        paddingRight: "30px",
-        borderColor: selectedUsername ? "green" : "",
-        transition: "border-color 0.3s",
-      }}
-    />
+            <div className="col-md-3" style={{ position: "relative", width: "550px" }} ref={dropdownRef}>
+              <label className="form-label">
+                Assign Name <span style={{ color: "red" }}>*</span>
+              </label>
 
-    {selectedUsername && (
-      <span
-        style={{
-          position: 'absolute',
-          right: '20px',
-          top: '8px',
-          color: 'green',
-          fontWeight: 'bold',
-          fontSize: '25px',
-          pointerEvents: 'none',
-          userSelect: 'none',
-        }}
-      >
-        ✓
-      </span>
-    )}
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Search or select username"
+                  value={searchTerm}
+                  onChange={handleInputChange}
+                  onFocus={() => setIsOpen(true)}
+                  style={{
+                    paddingRight: "30px",
+                    borderColor: selectedUsername ? "green" : "",
+                    transition: "border-color 0.3s",
+                  }}
+                />
 
-    {isOpen && (
-      <div
-        style={{
-          position: 'absolute',
-          top: '100%',
-          left: 0,
-          right: 0,
-          maxHeight: '500px',
-          overflowY: 'auto',
-          backgroundColor: 'white',
-          border: '1px solid #ccc',
-          borderTop: 'none',
-          zIndex: 1000,
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-        }}
-      >
-        {filteredUsernames.length > 0 ? (
-          filteredUsernames.map((username, index) => (
-            <div
-              key={index}
-              onClick={() => handleSelectUsername(username)}
-              style={{
-                padding: '8px 12px',
-                cursor: 'pointer',
-                backgroundColor: selectedUsername === username ? '#e9ecef' : 'white',
-                borderBottom: '1px solid #f0f0f0'
-              }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
-              onMouseLeave={(e) => e.target.style.backgroundColor = selectedUsername === username ? '#e9ecef' : 'white'}
-            >
-              {username}
+                {selectedUsername && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      right: '20px',
+                      top: '8px',
+                      color: 'green',
+                      fontWeight: 'bold',
+                      fontSize: '25px',
+                      pointerEvents: 'none',
+                      userSelect: 'none',
+                    }}
+                  >
+                    ✓
+                  </span>
+                )}
+
+                {isOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      maxHeight: '500px',
+                      overflowY: 'auto',
+                      backgroundColor: 'white',
+                      border: '1px solid #ccc',
+                      borderTop: 'none',
+                      zIndex: 1000,
+                      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    {filteredUsernames.length > 0 ? (
+                      filteredUsernames.map((username, index) => (
+                        <div
+                          key={index}
+                          onClick={() => handleSelectUsername(username)}
+                          style={{
+                            padding: '8px 12px',
+                            cursor: 'pointer',
+                            backgroundColor: selectedUsername === username ? '#e9ecef' : 'white',
+                            borderBottom: '1px solid #f0f0f0'
+                          }}
+                          onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+                          onMouseLeave={(e) => e.target.style.backgroundColor = selectedUsername === username ? '#e9ecef' : 'white'}
+                        >
+                          {username}
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ padding: '12px', color: '#6c757d', textAlign: 'center' }}>
+                        No results found
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          ))
-        ) : (
-          <div style={{ padding: '12px', color: '#6c757d', textAlign: 'center' }}>
-            No results found
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-</div>
 
             <div className="col-md-3" style={{ position: "relative", width: "550px" }}>
               <label className="form-label">
