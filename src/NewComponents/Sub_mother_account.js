@@ -43,6 +43,7 @@ function MotherAccountPage() {
   });
 
   // Fetch sub-accounts
+  // ✅ Fetch sub-accounts (now filtered by group_code instead of mother_id)
   const fetchSubAccounts = async (mother) => {
     setActiveMother(mother);
     setSubAccountSearchQuery("");
@@ -50,29 +51,26 @@ function MotherAccountPage() {
     const { data, error } = await supabase
       .from("sub_mother_account")
       .select(`
-        id,
-        mother_id,
-        dscode,
-        name,
-        status,
-        created_at,
-        group_name,
-        mother_account (
-          id,
-          code,
-          name
-        )
-      `)
-      .eq("mother_id", mother.id)
+      id,
+      group_code,
+      dscode,
+      name,
+      status,
+      created_at,
+      group_name
+    `)
+      .eq("group_code", mother.code)
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error(error);
+      console.error("❌ Error fetching sub-accounts:", error);
       Swal.fire("Error", "Failed to load sub-accounts", "error");
     } else {
       setSubAccounts(data);
     }
   };
+
+
 
   // Filter sub-accounts
   const filteredSubAccounts = subAccounts.filter((sub) => {
@@ -103,14 +101,16 @@ function MotherAccountPage() {
 
     try {
       if (editingSubAccount) {
+        // ✏️ Update existing
         const { error } = await supabase
           .from("sub_mother_account")
           .update({ name: formData.name })
           .eq("id", editingSubAccount.id);
+
         if (error) throw error;
         Swal.fire("Success", "Sub-account updated!", "success");
       } else {
-        // ✅ Generate next BP code
+        // ✅ Generate next DS code
         const { data: existing, error: fetchError } = await supabase
           .from("sub_mother_account")
           .select("dscode")
@@ -125,18 +125,19 @@ function MotherAccountPage() {
           if (!isNaN(lastNumber)) nextdscode = `DS${lastNumber + 1}`;
         }
 
-        // ✅ Insert with group_name
+        // ✅ Insert (no mother_id)
         const { error: insertError } = await supabase
           .from("sub_mother_account")
           .insert([
             {
-              mother_id: activeMother.id,
               name: formData.name,
               dscode: nextdscode,
               status: true,
-              group_name: activeMother.name, // ✅ Added here
+              group_name: activeMother.name,
+              group_code: activeMother.code, // ✅ only this used now
             },
           ]);
+
         if (insertError) throw insertError;
 
         Swal.fire("Success", `Sub-account created! (${nextdscode})`, "success");
@@ -149,6 +150,8 @@ function MotherAccountPage() {
       Swal.fire("Error", error.message, "error");
     }
   };
+
+
 
   const handleBack = () => {
     setActiveMother(null);
@@ -202,8 +205,8 @@ function MotherAccountPage() {
           if (!name) return;
           const record = {
             name,
-            mother_id: activeMother.id,
-            group_name: activeMother.name, // ✅ Added for CSV import
+            group_name: activeMother.name, // ✅
+            group_code: activeMother.code, // ✅
           };
           if (hasID && id) {
             if (existingIDs.includes(id)) {
@@ -251,6 +254,7 @@ function MotherAccountPage() {
 
     e.target.value = null;
   };
+
 
   // ✅ Export CSV
   const exportSubAccountsToCSV = (subs, motherInfo) => {
@@ -350,7 +354,7 @@ function MotherAccountPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [subAccountSearchQuery]);
- // Add these style objects at the bottom with your other styles
+  // Add these style objects at the bottom with your other styles
 
   const paginationContainer = {
     display: "flex",
@@ -459,13 +463,13 @@ function MotherAccountPage() {
             ← Back to Mother Accounts
           </button>
 
-          <h2>Mother Accounts for {activeMother.name}</h2>
+          <h2>{activeMother.name}</h2>
 
           {/* Search bar for sub-accounts */}
           <div style={{ marginBottom: 10, width: "300px" }}>
             <input
               type="text"
-              placeholder="Search sub-accounts..."
+              placeholder="Search accounts..."
               value={subAccountSearchQuery}
               onChange={(e) => setSubAccountSearchQuery(e.target.value)}
               style={inputStyle}
@@ -474,7 +478,7 @@ function MotherAccountPage() {
 
           <div style={{ marginBottom: 10 }}>
             <button style={btnAdd} onClick={() => { resetModal(); setShowModal(true); }}>
-              + Add Sub-Account
+              + Add Mother Account
             </button>
             <button
               style={{ ...btnAdd, marginLeft: 10, backgroundColor: "#6c757d" }}
@@ -502,10 +506,9 @@ function MotherAccountPage() {
               <thead>
                 <tr>
                   <th style={thStyle}>ID</th>
+                  <th style={thStyle}>Group Code</th>
                   <th style={thStyle}>Mother Code</th>
-                  <th style={thStyle}>BP Code</th>
-                  <th style={thStyle}>Sub-Mother Name</th>
-                  <th style={thStyle}>Group Name</th>
+                  <th style={thStyle}>Mother Name</th>
 
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Created At</th>
@@ -523,11 +526,10 @@ function MotherAccountPage() {
                   paginatedSubAccounts.map((sub) => (
                     <tr key={sub.id} style={trResponsive}>
                       <td style={tdStyle}>{sub.id}</td>
-                      <td style={tdStyle}>{sub.mother_account?.code || "-"}</td>
+                      <td style={tdStyle}>{sub.group_code || "-"}</td>
                       <td style={tdStyle}>{sub.dscode}</td> {/* ✅ KEPT THIS LINE */}
 
                       <td style={tdStyle}>{sub.name}</td> {/* ✅ KEPT THIS LINE */}
-                      <td style={tdStyle}>{sub.group_name}</td> {/* ✅ KEPT THIS LINE */}
 
                       <td style={tdStyle}>{sub.status ? "Active" : "Inactive"}</td>
                       <td style={tdStyle}>{new Date(sub.created_at).toLocaleString()}</td>
@@ -549,7 +551,7 @@ function MotherAccountPage() {
         </div>
       )}
 
-  {totalItems > 0 && (
+      {totalItems > 0 && (
         <div style={paginationContainer}>
           <div style={paginationInfo}>
             Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} entries
@@ -609,14 +611,14 @@ function MotherAccountPage() {
             </button>
           </div>
         </div>
-      )}  
+      )}
       {showModal && (
         <div style={modalOverlay}>
           <div style={modalContent}>
             <h3>
               {editingSubAccount
-                ? `Edit Sub-Account for ${activeMother?.name}`
-                : `Create Sub-Account for ${activeMother?.name}`}
+                ? `Edit Mother-Account for ${activeMother?.name}`
+                : `Create Mother-Account for ${activeMother?.name}`}
             </h3>
             <button style={closeBtn} onClick={resetModal}>
               &times;
@@ -627,7 +629,7 @@ function MotherAccountPage() {
                 name="name"
                 value={formData.name}
                 onChange={handleInputChange}
-                placeholder="Sub-account name"
+                placeholder="Mother-account name"
                 style={inputStyle}
                 autoFocus
               />
