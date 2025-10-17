@@ -1113,128 +1113,128 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
     }
   };
 
-const fetchBranches = async (motherAccountCode) => {
-  try {
-    console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
+  const fetchBranches = async (motherAccountCode) => {
+    try {
+      console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
 
-    const distributorCode = selectedDistributor?.code;
-    if (!distributorCode) {
-      console.error("❌ No distributor selected!");
-      return;
-    }
-
-    // ✅ Use cached Accounts_List
-    const cachedData = accountsListCache[distributorCode];
-    if (!cachedData || cachedData.length === 0) {
-      console.warn("⚠️ No cached Accounts_List found.");
-      return;
-    }
-
-    // Filter by mother_code
-    const filteredData = cachedData.filter(
-      (item) => (item.mother_code || "").trim() === motherAccountCode.trim() && item.bp_code
-    );
-
-    if (filteredData.length === 0) {
-      console.warn("⚠️ No branches found for this mother account.");
-      setBranchTypes([]);
-      return;
-    }
-
-    // 🔥 Ensure BP names map is ready
-    let bpMap = bpNamesMap;
-    if (!bpMap || Object.keys(bpMap).length === 0) {
-      console.log("📥 Fetching BP names from Bp_Accounts...");
-      const { data: bpData, error: bpError } = await supabase
-        .from("Bp_Accounts")
-        .select("bp_code, bp_name");
-
-      if (bpError) {
-        console.error("❌ Failed to fetch Bp_Accounts:", bpError);
+      const distributorCode = selectedDistributor?.code;
+      if (!distributorCode) {
+        console.error("❌ No distributor selected!");
         return;
       }
 
-      bpMap = {};
-      bpData.forEach((bp) => {
-        if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
-      });
-
-      setBpNamesMap(bpMap);
-    }
-
-    // Map branches to names
-    let uniqueBranches = filteredData
-      .map((row) => {
-        const bpCode = (row.bp_code || "").trim();
-        if (!bpCode) return null;
-
-        // ✅ Get bp_name from map
-        let branchName = bpMap[bpCode];
-
-        return {
-          id: row.id,
-          name: branchName || bpCode,
-          code: bpCode,
-          bp_name: branchName || bpCode,
-          status: row.status,
-          distributor_code: row.distributor_code,
-          agent_code: row.agent_code,
-          agent_name: agentNamesMap[row.agent_code] || row.agent_code,
-          _needsMapping: !branchName, // ✅ Flag if walang mapping
-        };
-      })
-      .filter(Boolean);
-
-    // 🔥 If may branches na walang mapping, fetch directly from Bp_Accounts
-    const unmappedCodes = uniqueBranches
-      .filter((b) => b._needsMapping)
-      .map((b) => b.code);
-
-    if (unmappedCodes.length > 0) {
-      console.log(`📥 Fetching BP names for unmapped codes:`, unmappedCodes);
-      const { data: bpDataDirect, error: bpErrorDirect } = await supabase
-        .from("Bp_Accounts")
-        .select("bp_code, bp_name")
-        .in("bp_code", unmappedCodes);
-
-      if (bpErrorDirect) {
-        console.error("❌ Failed to fetch unmapped BP names:", bpErrorDirect);
-      } else {
-        // ✅ Map directly sa results
-        const directMap = {};
-        bpDataDirect.forEach((bp) => {
-          if (bp.bp_code) directMap[bp.bp_code.trim()] = bp.bp_name;
-        });
-
-        // ✅ Update uniqueBranches with bp_name
-        uniqueBranches = uniqueBranches.map((branch) => {
-          if (branch._needsMapping && directMap[branch.code]) {
-            return {
-              ...branch,
-              name: directMap[branch.code],
-              bp_name: directMap[branch.code],
-              _needsMapping: false,
-            };
-          }
-          return branch;
-        });
+      // ✅ Use cached Accounts_List
+      const cachedData = accountsListCache[distributorCode];
+      if (!cachedData || cachedData.length === 0) {
+        console.warn("⚠️ No cached Accounts_List found.");
+        return;
       }
+
+      // Filter by mother_code
+      const filteredData = cachedData.filter(
+        (item) => (item.mother_code || "").trim() === motherAccountCode.trim() && item.bp_code
+      );
+
+      if (filteredData.length === 0) {
+        console.warn("⚠️ No branches found for this mother account.");
+        setBranchTypes([]);
+        return;
+      }
+
+      // 🔥 Ensure BP names map is ready
+      let bpMap = bpNamesMap;
+      if (!bpMap || Object.keys(bpMap).length === 0) {
+        console.log("📥 Fetching BP names from Bp_Accounts...");
+        const { data: bpData, error: bpError } = await supabase
+          .from("Bp_Accounts")
+          .select("bp_code, bp_name");
+
+        if (bpError) {
+          console.error("❌ Failed to fetch Bp_Accounts:", bpError);
+          return;
+        }
+
+        bpMap = {};
+        bpData.forEach((bp) => {
+          if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
+        });
+
+        setBpNamesMap(bpMap);
+      }
+
+      // Map branches to names
+      let uniqueBranches = filteredData
+        .map((row) => {
+          const bpCode = (row.bp_code || "").trim();
+          if (!bpCode) return null;
+
+          // ✅ Get bp_name from map
+          let branchName = bpMap[bpCode];
+
+          return {
+            id: row.id,
+            name: branchName || bpCode,
+            code: bpCode,
+            bp_name: branchName || bpCode,
+            status: row.status,
+            distributor_code: row.distributor_code,
+            agent_code: row.agent_code,
+            agent_name: agentNamesMap[row.agent_code] || row.agent_code,
+            _needsMapping: !branchName, // ✅ Flag if walang mapping
+          };
+        })
+        .filter(Boolean);
+
+      // 🔥 If may branches na walang mapping, fetch directly from Bp_Accounts
+      const unmappedCodes = uniqueBranches
+        .filter((b) => b._needsMapping)
+        .map((b) => b.code);
+
+      if (unmappedCodes.length > 0) {
+        console.log(`📥 Fetching BP names for unmapped codes:`, unmappedCodes);
+        const { data: bpDataDirect, error: bpErrorDirect } = await supabase
+          .from("Bp_Accounts")
+          .select("bp_code, bp_name")
+          .in("bp_code", unmappedCodes);
+
+        if (bpErrorDirect) {
+          console.error("❌ Failed to fetch unmapped BP names:", bpErrorDirect);
+        } else {
+          // ✅ Map directly sa results
+          const directMap = {};
+          bpDataDirect.forEach((bp) => {
+            if (bp.bp_code) directMap[bp.bp_code.trim()] = bp.bp_name;
+          });
+
+          // ✅ Update uniqueBranches with bp_name
+          uniqueBranches = uniqueBranches.map((branch) => {
+            if (branch._needsMapping && directMap[branch.code]) {
+              return {
+                ...branch,
+                name: directMap[branch.code],
+                bp_name: directMap[branch.code],
+                _needsMapping: false,
+              };
+            }
+            return branch;
+          });
+        }
+      }
+
+      // ✅ Remove flag before setting state
+      uniqueBranches = uniqueBranches.map(({ _needsMapping, ...rest }) => rest);
+
+      // Sort alphabetically
+      uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
+
+      setBranchTypes(uniqueBranches);
+      console.log(`✨ Unique branches: ${uniqueBranches.length}`);
+      console.table(uniqueBranches);
+    } catch (err) {
+      console.error("❌ Error fetching branches:", err.message);
+      Swal.fire("Error", err.message, "error");
     }
-
-    // ✅ Remove flag before setting state
-    uniqueBranches = uniqueBranches.map(({ _needsMapping, ...rest }) => rest);
-
-    // Sort alphabetically
-    uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
-
-    setBranchTypes(uniqueBranches);
-    console.log(`✨ Unique branches: ${uniqueBranches.length}`);
-    console.table(uniqueBranches);
-  } catch (err) {
-    console.error("❌ Error fetching branches:", err.message);
-    Swal.fire("Error", err.message, "error");
-  }
-};
+  };
 
 
 
@@ -2714,6 +2714,20 @@ const fetchBranches = async (motherAccountCode) => {
     });
   };
 
+  const handleBack = () => {
+    setActiveCategoryCode(null); // go back to category list
+  };
+
+  // Filter SKUs for active category
+  const activeSkus = (categoryListing || []).filter(
+    (sku) =>
+      sku.category_code?.toLowerCase() === activeCategoryCode?.toLowerCase() &&
+      (sku.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (sku.description || "")
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        sku.category_code?.toString().toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   const renderStepContent = () => {
     switch (step) {
@@ -4619,7 +4633,7 @@ const fetchBranches = async (motherAccountCode) => {
                                     <th>QTY</th>
                                     <th>UOM</th>
                                     <th>Billing Amount</th>
-                                    <th>Discount %</th>
+                                    <th>Discount </th>
                                     <th>Total Amount</th>
                                     <th>Actions</th>
                                   </tr>
@@ -4679,6 +4693,7 @@ const fetchBranches = async (motherAccountCode) => {
                                             onChange={(e) =>
                                               handleChangeSkuForBranch(branchName, idx, "SRP", e.target.value)
                                             }
+                                            disabled
                                           />
                                         </td>
 
@@ -4699,7 +4714,7 @@ const fetchBranches = async (motherAccountCode) => {
                                               handleChangeSkuForBranch(branchName, idx, "UOM", e.target.value)
                                             }
                                           >
-                                            {["PC", "CASE", "IBX", "PACK"].map((uom) => (
+                                            {["CASE", "PACK"].map((uom) => (
                                               <option key={uom} value={uom}>
                                                 {uom}
                                               </option>
@@ -4849,202 +4864,157 @@ const fetchBranches = async (motherAccountCode) => {
 
                     {/* Selected Categories */}
                     <div style={{ overflowY: "auto", flexGrow: 1 }}>
-                      <strong>Selected Categories:</strong>
-
-                      <div
-                        style={{
-                          marginTop: "0.5rem",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px",
-                        }}
-                      >
-                        {formData.categoryName && formData.categoryName.length > 0 ? (
-                          formData.categoryName.map((name, index) => {
-                            const code = formData.categoryCode[index];
-                            const isActive = activeCategoryCode === code;
-
-                            return (
-                              <div key={index}>
-                                {/* Category Item */}
-                                <div
-                                  onClick={() => handleCategoryClick(code)}
-                                  style={{
-                                    padding: "8px 12px",
-                                    border: isActive ? "2px solid black" : "1px solid #ccc",
-                                    borderRadius: "6px",
-                                    backgroundColor: isActive ? "#e6e6e6" : "#f9f9f9",
-                                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                                    fontWeight: "500",
-                                    cursor: "pointer",
-                                    userSelect: "none",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <span>
-                                    {code} - {name}
-                                  </span>
-                                  <span
+                      {!activeCategoryCode ? (
+                        // ✅ Category List View
+                        <div>
+                          <strong>Selected Categories:</strong>
+                          <div
+                            style={{
+                              marginTop: "0.5rem",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "8px",
+                            }}
+                          >
+                            {formData.categoryName && formData.categoryName.length > 0 ? (
+                              formData.categoryName.map((name, index) => {
+                                const code = formData.categoryCode[index];
+                                return (
+                                  <div
+                                    key={index}
+                                    onClick={() => handleCategoryClick(code)}
                                     style={{
-                                      fontWeight: "bold",
-                                      fontSize: "18px",
-                                      color: "#666",
+                                      padding: "8px 12px",
+                                      border: "1px solid #ccc",
+                                      borderRadius: "6px",
+                                      backgroundColor: "#f9f9f9",
+                                      cursor: "pointer",
+                                      userSelect: "none",
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
                                     }}
                                   >
-                                    {">"}
-                                  </span>
-                                </div>
+                                    <span>
+                                      {code} - {name}
+                                    </span>
+                                    <span style={{ fontWeight: "bold", fontSize: "18px", color: "#666" }}>
+                                      {">"}
+                                    </span>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div>None</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        // ✅ SKU Tab View
+                        <div>
+                          <button
+                            onClick={handleBack}
+                            style={{
+                              marginBottom: "12px",
+                              padding: "6px 12px",
+                              borderRadius: "4px",
+                              backgroundColor: "#eee",
+                              border: "1px solid #ccc",
+                              cursor: "pointer",
+                            }}
+                          >
+                            ← Back
+                          </button>
 
-                                {/* SKU List (only active) */}
-                                {isActive && (
+                          <div style={{ maxHeight: "550px", overflowY: "auto" }}>
+                            {activeSkus.length > 0 ? (
+                              activeSkus.map((sku) => (
+                                <div
+                                  key={sku.sku_code}
+                                  style={{
+                                    padding: "12px",
+                                    cursor: "pointer",
+                                    borderBottom: "1px solid #eee",
+                                    borderRadius: "6px",
+                                    transition: "background 0.2s",
+                                  }}
+                                  onClick={() => {
+                                    if (selectedRowIndex !== null && selectedBranchName !== null) {
+                                      handleChangeSkuForBranch(
+                                        selectedBranchName,
+                                        selectedRowIndex,
+                                        "SKUITEM",
+                                        sku.sku_code
+                                      );
+
+                                      if (showPack && Number(sku.pack || 0) > 0) {
+                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.pack);
+                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "PACK");
+                                      } else if (showCase && Number(sku.case || 0) > 0) {
+                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.case);
+                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "CASE");
+                                      } else {
+                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.default_srp || 0);
+                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", sku.default_uom || "PC");
+                                      }
+
+                                      handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "QTY", sku.default_qty || 1);
+
+                                      // Close modal / reset selection
+                                      setShowSkuModal(false);
+                                    }
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f5f5f5")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                                >
+                                  <div>
+                                    <strong>{sku.sku_code}</strong> – {sku.name}
+                                  </div>
+                                  <small style={{ color: "#666" }}>{sku.description || "No description"}</small>
                                   <div
                                     style={{
-                                      marginTop: "0.5rem",
-                                      padding: "0.5rem",
-                                      backgroundColor: "#fff",
-                                      border: "1px solid #ddd",
-                                      borderRadius: "4px",
-                                      maxHeight: "200px",
-                                      overflowY: "auto",
+                                      marginTop: "6px",
+                                      fontSize: "13px",
+                                      color: "#333",
+                                      display: "flex",
+                                      gap: "16px",
+                                      flexWrap: "wrap",
                                     }}
                                   >
-                                    {(categoryListing || [])
-                                      .filter((sku) => {
-                                        const matchesCategory =
-                                          sku.category_code?.toLowerCase() === code.toLowerCase();
-                                        const matchesSearch =
-                                          sku.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                          (sku.description || "")
-                                            .toLowerCase()
-                                            .includes(searchTerm.toLowerCase()) ||
-                                          sku.category_code
-                                            ?.toString()
-                                            .toLowerCase()
-                                            .includes(searchTerm.toLowerCase());
-                                        return matchesCategory && matchesSearch;
-                                      })
-                                      .map((sku) => (
-                                        <div
-                                          key={sku.sku_code}
-                                          style={{
-                                            padding: "12px",
-                                            cursor: "pointer",
-                                            borderBottom: "1px solid #eee",
-                                            borderRadius: "6px",
-                                            transition: "background 0.2s",
-                                          }}
-                                          onClick={() => {
-                                            if (selectedRowIndex !== null && selectedBranchName !== null) {
-                                              // 1️⃣ Update SKUITEM for the selected row
-                                              handleChangeSkuForBranch(
-                                                selectedBranchName,
-                                                selectedRowIndex,
-                                                "SKUITEM",
-                                                sku.sku_code
-                                              );
-
-                                              // 2️⃣ Set SRP and UOM depending on checkboxes and available data
-                                              if (showPack && Number(sku.pack || 0) > 0) {
-                                                handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.pack);
-                                                handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "PACK");
-                                              } else if (showCase && Number(sku.case || 0) > 0) {
-                                                handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.case);
-                                                handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "CASE");
-                                              } else {
-                                                handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.default_srp || 0);
-                                                handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", sku.default_uom || "PC");
-                                              }
-
-                                              // 3️⃣ Set default quantity
-                                              handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "QTY", sku.default_qty || 1);
-
-                                              // 4️⃣ Close modal and reset selections
-                                              setShowSkuModal(false);
-                                              setSelectedRowIndex(null);
-                                              setSelectedBranchName(null);
-                                            }
-                                          }}
-
-                                          onMouseEnter={(e) =>
-                                            (e.currentTarget.style.backgroundColor = "#f5f5f5")
-                                          }
-                                          onMouseLeave={(e) =>
-                                            (e.currentTarget.style.backgroundColor = "transparent")
-                                          }
-                                        >
-                                          {/* SKU Code + Name */}
-                                          <div>
-                                            <strong>{sku.sku_code}</strong> – {sku.name}
-                                          </div>
-
-                                          {/* Description */}
-                                          <small style={{ color: "#666" }}>
-                                            {sku.description || "No description"}
-                                          </small>
-
-                                          {/* Prices */}
-                                          <div
-                                            style={{
-                                              marginTop: "6px",
-                                              fontSize: "13px",
-                                              color: "#333",
-                                              display: "flex",
-                                              gap: "16px",
-                                              flexWrap: "wrap",
-                                            }}
-                                          >
-                                            <strong>SRP:</strong>
-
-                                            {showPack && (
-                                              <span>
-                                                🟦 Pack:{" "}
-                                                <strong>
-                                                  ₱
-                                                  {Number(sku.pack || 0).toLocaleString(undefined, {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  })}
-                                                </strong>
-                                              </span>
-                                            )}
-
-                                            {showCase && (
-                                              <span>
-                                                🟩 Case:{" "}
-                                                <strong>
-                                                  ₱
-                                                  {Number(sku.case || 0).toLocaleString(undefined, {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  })}
-                                                </strong>
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                      ))}
-
-                                    {/* No SKUs */}
-                                    {categoryListing.filter(
-                                      (sku) =>
-                                        sku.category_code?.toLowerCase() === code.toLowerCase()
-                                    ).length === 0 && (
-                                        <div className="text-center text-muted p-3">
-                                          No SKUs found for this category.
-                                        </div>
-                                      )}
+                                    <strong>SRP:</strong>
+                                    {showPack && (
+                                      <span>
+                                        🟦 Pack:{" "}
+                                        <strong>
+                                          ₱
+                                          {Number(sku.pack || 0).toLocaleString(undefined, {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}
+                                        </strong>
+                                      </span>
+                                    )}
+                                    {showCase && (
+                                      <span>
+                                        🟩 Case:{" "}
+                                        <strong>
+                                          ₱
+                                          {Number(sku.case || 0).toLocaleString(undefined, {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}
+                                        </strong>
+                                      </span>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div>None</div>
-                        )}
-                      </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-center text-muted p-3">No SKUs found for this category.</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </Modal.Body>
 
