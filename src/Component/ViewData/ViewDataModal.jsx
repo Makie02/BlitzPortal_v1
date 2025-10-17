@@ -814,64 +814,49 @@ const ViewDataModal = ({ visaCode, onClose }) => {
 
 
 
-                    {type !== 'Claims PWP' && (
-                        <div className="bottom-text-section">
-                            <div className="text-block">
-                                <label>{formatFieldName('objective')}</label>
-                                <div className="big-text-box">{data.objective || '-'}</div>
-                            </div>
-                            <div className="text-block">
-                                <label>{formatFieldName('promo_scheme')}</label>
-                                <div className="big-text-box">{data.promoScheme || '-'}</div>
-                            </div>
-                            <div className="text-block" style={{ width: '100%' }}>
-                                <label>{formatFieldName('remarks')}</label>
-                                <div className="big-text-box">{data.remarks || '-'}</div>
-                            </div>
-                        </div>
-                    )}
+                 
 
                 </div>
-               {skuListing.length === 0 && accountsBudgetList.length > 0 && (
-  <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
-    <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>Accounts Budget</h4>
+                {skuListing.length === 0 && accountsBudgetList.length > 0 && (
+                    <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
+                        <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>Accounts Budget</h4>
 
-    <table
-      style={{
-        width: '100%',
-        borderCollapse: 'collapse',
-        fontSize: '14px',
-        minWidth: '500px', // ensure horizontal scroll on small screens
-        boxShadow: '0 0 5px rgba(0, 0, 0, 0.1)',
-      }}
-    >
-      <thead>
-        <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
-          <th style={{ padding: '10px' }}>Account Name</th>
-          <th style={{ padding: '10px' }}>Budget</th>
-        </tr>
-      </thead>
-      <tbody>
-        {accountsBudgetList.map((row) => (
-          <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
-            <td style={{ padding: '8px' }}>{row.account_name}</td>
-            <td style={{ padding: '8px' }}>{Number(row.budget).toLocaleString()}</td>
-          </tr>
-        ))}
+                        <table
+                            style={{
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                fontSize: '14px',
+                                minWidth: '500px', // ensure horizontal scroll on small screens
+                                boxShadow: '0 0 5px rgba(0, 0, 0, 0.1)',
+                            }}
+                        >
+                            <thead>
+                                <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
+                                    <th style={{ padding: '10px' }}>Account Name</th>
+                                    <th style={{ padding: '10px' }}>Budget</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {accountsBudgetList.map((row) => (
+                                    <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                        <td style={{ padding: '8px' }}>{row.account_name}</td>
+                                        <td style={{ padding: '8px' }}>{Number(row.budget).toLocaleString()}</td>
+                                    </tr>
+                                ))}
 
-        {/* Total Row */}
-        <tr style={{ fontWeight: 'bold', backgroundColor: '#f1f5fb' }}>
-          <td style={{ padding: '10px' }}>Total</td>
-          <td style={{ padding: '10px' }}>
-            {accountsBudgetList
-              .reduce((acc, row) => acc + parseFloat(row.budget || 0), 0)
-              .toLocaleString()}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-)}
+                                {/* Total Row */}
+                                <tr style={{ fontWeight: 'bold', backgroundColor: '#f1f5fb' }}>
+                                    <td style={{ padding: '10px' }}>Total</td>
+                                    <td style={{ padding: '10px' }}>
+                                        {accountsBudgetList
+                                            .reduce((acc, row) => acc + parseFloat(row.budget || 0), 0)
+                                            .toLocaleString()}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                )}
 
                 {type === 'Regular PWP' && skuListing.length > 0 && (
                     <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
