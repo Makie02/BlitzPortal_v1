@@ -634,187 +634,352 @@ const Claims_pwp = () => {
 
     const [allowCoverToggle, setAllowCoverToggle] = useState(false);
 
-    const handleFormChange = async (e) => {
-        const { name, value } = e.target;
-        console.log(
-            `📝 Form change detected - Field: "${name}", Value: "${value}"`
-        );
+// ✅ Add state to store ALL master_data_list for selected distributor
+const [masterDataCache, setMasterDataCache] = useState({});
 
-        // If "distributor" changes, clear rowsAccounts early
+const handleFormChange = async (e) => {
+  const { name, value } = e.target;
+  console.log(
+    `📝 Form change detected - Field: "${name}", Value: "${value}"`
+  );
 
-        if (name === "distributor") {
-            setRowsAccounts([]);
-            console.log("🧹 Cleared rowsAccounts due to distributor/accountType change");
+  // If "distributor" changes, clear rowsAccounts early
+  if (name === "distributor") {
+    setRowsAccounts([]);
+    console.log("🧹 Cleared rowsAccounts due to distributor change");
 
-            // Find selected distributor by code
-            const selectedDistributor = distributors.find(
-                (d) => String(d.code) === String(value)
-            );
+    // Find selected distributor by code
+    const selectedDistributor = distributors.find(
+      (d) => String(d.code) === String(value)
+    );
 
-            if (!selectedDistributor) {
-                console.warn("⚠️ Distributor not found for code:", value);
-            } else {
-                // Log full distributor info
-                if (selectedDistributor) {
-                    console.log(`📦 Selected Distributor:
+    if (!selectedDistributor) {
+      console.warn("⚠️ Distributor not found for code:", value);
+    } else {
+      console.log(`📦 Selected Distributor:
 Code: ${selectedDistributor.code}
 Distributor: ${selectedDistributor.name}
 Description: ${selectedDistributor.description?.trim() || "N/A"}`);
-                } else {
-                    console.log("⚠️ No distributor selected or found.");
-                }
 
-                // Log mother accounts info (even if null)
-                console.log(
-                    `🧾 Mother Accounts Name: ${selectedDistributor.mother_accounts_name ?? "null"
-                    }`
-                );
-                console.log(
-                    `🧾 Mother Accounts Code: ${selectedDistributor.mother_accounts_code ?? "null"
-                    }`
-                );
+      console.log(
+        `🧾 Mother Accounts Name: ${selectedDistributor.mother_accounts_name ?? "null"}`
+      );
+      console.log(
+        `🧾 Mother Accounts Code: ${selectedDistributor.mother_accounts_code ?? "null"}`
+      );
+
+      // ✅ Check if data already cached
+      if (masterDataCache[selectedDistributor.code]) {
+        console.log("⚡ Using cached master_data_list!");
+        return;
+      }
+
+      // ✅ Fetch ALL master_data_list for this distributor
+      console.log("🔄 Fetching ALL master_data_list for distributor...");
+
+      (async () => {
+        try {
+          const batchSize = 2000;
+          let allData = [];
+          let offset = 0;
+          let batchNumber = 1;
+
+          while (true) {
+            console.log(`📥 Fetching batch ${batchNumber} (offset: ${offset})`);
+
+            const { data, error } = await supabase
+              .from("master_data_list")
+              .select("*")
+              .eq("distributor_code", selectedDistributor.code)
+              .order("id", { ascending: true })
+              .range(offset, offset + batchSize - 1);
+
+            if (error) {
+              console.error("❌ Failed to fetch master_data_list:", error);
+              break;
             }
+
+            const fetchedCount = data?.length || 0;
+            console.log(`✅ Batch ${batchNumber}: ${fetchedCount} records`);
+
+            if (fetchedCount > 0) {
+              allData = [...allData, ...data];
+              console.log(`📊 Total so far: ${allData.length} records`);
+            }
+
+            // Stop if less than batchSize
+            if (fetchedCount < batchSize) {
+              console.log(`🏁 Finished! Total: ${allData.length} records`);
+              break;
+            }
+
+            offset += batchSize;
+            batchNumber++;
+          }
+
+          if (allData.length === 0) {
+            console.warn(
+              `⚠️ No master_data_list records found for distributor_code: ${selectedDistributor.code}`
+            );
+            return;
+          }
+
+          // ✅ Cache the data
+          setMasterDataCache((prev) => ({
+            ...prev,
+            [selectedDistributor.code]: allData,
+          }));
+
+          console.log(
+            `✅ Cached ${allData.length} records for distributor ${selectedDistributor.code}`
+          );
+
+          // Display sample in console
+          console.group(
+            `📊 master_data_list for distributor_code: ${selectedDistributor.code}`
+          );
+          console.table(allData.slice(0, 20), [
+            "id",
+            "distributor_code",
+            "distributor_name",
+            "mother_code",
+            "mother_acct",
+            "bp_code",
+            "bp_name",
+            "agent_code",
+            "group_code",
+            "status",
+          ]);
+          console.groupEnd();
+        } catch (err) {
+          console.error("❌ Error fetching master_data_list:", err.message);
         }
+      })();
+    }
+  }
 
+  // Main state update block
+  setAllowCoverToggle(true);
+  setFormData((prev) => {
+    const newForm = { ...prev, [name]: value };
 
-        // Main state update block
-        setAllowCoverToggle(true);
-        setFormData((prev) => {
-            const newForm = { ...prev, [name]: value };
+    if (name === "activity") {
+      const selectedActivity = activities.find((a) => a.code === value);
+      newForm.activityName = selectedActivity?.name || "";
+      console.log(
+        "🎯 Selected activity:",
+        selectedActivity
+          ? `${selectedActivity.code} - ${selectedActivity.name}`
+          : "Not found"
+      );
+      console.log("📛 Selected Activity Name:", newForm.activityName);
 
-            if (name === "activity") {
-                const selectedActivity = activities.find((a) => a.code === value);
-                newForm.activityName = selectedActivity?.name || "";
-                console.log(
-                    "🎯 Selected activity:",
-                    selectedActivity
-                        ? `${selectedActivity.code} - ${selectedActivity.name}`
-                        : "Not found"
-                );
-                console.log("📛 Selected Activity Name:", newForm.activityName);
+      if (settingsMap[value]) {
+        newForm.sku = settingsMap[value].sku;
+        newForm.accounts = settingsMap[value].accounts;
+        newForm.amount_display = settingsMap[value].amount_display;
 
-                if (settingsMap[value]) {
-                    newForm.sku = settingsMap[value].sku;
-                    newForm.accounts = settingsMap[value].accounts;
-                    newForm.amount_display = settingsMap[value].amount_display;
-
-                    console.log("🔍 Applied settingsMap values:", {
-                        sku: newForm.sku,
-                        accounts: newForm.accounts,
-                        amount_display: newForm.amount_display,
-                    });
-                }
-            }
-
-            console.log("📋 Updated formData:", newForm);
-            return newForm;
+        console.log("🔍 Applied settingsMap values:", {
+          sku: newForm.sku,
+          accounts: newForm.accounts,
+          amount_display: newForm.amount_display,
         });
+      }
+    }
 
-        // 🔄 If distributor changes, fetch related data
-        // if (name === "distributor") {
-        //   try {
-        //     const selectedDistributor = distributors.find(
-        //       (d) => d.code === Number(value)
-        //     );
+    console.log("📋 Updated formData:", newForm);
+    return newForm;
+  });
+};
 
-        //     if (!selectedDistributor) {
-        //       console.warn("⚠️ Distributor not found for code:", value);
-        //       setAccountTypes([]);
-        //       return;
-        //     }
+// ✅ UPDATED: Filter from cache instead of fetching
+const fetchSubAccounts = async (mother) => {
+  try {
+    setSelectedMother(mother);
 
-        //     // ✅ Log the selected distributor's name and code
-        //     console.log(
-        //       `📦 Selected Distributor → Name: ${selectedDistributor.name}, Code: ${selectedDistributor.code}`
-        //     );
+    // prevent duplicate fetch
+    if (subAccounts[mother.id]) return;
 
-        //     const isBadOrder = selectedDistributor.name === "BAD ORDER";
+    console.log("🟡 Fetching sub-accounts for mother:", mother);
 
-        //     setFormData((prev) => ({
-        //       ...prev,
-        //       distributor: value,
-        //       distributorName: selectedDistributor.name || "",
-        //       categoryName: isBadOrder ? [] : prev.categoryName,
-        //       accountType: isBadOrder ? [] : prev.accountType,
-        //     }));
+    // ✅ Get distributor code from selectedDistributor
+    const distributorCode = selectedDistributor?.code;
 
-        //     if (isBadOrder) {
-        //       console.log("⛔ 'BAD ORDER' selected — skipping category fetch.");
-        //       setAccountTypes([]);
-        //       return;
-        //     }
+    if (!distributorCode) {
+      console.error("❌ No distributor selected!");
+      return;
+    }
 
-        //     // 🔄 Fetch categories in batches
-        //     const batchSize = 1000;
-        //     let allData = [];
-        //     let hasMore = true;
-        //     let offset = 0;
+    // ✅ Use cached data instead of fetching!
+    const cachedData = masterDataCache[distributorCode];
 
-        //     console.log(
-        //       `🔍 Fetching categories for distributor ID: ${selectedDistributor.name}`
-        //     );
+    if (!cachedData || cachedData.length === 0) {
+      console.warn("⚠️ No cached data found. Please select distributor first.");
+      return;
+    }
 
-        //     while (hasMore) {
-        //       console.log(
-        //         `📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
-        //       );
+    console.log(`⚡ Using cached data: ${cachedData.length} records`);
 
-        //       const { data, error } = await supabase
-        //         .from("categorydetails")
-        //         .select("code, name, description")
-        //         .eq("principal_id", selectedDistributor.id)
-        //         .order("name", { ascending: true })
-        //         .range(offset, offset + batchSize - 1);
+    // ✅ Filter by group_code from cached data (SUPER FAST!)
+    const allData = cachedData.filter(
+      (item) => item.group_code === mother.code
+    );
 
-        //       if (error) {
-        //         console.error("❌ Error during batch fetch:", error);
-        //         throw error;
-        //       }
+    console.log(
+      `🔍 Filtered ${allData.length} records for group_code: ${mother.code}`
+    );
 
-        //       console.log(
-        //         `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
-        //       );
+    if (!allData.length) {
+      console.warn(`⚠️ No records found for group_code ${mother.code}`);
+      return;
+    }
 
-        //       if (data && data.length > 0) {
-        //         allData = [...allData, ...data];
-        //         offset += batchSize;
-        //         hasMore = data.length === batchSize;
-        //         console.log(`📊 Total records so far: ${allData.length}`);
-        //       } else {
-        //         hasMore = false;
-        //         console.log("🏁 Finished fetching all category data");
-        //       }
-        //     }
+    // --- clean + normalize strings safely ---
+    const safeLower = (val) =>
+      typeof val === "string"
+        ? val.trim().toLowerCase()
+        : String(val ?? "").toLowerCase();
 
-        //     if (allData.length === 0) {
-        //       console.log("⚠️ No categories found for selected distributor");
-        //       setAccountTypes([]);
-        //       return;
-        //     }
+    const loggedInUsername = safeLower(parsedUser?.name);
+    const loggedInUserID = safeLower(parsedUser?.UserID);
+    const selectedDistributorName = safeLower(selectedDistributor?.name);
+    const selectedDistributorCode = safeLower(selectedDistributor?.code);
 
-        //     const formatted = allData.map((item) => ({
-        //       code: item.code,
-        //       name: item.name,
-        //       description: item.description,
-        //     }));
-        //     setAllowCoverToggle(true);
+    console.log("[DEBUG] Logged in user:", loggedInUsername);
+    console.log("[DEBUG] Logged in UserID:", loggedInUserID);
+    console.log("Distributor_Name:", selectedDistributorName);
+    console.log("Distributor_Code:", selectedDistributorCode);
 
-        //     setAccountTypes(formatted);
-        //     setAccountSearchTerm("");
-        //     setFormData((prev) => ({ ...prev, accountType: [] }));
+    // ✅ Filter by distributor + agent
+    const filteredData = allData.filter((item) => {
+      const distributorName = safeLower(item.distributor_name);
+      const distributorCode = safeLower(item.distributor_code);
+      const agentName = safeLower(item.agent_name);
+      const agentCode = safeLower(item.agent_code);
 
-        //     console.log(
-        //       `✅ Formatted and set ${formatted.length} account types`
-        //     );
-        //     console.log("🧹 Cleared previous accountType selection");
-        //   } catch (error) {
-        //     console.error("❌ Failed to fetch category details:", error.message);
-        //     setAccountTypes([]);
-        //   }
-        // }
+      const distributorMatch =
+        distributorName === selectedDistributorName ||
+        distributorCode === selectedDistributorCode;
 
-    };
+      const agentMatch =
+        agentName === loggedInUsername || agentCode === loggedInUserID;
 
+      return distributorMatch && agentMatch;
+    });
+
+    console.log(`🔍 After filter: ${filteredData.length} records`);
+
+    if (filteredData.length === 0) {
+      console.warn("⚠️ No matching data for this distributor and user.");
+      return;
+    }
+
+    // ✅ Remove duplicates (unique mother_acct + mother_code)
+    const uniqueData = Array.from(
+      new Map(
+        filteredData.map((item) => [
+          `${safeLower(item.mother_acct)}_${safeLower(item.mother_code)}`,
+          item,
+        ])
+      ).values()
+    );
+
+    console.log(`✨ After dedup: ${uniqueData.length} unique records`);
+
+    // ✅ Format for display with clean names and sorting
+    const formattedData = uniqueData
+      .map((item) => {
+        const cleanName = item.mother_acct ?? "";
+
+        return {
+          id: item.id,
+          name: cleanName, // No code in parentheses
+          code: item.mother_code ?? "",
+          rawName: cleanName.toUpperCase(),
+        };
+      })
+      .sort((a, b) => {
+        // NON CHAIN ACCT always at the bottom
+        const isANonChain = a.rawName.includes("NON CHAIN");
+        const isBNonChain = b.rawName.includes("NON CHAIN");
+
+        if (isANonChain && !isBNonChain) return 1;
+        if (!isANonChain && isBNonChain) return -1;
+
+        return a.rawName.localeCompare(b.rawName);
+      })
+      .map(({ rawName, ...rest }) => rest);
+
+    console.log(
+      `[✅ FINAL] Displaying ${formattedData.length} master_data_list record(s)`
+    );
+
+    setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
+  } catch (err) {
+    console.error("❌ Unexpected error fetching master_data_list:", err);
+  }
+};
+
+// ✅ UPDATED: Filter branches from cache
+const fetchBranches = async (motherAccountCode) => {
+  try {
+    console.log(
+      `🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`
+    );
+
+    const distributorCode = selectedDistributor?.code;
+
+    if (!distributorCode) {
+      console.error("❌ No distributor selected!");
+      return;
+    }
+
+    // ✅ Use cached data
+    const cachedData = masterDataCache[distributorCode];
+
+    if (!cachedData || cachedData.length === 0) {
+      console.warn("⚠️ No cached data found.");
+      return;
+    }
+
+    console.log(`⚡ Filtering branches from ${cachedData.length} cached records`);
+
+    // ✅ Filter from cache (INSTANT!)
+    const allData = cachedData.filter(
+      (item) => item.mother_code === motherAccountCode && item.bp_name
+    );
+
+    console.log(`✅ Found ${allData.length} branch records`);
+
+    // Extract unique branches based on bp_name
+    const uniqueBranches = [];
+    const seen = new Set();
+
+    allData.forEach((row) => {
+      const branchName = row.bp_name?.trim();
+      if (branchName && !seen.has(branchName)) {
+        seen.add(branchName);
+        uniqueBranches.push({
+          id: row.id,
+          name: branchName,
+          code: row.bp_code || "",
+          description: row.bp_code || "",
+          status: row.status,
+          distributor_code: row.distributor_code,
+          created_at: row.created_at,
+        });
+      }
+    });
+
+    setBranchTypes(uniqueBranches);
+
+    console.log(`✨ Unique branches: ${uniqueBranches.length}`);
+    console.table(uniqueBranches.slice(0, 10));
+  } catch (err) {
+    console.error("❌ Error fetching branches:", err.message);
+    Swal.fire("Error", err.message, "error");
+  }
+};
 
 
 
@@ -1810,196 +1975,6 @@ Description: ${selectedDistributor.description?.trim() || "N/A"}`);
         }
     };
 
-
-    const fetchSubAccounts = async (mother) => {
-        try {
-            setSelectedMother(mother);
-
-            // prevent duplicate fetch
-            if (subAccounts[mother.id]) return;
-
-            console.log("🟡 Fetching sub-accounts for mother:", mother);
-
-            const batchSize = 1000;
-            let allData = [];
-            let hasMore = true;
-            let offset = 0;
-
-            // 🔁 Fetch all batches
-            while (hasMore) {
-                console.log(
-                    `📥 Fetching master_data_list batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
-                );
-
-                const { data, error } = await supabase
-                    .from("master_data_list")
-                    .select(
-                        `id, mother_acct, mother_code, group_code, agent_name, agent_code, distributor_name, distributor_code`
-                    )
-                    .eq("group_code", mother.code)
-                    .order("mother_acct")
-                    .range(offset, offset + batchSize - 1);
-
-                if (error) {
-                    console.error("❌ Supabase error:", error);
-                    Swal.fire("Error", "Failed to fetch master data list", "error");
-                    break;
-                }
-
-                console.log(
-                    `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0
-                    } records`
-                );
-
-                if (data && data.length > 0) {
-                    allData = [...allData, ...data];
-                    offset += batchSize;
-                    hasMore = data.length === batchSize;
-                    console.log(`📊 Total records so far: ${allData.length}`);
-                } else {
-                    hasMore = false;
-                }
-            }
-
-            if (!allData.length) {
-                console.warn(`⚠️ No records found for group_code ${mother.code}`);
-                return;
-            }
-
-            // --- clean + normalize strings safely ---
-            const safeLower = (val) =>
-                typeof val === "string" ? val.trim().toLowerCase() : String(val ?? "").toLowerCase();
-
-            const loggedInUsername = safeLower(parsedUser?.name);
-            const loggedInUserID = safeLower(parsedUser?.UserID);
-            const selectedDistributorName = safeLower(selectedDistributor?.name);
-            const selectedDistributorCode = safeLower(selectedDistributor?.code);
-
-            console.log("[DEBUG] Logged in user:", loggedInUsername);
-            console.log("[DEBUG] Logged in UserID:", loggedInUserID);
-            console.log("Distributor_Name:", selectedDistributorName);
-            console.log("Distributor_Code:", selectedDistributorCode);
-
-            // ✅ Filter by distributor + agent
-            const filteredData = allData.filter((item) => {
-                const distributorName = safeLower(item.distributor_name);
-                const distributorCode = safeLower(item.distributor_code);
-                const agentName = safeLower(item.agent_name);
-                const agentCode = safeLower(item.agent_code);
-
-                const distributorMatch =
-                    distributorName === selectedDistributorName ||
-                    distributorCode === selectedDistributorCode;
-
-                const agentMatch =
-                    agentName === loggedInUsername || agentCode === loggedInUserID;
-
-                return distributorMatch && agentMatch;
-            });
-
-            if (filteredData.length === 0) {
-                console.warn("⚠️ No matching data for this distributor and user.");
-                console.table(allData);
-                return;
-            }
-
-            // ✅ Remove duplicates (unique mother_acct + mother_code)
-            const uniqueData = Array.from(
-                new Map(
-                    filteredData.map((item) => [
-                        `${safeLower(item.mother_acct)}_${safeLower(item.mother_code)}`,
-                        item,
-                    ])
-                ).values()
-            );
-
-            // ✅ Format for display
-            const formattedData = uniqueData.map((item) => ({
-                id: item.id,
-                name: `${item.mother_acct ?? ""} (${item.mother_code ?? ""})`,
-                code: item.mother_code ?? "",
-            }));
-
-            console.log(`[✅ INFO] Displaying ${formattedData.length} master_data_list record(s):`);
-            console.table(formattedData);
-
-            setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
-        } catch (err) {
-            console.error("❌ Unexpected error fetching master_data_list:", err);
-        }
-    };
-
-
-   const fetchBranches = async (motherAccountCode) => {
-     try {
-       console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
- 
-       const batchSize = 1000;
-       let allData = [];
-       let hasMore = true;
-       let offset = 0;
- 
-       while (hasMore) {
-         console.log(`📥 Fetching branches batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
- 
-         const { data, error } = await supabase
-           .from("master_data_list")
-           .select("*")
-           .eq("mother_code", motherAccountCode) // ✅ Match mother_code column
-           .not("bp_name", "is", null) // Filter only records with bp_name
-           .range(offset, offset + batchSize - 1);
- 
-         console.log(`✅ Fetched branches batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`);
- 
-         if (error) {
-           console.error("❌ Supabase error:", error);
-           Swal.fire("Error", "Failed to fetch branches", "error");
-           break;
-         }
- 
-         if (data && data.length > 0) {
-           allData = [...allData, ...data];
-           offset += batchSize;
-           hasMore = data.length === batchSize;
-           console.log(`📊 Total branch records so far: ${allData.length}`);
-         } else {
-           hasMore = false;
-         }
-       }
- 
-       // Extract unique branches based on bp_name
-       const uniqueBranches = [];
-       const seen = new Set();
- 
-       allData.forEach((row) => {
-         const branchName = row.bp_name?.trim();
-         if (branchName && !seen.has(branchName)) {
-           seen.add(branchName);
-           uniqueBranches.push({
-             id: row.id,
-             name: branchName,
-             code: row.bp_code || "",
-             description: row.bp_code || "",
-             status: row.status,
-             distributor_code: row.distributor_code,
-             created_at: row.created_at,
-           });
-         }
-       });
- 
-       setBranchTypes(uniqueBranches);
- 
-       console.group(`🏢 Branches fetched for Mother Account Code: ${motherAccountCode}`);
-       console.log(`🎉 Finished fetching all branches: ${allData.length} total records`);
-       console.log(`✨ Unique branches (bp_name): ${uniqueBranches.length}`);
-       console.table(uniqueBranches);
-       console.groupEnd();
-     } catch (err) {
-       console.error("❌ Error fetching branches:", err.message);
-       Swal.fire("Error", err.message, "error");
-     }
-   };
- 
 
 
     const toggleBranchType = (code) => {
