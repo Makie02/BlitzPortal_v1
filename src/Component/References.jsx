@@ -27,7 +27,7 @@ import BranchListing from '../NewComponents/BranchListing.jsx';
 import Sub_3rdmotherAccounts from '../NewComponents/Sub_3_mother_account.js';
 import UserList from '../NewComponents/UserList.jsx';
 import MasterDataBranch from '../NewComponents/MasterdataBranch.jsx';
-
+import Bp_Account from '../NewComponents/Bp_Account.jsx';
 const References = ({ setCurrentView }) => {
   const [view, setView] = useState(null); // selected view
   const [user, setUser] = useState(null); // logged in user from Account_Users
@@ -58,6 +58,7 @@ const References = ({ setCurrentView }) => {
     { id: 20, title: "BP-ACCOUNT", flag: 'sub_3rd_mother_account' },
     { id: 21, title: "USER-LIST", flag: 'userList' },
     { id: 22, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch' },
+    { id: 23, title: "Branch-List", flag: 'Bp_Account' },
 
 
 
@@ -181,8 +182,9 @@ const References = ({ setCurrentView }) => {
         {view === 'BP-ACCOUNT' && <Sub_3rdmotherAccounts />}
         {view === 'USER-LIST' && <UserList />}
         {view === 'LIST-BP_ACCOUNT' && <MasterDataBranch />}
+        {view === 'Branch-List' && <Bp_Account />}
 
-        
+
 
 
       </div>
