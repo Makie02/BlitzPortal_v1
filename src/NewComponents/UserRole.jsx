@@ -1,299 +1,270 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import Swal from 'sweetalert2';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
-const UserRole = () => {
-    const [roles, setRoles] = useState([]);
-    const [loading, setLoading] = useState(true);
+const UserList = () => {
+  const [users, setUsers] = useState([]);
+  const [filteredUsers, setFilteredUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [editUser, setEditUser] = useState(null); // for editing user
+  const [showModal, setShowModal] = useState(false);
+  const itemsPerPage = 10;
 
-    const [showModal, setShowModal] = useState(false);
-    const [form, setForm] = useState({ id: null, role: '', description: '' });
-    const [errorMsg, setErrorMsg] = useState('');
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
-    const fetchRoles = async () => {
-        setLoading(true);
+  useEffect(() => {
+    handleSearch();
+    setCurrentPage(1);
+  }, [searchTerm, users]);
+
+  // ✅ Fetch all users (paginated style)
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+
+      const batchSize = 1000;
+      let allData = [];
+      let hasMore = true;
+      let offset = 0;
+
+      while (hasMore) {
+        console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+
         const { data, error } = await supabase
-            .from('user_role')
-            .select('*')
-            .order('id', { ascending: true });
-        if (error) {
-            console.error('Error fetching roles:', error);
+          .from('Account_Users')
+          .select('id, username, role, name, "UserID"')
+          .range(offset, offset + batchSize - 1)
+          .order('UserID', { ascending: true });
+
+        if (error) throw error;
+
+        console.log(`✅ Fetched ${data?.length || 0} users`);
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          offset += batchSize;
+          hasMore = data.length === batchSize;
         } else {
-            setRoles(data);
+          hasMore = false;
         }
-        setLoading(false);
-    };
+      }
 
-    useEffect(() => {
-        fetchRoles();
-    }, []);
+      setUsers(allData);
+      console.log(`🏁 Total fetched users: ${allData.length}`);
+    } catch (error) {
+      Swal.fire('Error', `Failed to fetch users: ${error.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleFormChange = (e) => {
-        const { name, value } = e.target;
-        setForm(prev => ({ ...prev, [name]: value }));
-    };
-
-    const openNewModal = () => {
-        setForm({ id: null, role: '', description: '' });
-        setErrorMsg('');
-        setShowModal(true);
-    };
-
-    const openEditModal = (role) => {
-        setForm({
-            id: role.id,
-            role: role.role,
-            description: role.description || ''
-        });
-        setErrorMsg('');
-        setShowModal(true);
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setErrorMsg('');
-
-        if (!form.role.trim()) {
-            setErrorMsg('Role is required.');
-            return;
-        }
-
-        if (form.id) {
-            const { error } = await supabase
-                .from('user_role')
-                .update({ role: form.role, description: form.description })
-                .eq('id', form.id);
-
-            if (error) {
-                setErrorMsg(error.message);
-            } else {
-                setShowModal(false);
-                fetchRoles();
-            }
-        } else {
-            const { error } = await supabase
-                .from('user_role')
-                .insert({ role: form.role, description: form.description });
-
-            if (error) {
-                setErrorMsg(error.message);
-            } else {
-                setShowModal(false);
-                fetchRoles();
-            }
-        }
-    };
-
-    const handleDelete = async (id) => {
-        const confirmed = window.confirm('Are you sure you want to delete this role?');
-        if (!confirmed) return;
-
-        const { error } = await supabase
-            .from('user_role')
-            .delete()
-            .eq('id', id);
-
-        if (error) {
-            alert('Failed to delete role: ' + error.message);
-        } else {
-            fetchRoles();
-        }
-    };
-
-    return (
-        <div style={containerStyle}>
-            <h2 style={{ color: '#fff' }}>User Roles</h2>
-            <button onClick={openNewModal} style={addButtonStyle}>
-                + Add New Role
-            </button>
-
-            {loading ? (
-                <p style={{ color: '#fff' }}>Loading...</p>
-            ) : (
-                <div style={tableWrapperStyle}>
-                    <table style={tableStyle}>
-                        <thead>
-                            <tr style={{ backgroundColor: '#0062ffff' }}>
-                                <th style={thStyle}>ID</th>
-                                <th style={thStyle}>Code</th>
-
-                                <th style={thStyle}>Role</th>
-                                <th style={thStyle}>Description</th>
-                                <th style={thStyle}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {roles.length === 0 ? (
-                                <tr>
-                                    <td colSpan="4" style={{ padding: 12, textAlign: 'center', color: '#fff' }}>
-                                        No roles found.
-                                    </td>
-                                </tr>
-                            ) : (
-                                roles.map(role => (
-                                    <tr key={role.id} style={{ borderBottom: '1px solid #ddd' }}>
-                                        <td style={tdStyle}>{role.id}</td>
-                                        <td style={tdStyle}>{role.code}</td>
-
-                                        <td style={tdStyle}>{role.role}</td>
-                                        <td style={tdStyle}>{role.description || '-'}</td>
-                                        <td style={tdStyle}>
-                                            <button onClick={() => openEditModal(role)} style={actionBtnStyle}>
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(role.id)}
-                                                style={{ ...actionBtnStyle, backgroundColor: '#dc3545' }}
-                                            >
-                                                Delete
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {showModal && (
-                <div style={modalOverlayStyle}>
-                    <div style={modalContentStyle}>
-                        <h3 style={{ color: 'black' }}>{form.id ? 'Edit Role' : 'Add New Role'}</h3>
-                        {errorMsg && (
-                            <div style={{ color: 'red', marginBottom: '10px' }}>{errorMsg}</div>
-                        )}
-                        <form onSubmit={handleSubmit}>
-                            <div style={{ marginBottom: '12px' }}>
-                                <label style={{ color: 'black' }}>Role:</label>
-                                <input
-                                    type="text"
-                                    name="role"
-                                    value={form.role}
-                                    onChange={handleFormChange}
-                                    required
-                                    style={inputStyle}
-                                />
-                            </div>
-                            <div style={{ marginBottom: '12px' }}>
-                                <label style={{ color: 'black' }}>Description:</label>
-                                <textarea
-                                    name="description"
-                                    value={form.description}
-                                    onChange={handleFormChange}
-                                    style={{ ...inputStyle, height: '60px' }}
-                                />
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowModal(false)}
-                                    style={{ ...actionBtnStyle, backgroundColor: '#6c757d' }}
-                                >
-                                    Cancel
-                                </button>
-                                <button type="submit" style={actionBtnStyle}>
-                                    {form.id ? 'Update' : 'Add'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-        </div>
+  const handleSearch = () => {
+    const term = searchTerm.toLowerCase();
+    const filtered = users.filter((user) =>
+      user.name?.toLowerCase().includes(term)
     );
+    setFilteredUsers(filtered);
+  };
+
+  const handleEditClick = (user) => {
+    setEditUser({ ...user });
+    setShowModal(true);
+  };
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditUser((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      const { error } = await supabase
+        .from('Account_Users')
+        .update({
+          username: editUser.username,
+          role: editUser.role,
+          name: editUser.name,
+        })
+        .eq('id', editUser.id);
+
+      if (error) throw error;
+
+      Swal.fire('✅ Success', 'User updated successfully!', 'success');
+      setShowModal(false);
+      fetchUsers(); // refresh
+    } catch (error) {
+      Swal.fire('❌ Error', error.message, 'error');
+    }
+  };
+
+  // Pagination
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const paginatedUsers = filteredUsers.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  if (loading) return <p style={{ padding: '20px' }}>🔄 Loading users...</p>;
+
+  return (
+    <div style={{ padding: '20px', fontFamily: 'Arial' }}>
+      <h2 style={{ color: '#0077cc' }}>User List</h2>
+
+      {/* Search Bar */}
+      <div style={{ marginBottom: '15px' }}>
+        <input
+          type="text"
+          placeholder="Search by Agent Name..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            padding: '10px',
+            width: '100%',
+            maxWidth: '300px',
+            borderRadius: '6px',
+            border: '1px solid #0077cc',
+            fontSize: '14px',
+          }}
+        />
+      </div>
+
+      {/* User Table */}
+      <table className="table table-bordered table-hover">
+        <thead className="table-primary">
+          <tr>
+            <th>ID</th>
+            <th>Agent Code</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Agent Name</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {paginatedUsers.map((user) => (
+            <tr key={user.id}>
+              <td>{user.id}</td>
+              <td>{user.UserID}</td>
+              <td>{user.username}</td>
+              <td>{user.role}</td>
+              <td>{user.name}</td>
+              <td>
+                <button
+                  className="btn btn-sm btn-warning"
+                  onClick={() => handleEditClick(user)}
+                >
+                  ✏️ Edit
+                </button>
+              </td>
+            </tr>
+          ))}
+          {paginatedUsers.length === 0 && (
+            <tr>
+              <td colSpan="6" className="text-center">
+                No users found.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Pagination Controls */}
+      {filteredUsers.length > itemsPerPage && (
+        <div className="d-flex justify-content-center align-items-center mt-3 gap-2">
+          <button
+            className="btn btn-primary"
+            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+          >
+            ← Prev
+          </button>
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            className="btn btn-primary"
+            onClick={() =>
+              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+            }
+            disabled={currentPage === totalPages}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showModal && (
+        <div
+          className="modal fade show"
+          style={{
+            display: 'block',
+            background: 'rgba(0,0,0,0.5)',
+          }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title">Edit User</h5>
+                <button
+                  className="btn-close btn-close-white"
+                  onClick={() => setShowModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label">Username</label>
+                  <input
+                    type="text"
+                    name="username"
+                    value={editUser.username || ''}
+                    onChange={handleEditChange}
+                    className="form-control"
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Role</label>
+                  <input
+                    type="text"
+                    name="role"
+                    value={editUser.role || ''}
+                    onChange={handleEditChange}
+                    className="form-control"
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Agent Name</label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={editUser.name || ''}
+                    onChange={handleEditChange}
+                    className="form-control"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-success" onClick={handleSaveEdit}>
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
-// Styles
-const containerStyle = {
-    padding: '20px',
-    maxWidth: 1500,
-    margin: '0 auto',
-    backgroundColor: '#fdfdfdff',
-    borderRadius: '12px',
-    color: 'white',
-    fontFamily: 'Arial, sans-serif',
-    boxSizing: 'border-box',
-};
-
-const addButtonStyle = {
-    marginBottom: '20px',
-    padding: '10px 16px',
-    cursor: 'pointer',
-    borderRadius: '6px',
-    border: 'none',
-    backgroundColor: '#6387ebff',
-    color: 'white',
-    fontWeight: '600',
-    fontSize: '16px',
-};
-
-const tableWrapperStyle = {
-    overflowX: 'auto',
-};
-
-const tableStyle = {
-    width: '100%',
-    borderCollapse: 'collapse',
-    minWidth: '600px',
-};
-
-const thStyle = {
-    padding: '12px',
-    borderBottom: '2px solid #ccc',
-    textAlign: 'left',
-    fontWeight: '600',
-    color: 'white',
-};
-
-const tdStyle = {
-    padding: '12px',
-    color: 'black',
-};
-
-const actionBtnStyle = {
-    padding: '6px 12px',
-    marginRight: '8px',
-    cursor: 'pointer',
-    borderRadius: '4px',
-    border: 'none',
-    backgroundColor: '#007bff',
-    color: 'white',
-    fontWeight: '600',
-    fontSize: '14px',
-};
-
-const modalOverlayStyle = {
-    position: 'fixed',
-    top: 0, left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    padding: '10px',
-    boxSizing: 'border-box',
-};
-
-const modalContentStyle = {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '8px',
-    width: '100%',
-    maxWidth: '400px',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-    boxSizing: 'border-box',
-};
-
-const inputStyle = {
-    width: '100%',
-    padding: '8px 12px',
-    borderRadius: '4px',
-    border: '1px solid #ccc',
-    marginTop: '4px',
-    fontSize: '14px',
-    boxSizing: 'border-box',
-};
-
-export default UserRole;
+export default UserList;
