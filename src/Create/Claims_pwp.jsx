@@ -608,28 +608,6 @@ const Claims_pwp = () => {
 
 
 
-useEffect(() => {
-  const fetchBpNames = async () => {
-    const { data, error } = await supabase
-      .from("Bp_Accounts")
-      .select("bp_code, bp_name");
-
-    if (error) {
-      console.error("Error fetching BP names:", error);
-      return;
-    }
-
-    const map = {};
-    data.forEach((bp) => {
-      if (bp.bp_code) map[bp.bp_code.trim()] = bp.bp_name;
-    });
-
-    setBpNamesMap(map);
-    console.log("✅ BP name map loaded:", Object.keys(map).length, "entries");
-  };
-
-  fetchBpNames();
-}, []);
 
     const [accountSearchTerm, setAccountSearchTerm] = useState("");
     const [showModal_Account, setShowModal_Account] = useState(false);
@@ -657,194 +635,338 @@ useEffect(() => {
     const [allowCoverToggle, setAllowCoverToggle] = useState(false);
 
 // ✅ Add state to store ALL master_data_list for selected distributor
-// ✅ Add state to store ALL Accounts_List for each distributor
-const [accountsListCache, setAccountsListCache] = useState({});
-const [bpNamesMap, setBpNamesMap] = useState({});
-const [motherAccountNamesMap, setMotherAccountNamesMap] = useState({});
-const [agentNamesMap, setAgentNamesMap] = useState({});
+const [masterDataCache, setMasterDataCache] = useState({});
 
-// ✅ Fetch Accounts_List when distributor changes
-const handleFormChange = async (e) => {
-  const { name, value } = e.target;
-  console.log(`📝 Form change detected - Field: "${name}", Value: "${value}"`);
+  const handleFormChange = async (e) => {
+    const { name, value } = e.target;
+    console.log(`📝 Form change detected - Field: "${name}", Value: "${value}"`);
 
-  if (name === "distributor") {
-    setRowsAccounts([]);
-    console.log("🧹 Cleared rowsAccounts due to distributor change");
+    if (name === "distributor") {
+      setRowsAccounts([]);
+      console.log("🧹 Cleared rowsAccounts due to distributor change");
 
-    const selectedDistributor = distributors.find(
-      (d) => String(d.code) === String(value)
-    );
+      const selectedDistrib = distributors.find(
+        (d) => String(d.code) === String(value)
+      );
 
-    if (!selectedDistributor) {
-      console.warn("⚠️ Distributor not found for code:", value);
-      return;
-    }
-
-    console.log(`📦 Selected Distributor:
-Code: ${selectedDistributor.code}
-Name: ${selectedDistributor.name}
-Description: ${selectedDistributor.description?.trim() || "N/A"}`);
-
-    // ✅ Check if Accounts_List is already cached
-    if (accountsListCache[selectedDistributor.code]) {
-      console.log("⚡ Using cached Accounts_List!");
-      return;
-    }
-
-    console.log("🔄 Fetching ALL Accounts_List for this distributor...");
-
-    try {
-      // ✅ Fetch lookup tables (for BP and Mother Names)
-      const [motherRes, bpRes, agentRes] = await Promise.all([
-        supabase.from("sub_mother_account").select("dscode, name"),
-        supabase.from("Bp_Accounts").select("bp_code, bp_name"),
-        supabase.from("user_role").select("UserID, name"),
-      ]);
-
-      // 🧩 Build mappings
-      const bpMap = {};
-      bpRes.data?.forEach((bp) => {
-        if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
-      });
-      setBpNamesMap(bpMap);
-
-      const motherMap = {};
-      motherRes.data?.forEach((mother) => {
-        const code = mother.dscode?.trim();
-        motherMap[code] = mother.name || code;
-      });
-      setMotherAccountNamesMap(motherMap);
-
-      const agentMap = {};
-      agentRes.data?.forEach((agent) => {
-        agentMap[agent.UserID] = agent.name;
-      });
-      setAgentNamesMap(agentMap);
-
-      // ✅ Batched fetching for Accounts_List
-      const batchSize = 2000;
-      let allData = [];
-      let offset = 0;
-      let batchNumber = 1;
-
-      while (true) {
-        console.log(`📥 Fetching batch ${batchNumber} (offset: ${offset})`);
-        const { data, error } = await supabase
-          .from("Accounts_List")
-          .select("*")
-          .eq("distributor_code", selectedDistributor.code)
-          .order("id", { ascending: true })
-          .range(offset, offset + batchSize - 1);
-
-        if (error) {
-          console.error("❌ Failed to fetch Accounts_List:", error);
-          break;
-        }
-
-        const fetchedCount = data?.length || 0;
-        console.log(`✅ Batch ${batchNumber}: ${fetchedCount} records`);
-
-        if (fetchedCount > 0) {
-          allData = [...allData, ...data];
-        }
-
-        if (fetchedCount < batchSize) break;
-        offset += batchSize;
-        batchNumber++;
+      if (!selectedDistrib) {
+        console.warn("⚠️ Distributor not found for code:", value);
+        return;
       }
 
-      if (allData.length === 0) {
+      console.log(`📦 Selected Distributor:
+Code: ${selectedDistrib.code}
+Name: ${selectedDistrib.name}
+Description: ${selectedDistrib.description?.trim() || "N/A"}`);
+
+      // ✅ Check if data already cached
+      if (accountsListCache[selectedDistrib.code]) {
+        console.log("⚡ Using cached Accounts_List!");
+        setFormData((prev) => ({
+          ...prev,
+          [name]: value,
+          distributorName: selectedDistrib.name || "",
+        }));
+        return;
+      }
+
+      // ✅ Fetch ALL Accounts_List for this distributor
+      console.log("🔄 Fetching ALL Accounts_List for distributor...");
+
+      try {
+        // ✅ Fetch all lookup tables in parallel
+        console.log(
+          "📥 Fetching lookup tables (user_role, sub_mother_account, Bp_Accounts)..."
+        );
+
+        const [userResult, motherResult, bpResult] = await Promise.all([
+          supabase.from("user_role").select("UserID, name"),
+          supabase.from("sub_mother_account").select("dscode, name"),
+          supabase.from("Bp_Accounts").select("bp_code, bp_name"),
+        ]);
+
+        // ✅ Process user_role mapping
+        if (userResult.error) {
+          console.error("❌ Failed to fetch user_role:", userResult.error);
+        } else {
+          const userMap = {};
+          userResult.data.forEach((user) => {
+            userMap[user.UserID] = user.name;
+          });
+          setAgentNamesMap(userMap);
+          console.log(`✅ Mapped ${userResult.data.length} agent names`);
+        }
+
+        // ✅ Process sub_mother_account mapping
+        if (motherResult.error) {
+          console.error("❌ Failed to fetch sub_mother_account:", motherResult.error);
+        } else {
+          const motherMap = {};
+          motherResult.data.forEach((mother) => {
+            const cleanCode = mother.dscode?.trim() || "";
+            const displayName =
+              mother.name && mother.name.trim() !== ""
+                ? mother.name.trim()
+                : cleanCode;
+            motherMap[cleanCode] = displayName;
+            motherMap[mother.dscode] = displayName;
+          });
+
+          setMotherAccountNamesMap(motherMap);
+          console.log(
+            `✅ Mapped ${motherResult.data.length} mother account names (normalized):`,
+            Object.keys(motherMap).slice(0, 10)
+          );
+        }
+
+        // ✅ Process Bp_Accounts mapping
+        if (bpResult.error) {
+          console.error("❌ Failed to fetch Bp_Accounts:", bpResult.error);
+        } else {
+          const bpMap = {};
+          bpResult.data.forEach((bp) => {
+            bpMap[bp.bp_code.trim()] = bp.bp_name; // Trim and map
+          });
+          setBpNamesMap(bpMap);
+          console.log(`✅ Mapped ${bpResult.data.length} BP names`);
+          console.log("Sample BP mappings:", Object.entries(bpMap).slice(0, 5));
+        }
+
+        // ✅ Batched fetch for Accounts_List
+        console.log("📦 Starting batched fetch for Accounts_List...");
+
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
+        let batchNumber = 1;
+
+        while (hasMore) {
+          console.log(`📥 Fetching batch ${batchNumber} (offset: ${offset})`);
+
+          const { data, error } = await supabase
+            .from("Accounts_List")
+            .select("*")
+            .eq("distributor_code", String(selectedDistrib.code))
+            .order("id", { ascending: true })
+            .range(offset, offset + batchSize - 1);
+
+          if (error) {
+            console.error("❌ Failed to fetch Accounts_List:", error);
+            break;
+          }
+
+          const fetchedCount = data?.length || 0;
+          console.log(`✅ Fetched batch ${batchNumber}: ${fetchedCount} records`);
+
+          if (fetchedCount > 0) {
+            allData = [...allData, ...data];
+            offset += batchSize;
+            batchNumber++;
+            hasMore = fetchedCount === batchSize;
+            console.log(`📊 Total records so far: ${allData.length}`);
+          } else {
+            hasMore = false;
+            console.log("🏁 Finished fetching all Accounts_List records");
+          }
+        }
+
+        // ✅ Check results
+        if (allData.length === 0) {
+          console.warn(
+            `⚠️ No Accounts_List records found for distributor_code: ${selectedDistrib.code}`
+          );
+          Swal.fire("Notice", "No Accounts_List records found.", "info");
+          return;
+        }
+
+        // ✅ Cache the data
+        setAccountsListCache((prev) => ({
+          ...prev,
+          [selectedDistrib.code]: allData,
+        }));
+
+        console.log(
+          `✅ Cached ${allData.length} records for distributor ${selectedDistrib.code}`
+        );
+
+        // ✅ Show *ALL* records in console
+        console.group(
+          `📊 Accounts_List for distributor_code: ${selectedDistrib.code}`
+        );
+        console.table(allData, [
+          "id",
+          "distributor_code",
+          "mother_code",
+          "bp_code",
+          "agent_code",
+          "group_code",
+          "status",
+        ]);
+        console.groupEnd();
+      } catch (err) {
+        console.error("❌ Error fetching Accounts_List:", err.message);
+      }
+    }
+
+    // Main state update block
+    setAllowCoverToggle(true);
+    setFormData((prev) => {
+      const newForm = { ...prev, [name]: value };
+
+      if (name === "activity") {
+        const selectedActivity = activities.find((a) => a.code === value);
+        newForm.activityName = selectedActivity?.name || "";
+
+        if (settingsMap[value]) {
+          newForm.sku = settingsMap[value].sku;
+          newForm.accounts = settingsMap[value].accounts;
+          newForm.amount_display = settingsMap[value].amount_display;
+          newForm.category = settingsMap[value].category;
+          newForm.various = settingsMap[value].various;
+          newForm.walk_in = settingsMap[value].walk_in;
+        }
+      }
+
+      console.log("📋 Updated formData:", newForm);
+      return newForm;
+    });
+  };
+
+// ✅ UPDATED: Filter from cache instead of fetching
+  // ✅ Fetch sub-accounts (mother accounts)
+  const fetchSubAccounts = async (mother) => {
+    try {
+      setSelectedMother(mother);
+
+      // prevent duplicate fetch
+      if (subAccounts[mother.id]) return;
+
+      console.log("🟡 Fetching sub-accounts for mother:", mother);
+
+      // ✅ Get distributor code
+      const distributorCode = selectedDistributor?.code;
+
+      if (!distributorCode) {
+        console.error("❌ No distributor selected!");
+        return;
+      }
+
+      // ✅ Use cached Accounts_List data
+      const cachedData = accountsListCache[distributorCode];
+
+      if (!cachedData || cachedData.length === 0) {
         console.warn(
-          `⚠️ No Accounts_List records found for distributor_code: ${selectedDistributor.code}`
+          "⚠️ No cached Accounts_List found. Please select distributor first."
         );
         return;
       }
 
-      // ✅ Cache data
-      setAccountsListCache((prev) => ({
-        ...prev,
-        [selectedDistributor.code]: allData,
-      }));
+      console.log(`⚡ Using cached data: ${cachedData.length} records`);
 
-      console.log(`✅ Cached ${allData.length} Accounts_List records`);
-      console.table(allData.slice(0, 10), [
-        "id",
-        "distributor_code",
-        "mother_code",
-        "bp_code",
-        "agent_code",
-        "status",
-      ]);
+      // ✅ Filter by group_code from cached data (SUPER FAST!)
+      const filteredByGroup = cachedData.filter(
+        (item) => item.group_code === mother.code
+      );
+
+      console.log(
+        `🔍 Filtered ${filteredByGroup.length} records for group_code: ${mother.code}`
+      );
+
+      if (!filteredByGroup.length) {
+        console.warn(`⚠️ No records found for group_code ${mother.code}`);
+        return;
+      }
+
+      // --- clean + normalize strings safely ---
+      const safeLower = (val) =>
+        typeof val === "string"
+          ? val.trim().toLowerCase()
+          : String(val ?? "").toLowerCase();
+
+      const loggedInUserID = safeLower(parsedUser?.UserID);
+      const selectedDistributorCode = safeLower(selectedDistributor?.code);
+
+      console.log("[DEBUG] Logged in UserID:", loggedInUserID);
+      console.log("Distributor_Code:", selectedDistributorCode);
+
+      // ✅ Filter by distributor + agent
+      const filteredData = filteredByGroup.filter((item) => {
+        const distributorCode = safeLower(item.distributor_code);
+        const agentCode = safeLower(item.agent_code);
+
+        const distributorMatch = distributorCode === selectedDistributorCode;
+        const agentMatch = agentCode === loggedInUserID;
+
+        return distributorMatch && agentMatch;
+      });
+
+      console.log(`🔍 After filter: ${filteredData.length} records`);
+
+      if (filteredData.length === 0) {
+        console.warn("⚠️ No matching data for this distributor and user.");
+        return;
+      }
+
+      // ✅ Remove duplicates (unique mother_code)
+      const uniqueData = Array.from(
+        new Map(
+          filteredData.map((item) => [safeLower(item.mother_code), item])
+        ).values()
+      );
+
+      console.log(`✨ After dedup: ${uniqueData.length} unique records`);
+      console.log(
+        "🔍 Mother codes to lookup:",
+        uniqueData.map((d) => d.mother_code)
+      );
+
+      // ✅ Format for display using ALREADY CACHED motherAccountNamesMap
+      const formattedData = uniqueData
+        .map((item) => {
+          const cleanCode = (item.mother_code || "").trim(); // 🔥 Trim tabs/spaces
+          const displayName =
+            motherAccountNamesMap[cleanCode] ||
+            motherAccountNamesMap[item.mother_code] ||
+            cleanCode;
+
+          console.log(
+            `🏷️ ${item.mother_code} -> ${displayName} (in map: ${motherAccountNamesMap[cleanCode] ? "✅" : "❌"
+            })`
+          );
+
+          return {
+            id: item.id,
+            name: displayName,
+            code: cleanCode,
+            bp_code: item.bp_code ?? "",
+            agent_code: item.agent_code ?? "",
+            agent_name: agentNamesMap[item.agent_code] || item.agent_code,
+            rawName: displayName.toUpperCase(),
+          };
+        })
+        .sort((a, b) => {
+          const isANonChain = a.rawName.includes("NON CHAIN");
+          const isBNonChain = b.rawName.includes("NON CHAIN");
+          if (isANonChain && !isBNonChain) return 1;
+          if (!isANonChain && isBNonChain) return -1;
+          return a.rawName.localeCompare(b.rawName);
+        })
+        .map(({ rawName, ...rest }) => rest);
+
+      console.log(
+        `[✅ FINAL] Displaying ${formattedData.length} mother account(s)`
+      );
+      console.table(formattedData);
+
+      setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
     } catch (err) {
-      console.error("❌ Error fetching Accounts_List:", err.message);
+      console.error("❌ Unexpected error fetching sub-accounts:", err);
     }
-  }
+  };
 
-  // ✅ Continue your main form logic
-  setAllowCoverToggle(true);
-  setFormData((prev) => ({ ...prev, [name]: value }));
-};
 
-// ✅ Filter mother accounts (from Accounts_List cache)
-const fetchSubAccounts = async (mother) => {
-  try {
-    setSelectedMother(mother);
-    if (subAccounts[mother.id]) return;
-
-    const distributorCode = selectedDistributor?.code;
-    if (!distributorCode) {
-      console.error("❌ No distributor selected!");
-      return;
-    }
-
-    const cachedData = accountsListCache[distributorCode];
-    if (!cachedData || cachedData.length === 0) {
-      console.warn("⚠️ No cached Accounts_List found.");
-      return;
-    }
-
-    console.log(`⚡ Using cached Accounts_List: ${cachedData.length} records`);
-
-    // ✅ Filter by group_code (mother group)
-    const filtered = cachedData.filter(
-      (item) => item.group_code === mother.code
-    );
-
-    console.log(`🔍 Filtered ${filtered.length} for group_code: ${mother.code}`);
-
-    // ✅ Format data with Mother Account Names Map
-    const unique = Array.from(
-      new Map(filtered.map((i) => [i.mother_code, i])).values()
-    );
-
-    const formatted = unique
-      .map((item) => {
-        const cleanCode = item.mother_code?.trim();
-        const motherName =
-          motherAccountNamesMap[cleanCode] || cleanCode || "Unknown";
-
-        return {
-          id: item.id,
-          name: motherName,
-          code: cleanCode,
-          bp_code: item.bp_code,
-          agent_name: agentNamesMap[item.agent_code] || item.agent_code,
-        };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    setSubAccounts((prev) => ({ ...prev, [mother.id]: formatted }));
-
-    console.log(`✅ Loaded ${formatted.length} sub-accounts`);
-    console.table(formatted.slice(0, 10));
-  } catch (err) {
-    console.error("❌ Error fetching sub-accounts:", err.message);
-  }
-};
-const [branches, setBranches] = useState([]); // for the result
-
-// ✅ Filter branches (from cached Accounts_List)
+// ✅ UPDATED: Filter branches from cache
 const fetchBranches = async (motherAccountCode) => {
   try {
     console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
@@ -855,82 +977,112 @@ const fetchBranches = async (motherAccountCode) => {
       return;
     }
 
-    // ✅ Use cached Accounts_List for performance
+    // ✅ Use cached Accounts_List
     const cachedData = accountsListCache[distributorCode];
     if (!cachedData || cachedData.length === 0) {
-      console.warn("⚠️ No cached Accounts_List found. Please select a distributor first.");
+      console.warn("⚠️ No cached Accounts_List found.");
       return;
     }
 
-    // ✅ Filter by mother_code
+    // Filter by mother_code
     const filteredData = cachedData.filter(
       (item) => (item.mother_code || "").trim() === motherAccountCode.trim() && item.bp_code
     );
 
     if (filteredData.length === 0) {
       console.warn("⚠️ No branches found for this mother account.");
-      setBranchTypes([]); // Clear UI
+      setBranchTypes([]);
       return;
     }
 
-    // ✅ Prepare seen set to remove duplicates
-    const seen = new Set();
-    let uniqueBranches = [];
+    // 🔥 Ensure BP names map is ready
+    let bpMap = bpNamesMap;
+    if (!bpMap || Object.keys(bpMap).length === 0) {
+      console.log("📥 Fetching BP names from Bp_Accounts...");
+      const { data: bpData, error: bpError } = await supabase
+        .from("Bp_Accounts")
+        .select("bp_code, bp_name");
 
-    // ✅ Convert bp_code → bp_name using bpNamesMap
-    filteredData.forEach((row) => {
-      const branchCode = row.bp_code?.trim();
-      if (branchCode && !seen.has(branchCode)) {
-        seen.add(branchCode);
+      if (bpError) {
+        console.error("❌ Failed to fetch Bp_Accounts:", bpError);
+        return;
+      }
 
-        uniqueBranches.push({
+      bpMap = {};
+      bpData.forEach((bp) => {
+        if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
+      });
+
+      setBpNamesMap(bpMap);
+    }
+
+    // Map branches to names
+    let uniqueBranches = filteredData
+      .map((row) => {
+        const bpCode = (row.bp_code || "").trim();
+        if (!bpCode) return null;
+
+        // ✅ Get bp_name from map
+        let branchName = bpMap[bpCode];
+
+        return {
           id: row.id,
-          code: branchCode,
-          name: bpNamesMap[branchCode] || branchCode, // ✅ bp_code → bp_name
-          distributor_code: row.distributor_code,
+          name: branchName || bpCode,
+          code: bpCode,
+          bp_name: branchName || bpCode,
           status: row.status,
+          distributor_code: row.distributor_code,
           agent_code: row.agent_code,
           agent_name: agentNamesMap[row.agent_code] || row.agent_code,
-        });
-      }
-    });
+          _needsMapping: !branchName, // ✅ Flag if walang mapping
+        };
+      })
+      .filter(Boolean);
 
-    // 🔍 Find unmapped bp_codes (no bp_name found)
+    // 🔥 If may branches na walang mapping, fetch directly from Bp_Accounts
     const unmappedCodes = uniqueBranches
-      .filter((b) => !bpNamesMap[b.code])
+      .filter((b) => b._needsMapping)
       .map((b) => b.code);
 
-    // ✅ Fetch missing bp_names directly from Supabase if needed
     if (unmappedCodes.length > 0) {
-      console.log(`📥 Fetching missing BP names for codes:`, unmappedCodes);
-      const { data: missingBpData, error: bpError } = await supabase
+      console.log(`📥 Fetching BP names for unmapped codes:`, unmappedCodes);
+      const { data: bpDataDirect, error: bpErrorDirect } = await supabase
         .from("Bp_Accounts")
         .select("bp_code, bp_name")
         .in("bp_code", unmappedCodes);
 
-      if (bpError) {
-        console.error("❌ Failed to fetch unmapped BP names:", bpError);
-      } else if (missingBpData?.length > 0) {
-        // ✅ Update bpNamesMap
-        const updatedMap = { ...bpNamesMap };
-        missingBpData.forEach((bp) => {
-          if (bp.bp_code) updatedMap[bp.bp_code.trim()] = bp.bp_name;
+      if (bpErrorDirect) {
+        console.error("❌ Failed to fetch unmapped BP names:", bpErrorDirect);
+      } else {
+        // ✅ Map directly sa results
+        const directMap = {};
+        bpDataDirect.forEach((bp) => {
+          if (bp.bp_code) directMap[bp.bp_code.trim()] = bp.bp_name;
         });
-        setBpNamesMap(updatedMap);
 
-        // ✅ Update names in uniqueBranches
-        uniqueBranches = uniqueBranches.map((branch) => ({
-          ...branch,
-          name: updatedMap[branch.code] || branch.name,
-        }));
+        // ✅ Update uniqueBranches with bp_name
+        uniqueBranches = uniqueBranches.map((branch) => {
+          if (branch._needsMapping && directMap[branch.code]) {
+            return {
+              ...branch,
+              name: directMap[branch.code],
+              bp_name: directMap[branch.code],
+              _needsMapping: false,
+            };
+          }
+          return branch;
+        });
       }
     }
 
-    // ✅ Sort alphabetically
+    // ✅ Remove flag before setting state
+    uniqueBranches = uniqueBranches.map(({ _needsMapping, ...rest }) => rest);
+
+    // Sort alphabetically
     uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
 
     setBranchTypes(uniqueBranches);
-    console.log(`✨ ${uniqueBranches.length} unique branches found (with readable names)`);
+    console.log(`✨ Unique branches: ${uniqueBranches.length}`);
     console.table(uniqueBranches);
   } catch (err) {
     console.error("❌ Error fetching branches:", err.message);
@@ -1935,6 +2087,55 @@ const fetchBranches = async (motherAccountCode) => {
 
 
 
+    
+      const [accountsListCache, setAccountsListCache] = useState({});
+      const [agentNamesMap, setAgentNamesMap] = useState({});
+      const [motherAccountNamesMap, setMotherAccountNamesMap] = useState({});
+      const [bpNamesMap, setBpNamesMap] = useState({});
+    
+  const getFilteredBranchesWithExtras = () => {
+    let filtered = branchTypes
+      .filter((opt) =>
+        opt.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+      )
+      .filter((opt) => {
+        if (!formData.distributor) return false;
+
+        const distributorCodes = opt.distributor_code
+          ? opt.distributor_code.split(",").map((code) => code.trim()).filter(Boolean)
+          : [];
+
+        if (Array.isArray(formData.distributor)) {
+          return formData.distributor.some((d) => distributorCodes.includes(d));
+        }
+        return distributorCodes.includes(formData.distributor);
+      });
+
+    // ✅ Add "Various" and "Walk In" if enabled in formData
+    if (formData.various) {
+      filtered.push({
+        id: "various",
+        name: "Various",
+        distributor_code: "N/A",
+        status: true, // ✅ Active status
+      });
+    }
+
+    if (formData.walk_in) {
+      filtered.push({
+        id: "walk_in",
+        name: "Walk In",
+        distributor_code: "N/A",
+        status: true, // ✅ Active status
+      });
+    }
+
+    // ✅ Sort alphabetically
+    return filtered.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+  };
+
     const toggleBranchType = (code) => {
         const updated = formData.branchType.includes(code)
             ? formData.branchType.filter((c) => c !== code)
@@ -2766,157 +2967,143 @@ const fetchBranches = async (motherAccountCode) => {
                                 </div>
 
                                 {/* ✅ Branch Selection Modal */}
-                                <Modal
-                                    show={showModal_Branch}
-                                    onHide={() => setShowModal_Branch(false)}
-                                    centered
-                                    size="lg"
-                                >
-                                 <Modal.Header
-                                                   closeButton
-                                                   style={{ background: "rgb(70, 137, 166)", color: "white" }}
-                                                 >
-                                                   <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                                                     Select Branch
-                                                   </Modal.Title>
-                                                 </Modal.Header>
-
-                                    <Modal.Body
-                                        style={{
-                                            maxHeight: "400px",
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            padding: "1rem",
-                                        }}
-                                    >
-                                        {/* Search Bar */}
-                                        <input
-                                            type="text"
-                                            className="form-control mb-3"
-                                            placeholder="Search branches..."
-                                            value={branchSearchTerm}
-                                            onChange={(e) => setBranchSearchTerm(e.target.value)}
-                                            style={{ borderColor: "#007bff", flexShrink: 0 }}
-                                        />
-
-                                        <div style={{ overflowY: "auto", flexGrow: 1 }}>
-                                            {(() => {
-                                                // ✅ Filter and sort branches alphabetically
-                                                const filteredBranches = branchTypes
-                                                    .filter((b) =>
-                                                        b.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
-                                                    )
-                                                    .sort((a, b) =>
-                                                        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-                                                    );
-
-                                                // ✅ If none, show empty state
-                                                if (filteredBranches.length === 0) {
-                                                    return (
-                                                        <div style={{ textAlign: "center", color: "#999", marginTop: "20px" }}>
-                                                            No branches found for the selected Sub Account.
-                                                        </div>
-                                                    );
-                                                }
-
-                                                return (
-                                                    <>
-                                                        {/* ✅ Display total filtered count */}
-                                                        <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
-                                                            Showing {filteredBranches.length} branch
-                                                            {filteredBranches.length !== 1 ? "es" : ""}
-                                                        </p>
-
-                                                        {/* ✅ Render filtered & sorted list */}
-                                                        {filteredBranches.map((opt) => (
-                                                            <div
-                                                                key={opt.id}
-                                                                style={{
-                                                                    display: "flex",
-                                                                    alignItems: "center",
-                                                                    justifyContent: "space-between", // ✅ Push status to the right
-                                                                    padding: "6px 10px",
-                                                                }}
-                                                            >
-                                                                <div style={{ display: "flex", alignItems: "center" }}>
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={formData.branchType.includes(opt.name)}
-                                                                        onChange={() => toggleBranchType(opt.name)}
-                                                                        id={`branchType-${opt.id}`}
-                                                                        style={{
-                                                                            width: "20px",
-                                                                            height: "20px",
-                                                                            transform: "scale(1.3)",
-                                                                            cursor: "pointer",
-                                                                        }}
-                                                                    />
-                                                                    <label
-                                                                        htmlFor={`branchType-${opt.id}`}
-                                                                        style={{ marginLeft: "8px", cursor: "pointer" }}
-                                                                    >
-                                                                        {opt.name}
-                                                                    </label>
-                                                                </div>
-
-                                                                {/* ✅ Status shown here */}
-                                                                <span
-                                                                    style={{
-                                                                        fontSize: "0.9rem",
-                                                                        fontWeight: 500,
-                                                                        color: opt.status ? "#28a745" : "#dc3545", // ✅ Green if active, red if inactive
-                                                                    }}
-                                                                >
-                                                                    {opt.status ? "Active " : "Inactive ❌"}
-                                                                </span>
-                                                            </div>
-                                                        ))}
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                    </Modal.Body>
-
-                                    <Modal.Footer style={{ display: "flex", justifyContent: "space-between" }}>
-                                        <div style={{ display: "flex", gap: "8px" }}>
-                                            {/* ✅ Select All only from filtered list */}
-                                            <Button
-                                                variant="success"
-                                                onClick={() => {
-                                                    const filteredBranches = branchTypes
-                                                        .filter((b) =>
-                                                            b.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
-                                                        )
-                                                        .sort((a, b) =>
-                                                            a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-                                                        );
-
-                                                    const names = filteredBranches.map((b) => b.name);
-                                                    setFormData((prev) => ({ ...prev, branchType: names }));
-                                                }}
-                                            >
-                                                Select All
-                                            </Button>
-
-                                            <Button
-                                                variant="warning"
-                                                onClick={() =>
-                                                    setFormData((prev) => ({
-                                                        ...prev,
-                                                        branchType: [],
-                                                    }))
-                                                }
-                                            >
-                                                Clear All
-                                            </Button>
-                                        </div>
-
-                                        <Button variant="light" onClick={() => setShowModal_Branch(false)}>
-                                            Close
-                                        </Button>
-                                    </Modal.Footer>
-                                </Modal>
-
+                              <Modal
+                                               show={showModal_Branch}
+                                               onHide={() => setShowModal_Branch(false)}
+                                               centered
+                                               size="lg"
+                                             >
+                                               <Modal.Header
+                                                 closeButton
+                                                 style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                                               >
+                                                 <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                                                   Select Branch
+                                                 </Modal.Title>
+                                               </Modal.Header>
+                             
+                                               <Modal.Body
+                                                 style={{
+                                                   maxHeight: "400px",
+                                                   display: "flex",
+                                                   flexDirection: "column",
+                                                   padding: "1rem",
+                                                 }}
+                                               >
+                                                 <input
+                                                   type="text"
+                                                   className="form-control mb-3"
+                                                   placeholder="Search branches..."
+                                                   value={branchSearchTerm}
+                                                   onChange={(e) => setBranchSearchTerm(e.target.value)}
+                                                   style={{ borderColor: "#007bff", flexShrink: 0 }}
+                                                 />
+                             
+                                                 <div style={{ overflowY: "auto", flexGrow: 1 }}>
+                                                   {(() => {
+                                                     const filteredBranches = getFilteredBranchesWithExtras();
+                             
+                                                     return (
+                                                       <>
+                                                         <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
+                                                           Showing {filteredBranches.length} branch
+                                                           {filteredBranches.length !== 1 ? "es" : ""}
+                                                         </p>
+                             
+                                                         {filteredBranches.map((opt) => (
+                                                           <div
+                                                             key={opt.id}
+                                                             style={{
+                                                               display: "flex",
+                                                               alignItems: "center",
+                                                               justifyContent: "space-between", // ✅ Push status to the right
+                                                               padding: "6px 10px",
+                                                             }}
+                                                           >
+                                                             <div style={{ display: "flex", alignItems: "center" }}>
+                                                               <input
+                                                                 type="checkbox"
+                                                                 checked={formData.branchType.includes(opt.name)}
+                                                                 onChange={() => toggleBranchType(opt.name)}
+                                                                 id={`branchType-${opt.id}`}
+                                                                 style={{
+                                                                   width: "20px",
+                                                                   height: "20px",
+                                                                   transform: "scale(1.3)",
+                                                                   cursor: "pointer",
+                                                                 }}
+                                                               />
+                                                               <label
+                                                                 htmlFor={`branchType-${opt.id}`}
+                                                                 style={{ marginLeft: "8px", cursor: "pointer" }}
+                                                               >
+                                                                 {opt.name}
+                                                               </label>
+                                                             </div>
+                             
+                                                             {/* ✅ Status shown here */}
+                                                             <span
+                                                               style={{
+                                                                 fontSize: "0.9rem",
+                                                                 fontWeight: 500,
+                                                                 color: opt.status ? "#28a745" : "#dc3545", // ✅ Green if active, red if inactive
+                                                               }}
+                                                             >
+                                                               {opt.status ? "Active " : "Inactive ❌"}
+                                                             </span>
+                                                           </div>
+                                                         ))}
+                             
+                                                       </>
+                                                     );
+                                                   })()}
+                             
+                                                 </div>
+                                               </Modal.Body>
+                             
+                             
+                                               <Modal.Footer style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                 <div style={{ display: 'flex', gap: '8px' }}>
+                                                   <Button
+                                                     variant="success"
+                                                     onClick={() => {
+                                                       const filteredBranches = branchTypes
+                                                         .filter((opt) =>
+                                                           opt.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+                                                         )
+                                                         .filter((opt) => {
+                                                           if (!formData.distributor) return false;
+                                                           const distributorCodes = opt.distributor_code
+                                                             ? opt.distributor_code.split(",").map((code) => code.trim()).filter((code) => code.length > 0)
+                                                             : [];
+                                                           if (Array.isArray(formData.distributor)) {
+                                                             return formData.distributor.some((d) => distributorCodes.includes(d));
+                                                           }
+                                                           return distributorCodes.includes(formData.distributor);
+                                                         });
+                             
+                                                       const allBranchNames = filteredBranches.map(opt => opt.name);
+                                                       setFormData(prev => ({ ...prev, branchType: allBranchNames }));
+                                                     }}
+                                                   >
+                                                     Select All
+                                                   </Button>
+                             
+                                                   <Button
+                                                     variant="warning"
+                                                     onClick={() => {
+                                                       setFormData(prev => ({ ...prev, branchType: [] }));
+                                                     }}
+                                                   >
+                                                     Clear All
+                                                   </Button>
+                                                 </div>
+                             
+                                                 <Button variant="light" onClick={() => setShowModal_Branch(false)}>
+                                                   Close
+                                                 </Button>
+                                               </Modal.Footer>
+                                             </Modal>
 
 
 
