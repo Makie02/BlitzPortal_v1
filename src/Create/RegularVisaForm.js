@@ -378,35 +378,6 @@ const RegularVisaForm = () => {
     setRows(newRows);
   }, [selectedSkus]);
 
-  // const handleAccountSkuChange = (selectedCode) => {
-  //     setSelectedAccountForSku(selectedCode);
-
-  //     if (selectedCode && selectedCode !== 'ALL_ACCOUNTS') {
-  //         setAccountSkuRows(prev => {
-  //             const existingRows = prev[selectedCode] || [];
-
-  //             // Only create a default row if this account truly has none
-  //             if (existingRows.length === 0) {
-  //                 return {
-  //                     ...prev,
-  //                     [selectedCode]: [{
-  //                         accountCode: selectedCode,  // 👈 keep code reference
-  //                         SKUITEM: '',
-  //                         SRP: '',
-  //                         QTY: '',
-  //                         UOM: '',
-  //                         BILLING_AMOUNT: '',
-  //                         DISCOUNT: '',
-  //                         TOTAL_AMOUNT: '',
-  //                     }]
-  //                 };
-  //             }
-
-  //             return prev; // Keep existing rows
-  //         });
-  //     }
-  // };
-  const [branchSkuRows, setBranchSkuRows] = useState({});
 
   const handleChangeSkuForBranch = (branchKey, index, field, value) => {
     setAccountSkuRows((prev) => {
@@ -1662,54 +1633,45 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
 
   const [userDistributors, setUserDistributors] = useState([]);
   const [filteredDistributors, setFilteredDistributors] = useState([]);
+  const loggedInUserId = parsedUser?.id || parsedUser?.user_id || null;
+  console.log("[DEBUG] Logged in user ID:", loggedInUserId);
 
-  const loggedInUsername = parsedUser?.name || "Unknown";
-  console.log("[DEBUG] Logged in user:", loggedInUsername);
-
+   // ✅ Fetch distributors assigned to the logged-in agent
   useEffect(() => {
-    const fetchUserDistributors = async () => {
-      const { data, error } = await supabase
-        .from("user_distributors")
-        .select("distributor_name")
-        .eq("username", loggedInUsername);
-
-      if (error) {
-        console.error("[ERROR] Fetching user_distributors:", error);
-      } else {
-        const names = data.map((d) => d.distributor_name);
-        console.log("[DEBUG] Distributors assigned to user:", names);
-        setUserDistributors(names);
+    const fetchDistributorsByAgent = async () => {
+      if (!loggedInUserId) {
+        console.warn("[WARN] No logged in user ID found, skipping distributor fetch.");
+        return;
       }
-    };
 
-    fetchUserDistributors();
-  }, [loggedInUsername]);
+      console.log(`🔍 Fetching distributors for agent_code: ${loggedInUserId}`);
 
-  useEffect(() => {
-    const fetchDistributors = async () => {
       const { data, error } = await supabase
         .from("distributors")
         .select("*")
+        .eq("agent_code", loggedInUserId) // Filter distributors by agent
         .order("name", { ascending: true });
 
       if (error) {
-        console.error("[ERROR] Fetching distributors:", error);
-      } else {
-        console.log("[DEBUG] All distributors from DB:", data);
-        setDistributors(data);
-
-        const allowed = data.filter((dist) =>
-          userDistributors.includes(dist.name)
-        );
-        console.log("[DEBUG] Filtered distributors for dropdown:", allowed);
-        setFilteredDistributors(allowed);
+        console.error("[ERROR] Fetching distributors by agent_code:", error);
+        Swal.fire("Error", "Failed to load distributors.", "error");
+        return;
       }
+
+      if (!data || data.length === 0) {
+        console.warn("⚠️ No distributors found for this agent.");
+        Swal.fire("Notice", "No distributors assigned to your account.", "info");
+      } else {
+        console.log("✅ Distributors loaded:", data);
+      }
+
+      // Store the distributors
+      setDistributors(data || []);
+      setFilteredDistributors(data || []);
     };
 
-    if (userDistributors.length > 0) {
-      fetchDistributors();
-    }
-  }, [userDistributors]);
+    fetchDistributorsByAgent();
+  }, [loggedInUserId]);
 
   const [approvalList, setApprovalList] = useState([]);
 
@@ -2565,47 +2527,86 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
   useEffect(() => {
     if (showModal_Account) fetchAccounts();
   }, [showModal_Account]);
-  const fetchAccounts = async () => {
-    try {
-      // Fetch all data from user_savemotheraccount_link
-      const { data, error } = await supabase
-        .from("user_savemotheraccount_link")
-        .select("mother_account_id, mother_account_code, mother_account_name, username")
-        .order("mother_account_name", { ascending: true });
+  
+const fetchAccounts = async () => {
+  try {
+    const distributorCode = formData.distributor;
 
-      if (error) throw error;
-
-      // Get logged-in user
-      const loggedInUsername = parsedUser?.name || "Unknown";
-      console.log("[DEBUG] Logged in user:", loggedInUsername);
-
-      // Filter results by username
-      const filteredData = data.filter(
-        (item) => item.username === loggedInUsername
-      );
-
-      // Format to match your UI structure
-      const formattedData = filteredData.map((item) => ({
-        id: item.mother_account_id, // ✅ use mother_account_id as ID
-        code: item.mother_account_code,
-        name: item.mother_account_name,
-      }));
-
-      // Save to state for display
-      setAccountTypes(formattedData);
-
-      console.log("✅ Mother Accounts for user:", loggedInUsername);
-      console.table(
-        formattedData.map((item) => ({
-          ID: item.id,
-          Code: item.code,
-          Name: item.name,
-        }))
-      );
-    } catch (err) {
-      console.error("❌ Error fetching accounts:", err.message);
+    if (!distributorCode) {
+      console.warn("⚠️ No distributor selected — skipping mother account fetch.");
+      setAccountTypes([]);
+      return;
     }
-  };
+
+    console.log("🔍 Fetching mother account(s) for distributor:", distributorCode);
+
+    // ✅ Fetch the distributor by its code
+    const { data: distributor, error: distributorError } = await supabase
+      .from("distributors")
+      .select("id, name, code, mother_accounts_code")
+      .eq("code", distributorCode)
+      .single();
+
+    if (distributorError) throw distributorError;
+    if (!distributor) {
+      console.warn("⚠️ No distributor record found for:", distributorCode);
+      setAccountTypes([]);
+      return;
+    }
+
+    console.log("✅ Distributor record:", distributor);
+
+    // ✅ Parse mother_accounts_code — may be single or comma-separated
+    let motherCodes = [];
+    if (distributor.mother_accounts_code) {
+      if (Array.isArray(distributor.mother_accounts_code)) {
+        motherCodes = distributor.mother_accounts_code;
+      } else {
+        motherCodes = distributor.mother_accounts_code
+          .split(",")
+          .map((code) => code.replace(/[()]/g, "").trim()) // remove parentheses like (6001)
+          .filter(Boolean);
+      }
+    }
+
+    if (motherCodes.length === 0) {
+      console.warn("⚠️ Distributor has no mother_accounts_code defined.");
+      setAccountTypes([]);
+      return;
+    }
+
+    console.log("📦 Mother Account Codes:", motherCodes);
+
+    // ✅ Fetch corresponding mother account names
+    const { data: motherAccounts, error: motherError } = await supabase
+      .from("mother_account")
+      .select("code, name")
+      .in("code", motherCodes.map(Number)); // convert to numbers
+
+    if (motherError) throw motherError;
+
+    console.log("✅ Mother accounts fetched from DB:", motherAccounts);
+
+    // ✅ Map codes to names (fallback to code if no match)
+    const formattedData = motherCodes.map((code, index) => {
+      const matched = motherAccounts?.find(
+        (acc) => String(acc.code) === String(code)
+      );
+      return {
+        id: index + 1,
+        code,
+        name: matched ? matched.name : code, // fallback if name not found
+      };
+    });
+
+    setAccountTypes(formattedData);
+    console.table(formattedData);
+  } catch (err) {
+    console.error("❌ Error fetching mother accounts:", err.message);
+    setAccountTypes([]);
+  }
+};
+
 
 
 
