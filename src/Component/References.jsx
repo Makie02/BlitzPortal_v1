@@ -37,7 +37,7 @@ const References = ({ setCurrentView }) => {
   // Cards info + what boolean flag each card corresponds to
   const cards = [
     { id: 1, title: "DISTRIBUTOR", flag: 'distributor' },
-    { id: 2, title: "DISTRIBUTOR-LISTING", flag: 'distributor_listing' },
+    // { id: 2, title: "DISTRIBUTOR-LISTING", flag: 'distributor_listing' },
     { id: 3, title: "MODULE", flag: 'module' },
     { id: 4, title: "ACTIVITY", flag: 'activity' },
     { id: 5, title: "DEPARTMENT", flag: 'department' },
@@ -52,17 +52,18 @@ const References = ({ setCurrentView }) => {
     { id: 14, title: "404-PAGE", flag: 'page_404' },
     { id: 15, title: "CLAIMS-lISTING-ACTIVITY", flag: 'claims_listing_activity' },
     { id: 16, title: "LICENSE", flag: 'license' },
-    { id: 17, title: "CUSTOMER-GROUP", flag: 'customer_group' },
+    // { id: 17, title: "CUSTOMER-GROUP", flag: 'customer_group' },
     { id: 18, title: "GROUP-ACCOUNT", flag: 'monther_account' },
     { id: 19, title: "MOTHER-ACCOUNT", flag: 'sub_mother_account' },
-    { id: 20, title: "BP-ACCOUNT", flag: 'sub_3rd_mother_account' },
+    // { id: 20, title: "BP-ACCOUNT", flag: 'sub_3rd_mother_account' },
     { id: 21, title: "USER-LIST", flag: 'userList' },
-    { id: 22, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch' },
-    { id: 23, title: "Branch-List", flag: 'Bp_Account' },
+    { id: 22, title: "Bp Accounts", flag: 'Bp_Account' },
+
+    { id: 23, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch' },
 
 
 
-    
+
   ];
 
   useEffect(() => {
@@ -182,7 +183,7 @@ const References = ({ setCurrentView }) => {
         {view === 'BP-ACCOUNT' && <Sub_3rdmotherAccounts />}
         {view === 'USER-LIST' && <UserList />}
         {view === 'LIST-BP_ACCOUNT' && <MasterDataBranch />}
-        {view === 'Branch-List' && <Bp_Account />}
+        {view === 'Bp Accounts' && <Bp_Account />}
 
 
 
