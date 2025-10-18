@@ -10,16 +10,33 @@ const Distributor = () => {
   const [distributors, setDistributors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: null, code: '', name: '', description: '' });
+
+  // form now includes agent_code and mother_accounts_code (string)
+  const [form, setForm] = useState({
+    id: null,
+    code: '',
+    name: '',
+    description: '',
+    agent_code: '',
+    mother_accounts_code: '' // comma-separated codes
+  });
+
   const [isEditing, setIsEditing] = useState(false);
+  const [isViewing, setIsViewing] = useState(false); // view-only modal mode
 
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5);
 
-  // New states for mother accounts
+  // Mother accounts state
   const [motherAccounts, setMotherAccounts] = useState([]);
   const [selectedMotherAccounts, setSelectedMotherAccounts] = useState([]); // array of mother account ids
+
+  // Account_Users (for selecting agent)
+  const [accountUsers, setAccountUsers] = useState([]);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [accountUserSearch, setAccountUserSearch] = useState('');
+  const [selectedAgentUser, setSelectedAgentUser] = useState(null); // {id, name, UserID}
 
   const fetchDistributors = async () => {
     setLoading(true);
@@ -30,7 +47,7 @@ const Distributor = () => {
     if (error) {
       Swal.fire('Error', 'Error fetching distributors: ' + error.message, 'error');
     } else {
-      setDistributors(data);
+      setDistributors(data || []);
     }
     setLoading(false);
   };
@@ -39,36 +56,92 @@ const Distributor = () => {
     const { data, error } = await supabase
       .from('mother_account')
       .select('id, code, name')
-      .eq('status', true) // only active mother accounts, adjust if needed
+      .eq('status', true)
       .order('code', { ascending: true });
     if (error) {
       Swal.fire('Error', 'Error fetching mother accounts: ' + error.message, 'error');
     } else {
-      setMotherAccounts(data);
+      setMotherAccounts(data || []);
+    }
+  };
+
+  const fetchAccountUsers = async () => {
+    // fetch id, name, "UserID"
+    const { data, error } = await supabase
+      .from('Account_Users')
+      .select('id, name, "UserID"')
+      .order('name', { ascending: true })
+      .limit(1000); // adjust limit as needed
+    if (error) {
+      Swal.fire('Error', 'Error fetching account users: ' + error.message, 'error');
+    } else {
+      setAccountUsers(data || []);
     }
   };
 
   useEffect(() => {
     fetchDistributors();
     fetchMotherAccounts();
+    fetchAccountUsers();
   }, []);
 
-  const openAddModal = () => {
-    // Don't set code when adding - let database generate it
-    setForm({ id: null, code: 'Auto-generated', name: '', description: '' });
+  // generate next code: returns numeric string padded to 4
+  const getNextDistributorCode = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('distributors')
+        .select('code')
+        .not('code', 'is', null)
+        .order('id', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      if (data && data.length > 0 && data[0].code) {
+        const lastCode = data[0].code;
+        const numberPart = parseInt(String(lastCode).replace(/\D/g, ''), 10) || 0;
+        const nextNumber = numberPart + 1;
+        return nextNumber.toString().padStart(4, '0');
+      }
+
+      return '0001';
+    } catch (err) {
+      console.error('Error generating next code:', err.message);
+      return '0001';
+    }
+  };
+
+  const openAddModal = async () => {
+    const nextCode = await getNextDistributorCode();
+
+    setForm({
+      id: null,
+      code: nextCode,
+      name: '',
+      description: '',
+      agent_code: '',
+      mother_accounts_code: ''
+    });
     setIsEditing(false);
-    setSelectedMotherAccounts([]); // reset selection on add
+    setIsViewing(false);
+    setSelectedMotherAccounts([]);
+    setSelectedAgentUser(null);
     setModalOpen(true);
   };
 
   const openEditModal = (distributor) => {
-    setForm({ id: distributor.id, code: distributor.code, name: distributor.name, description: distributor.description || '' });
+    setForm({
+      id: distributor.id,
+      code: distributor.code,
+      name: distributor.name || '',
+      description: distributor.description || '',
+      agent_code: distributor.agent_code || '',
+      mother_accounts_code: distributor.mother_accounts_code || ''
+    });
 
-    // Parse stored mother_accounts_code and mother_accounts_name into selectedMotherAccounts array by matching with motherAccounts
-    // mother_accounts_code and mother_accounts_name are comma separated strings
-    if (distributor.mother_accounts_code && distributor.mother_accounts_name) {
-      const codesArr = distributor.mother_accounts_code.split(',').map(c => c.trim());
-      // Find matching mother accounts by code
+    // populate selectedMotherAccounts by matching codes in mother_accounts_code
+    if (distributor.mother_accounts_code) {
+      const codesArr = distributor.mother_accounts_code.split(',').map(c => c.trim()).filter(Boolean);
       const selectedIds = motherAccounts
         .filter(ma => codesArr.includes(String(ma.code)))
         .map(ma => ma.id);
@@ -77,7 +150,51 @@ const Distributor = () => {
       setSelectedMotherAccounts([]);
     }
 
+    // find selected agent user (if any)
+    if (distributor.agent_code) {
+      const match = accountUsers.find(u => String(u.UserID) === String(distributor.agent_code));
+      if (match) setSelectedAgentUser(match);
+      else setSelectedAgentUser(null);
+    } else {
+      setSelectedAgentUser(null);
+    }
+
     setIsEditing(true);
+    setIsViewing(false);
+    setModalOpen(true);
+  };
+
+  const openViewModal = (distributor) => {
+    setForm({
+      id: distributor.id,
+      code: distributor.code,
+      name: distributor.name || '',
+      description: distributor.description || '',
+      agent_code: distributor.agent_code || '',
+      mother_accounts_code: distributor.mother_accounts_code || ''
+    });
+
+    if (distributor.mother_accounts_code) {
+      const codesArr = distributor.mother_accounts_code.split(',').map(c => c.trim()).filter(Boolean);
+      const selectedIds = motherAccounts
+        .filter(ma => codesArr.includes(String(ma.code)))
+        .map(ma => ma.id);
+      setSelectedMotherAccounts(selectedIds);
+    } else {
+      setSelectedMotherAccounts([]);
+    }
+
+    // find agent user for view
+    if (distributor.agent_code) {
+      const match = accountUsers.find(u => String(u.UserID) === String(distributor.agent_code));
+      if (match) setSelectedAgentUser(match);
+      else setSelectedAgentUser(null);
+    } else {
+      setSelectedAgentUser(null);
+    }
+
+    setIsEditing(false);
+    setIsViewing(true);
     setModalOpen(true);
   };
 
@@ -86,13 +203,21 @@ const Distributor = () => {
     const updated = { ...form, [name]: value };
     setForm(updated);
 
+    // if agent_code typed manually, update selectedAgentUser (best-effort)
+    if (name === 'agent_code') {
+      const match = accountUsers.find(u => String(u.UserID) === String(value));
+      setSelectedAgentUser(match || null);
+    }
+
     if (isEditing) {
       autoSave(updated);
     }
   };
 
-  // Handle checkbox change for mother accounts
   const handleMotherAccountToggle = (id) => {
+    // Do nothing in view-only mode
+    if (isViewing) return;
+
     let updatedSelected = [];
     if (selectedMotherAccounts.includes(id)) {
       updatedSelected = selectedMotherAccounts.filter(sid => sid !== id);
@@ -101,79 +226,88 @@ const Distributor = () => {
     }
     setSelectedMotherAccounts(updatedSelected);
 
-    // If editing, also auto-save after changing mother accounts
+    // update form.mother_accounts_code to reflect selected codes
+    const motherCodes = motherAccounts
+      .filter(ma => updatedSelected.includes(ma.id))
+      .map(ma => ma.code)
+      .join(',') || '';
+
+    const updatedForm = {
+      ...form,
+      mother_accounts_code: motherCodes
+    };
+
+    setForm(updatedForm);
+
     if (isEditing) {
-      // get updated form with updated mother accounts info
-      const motherNames = motherAccounts
-        .filter(ma => updatedSelected.includes(ma.id))
-        .map(ma => ma.name)
-        .join(', ');
-      const motherCodes = motherAccounts
-        .filter(ma => updatedSelected.includes(ma.id))
-        .map(ma => ma.code)
-        .join(', ');
-
-      const updatedForm = {
-        ...form,
-        mother_accounts_name: motherNames,
-        mother_accounts_code: motherCodes
-      };
-
       autoSave(updatedForm);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (!form.name.trim()) {
-      Swal.fire('Validation Error', 'Name is required.', 'warning');
+      Swal.fire('Warning', 'Distributor name is required.', 'warning');
       return;
     }
 
-    // Compose mother accounts names and codes as comma-separated strings from selectedMotherAccounts
-    const motherNames = motherAccounts
-      .filter(ma => selectedMotherAccounts.includes(ma.id))
-      .map(ma => ma.name)
-      .join(', ');
+    // Compose mother_accounts_code from selectedMotherAccounts (ensure it's stored)
     const motherCodes = motherAccounts
       .filter(ma => selectedMotherAccounts.includes(ma.id))
       .map(ma => ma.code)
-      .join(', ');
+      .join(',') || null;
 
-    if (isEditing) {
-      const { error } = await supabase
-        .from('distributors')
-        .update({
-          name: form.name,
-          description: form.description || null,
-          mother_accounts_name: motherNames || null,
-          mother_accounts_code: motherCodes || null
-        })
-        .eq('id', form.id);
-      if (error) {
-        Swal.fire('Update Error', error.message, 'error');
-      } else {
+    try {
+      if (isEditing && form.id) {
+        const { error } = await supabase
+          .from('distributors')
+          .update({
+            name: form.name.trim(),
+            description: form.description?.trim() || null,
+            agent_code: form.agent_code?.trim() || null,
+            mother_accounts_code: motherCodes
+          })
+          .eq('id', form.id);
+
+        if (error) throw error;
+
         Swal.fire('Success', 'Distributor updated successfully!', 'success');
-        setModalOpen(false);
-        fetchDistributors();
-      }
-    } else {
-      // Insert new distributor without code (auto-gen)
-      const { error } = await supabase
-        .from('distributors')
-        .insert([{
-          name: form.name,
-          description: form.description || null,
-          mother_accounts_name: motherNames || null,
-          mother_accounts_code: motherCodes || null
-        }]);
-      if (error) {
-        Swal.fire('Insert Error', error.message, 'error');
       } else {
-        Swal.fire('Success', 'Distributor added successfully!', 'success');
-        setModalOpen(false);
-        fetchDistributors();
+        // Add new distributor
+        const nextCode = form.code || (await getNextDistributorCode());
+
+        // check duplicate name
+        const { data: existing } = await supabase
+          .from('distributors')
+          .select('name')
+          .eq('name', form.name.trim());
+
+        if (existing && existing.length > 0) {
+          Swal.fire('Duplicate', 'A distributor with this name already exists.', 'warning');
+          return;
+        }
+
+        const { error } = await supabase.from('distributors').insert([
+          {
+            code: nextCode,
+            name: form.name.trim(),
+            description: form.description?.trim() || null,
+            agent_code: form.agent_code?.trim() || null,
+            mother_accounts_code: motherCodes
+          },
+        ]);
+
+        if (error) throw error;
+
+        Swal.fire('Success', `Distributor added successfully! (${nextCode})`, 'success');
       }
+
+      setModalOpen(false);
+      await fetchDistributors();
+    } catch (err) {
+      console.error('Error saving distributor:', err.message);
+      Swal.fire('Error', err.message, 'error');
     }
   };
 
@@ -203,13 +337,13 @@ const Distributor = () => {
   };
 
   const handleExport = () => {
-    const headers = ['ID', 'Code', 'Name', 'Description', 'Mother Accounts Name', 'Mother Accounts Code'];
+    const headers = ['ID', 'Code', 'Name', 'Description', 'Agent Code', 'Mother Accounts Code'];
     const rows = distributors.map(d => [
       d.id,
       d.code,
       d.name,
       d.description || '',
-      d.mother_accounts_name || '',
+      d.agent_code || '',
       d.mother_accounts_code || ''
     ]);
 
@@ -269,8 +403,11 @@ const Distributor = () => {
         const validEntries = normalizedData
           .filter(row => row.name && !existingNames.has(row.name.trim()))
           .map(row => ({
+            code: row.code?.trim() || undefined,
             name: row.name.trim(),
             description: row.description?.trim() || null,
+            agent_code: row.agent_code?.trim() || null,
+            mother_accounts_code: row.mother_accounts_code?.trim() || null
           }));
 
         if (validEntries.length === 0) {
@@ -299,23 +436,18 @@ const Distributor = () => {
 
   const autoSave = debounce(async (updatedForm) => {
     if (updatedForm.id && updatedForm.name.trim()) {
-      // Compose mother accounts from selectedMotherAccounts state
-      const motherNames = motherAccounts
-        .filter(ma => selectedMotherAccounts.includes(ma.id))
-        .map(ma => ma.name)
-        .join(', ');
       const motherCodes = motherAccounts
         .filter(ma => selectedMotherAccounts.includes(ma.id))
         .map(ma => ma.code)
-        .join(', ');
+        .join(',') || null;
 
       const { error } = await supabase
         .from('distributors')
         .update({
-          name: updatedForm.name,
-          description: updatedForm.description || null,
-          mother_accounts_name: motherNames || null,
-          mother_accounts_code: motherCodes || null
+          name: updatedForm.name.trim(),
+          description: updatedForm.description?.trim() || null,
+          agent_code: updatedForm.agent_code?.trim() || null,
+          mother_accounts_code: motherCodes
         })
         .eq('id', updatedForm.id);
 
@@ -323,39 +455,39 @@ const Distributor = () => {
         console.error('Auto-save error:', error.message);
       } else {
         console.log('Auto-saved changes');
+        fetchDistributors(); // optional: refresh list after autosave
       }
     }
-  }, 1000); // 1 second debounce
+  }, 1000);
 
   // Filtering distributors by searchTerm
   const filteredDistributors = distributors.filter(dist => {
     const term = searchTerm.toLowerCase();
     return (
-      dist.name.toLowerCase().includes(term) ||
-      dist.code.toString().toLowerCase().includes(term) ||
-      (dist.description && dist.description.toLowerCase().includes(term))
+      String(dist.name || '').toLowerCase().includes(term) ||
+      String(dist.code || '').toLowerCase().includes(term) ||
+      (dist.description && String(dist.description).toLowerCase().includes(term)) ||
+      (dist.agent_code && String(dist.agent_code).toLowerCase().includes(term))
     );
   });
 
   // Pagination calculations
-  const totalPages = Math.ceil(filteredDistributors.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredDistributors.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentItems = filteredDistributors.slice(startIndex, startIndex + itemsPerPage);
 
-  // Pagination controls handlers
   const goToPage = (page) => {
     if (page < 1) page = 1;
     else if (page > totalPages) page = totalPages;
     setCurrentPage(page);
   };
 
-  // When itemsPerPage changes reset to first page
   const handleItemsPerPageChange = (e) => {
     setItemsPerPage(Number(e.target.value));
     setCurrentPage(1);
   };
 
-  // Styles
+  // Styles (kept mostly same)
   const containerStyle = {
     padding: '20px',
     maxWidth: 1500,
@@ -416,9 +548,9 @@ const Distributor = () => {
     padding: '24px',
     borderRadius: '8px',
     width: '100%',
-    maxWidth: '400px',
+    maxWidth: '720px',
     boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-    maxHeight: '80vh',
+    maxHeight: '85vh',
     overflowY: 'auto'
   };
   const inputStyle = {
@@ -446,10 +578,39 @@ const Distributor = () => {
     marginLeft: '8px'
   };
 
+  // --- UI helpers for account users modal ---
+  const filteredAccountUsers = accountUsers.filter(u => {
+    const term = accountUserSearch.toLowerCase();
+    return (
+      String(u.name || '').toLowerCase().includes(term) ||
+      String(u.UserID || '').toLowerCase().includes(term)
+    );
+  });
+
+  const openUserPicker = () => {
+    // refresh account users in case of changes
+    fetchAccountUsers();
+    setAccountUserSearch('');
+    setUserModalOpen(true);
+  };
+
+  const selectAgentUser = (user) => {
+    // user.UserID goes into agent_code
+    setForm(prev => ({ ...prev, agent_code: String(user.UserID) }));
+    setSelectedAgentUser(user);
+    setUserModalOpen(false);
+
+    if (isEditing) {
+      // autosave the selection for editing
+      autoSave({ ...form, agent_code: String(user.UserID) });
+    }
+  };
+
+  // --- Render ---
   return (
     <div style={containerStyle}>
       <h2>Distributor List</h2>
-      {/* Action Bar: Add, Export, Import, Search */}
+
       <div style={{
         display: 'flex',
         flexWrap: 'wrap',
@@ -468,7 +629,6 @@ const Distributor = () => {
           Export CSV
         </button>
 
-        {/* Import CSV as a styled button */}
         <label
           htmlFor="import-csv"
           style={{
@@ -493,10 +653,9 @@ const Distributor = () => {
           style={{ display: 'none' }}
         />
 
-
         <input
           type="text"
-          placeholder="Search by name, code or description"
+          placeholder="Search by name, code, description or agent"
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           style={{
@@ -508,7 +667,6 @@ const Distributor = () => {
         />
       </div>
 
-      {/* Rows per page dropdown */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -541,7 +699,8 @@ const Distributor = () => {
               <th style={thStyle}>Code</th>
               <th style={thStyle}>Name</th>
               <th style={thStyle}>Description</th>
-              <th style={thStyle}>Mother Accounts Name</th>
+              <th style={thStyle}>Agent Code</th>
+              <th style={thStyle}>Mother Accounts Code</th>
               <th style={thStyle}>Actions</th>
             </tr>
           </thead>
@@ -556,54 +715,50 @@ const Distributor = () => {
                 <td style={tdStyle}>{distributor.code}</td>
                 <td style={tdStyle}>{distributor.name}</td>
                 <td style={tdStyle}>{distributor.description}</td>
+                <td style={tdStyle}>{distributor.agent_code}</td>
                 <td style={tdStyle}>
-                  {distributor.mother_accounts_name?.length > 50
-                    ? distributor.mother_accounts_name.substring(0, 50) + "..."
-                    : distributor.mother_accounts_name}
+                  {distributor.mother_accounts_code?.length > 40
+                    ? distributor.mother_accounts_code.substring(0, 40) + "..."
+                    : distributor.mother_accounts_code}
                 </td>
                 <td style={tdStyle}>
+                  {/* View (magnifying glass) */}
+                  <button
+                    title="View"
+                    onClick={() => openViewModal(distributor)}
+                    style={{ ...actionBtnStyle, backgroundColor: '#17a2b8', padding: '6px 10px', minWidth: 'auto' }}
+                    aria-label="View Distributor"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="white" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                      <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85zm-5.242.656a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
+                    </svg>
+                  </button>
+
+                  {/* Edit */}
                   <button
                     style={{ ...actionBtnStyle, backgroundColor: '#007bff', padding: '6px 10px', minWidth: 'auto' }}
                     onClick={() => openEditModal(distributor)}
                     aria-label="Edit Distributor"
                     title="Edit"
                   >
-                    {/* Pencil/Edit icon SVG */}
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      fill="white"
-                      viewBox="0 0 16 16"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="white" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                       <path d="M12.146.854a.5.5 0 0 1 .708 0l2.292 2.292a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2L3 10.207V11h.793L13 3.793 11.207 2z" />
                     </svg>
                   </button>
 
+                  {/* Delete */}
                   <button
                     style={{ ...actionBtnStyle, backgroundColor: '#dc3545', padding: '6px 10px', minWidth: 'auto' }}
                     onClick={() => handleDelete(distributor.id)}
                     aria-label="Delete Distributor"
                     title="Delete"
                   >
-                    {/* Trash/Delete icon SVG */}
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      fill="white"
-                      viewBox="0 0 16 16"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="white" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                       <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm5 0A.5.5 0 0 1 11 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5z" />
                       <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3.086a1 1 0 0 1 .707.293l.707.707h3.086l.707-.707A1 1 0 0 1 11.914 2H15a1 1 0 0 1 .5.5zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118z" />
                     </svg>
                   </button>
                 </td>
-
               </tr>
             ))}
           </tbody>
@@ -611,16 +766,14 @@ const Distributor = () => {
       </div>
 
       {/* Pagination */}
-      <div
-        style={{
-          marginTop: '20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '16px',
-          fontFamily: 'Arial, sans-serif',
-        }}
-      >
+      <div style={{
+        marginTop: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '16px',
+        fontFamily: 'Arial, sans-serif',
+      }}>
         <button
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage === 1}
@@ -632,12 +785,6 @@ const Distributor = () => {
             color: currentPage === 1 ? '#888' : '#fff',
             cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
             transition: 'background-color 0.3s',
-          }}
-          onMouseEnter={e => {
-            if (currentPage !== 1) e.currentTarget.style.backgroundColor = '#0056b3';
-          }}
-          onMouseLeave={e => {
-            if (currentPage !== 1) e.currentTarget.style.backgroundColor = '#007bff';
           }}
         >
           Prev
@@ -659,22 +806,16 @@ const Distributor = () => {
             cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
             transition: 'background-color 0.3s',
           }}
-          onMouseEnter={e => {
-            if (currentPage !== totalPages) e.currentTarget.style.backgroundColor = '#0056b3';
-          }}
-          onMouseLeave={e => {
-            if (currentPage !== totalPages) e.currentTarget.style.backgroundColor = '#007bff';
-          }}
         >
           Next
         </button>
       </div>
 
-      {/* Modal for Add/Edit */}
+      {/* Modal for Add/Edit/View */}
       {modalOpen && (
         <div style={modalOverlayStyle} onClick={() => setModalOpen(false)}>
           <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
-            <h3>{isEditing ? 'Edit Distributor' : 'Add Distributor'}</h3>
+            <h3>{isViewing ? 'View Distributor' : (isEditing ? 'Edit Distributor' : 'Add Distributor')}</h3>
             <form onSubmit={handleSubmit}>
               <label>Code</label>
               <input
@@ -685,6 +826,7 @@ const Distributor = () => {
                 disabled
                 readOnly
               />
+
               <label>Name *</label>
               <input
                 style={inputStyle}
@@ -693,39 +835,103 @@ const Distributor = () => {
                 value={form.name}
                 onChange={handleChange}
                 required
+                disabled={isViewing}
               />
+
               <label>Description</label>
               <textarea
                 style={{ ...inputStyle, height: '60px' }}
                 name="description"
                 value={form.description}
                 onChange={handleChange}
+                disabled={isViewing}
               />
 
-              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontWeight: '600' }}>
-                Mother Accounts
+              <label style={{ display: 'block', marginBottom: '6px', fontWeight: 600 }}>Agent Code</label>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
+                <input
+                  style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+                  type="text"
+                  name="agent_code"
+                  value={form.agent_code}
+                  onChange={handleChange}
+                  disabled={isViewing}
+                  placeholder="Enter UserID or pick from users"
+                />
+
+                {/* magnifying glass button */}
                 <button
                   type="button"
+                  title="Pick Agent (Account User)"
                   onClick={() => {
-                    if (selectedMotherAccounts.length === motherAccounts.length) {
-                      setSelectedMotherAccounts([]); // uncheck all
-                    } else {
-                      setSelectedMotherAccounts(motherAccounts.map(ma => ma.id)); // check all
-                    }
+                    if (!isViewing) openUserPicker();
                   }}
                   style={{
-                    fontSize: '0.85rem',
-                    padding: '4px 8px',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    border: '1px solid #007bff',
-                    backgroundColor: selectedMotherAccounts.length === motherAccounts.length ? '#f8d7da' : '#007bff',
-                    color: selectedMotherAccounts.length === motherAccounts.length ? '#721c24' : 'white',
-                    transition: 'background-color 0.2s, color 0.2s'
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    border: 'none',
+                    cursor: isViewing ? 'not-allowed' : 'pointer',
+                    backgroundColor: '#17a2b8',
+                    color: 'white'
                   }}
                 >
-                  {selectedMotherAccounts.length === motherAccounts.length ? 'Uncheck All' : 'Check All'}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="white" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85zM6.5 11a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/>
+                  </svg>
                 </button>
+              </div>
+
+              {/* show selected agent user name if present */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ fontWeight: 600 }}>Agent Info</label>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: 6,
+                  border: '1px solid #ddd',
+                  backgroundColor: '#fafafa'
+                }}>
+                  {selectedAgentUser ? (
+                    <div>
+                      <div><strong>UserID:</strong> {selectedAgentUser.UserID}</div>
+                      <div><strong>Name:</strong> {selectedAgentUser.name}</div>
+                    </div>
+                  ) : (
+                    <div style={{ color: '#666', fontStyle: 'italic' }}>No agent selected</div>
+                  )}
+                </div>
+              </div>
+
+              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontWeight: '600' }}>
+                Mother Accounts (select codes)
+                {!isViewing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedMotherAccounts.length === motherAccounts.length) {
+                        setSelectedMotherAccounts([]); // uncheck all
+                        setForm(prev => ({ ...prev, mother_accounts_code: '' }));
+                      } else {
+                        const allIds = motherAccounts.map(ma => ma.id);
+                        setSelectedMotherAccounts(allIds);
+                        const allCodes = motherAccounts.map(ma => ma.code).join(',');
+                        setForm(prev => ({ ...prev, mother_accounts_code: allCodes }));
+                      }
+                    }}
+                    style={{
+                      fontSize: '0.85rem',
+                      padding: '4px 8px',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      border: '1px solid #007bff',
+                      backgroundColor: selectedMotherAccounts.length === motherAccounts.length ? '#f8d7da' : '#007bff',
+                      color: selectedMotherAccounts.length === motherAccounts.length ? '#721c24' : 'white',
+                      transition: 'background-color 0.2s, color 0.2s'
+                    }}
+                  >
+                    {selectedMotherAccounts.length === motherAccounts.length ? 'Uncheck All' : 'Check All'}
+                  </button>
+                )}
               </label>
 
               <div
@@ -743,55 +949,156 @@ const Distributor = () => {
                 {motherAccounts.length === 0 ? (
                   <p style={{ color: '#888', fontStyle: 'italic' }}>No mother accounts available</p>
                 ) : (
-                  motherAccounts.map(ma => (
-                    <div
-                      key={ma.id}
-                      style={{
-                        marginBottom: '8px',
-                        padding: '6px 8px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        userSelect: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        transition: 'background-color 0.15s'
-                      }}
-                      onClick={() => handleMotherAccountToggle(ma.id)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleMotherAccountToggle(ma.id);
-                        }
-                      }}
-                      role="checkbox"
-                      aria-checked={selectedMotherAccounts.includes(ma.id)}
-                      tabIndex={0}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedMotherAccounts.includes(ma.id)}
-                        onChange={() => handleMotherAccountToggle(ma.id)}
-                        style={{ marginRight: '10px', cursor: 'pointer' }}
-                        tabIndex={-1}
-                      />
-                      <span>{ma.code} - {ma.name}</span>
-                    </div>
-                  ))
+                  motherAccounts.map(ma => {
+                    const checked = selectedMotherAccounts.includes(ma.id);
+                    return (
+                      <div
+                        key={ma.id}
+                        style={{
+                          marginBottom: '8px',
+                          padding: '6px 8px',
+                          borderRadius: '4px',
+                          cursor: isViewing ? 'default' : 'pointer',
+                          userSelect: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          transition: 'background-color 0.15s'
+                        }}
+                        onClick={() => handleMotherAccountToggle(ma.id)}
+                        onKeyDown={e => {
+                          if (!isViewing && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault();
+                            handleMotherAccountToggle(ma.id);
+                          }
+                        }}
+                        role="checkbox"
+                        aria-checked={checked}
+                        tabIndex={0}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleMotherAccountToggle(ma.id)}
+                          disabled={isViewing}
+                          style={{ marginRight: '10px', cursor: isViewing ? 'default' : 'pointer' }}
+                          tabIndex={-1}
+                        />
+                        <span>{ma.code} - {ma.name}</span>
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
+              {/* Show the composed mother_accounts_code so user can see or copy */}
+              <label>Mother Accounts Code (stored)</label>
+              <input
+                style={inputStyle}
+                type="text"
+                name="mother_accounts_code"
+                value={form.mother_accounts_code}
+                readOnly
+                disabled
+              />
 
-              <button type="submit" style={saveButtonStyle}>
-                {isEditing ? 'Save Changes' : 'Add Distributor'}
-              </button>
+              {!isViewing ? (
+                <>
+                  <button type="submit" style={saveButtonStyle}>
+                    {isEditing ? 'Save Changes' : 'Add Distributor'}
+                  </button>
+                  <button
+                    type="button"
+                    style={cancelButtonStyle}
+                    onClick={() => setModalOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button
+                    type="button"
+                    style={cancelButtonStyle}
+                    onClick={() => setModalOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* User picker modal (for selecting Agent) */}
+      {userModalOpen && (
+        <div style={modalOverlayStyle} onClick={() => setUserModalOpen(false)}>
+          <div style={{ ...modalContentStyle, maxWidth: '720px' }} onClick={e => e.stopPropagation()}>
+            <h4>Select Account User (Agent)</h4>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input
+                placeholder="Search by name or UserID"
+                value={accountUserSearch}
+                onChange={e => setAccountUserSearch(e.target.value)}
+                style={{ ...inputStyle, marginBottom: 0 }}
+              />
               <button
                 type="button"
-                style={cancelButtonStyle}
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setAccountUserSearch('');
+                  fetchAccountUsers();
+                }}
+                style={{ padding: '8px 12px', borderRadius: 6, border: 'none', backgroundColor: '#007bff', color: 'white', cursor: 'pointer' }}
               >
-                Cancel
+                Refresh
               </button>
-            </form>
+            </div>
+
+            <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid #eee', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f7f7f7' }}>
+                    <th style={{ padding: 8, textAlign: 'left' }}>UserID</th>
+                    <th style={{ padding: 8, textAlign: 'left' }}>Name</th>
+                    <th style={{ padding: 8, textAlign: 'left' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAccountUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ padding: 12, textAlign: 'center', color: '#666' }}>No account users found</td>
+                    </tr>
+                  ) : (
+                    filteredAccountUsers.map((u, idx) => (
+                      <tr key={u.id} style={{ borderTop: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: 8 }}>{u.UserID}</td>
+                        <td style={{ padding: 8 }}>{u.name}</td>
+                        <td style={{ padding: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => selectAgentUser(u)}
+                            style={{ padding: '6px 10px', borderRadius: 6, border: 'none', backgroundColor: '#28a745', color: 'white', cursor: 'pointer' }}
+                          >
+                            Select
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setUserModalOpen(false)}
+                style={{ ...cancelButtonStyle }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
