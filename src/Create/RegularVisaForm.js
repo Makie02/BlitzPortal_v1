@@ -1084,7 +1084,7 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
     }
   };
 
-  const fetchBranches = async (motherAccountCode) => {
+const fetchBranches = async (motherAccountCode) => {
     try {
       console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
 
@@ -1112,26 +1112,39 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
         return;
       }
 
-      // 🔥 Ensure BP names map is ready
-      let bpMap = bpNamesMap;
-      if (!bpMap || Object.keys(bpMap).length === 0) {
-        console.log("📥 Fetching BP names from Bp_Accounts...");
+      // 🔥 Get all unique BP codes from filtered data
+      const allBpCodes = [...new Set(filteredData.map(row => (row.bp_code || "").trim()).filter(Boolean))];
+      console.log(`📊 Total unique BP codes to fetch: ${allBpCodes.length}`);
+
+      // 🔥 Fetch ALL BP names in batches (Supabase limit is 1000 per query)
+      let allBpData = [];
+      const batchSize = 1000;
+      
+      for (let i = 0; i < allBpCodes.length; i += batchSize) {
+        const batch = allBpCodes.slice(i, i + batchSize);
         const { data: bpData, error: bpError } = await supabase
           .from("Bp_Accounts")
-          .select("bp_code, bp_name");
+          .select("bp_code, bp_name")
+          .in("bp_code", batch);
 
         if (bpError) {
-          console.error("❌ Failed to fetch Bp_Accounts:", bpError);
-          return;
+          console.error("❌ Failed to fetch Bp_Accounts batch:", bpError);
+          continue;
         }
 
-        bpMap = {};
-        bpData.forEach((bp) => {
-          if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
-        });
-
-        setBpNamesMap(bpMap);
+        allBpData = [...allBpData, ...bpData];
       }
+
+      console.log(`✅ Fetched ${allBpData.length} BP records`);
+
+      // Create mapping
+      const bpMap = {};
+      allBpData.forEach((bp) => {
+        if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
+      });
+
+      // Update global map
+      setBpNamesMap(prev => ({ ...prev, ...bpMap }));
 
       // Map branches to names
       let uniqueBranches = filteredData
@@ -1139,8 +1152,7 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
           const bpCode = (row.bp_code || "").trim();
           if (!bpCode) return null;
 
-          // ✅ Get bp_name from map
-          let branchName = bpMap[bpCode];
+          const branchName = bpMap[bpCode];
 
           return {
             id: row.id,
@@ -1151,56 +1163,17 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
             distributor_code: row.distributor_code,
             agent_code: row.agent_code,
             agent_name: agentNamesMap[row.agent_code] || row.agent_code,
-            _needsMapping: !branchName, // ✅ Flag if walang mapping
           };
         })
         .filter(Boolean);
-
-      // 🔥 If may branches na walang mapping, fetch directly from Bp_Accounts
-      const unmappedCodes = uniqueBranches
-        .filter((b) => b._needsMapping)
-        .map((b) => b.code);
-
-      if (unmappedCodes.length > 0) {
-        console.log(`📥 Fetching BP names for unmapped codes:`, unmappedCodes);
-        const { data: bpDataDirect, error: bpErrorDirect } = await supabase
-          .from("Bp_Accounts")
-          .select("bp_code, bp_name")
-          .in("bp_code", unmappedCodes);
-
-        if (bpErrorDirect) {
-          console.error("❌ Failed to fetch unmapped BP names:", bpErrorDirect);
-        } else {
-          // ✅ Map directly sa results
-          const directMap = {};
-          bpDataDirect.forEach((bp) => {
-            if (bp.bp_code) directMap[bp.bp_code.trim()] = bp.bp_name;
-          });
-
-          // ✅ Update uniqueBranches with bp_name
-          uniqueBranches = uniqueBranches.map((branch) => {
-            if (branch._needsMapping && directMap[branch.code]) {
-              return {
-                ...branch,
-                name: directMap[branch.code],
-                bp_name: directMap[branch.code],
-                _needsMapping: false,
-              };
-            }
-            return branch;
-          });
-        }
-      }
-
-      // ✅ Remove flag before setting state
-      uniqueBranches = uniqueBranches.map(({ _needsMapping, ...rest }) => rest);
 
       // Sort alphabetically
       uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
 
       setBranchTypes(uniqueBranches);
       console.log(`✨ Unique branches: ${uniqueBranches.length}`);
-      console.table(uniqueBranches);
+      console.log(`🔍 Unmapped branches: ${uniqueBranches.filter(b => b.name === b.code).length}`);
+      console.table(uniqueBranches.slice(0, 10)); // Show first 10 only
     } catch (err) {
       console.error("❌ Error fetching branches:", err.message);
       Swal.fire("Error", err.message, "error");
@@ -2233,7 +2206,7 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
     try {
       const storedUser = localStorage.getItem("loggedInUser");
       const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-      const createdBy = parsedUser?.name || "Unknown";
+      const createdBy = parsedUser?.UserID || "Unknown";
 
       // ✅ Required validation
       if (!formData.regularpwpcode?.trim()) {
@@ -2409,104 +2382,11 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
   // Handle Excel Import
 
   // Trigger hidden file input
-  const triggerFileInput = () => {
-    if (window.excelInput) {
-      window.excelInput.click();
-    }
-  };
 
-
-  const handleImport = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const importedData = results.data.map((row) => ({
-          SKUITEM: row.SKU || "",
-          SRP: parseFloat(row.SRP) || 0,
-          QTY: parseInt(row.QTY) || 0,
-          UOM: row.UOM || "PC",
-          DISCOUNT: parseFloat(row["Discount %"]) || 0,
-        }));
-
-        setRows(importedData);
-        alert("✅ Import successful! Data loaded into table.");
-      },
-    });
-  };
-
-  const handleExport = () => {
-    if (!accountSkuRows || Object.keys(accountSkuRows).length === 0) {
-      Swal.fire({
-        icon: "warning",
-        title: "No Data to Export",
-        text: "There is no data available for export.",
-      });
-      return;
-    }
-
-    // ✅ Combine all branches into one export array (no totals, no SKUITEM)
-    let exportData = [];
-
-    Object.keys(accountSkuRows).forEach((branchName) => {
-      const branchRows = accountSkuRows[branchName] || [];
-      branchRows.forEach((row) => {
-        exportData.push({
-          BRANCH_NAME: branchName,
-          SRP: row.SRP || 0,
-          QTY: row.QTY || 0,
-          UOM: row.UOM || "PC",
-          DISCOUNT: row.DISCOUNT || 0,
-
-        });
-      });
-    });
-
-    if (exportData.length === 0) {
-      Swal.fire({
-        icon: "info",
-        title: "Empty Data",
-        text: "No records found to export.",
-      });
-      return;
-    }
-
-    // ✅ Convert JSON to Excel worksheet
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Branch_Data");
-
-    // ✅ Create Excel file and trigger download
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
-    const blob = new Blob([excelBuffer], {
-      type: "application/octet-stream",
-    });
-    saveAs(blob, "Branch_Export.xlsx");
-
-    Swal.fire({
-      icon: "success",
-      title: "Export Successful 🎉",
-      text: "Your branch data has been exported to Excel.",
-      timer: 2000,
-      showConfirmButton: false,
-    });
-  };
 
   const [tabs, setTabs] = useState([]);
 
-  const handleAccountSkuChange = (value) => {
-    setSelectedAccountForSku(value);
 
-    if (value && !tabs.includes(value)) {
-      setTabs((prev) => [...prev, value]); // add new tab if not already added
-    }
-  };
 
 
 
