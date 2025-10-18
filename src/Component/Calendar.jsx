@@ -8,8 +8,8 @@ import getDay from "date-fns/getDay";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 import { FaCheckCircle, FaHourglassHalf, FaTimesCircle, FaExclamationTriangle } from "react-icons/fa";
-import { supabase } from "../supabaseClient"; // adjust path as needed
-import "./CalendarStyles.css"; // Optional custom styles
+import { supabase } from "../supabaseClient";
+import "./CalendarStyles.css";
 
 const locales = { "en-US": require("date-fns/locale/en-US") };
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
@@ -17,22 +17,68 @@ const DnDCalendar = withDragAndDrop(Calendar);
 
 export default function VisaCalendar() {
   const [events, setEvents] = useState([]);
-  const [showUnscheduled, setShowUnscheduled] = useState(false);
   const [showOnlyApproved, setShowOnlyApproved] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showProcessData, setShowProcessData] = useState(false);
+  const [processHistory, setProcessHistory] = useState([]);
+
+  // Fetch current logged-in user
+  const fetchCurrentUser = async () => {
+    try {
+      // Get user from localStorage instead of Supabase Auth
+      const loggedInUser = JSON.parse(localStorage.getItem('loggedInUser'));
+      
+      console.log("🔍 Logged in user from localStorage:", loggedInUser);
+      
+      if (!loggedInUser) {
+        console.log("⚠️ No user in localStorage!");
+        alert("Please log in first.");
+        return;
+      }
+      
+      // Get the UserID from localStorage
+      const userId = loggedInUser.UserID || loggedInUser.userId || loggedInUser.id;
+      const userName = loggedInUser.name;
+      
+      console.log("✅ Current User - ID:", userId, "Name:", userName);
+      
+      setCurrentUser({
+        UserID: userId,
+        name: userName,
+        role: loggedInUser.role
+      });
+      
+    } catch (error) {
+      console.error("❌ Error fetching current user:", error);
+    }
+  };
 
   const fetchAllVisaEvents = async () => {
     try {
-      const visaTables = ["cover_pwp", "regular_pwp"];
+      if (!currentUser) {
+        console.log("⏸️ Waiting for user login...");
+        return;
+      }
+
+      console.log(`🔄 Fetching PWPs for UserID: ${currentUser.UserID} (${currentUser.name})`);
+
+      const visaTables = ["cover_pwp", "regular_pwp", "Claims_pwp"];
       let allVisaItems = [];
 
       await Promise.all(
         visaTables.map(async (table) => {
-          const { data, error } = await supabase.from(table).select("*");
+          const { data, error } = await supabase
+            .from(table)
+            .select("*")
+            .eq("createForm", currentUser.UserID);
 
           if (error) {
-            console.error(`Error fetching from ${table}:`, error);
+            console.error(`❌ Error fetching from ${table}:`, error);
             return;
           }
+          
           if (data && data.length) {
             allVisaItems = allVisaItems.concat(
               data.map((item) => ({
@@ -44,12 +90,15 @@ export default function VisaCalendar() {
         })
       );
 
-      // Collect all possible codes for approval lookup from allVisaItems
-      // Since Approval_History.PwpCode matches cover_code or regularpwpcode,
-      // gather those codes to fetch approval responses
+      if (allVisaItems.length === 0) {
+        console.log("⚠️ No PWPs found for this user!");
+        setEvents([]);
+        return;
+      }
+
       const approvalCodes = Array.from(
         new Set(
-          allVisaItems.flatMap(item => [item.cover_code, item.regularpwpcode]).filter(Boolean)
+          allVisaItems.flatMap(item => [item.cover_code, item.regularpwpcode, item.code_pwp]).filter(Boolean)
         )
       );
 
@@ -58,7 +107,6 @@ export default function VisaCalendar() {
         return;
       }
 
-      // Fetch approval history for these codes
       const { data: approvalData, error: approvalError } = await supabase
         .from("Approval_History")
         .select(`"PwpCode", "Response", "DateResponded"`)
@@ -70,42 +118,41 @@ export default function VisaCalendar() {
         return;
       }
 
-      // Map latest approval response by PwpCode
       const latestApprovals = new Map();
+      const historyMap = new Map();
+      
       if (approvalData) {
         for (const approval of approvalData) {
           if (!latestApprovals.has(approval.PwpCode)) {
             latestApprovals.set(approval.PwpCode, approval.Response);
           }
+          
+          if (!historyMap.has(approval.PwpCode)) {
+            historyMap.set(approval.PwpCode, []);
+          }
+          historyMap.get(approval.PwpCode).push({
+            response: approval.Response,
+            date: approval.DateResponded
+          });
         }
       }
 
-      // Map events with approval statuses and proper keys
       const newEvents = allVisaItems.map((item) => {
-        let startDate = null;
-        let endDate = null;
+        // Always use creation date as the primary date
+        const creationDate = item.created_at || item.DateCreated;
+        let startDate = creationDate ? new Date(creationDate) : new Date();
+        // Set start time to beginning of day
+        startDate.setHours(0, 0, 0, 0);
+        // End date is same day (not +1 day) to keep it on single date
+        let endDate = new Date(startDate);
 
-        if (item.sourcePath === "regular_pwp") {
-          startDate = item.activityDurationFrom ? new Date(item.activityDurationFrom) : null;
-          endDate = item.activityDurationTo ? new Date(item.activityDurationTo) : null;
-        } else {
-          startDate = item.start ? new Date(item.start) : null;
-          endDate = item.end ? new Date(item.end) : null;
-        }
-
-        // Use cover_code or regularpwpcode as the key for approval lookup
-        const approvalKey = item.cover_code || item.regularpwpcode;
+        const approvalKey = item.cover_code || item.regularpwpcode || item.code_pwp;
         const approvalResponse = approvalKey ? latestApprovals.get(approvalKey) : null;
-
-        // Log the approvalResponse with the proper code key
-        const codeForLog = approvalKey || "unknown_code";
-        console.log(`Approval response for ${codeForLog}:`, approvalResponse);
 
         let approvalStatus;
         if (approvalResponse) {
           if (approvalResponse.toLowerCase() === "approved" || approvalResponse.toLowerCase() === "approve") {
-            console.log("fuckk"); // Display if approved or approve
-            approvalStatus = "approved"; // lowercase for color logic
+            approvalStatus = "approved";
           } else {
             approvalStatus = approvalResponse.toLowerCase();
           }
@@ -114,15 +161,14 @@ export default function VisaCalendar() {
         }
 
         return {
-          id: approvalKey || item.visaCode || "unknown_id",
-          title: `${approvalKey || item.visaCode} (${approvalStatus})`,
+          id: approvalKey || item.visaCode || item.id || "unknown_id",
+          title: `${approvalKey || item.visaCode || item.code_pwp} (${approvalStatus})`,
           start: startDate,
           end: endDate,
           status: approvalStatus,
           sourcePath: item.sourcePath,
           visaCode: item.visaCode,
           DateCreated: item.DateCreated,
-
           regularpwpcode: item.regularpwpcode,
           cover_code: item.cover_code,
           distributor_code: item.distributor_code,
@@ -133,19 +179,65 @@ export default function VisaCalendar() {
           coverPwpCode: item.coverPwpCode,
           remaining_balance: item.remaining_balance,
           credit_budget: item.credit_budget,
+          code_pwp: item.code_pwp,
+          distributor: item.distributor,
+          activity: item.activity,
+          account_types: item.account_types,
+          category_codes: item.category_codes,
+          category_names: item.category_names,
+          amount_budget: item.amount_budget,
+          remaining_budget: item.remaining_budget,
+          notification: item.notification,
+          pwp_type: item.pwp_type,
+          branchType: item.branchType,
+          approvalHistory: historyMap.get(approvalKey) || []
         };
       });
 
       setEvents(newEvents);
+      
+      // Build process history data
+      const processData = [];
+      allVisaItems.forEach(item => {
+        const code = item.cover_code || item.regularpwpcode || item.code_pwp;
+        const createdDate = item.created_at || item.DateCreated;
+        const history = historyMap.get(code) || [];
+        
+        processData.push({
+          code: code,
+          type: item.sourcePath,
+          createdDate: createdDate ? new Date(createdDate).toLocaleDateString() : 'N/A',
+          status: 'Pending',
+          statusDate: createdDate ? new Date(createdDate).toLocaleDateString() : 'N/A'
+        });
+        
+        history.forEach(h => {
+          processData.push({
+            code: code,
+            type: item.sourcePath,
+            createdDate: createdDate ? new Date(createdDate).toLocaleDateString() : 'N/A',
+            status: h.response,
+            statusDate: h.date ? new Date(h.date).toLocaleDateString() : 'N/A'
+          });
+        });
+      });
+      
+      setProcessHistory(processData);
+
     } catch (error) {
-      console.error("Error fetching visa events from Supabase:", error);
+      console.error("❌ Error fetching visa events:", error);
     }
   };
 
+  useEffect(() => {
+    fetchCurrentUser();
+  }, []);
 
   useEffect(() => {
-    fetchAllVisaEvents();
-  }, []);
+    if (currentUser) {
+      fetchAllVisaEvents();
+    }
+  }, [currentUser]);
 
   const moveEvent = async ({ event, start, end }) => {
     const { sourcePath, id } = event;
@@ -163,6 +255,9 @@ export default function VisaCalendar() {
           activityDurationFrom: start.toISOString(),
           activityDurationTo: end.toISOString(),
         };
+      } else if (sourcePath === "Claims_pwp") {
+        console.log("Claims_pwp doesn't support date scheduling");
+        return;
       } else {
         updatePayload = {
           start: start.toISOString(),
@@ -183,31 +278,36 @@ export default function VisaCalendar() {
     }
   };
 
-const getIconByStatus = (status) => {
-  status = typeof status === "boolean" ? (status ? "approved" : "false") : (status || "").toLowerCase();
+  const getIconByStatus = (status) => {
+    status = typeof status === "boolean" ? (status ? "approved" : "false") : (status || "").toLowerCase();
 
-  switch (status) {
-    case "approved":
-    case "true":
-      return <FaCheckCircle style={{ marginRight: 5, color: "#28a745" }} />;
-    case "false":
-    case "declined":
-      return <FaTimesCircle style={{ marginRight: 5, color: "#f3f3f3ff" }} />;
-    case "revision":
-    case "sent back for revision":
-      return <FaExclamationTriangle style={{ marginRight: 5, color: "#ff0000ff" }} />;
-    case "cancel":
-    case "cancelled":
-      return <FaTimesCircle style={{ marginRight: 5, color: "#ffffffff" }} />;
-    default:
-      return <FaHourglassHalf style={{ marginRight: 5, color: "#7700ffff" }} />;
-  }
-};
+    switch (status) {
+      case "approved":
+      case "true":
+        return <FaCheckCircle style={{ marginRight: 5, color: "#28a745" }} />;
+      case "false":
+      case "declined":
+        return <FaTimesCircle style={{ marginRight: 5, color: "#f3f3f3ff" }} />;
+      case "revision":
+      case "sent back for revision":
+        return <FaExclamationTriangle style={{ marginRight: 5, color: "#ff0000ff" }} />;
+      case "cancel":
+      case "cancelled":
+        return <FaTimesCircle style={{ marginRight: 5, color: "#ffffffff" }} />;
+      default:
+        return <FaHourglassHalf style={{ marginRight: 5, color: "#7700ffff" }} />;
+    }
+  };
 
   const handleDropFromOutside = async ({ start, end }) => {
     try {
       const data = JSON.parse(window.draggedVisaData);
       const { sourcePath, id } = data;
+
+      if (sourcePath === "Claims_pwp") {
+        console.log("Claims_pwp doesn't support date scheduling");
+        return;
+      }
 
       const { error } = await supabase
         .from(sourcePath)
@@ -232,194 +332,299 @@ const getIconByStatus = (status) => {
     }
   };
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState(null);
-const onSelectEvent = (event) => {
-  console.log("Event clicked:", event);  // <-- add this
-  const codeKey = event.cover_code || event.regularpwpcode || event.visaCode || null;
+  const onSelectEvent = (event) => {
+    console.log("Event clicked:", event);
+    const codeKey = event.cover_code || event.regularpwpcode || event.code_pwp || event.visaCode || null;
 
-  const fullEvent = events.find(
-    (ev) => ev.cover_code === codeKey || ev.regularpwpcode === codeKey || ev.visaCode === codeKey
-  ) || event;
+    const fullEvent = events.find(
+      (ev) => ev.cover_code === codeKey || ev.regularpwpcode === codeKey || ev.code_pwp === codeKey || ev.visaCode === codeKey
+    ) || event;
 
-  setSelectedEvent(fullEvent);
-  setModalOpen(true);
-};
+    setSelectedEvent(fullEvent);
+    setModalOpen(true);
+  };
 
   const closeModal = () => {
     setModalOpen(false);
     setSelectedEvent(null);
   };
-const renderModalContent = () => {
-  if (!selectedEvent) return null;
 
-  const e = selectedEvent;
+  const renderModalContent = () => {
+    if (!selectedEvent) return null;
 
-  const containerStyle = {
-    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-    color: "#333",
-    lineHeight: 1.5,
-  };
+    const e = selectedEvent;
 
-  const headerStyle = {
-    marginBottom: "16px",
-    fontSize: "1.5rem",
-    borderBottom: "2px solid #007bff",
-    paddingBottom: "6px",
-    color: "#007bff",
-  };
+    const containerStyle = {
+      fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+      color: "#333",
+      lineHeight: 1.5,
+    };
 
-  const labelStyle = {
-    fontWeight: "600",
-    marginRight: "8px",
-    color: "#555",
-  };
+    const headerStyle = {
+      marginBottom: "16px",
+      fontSize: "1.5rem",
+      borderBottom: "2px solid #007bff",
+      paddingBottom: "6px",
+      color: "#007bff",
+    };
 
-  const valueStyle = {
-    color: "#222",
-  };
+    const labelStyle = {
+      fontWeight: "600",
+      marginRight: "8px",
+      color: "#555",
+    };
 
-  const itemStyle = {
-    marginBottom: "12px",
-    display: "flex",
-    flexWrap: "wrap",
-  };
+    const valueStyle = {
+      color: "#222",
+    };
 
-  if (e.sourcePath === "cover_pwp") {
+    const itemStyle = {
+      marginBottom: "12px",
+      display: "flex",
+      flexWrap: "wrap",
+    };
+
+    if (e.sourcePath === "cover_pwp") {
+      return (
+        <div style={containerStyle}>
+          <h3 style={headerStyle}>Cover PWP Details</h3>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Cover Code:</span>
+            <span style={valueStyle}>{e.cover_code || e.visaCode || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Distributor Code:</span>
+            <span style={valueStyle}>{e.distributor_code || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Amount Budget:</span>
+            <span style={valueStyle}>{e.amount_badget || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Created At:</span>
+            <span style={valueStyle}>
+              {e.created_at
+                ? new Date(e.created_at).toLocaleString()
+                : e.DateCreated
+                ? new Date(e.DateCreated).toLocaleString()
+                : "N/A"}
+            </span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Create Form:</span>
+            <span style={valueStyle}>{e.createForm || "N/A"}</span>
+          </div>
+          {e.approvalHistory && e.approvalHistory.length > 0 && (
+            <div style={itemStyle}>
+              <span style={labelStyle}>Approval History:</span>
+              <div style={valueStyle}>
+                {e.approvalHistory.map((h, idx) => (
+                  <div key={idx} style={{ fontSize: '0.9rem', marginTop: '4px' }}>
+                    {h.response} - {h.date ? new Date(h.date).toLocaleString() : 'N/A'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    } else if (e.sourcePath === "regular_pwp") {
+      return (
+        <div style={containerStyle}>
+          <h3 style={headerStyle}>Regular PWP Details</h3>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Regular PWP Code:</span>
+            <span style={valueStyle}>{e.regularpwpcode || e.visaCode || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Is Part Of Cover PWP:</span>
+            <span style={valueStyle}>{e.isPartOfCoverPwp ? "Yes" : "No"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Cover PWP Code:</span>
+            <span style={valueStyle}>{e.coverPwpCode || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Remaining Balance:</span>
+            <span style={valueStyle}>{e.remaining_balance || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Credit Budget:</span>
+            <span style={valueStyle}>{e.credit_budget || "N/A"}</span>
+          </div>
+          {e.approvalHistory && e.approvalHistory.length > 0 && (
+            <div style={itemStyle}>
+              <span style={labelStyle}>Approval History:</span>
+              <div style={valueStyle}>
+                {e.approvalHistory.map((h, idx) => (
+                  <div key={idx} style={{ fontSize: '0.9rem', marginTop: '4px' }}>
+                    {h.response} - {h.date ? new Date(h.date).toLocaleString() : 'N/A'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    } else if (e.sourcePath === "Claims_pwp") {
+      return (
+        <div style={containerStyle}>
+          <h3 style={headerStyle}>Claims PWP Details</h3>
+          <div style={itemStyle}>
+            <span style={labelStyle}>PWP Code:</span>
+            <span style={valueStyle}>{e.code_pwp || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Distributor:</span>
+            <span style={valueStyle}>{e.distributor || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Activity:</span>
+            <span style={valueStyle}>{e.activity || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Account Types:</span>
+            <span style={valueStyle}>{e.account_types || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Category Codes:</span>
+            <span style={valueStyle}>
+              {e.category_codes ? e.category_codes.join(", ") : "N/A"}
+            </span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Category Names:</span>
+            <span style={valueStyle}>
+              {e.category_names ? e.category_names.join(", ") : "N/A"}
+            </span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Amount Budget:</span>
+            <span style={valueStyle}>{e.amount_budget || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Remaining Budget:</span>
+            <span style={valueStyle}>{e.remaining_budget || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>PWP Type:</span>
+            <span style={valueStyle}>{e.pwp_type || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Branch Type:</span>
+            <span style={valueStyle}>{e.branchType || "N/A"}</span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Created At:</span>
+            <span style={valueStyle}>
+              {e.created_at ? new Date(e.created_at).toLocaleString() : "N/A"}
+            </span>
+          </div>
+          <div style={itemStyle}>
+            <span style={labelStyle}>Notification:</span>
+            <span style={valueStyle}>{e.notification ? "Yes" : "No"}</span>
+          </div>
+          {e.approvalHistory && e.approvalHistory.length > 0 && (
+            <div style={itemStyle}>
+              <span style={labelStyle}>Approval History:</span>
+              <div style={valueStyle}>
+                {e.approvalHistory.map((h, idx) => (
+                  <div key={idx} style={{ fontSize: '0.9rem', marginTop: '4px' }}>
+                    {h.response} - {h.date ? new Date(h.date).toLocaleString() : 'N/A'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div style={containerStyle}>
-        <h3 style={headerStyle}>Cover PWP Details</h3>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Cover Code:</span>
-          <span style={valueStyle}>{e.cover_code || e.visaCode || "N/A"}</span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Distributor Code:</span>
-          <span style={valueStyle}>{e.distributor_code || "N/A"}</span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Amount Budget:</span>
-          <span style={valueStyle}>{e.amount_badget || "N/A"}</span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Created At:</span>
-          <span style={valueStyle}>
-            {e.created_at
-              ? new Date(e.created_at).toLocaleString()
-              : e.DateCreated
-              ? new Date(e.DateCreated).toLocaleString()
-              : "N/A"}
-          </span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Create Form:</span>
-          <span style={valueStyle}>{e.createForm || "N/A"}</span>
-        </div>
+        <p>No additional details available.</p>
       </div>
     );
-  } else if (e.sourcePath === "regular_pwp") {
-    return (
-      <div style={containerStyle}>
-        <h3 style={headerStyle}>Regular PWP Details</h3>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Regular PWP Code:</span>
-          <span style={valueStyle}>{e.regularpwpcode || e.visaCode || "N/A"}</span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Is Part Of Cover PWP:</span>
-          <span style={valueStyle}>{e.isPartOfCoverPwp ? "Yes" : "No"}</span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Cover PWP Code:</span>
-          <span style={valueStyle}>{e.coverPwpCode || "N/A"}</span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Remaining Balance:</span>
-          <span style={valueStyle}>{e.remaining_balance || "N/A"}</span>
-        </div>
-        <div style={itemStyle}>
-          <span style={labelStyle}>Credit Budget:</span>
-          <span style={valueStyle}>{e.credit_budget || "N/A"}</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={containerStyle}>
-      <p>No additional details available.</p>
-    </div>
-  );
-};
-
+  };
 
   return (
     <div style={{ display: "flex", height: "90vh", padding: '20px' }}>
-      <div style={{ flex: 3, position: "relative" }}>
-        {/* Toggle button for showing only approved */}
-        <button
-          onClick={() => setShowOnlyApproved((prev) => !prev)}
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 500,
-            zIndex: 1002,
-            padding: "8px 12px",
-            backgroundColor: "#28a745",
-            color: "#fff",
-            border: "none",
-            borderRadius: 4,
-            cursor: "pointer",
-            marginRight: 10,
-          }}
-        >
-          {showOnlyApproved ? "Show All " : "Show Approved"}
-        </button>
+      {currentUser && (
+        <div style={{
+          position: "absolute",
+          top: 10,
+          left: 20,
+          padding: "8px 12px",
+          borderRadius: 4,
+          fontSize: "14px",
+          zIndex: 1003,
+        }}>
+        </div>
+      )}
+      
+      <div style={{ flex: 1, position: "relative" }}>
+        <div style={{
+          position: "absolute",
+          top: 0,
+          right: 350,
+          zIndex: 1002,
+          display: "flex",
+          gap: "10px"
+        }}>
+          <button
+            onClick={() => setShowOnlyApproved((prev) => !prev)}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: "#28a745",
+              color: "#fff",
+              border: "none",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontWeight: "500",
+            }}
+          >
+            {showOnlyApproved ? "Show All" : "Show Approved"}
+          </button>
 
-        {/* Existing showUnscheduled toggle */}
-        <button
-          onClick={() => setShowUnscheduled((prev) => !prev)}
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 350,
-            zIndex: 1001,
-            padding: "8px 12px",
-            backgroundColor: "#4267B2",
-            color: "#fff",
-            border: "none",
-            borderRadius: 4,
-            cursor: "pointer",
-          }}
-        >
-          {showUnscheduled ? "Hide Unscheduled" : " Unscheduled"}
-        </button>
+          <button
+            onClick={() => setShowProcessData((prev) => !prev)}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: "#007bff",
+              color: "#fff",
+              border: "none",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontWeight: "500",
+            }}
+          >
+            {showProcessData ? "Hide Process" : "Show Process"}
+          </button>
+        </div>
 
         <DnDCalendar
           defaultView="month"
           views={["month", "week", "day", "agenda"]}
           localizer={localizer}
           events={events.filter((e) =>
-            e.start &&
-            e.end &&
             (!showOnlyApproved || (e.status?.toLowerCase() === "approved" || e.status === true))
           )}
-          onEventDrop={moveEvent}
-          onEventResize={moveEvent}
           onSelectEvent={onSelectEvent}
-          onDropFromOutside={handleDropFromOutside}
-          dragFromOutsideItem={() => (window.draggedVisaData ? JSON.parse(window.draggedVisaData) : null)}
-          resizable
+          resizable={false}
+          draggableAccessor={() => false}
           style={{ height: "100%" }}
           popup
+          formats={{
+            eventTimeRangeFormat: () => null,
+          }}
           eventPropGetter={(event) => {
             let status = event.status?.toLowerCase();
-            let backgroundColor = "#ffc107"; // default yellow (Pending)
+            let backgroundColor = "#ffc107";
 
             if (status === "approved" || status === "true") backgroundColor = "green";
             else if (status === "false" || status === "declined") backgroundColor = "#dc3545";
-            else if (status === "revision" || status === "sent back for revision") backgroundColor = "#6c757d"; // gray
-            else if (status === "cancel" || status === "cancelled") backgroundColor = "#ff0000"; // bright red
+            else if (status === "revision" || status === "sent back for revision") backgroundColor = "#6c757d";
+            else if (status === "cancel" || status === "cancelled") backgroundColor = "#ff0000";
 
             return {
               style: {
@@ -427,143 +632,150 @@ const renderModalContent = () => {
                 color: "#fff",
                 borderRadius: "5px",
                 padding: "2px 6px",
-                fontSize: "0.85rem",
+                fontSize: "0.75rem",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                maxWidth: "100%",
+                display: "block",
               },
             };
           }}
-
-
           components={{
             event: ({ event }) => (
-              <span>
-                {getIconByStatus(event.status)}
-                {event.title}
+              <span style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+                textOverflow: "ellipsis"
+              }}>
+                <span style={{ flexShrink: 0 }}>{getIconByStatus(event.status)}</span>
+                <span style={{ 
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap"
+                }}>
+                  {event.title}
+                </span>
               </span>
             ),
           }}
         />
       </div>
-   {modalOpen && (
-            <div
+
+      {modalOpen && (
+        <div
+          onClick={closeModal}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 2000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "white",
+              borderRadius: 8,
+              padding: 24,
+              width: 400,
+              maxHeight: "80vh",
+              overflowY: "auto",
+              boxShadow: "0 5px 15px rgba(0,0,0,.3)",
+            }}
+          >
+            <button
               onClick={closeModal}
               style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0,0,0,0.5)",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                zIndex: 2000,
+                float: "right",
+                border: "none",
+                background: "none",
+                fontSize: 18,
+                cursor: "pointer",
               }}
             >
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  backgroundColor: "white",
-                  borderRadius: 8,
-                  padding: 24,
-                  width: 400,
-                  maxHeight: "80vh",
-                  overflowY: "auto",
-                  boxShadow: "0 5px 15px rgba(0,0,0,.3)",
-                }}
-              >
-                <button
-                  onClick={closeModal}
-                  style={{
-                    float: "right",
-                    border: "none",
-                    background: "none",
-                    fontSize: 18,
-                    cursor: "pointer",
-                  }}
-                >
-                  &times;
-                </button>
-                {renderModalContent()}
-              </div>
-            </div>
-          )}
-      {/* Unscheduled List */}
-      {showUnscheduled && (
+              &times;
+            </button>
+            {renderModalContent()}
+          </div>
+        </div>
+      )}
+
+      {showProcessData && (
         <div
           style={{
-            flex: 1,
-            backgroundColor: "#f9f9f9",
-            borderLeft: "1px solid #ddd",
-            padding: "16px",
+            position: "fixed",
+            top: 80,
+            right: 20,
+            width: 400,
+            maxHeight: "80vh",
+            backgroundColor: "white",
+            borderRadius: 8,
+            padding: 16,
+            boxShadow: "0 5px 15px rgba(0,0,0,.3)",
+            zIndex: 1500,
             overflowY: "auto",
           }}
         >
-          <h4 style={{ marginTop: 0 }}>Unscheduled </h4>
-
-          {events.filter((ev) => !ev.start || !ev.end).length === 0 ? (
-            <p style={{ color: "#777" }}>No unscheduled visas found.</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ margin: 0 }}>Process Data</h3>
+            <button
+              onClick={() => setShowProcessData(false)}
+              style={{
+                border: "none",
+                background: "none",
+                fontSize: 18,
+                cursor: "pointer",
+              }}
+            >
+              &times;
+            </button>
+          </div>
+          
+          {processHistory.length === 0 ? (
+            <p style={{ color: "#777" }}>No process data available.</p>
           ) : (
-            events
-              .filter((ev) => !ev.start || !ev.end)
-              .map((ev) => {
-                let bgColor = "#fff";
-                let icon = "❓";
-
-                if (ev.sourcePath) {
-                  const type = ev.sourcePath.toLowerCase();
-
-                  if (type.startsWith("corporate")) {
-                    bgColor = "#f8d7da"; // light red
-                    icon = "🏢"; // building icon for Corporate
-                  } else if (type.startsWith("cover")) {
-                    bgColor = "#d1ecf1"; // light blue
-                    icon = "📄"; // document icon for Cover
-                  } else if (type.startsWith("regular")) {
-                    bgColor = "#1877f2"; // Facebook blue
-                    icon = "✅"; // checkmark for Regular
-                  }
-                }
-
-                return (
-                  <div
-                    key={ev.id}
-                    draggable
-                    onDragStart={() => {
-                      window.draggedVisaData = JSON.stringify(ev);
-                    }}
-                    style={{
-                      backgroundColor: bgColor,
-                      color: bgColor === "#1877f2" ? "white" : "black",
-                      marginBottom: 8,
-                      padding: 12,
-                      border: "1px solid #ccc",
-                      borderRadius: 6,
-                      cursor: "grab",
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <span style={{ fontSize: 18 }}>{icon}</span>
-                    <div>
-                      <strong>{ev.visaCode}</strong>
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: 12,
-                          color: bgColor === "#1877f2" ? "#ddd" : "#555",
-                        }}
-                      >
-                        {ev.status}
-                      </p>
-                    </div>
+            <div style={{ fontSize: "0.9rem" }}>
+              {processHistory.map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: 12,
+                    marginBottom: 8,
+                    backgroundColor: "#f9f9f9",
+                    borderRadius: 6,
+                    borderLeft: `4px solid ${
+                      item.status.toLowerCase() === "approved" ? "#28a745" :
+                      item.status.toLowerCase() === "pending" ? "#ffc107" :
+                      item.status.toLowerCase().includes("revision") ? "#6c757d" :
+                      "#dc3545"
+                    }`,
+                  }}
+                >
+                  <div style={{ fontWeight: "600", marginBottom: 4 }}>
+                    {item.code}
                   </div>
-                );
-              })
+                  <div style={{ fontSize: "0.85rem", color: "#555" }}>
+                    Type: {item.type.replace("_", " ")}
+                  </div>
+                  <div style={{ fontSize: "0.85rem", color: "#555" }}>
+                    Created: {item.createdDate}
+                  </div>
+                  <div style={{ fontSize: "0.85rem", color: "#555" }}>
+                    Status: <strong>{item.status}</strong> ({item.statusDate})
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-
-       
         </div>
       )}
     </div>
