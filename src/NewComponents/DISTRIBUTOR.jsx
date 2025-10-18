@@ -1089,7 +1089,6 @@ const Distributor = () => {
                 </tbody>
               </table>
             </div>
-
             <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 type="button"
