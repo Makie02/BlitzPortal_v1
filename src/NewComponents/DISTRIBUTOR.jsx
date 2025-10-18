@@ -214,33 +214,41 @@ const Distributor = () => {
     }
   };
 
-const handleMotherAccountToggle = (id) => {
-  // Do nothing in view-only mode
-  if (isViewing) return;
+  const handleMotherAccountToggle = (id) => {
+    // Do nothing in view-only mode
+    if (isViewing) return;
 
-  let updatedSelected = [];
-  if (selectedMotherAccounts.includes(id)) {
-    updatedSelected = selectedMotherAccounts.filter(sid => sid !== id);
-  } else {
-    updatedSelected = [...selectedMotherAccounts, id];
-  }
-  setSelectedMotherAccounts(updatedSelected);
+    let updatedSelected = [];
+    if (selectedMotherAccounts.includes(id)) {
+      updatedSelected = selectedMotherAccounts.filter(sid => sid !== id);
+    } else {
+      updatedSelected = [...selectedMotherAccounts, id];
+    }
+    setSelectedMotherAccounts(updatedSelected);
 
-  // update form.mother_accounts_code to reflect selected codes
-  const motherCodes = motherAccounts
-    .filter(ma => updatedSelected.includes(ma.id))
-    .map(ma => ma.code)
-    .join(',') || '';
+    // update form.mother_accounts_code to reflect selected codes
+    const motherCodes = motherAccounts
+      .filter(ma => updatedSelected.includes(ma.id))
+      .map(ma => ma.code)
+      .join(',') || '';
 
-  const updatedForm = {
-    ...form,
-    mother_accounts_code: motherCodes
+    const updatedForm = {
+      ...form,
+      mother_accounts_code: motherCodes
+    };
+
+    setForm(updatedForm);
+
+    // Remove autosave here - it will be saved on form submit or when typing other fields
   };
-
-  setForm(updatedForm);
-
-  // Remove autosave here - it will be saved on form submit or when typing other fields
-};
+  const [selectedAgentUsers, setSelectedAgentUsers] = useState([]);
+useEffect(() => {
+  if (isEditing && form.agent_code) {
+    const codes = form.agent_code.split(',').map(c => c.trim());
+    const preSelected = accountUsers.filter(u => codes.includes(String(u.UserID)));
+    setSelectedAgentUsers(preSelected);
+  }
+}, [isEditing, form.agent_code, accountUsers]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -258,15 +266,17 @@ const handleMotherAccountToggle = (id) => {
 
     try {
       if (isEditing && form.id) {
-       const { error } = await supabase
-  .from('distributors')
-  .update({
-    name: form.name.trim(),
-    description: form.description ? form.description.trim() : null,
-    agent_code: form.agent_code ? String(form.agent_code).trim() : null,
-    mother_accounts_code: motherCodes
-  })
-  .eq('id', form.id);
+        const { error } = await supabase
+          .from('distributors')
+          .update({
+            name: form.name.trim(),
+            description: form.description ? form.description.trim() : null,
+            agent_code: selectedAgentUsers.length > 0
+              ? selectedAgentUsers.map(a => a.UserID).join(',')
+              : null,
+            mother_accounts_code: motherCodes
+          })
+          .eq('id', form.id);
 
         if (error) throw error;
 
@@ -286,15 +296,15 @@ const handleMotherAccountToggle = (id) => {
           return;
         }
 
-      const { error } = await supabase.from('distributors').insert([
-  {
-    code: nextCode,
-    name: form.name.trim(),
-    description: form.description ? form.description.trim() : null,
-    agent_code: form.agent_code ? String(form.agent_code).trim() : null,
-    mother_accounts_code: motherCodes
-  },
-]);
+        const { error } = await supabase.from('distributors').insert([
+          {
+            code: nextCode,
+            name: form.name.trim(),
+            description: form.description ? form.description.trim() : null,
+            agent_code: form.agent_code ? String(form.agent_code).trim() : null,
+            mother_accounts_code: motherCodes
+          },
+        ]);
 
         if (error) throw error;
 
@@ -432,26 +442,26 @@ const handleMotherAccountToggle = (id) => {
     e.target.value = '';
   };
 
-const autoSave = debounce(async (updatedForm) => {
-  if (updatedForm.id && updatedForm.name && updatedForm.name.trim()) {
-    const { error } = await supabase
-      .from('distributors')
-      .update({
-        name: updatedForm.name.trim(),
-        description: updatedForm.description ? updatedForm.description.trim() : null,
-        agent_code: updatedForm.agent_code ? String(updatedForm.agent_code).trim() : null,
-        mother_accounts_code: updatedForm.mother_accounts_code || null
-      })
-      .eq('id', updatedForm.id);
+  const autoSave = debounce(async (updatedForm) => {
+    if (updatedForm.id && updatedForm.name && updatedForm.name.trim()) {
+      const { error } = await supabase
+        .from('distributors')
+        .update({
+          name: updatedForm.name.trim(),
+          description: updatedForm.description ? updatedForm.description.trim() : null,
+          agent_code: updatedForm.agent_code ? String(updatedForm.agent_code).trim() : null,
+          mother_accounts_code: updatedForm.mother_accounts_code || null
+        })
+        .eq('id', updatedForm.id);
 
-    if (error) {
-      console.error('Auto-save error:', error.message);
-    } else {
-      console.log('Auto-saved changes');
-      fetchDistributors();
+      if (error) {
+        console.error('Auto-save error:', error.message);
+      } else {
+        console.log('Auto-saved changes');
+        fetchDistributors();
+      }
     }
-  }
-}, 1000);
+  }, 1000);
 
 
 
@@ -725,7 +735,7 @@ const autoSave = debounce(async (updatedForm) => {
                     aria-label="View Distributor"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="white" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                      <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85zm-5.242.656a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
+                      <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85zm-5.242.656a5 5 0 1 1 0-10 5 5 0 0 1 0 10z" />
                     </svg>
                   </button>
 
@@ -872,7 +882,7 @@ const autoSave = debounce(async (updatedForm) => {
                   }}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="white" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85zM6.5 11a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/>
+                    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85zM6.5 11a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z" />
                   </svg>
                 </button>
               </div>
@@ -880,19 +890,24 @@ const autoSave = debounce(async (updatedForm) => {
               {/* show selected agent user name if present */}
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ fontWeight: 600 }}>Agent Info</label>
-                <div style={{
-                  padding: '8px',
-                  borderRadius: 6,
-                  border: '1px solid #ddd',
-                  backgroundColor: '#fafafa'
-                }}>
-                  {selectedAgentUser ? (
-                    <div>
-                      <div><strong>UserID:</strong> {selectedAgentUser.UserID}</div>
-                      <div><strong>Distributor Name:</strong> {selectedAgentUser.name}</div>
-                    </div>
+                <div
+                  style={{
+                    padding: '8px',
+                    borderRadius: 6,
+                    border: '1px solid #ddd',
+                    backgroundColor: '#fafafa'
+                  }}
+                >
+                  {selectedAgentUsers.length > 0 ? (
+                    <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                      {selectedAgentUsers.map((user) => (
+                        <li key={user.id}>
+                          <strong>UserID:</strong> {user.UserID} — <strong>Name:</strong> {user.name}
+                        </li>
+                      ))}
+                    </ul>
                   ) : (
-                    <div style={{ color: '#666', fontStyle: 'italic' }}>No agent selected</div>
+                    <div style={{ color: '#666', fontStyle: 'italic' }}>No agents selected</div>
                   )}
                 </div>
               </div>
@@ -1062,26 +1077,82 @@ const autoSave = debounce(async (updatedForm) => {
                 <tbody>
                   {filteredAccountUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={4} style={{ padding: 12, textAlign: 'center', color: '#666' }}>No account users found</td>
+                      <td colSpan={4} style={{ padding: 12, textAlign: 'center', color: '#666' }}>
+                        No account users found
+                      </td>
                     </tr>
                   ) : (
-                    filteredAccountUsers.map((u, idx) => (
-                      <tr key={u.id} style={{ borderTop: '1px solid #f0f0f0' }}>
-                        <td style={{ padding: 8 }}>{u.UserID}</td>
-                        <td style={{ padding: 8 }}>{u.name}</td>
-                        <td style={{ padding: 8 }}>
-                          <button
-                            type="button"
-                            onClick={() => selectAgentUser(u)}
-                            style={{ padding: '6px 10px', borderRadius: 6, border: 'none', backgroundColor: '#28a745', color: 'white', cursor: 'pointer' }}
-                          >
-                            Select
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    filteredAccountUsers.map((u) => {
+                      const isSelected = selectedAgentUsers.some(a => a.id === u.id);
+                      return (
+                        <tr
+                          key={u.id}
+                          style={{
+                            borderTop: '1px solid #f0f0f0',
+                            backgroundColor: isSelected ? '#e8f5e9' : 'transparent',
+                            transition: 'background-color 0.2s ease',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedAgentUsers(prev => prev.filter(a => a.id !== u.id));
+                            } else {
+                              setSelectedAgentUsers(prev => [...prev, u]);
+                            }
+                          }}
+                          onMouseEnter={e => {
+                            if (!isSelected) e.currentTarget.style.backgroundColor = '#f9f9f9';
+                          }}
+                          onMouseLeave={e => {
+                            if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                        >
+                          <td style={{ padding: 10, textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelected) {
+                                  setSelectedAgentUsers(prev => prev.filter(a => a.id !== u.id));
+                                } else {
+                                  setSelectedAgentUsers(prev => [...prev, u]);
+                                }
+                              }}
+                              style={{
+                                width: 20,
+                                height: 20,
+                                accentColor: '#28a745',
+                                cursor: 'pointer'
+                              }}
+                            />
+                          </td>
+
+                          <td style={{ padding: 10, fontWeight: 500, color: '#333' }}>{u.UserID}</td>
+                          <td style={{ padding: 10, color: '#555' }}>{u.name}</td>
+                          <td style={{ padding: 10 }}>
+                            {isSelected && (
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  backgroundColor: '#d4edda',
+                                  color: '#155724',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '600'
+                                }}
+                              >
+                                Selected
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
+
+
               </table>
             </div>
 
