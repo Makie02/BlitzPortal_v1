@@ -106,7 +106,7 @@ export default function AccountsListManager() {
     const fetchDistributors = async () => {
         const { data, error } = await supabase
             .from("distributors")
-            .select("code, name")
+            .select("code, name,agent_code")
             .order("name", { ascending: true });
         if (error) console.error(error);
         else setDistributors(data);
@@ -151,7 +151,9 @@ export default function AccountsListManager() {
     const handleSelectDistributor = (selected) => {
         setNewRecord(prev => ({
             ...prev,
-            distributor_code: selected.code
+            distributor_code: selected.code,
+            agent_code: selected.agent_code
+
         }));
         setShowDistributorModal(false);
     };
@@ -528,11 +530,12 @@ export default function AccountsListManager() {
                                     </div>
                                 </div>
 
+
+
                                 <div>
-                                    <label>Mother Code</label>
+                                    <label>Agent Code</label>
                                     <div style={{ display: 'flex', gap: 5 }}>
-                                        <input name="mother_code" value={newRecord.mother_code} onChange={handleInputChange} style={styles.input} />
-                                        <button type="button" onClick={() => setShowMotherModal(true)} style={styles.btnIcon}>🔍</button>
+                                        <input name="agent_code" value={newRecord.agent_code} onChange={handleInputChange} disabled style={styles.input} />
                                     </div>
                                 </div>
 
@@ -545,17 +548,20 @@ export default function AccountsListManager() {
                                 </div>
 
                                 <div>
-                                    <label>Agent Code</label>
+                                    <label>Group Code</label>
+                                    <input name="group_code" value={newRecord.group_code} disabled onChange={handleInputChange} style={styles.input} />
+                                </div>
+
+
+                                <div>
+                                    <label>Mother Code</label>
                                     <div style={{ display: 'flex', gap: 5 }}>
-                                        <input name="agent_code" value={newRecord.agent_code} onChange={handleInputChange} style={styles.input} />
-                                        <button type="button" onClick={() => setShowAgentModal(true)} style={styles.btnIcon}>🔍</button>
+                                        <input name="mother_code" value={newRecord.mother_code} onChange={handleInputChange} style={styles.input} />
+                                        <button type="button" onClick={() => setShowMotherModal(true)} style={styles.btnIcon}>🔍</button>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label>Group Code</label>
-                                    <input name="group_code" value={newRecord.group_code} onChange={handleInputChange} style={styles.input} />
-                                </div>
+
 
                                 <div>
                                     <label>Status</label>
@@ -577,7 +583,7 @@ export default function AccountsListManager() {
                 </div>
             )}
 
-            {showDistributorModal && <LookupModal title="Select Distributor" columns={['Code', 'Name']} data={distributors} onSelect={handleSelectDistributor} onClose={() => setShowDistributorModal(false)} fieldKeys={['code', 'name']} />}
+            {showDistributorModal && <LookupModal title="Select Distributor" columns={['Code', 'Name', 'Agent Code']} data={distributors} onSelect={handleSelectDistributor} onClose={() => setShowDistributorModal(false)} fieldKeys={['code', 'name', 'agent_code']} />}
             {showMotherModal && <LookupModal title="Select Mother Account" columns={['Code', 'Name', 'Group']} data={motherAccounts} onSelect={handleSelectMother} onClose={() => setShowMotherModal(false)} fieldKeys={['dscode', 'name', 'group_name']} />}
             {showBpModal && <LookupModal title="Select BP Account" columns={['Code', 'Name']} data={bpAccounts} onSelect={handleSelectBp} onClose={() => setShowBpModal(false)} fieldKeys={['bp_code', 'bp_name']} />}
             {showAgentModal && <LookupModal title="Select Agent" columns={['ID', 'Name']} data={agents} onSelect={handleSelectAgent} onClose={() => setShowAgentModal(false)} fieldKeys={['UserID', 'name']} />}
