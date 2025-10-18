@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import Swal from 'sweetalert2';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 const UserList = () => {
   const [users, setUsers] = useState([]);
@@ -7,7 +9,9 @@ const UserList = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const [editUser, setEditUser] = useState(null); // for editing user
+  const [showModal, setShowModal] = useState(false);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     fetchUsers();
@@ -15,26 +19,49 @@ const UserList = () => {
 
   useEffect(() => {
     handleSearch();
-    setCurrentPage(1); // Reset to first page on new search
+    setCurrentPage(1);
   }, [searchTerm, users]);
 
-const fetchUsers = async () => {
-  setLoading(true);
-  const { data, error } = await supabase
-    .from('Account_Users')
-    .select('id, username, role, name, "UserID"')
-    .gte('UserID', 1)
-    .lte('UserID', 100)
-    .order('UserID', { ascending: true }); // Optional: sorts by UserID
+  // ✅ Fetch all users (paginated style)
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
 
-  if (error) {
-    console.error('Error fetching users:', error.message);
-  } else {
-    setUsers(data);
-  }
+      const batchSize = 1000;
+      let allData = [];
+      let hasMore = true;
+      let offset = 0;
 
-  setLoading(false);
-};
+      while (hasMore) {
+        console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+
+        const { data, error } = await supabase
+          .from('Account_Users')
+          .select('id, username, role, name, "UserID"')
+          .range(offset, offset + batchSize - 1)
+          .order('UserID', { ascending: true });
+
+        if (error) throw error;
+
+        console.log(`✅ Fetched ${data?.length || 0} users`);
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          offset += batchSize;
+          hasMore = data.length === batchSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setUsers(allData);
+      console.log(`🏁 Total fetched users: ${allData.length}`);
+    } catch (error) {
+      Swal.fire('Error', `Failed to fetch users: ${error.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSearch = () => {
     const term = searchTerm.toLowerCase();
@@ -42,6 +69,37 @@ const fetchUsers = async () => {
       user.name?.toLowerCase().includes(term)
     );
     setFilteredUsers(filtered);
+  };
+
+  const handleEditClick = (user) => {
+    setEditUser({ ...user });
+    setShowModal(true);
+  };
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditUser((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      const { error } = await supabase
+        .from('Account_Users')
+        .update({
+          username: editUser.username,
+          role: editUser.role,
+          name: editUser.name,
+        })
+        .eq('id', editUser.id);
+
+      if (error) throw error;
+
+      Swal.fire('✅ Success', 'User updated successfully!', 'success');
+      setShowModal(false);
+      fetchUsers(); // refresh
+    } catch (error) {
+      Swal.fire('❌ Error', error.message, 'error');
+    }
   };
 
   // Pagination
@@ -76,38 +134,38 @@ const fetchUsers = async () => {
       </div>
 
       {/* User Table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#0077cc', color: 'white' }}>
-            <th style={thStyle}>ID</th>
-            <th style={thStyle}>User ID</th>
-            <th style={thStyle}>Username</th>
-            <th style={thStyle}>Role</th>
-            <th style={thStyle}>Agent Name</th>
+      <table className="table table-bordered table-hover">
+        <thead className="table-primary">
+          <tr>
+            <th>ID</th>
+            <th>Agent Code</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Agent Name</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {paginatedUsers.map((user) => (
-            <tr
-              key={user.id}
-              style={{
-                ...rowStyle,
-                cursor: 'pointer',
-                transition: 'background-color 0.2s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#e6f2ff')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
-            >
-              <td style={tdStyle}>{user.id}</td>
-              <td style={tdStyle}>{user.UserID}</td>
-              <td style={tdStyle}>{user.username}</td>
-              <td style={tdStyle}>{user.role}</td>
-              <td style={tdStyle}>{user.name}</td>
+            <tr key={user.id}>
+              <td>{user.id}</td>
+              <td>{user.UserID}</td>
+              <td>{user.username}</td>
+              <td>{user.role}</td>
+              <td>{user.name}</td>
+              <td>
+                <button
+                  className="btn btn-sm btn-warning"
+                  onClick={() => handleEditClick(user)}
+                >
+                  ✏️ Edit
+                </button>
+              </td>
             </tr>
           ))}
           {paginatedUsers.length === 0 && (
             <tr>
-              <td colSpan="5" style={{ textAlign: 'center', padding: '20px' }}>
+              <td colSpan="6" className="text-center">
                 No users found.
               </td>
             </tr>
@@ -117,19 +175,11 @@ const fetchUsers = async () => {
 
       {/* Pagination Controls */}
       {filteredUsers.length > itemsPerPage && (
-        <div
-          style={{
-            marginTop: '20px',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: '10px',
-          }}
-        >
+        <div className="d-flex justify-content-center align-items-center mt-3 gap-2">
           <button
+            className="btn btn-primary"
             onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
             disabled={currentPage === 1}
-            style={paginationButtonStyle}
           >
             ← Prev
           </button>
@@ -137,43 +187,84 @@ const fetchUsers = async () => {
             Page {currentPage} of {totalPages}
           </span>
           <button
+            className="btn btn-primary"
             onClick={() =>
               setCurrentPage((prev) => Math.min(prev + 1, totalPages))
             }
             disabled={currentPage === totalPages}
-            style={paginationButtonStyle}
           >
             Next →
           </button>
         </div>
       )}
+
+      {/* Edit Modal */}
+      {showModal && (
+        <div
+          className="modal fade show"
+          style={{
+            display: 'block',
+            background: 'rgba(0,0,0,0.5)',
+          }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title">Edit User</h5>
+                <button
+                  className="btn-close btn-close-white"
+                  onClick={() => setShowModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label">Username</label>
+                  <input
+                    type="text"
+                    name="username"
+                    value={editUser.username || ''}
+                    onChange={handleEditChange}
+                    className="form-control"
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Role</label>
+                  <input
+                    type="text"
+                    name="role"
+                    value={editUser.role || ''}
+                    onChange={handleEditChange}
+                    className="form-control"
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Agent Name</label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={editUser.name || ''}
+                    onChange={handleEditChange}
+                    className="form-control"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-success" onClick={handleSaveEdit}>
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
-
-// Table styles
-const thStyle = {
-  padding: '12px',
-  textAlign: 'left',
-  borderBottom: '1px solid #ccc',
-};
-
-const tdStyle = {
-  padding: '12px',
-  borderBottom: '1px solid #eee',
-};
-
-const rowStyle = {
-  backgroundColor: '#fff',
-};
-
-const paginationButtonStyle = {
-  padding: '8px 12px',
-  borderRadius: '5px',
-  border: 'none',
-  backgroundColor: '#0077cc',
-  color: 'white',
-  cursor: 'pointer',
 };
 
 export default UserList;
