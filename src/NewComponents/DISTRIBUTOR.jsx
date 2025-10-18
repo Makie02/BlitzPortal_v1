@@ -214,35 +214,33 @@ const Distributor = () => {
     }
   };
 
-  const handleMotherAccountToggle = (id) => {
-    // Do nothing in view-only mode
-    if (isViewing) return;
+const handleMotherAccountToggle = (id) => {
+  // Do nothing in view-only mode
+  if (isViewing) return;
 
-    let updatedSelected = [];
-    if (selectedMotherAccounts.includes(id)) {
-      updatedSelected = selectedMotherAccounts.filter(sid => sid !== id);
-    } else {
-      updatedSelected = [...selectedMotherAccounts, id];
-    }
-    setSelectedMotherAccounts(updatedSelected);
+  let updatedSelected = [];
+  if (selectedMotherAccounts.includes(id)) {
+    updatedSelected = selectedMotherAccounts.filter(sid => sid !== id);
+  } else {
+    updatedSelected = [...selectedMotherAccounts, id];
+  }
+  setSelectedMotherAccounts(updatedSelected);
 
-    // update form.mother_accounts_code to reflect selected codes
-    const motherCodes = motherAccounts
-      .filter(ma => updatedSelected.includes(ma.id))
-      .map(ma => ma.code)
-      .join(',') || '';
+  // update form.mother_accounts_code to reflect selected codes
+  const motherCodes = motherAccounts
+    .filter(ma => updatedSelected.includes(ma.id))
+    .map(ma => ma.code)
+    .join(',') || '';
 
-    const updatedForm = {
-      ...form,
-      mother_accounts_code: motherCodes
-    };
-
-    setForm(updatedForm);
-
-    if (isEditing) {
-      autoSave(updatedForm);
-    }
+  const updatedForm = {
+    ...form,
+    mother_accounts_code: motherCodes
   };
+
+  setForm(updatedForm);
+
+  // Remove autosave here - it will be saved on form submit or when typing other fields
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -260,15 +258,15 @@ const Distributor = () => {
 
     try {
       if (isEditing && form.id) {
-        const { error } = await supabase
-          .from('distributors')
-          .update({
-            name: form.name.trim(),
-            description: form.description?.trim() || null,
-            agent_code: form.agent_code?.trim() || null,
-            mother_accounts_code: motherCodes
-          })
-          .eq('id', form.id);
+       const { error } = await supabase
+  .from('distributors')
+  .update({
+    name: form.name.trim(),
+    description: form.description ? form.description.trim() : null,
+    agent_code: form.agent_code ? String(form.agent_code).trim() : null,
+    mother_accounts_code: motherCodes
+  })
+  .eq('id', form.id);
 
         if (error) throw error;
 
@@ -288,15 +286,15 @@ const Distributor = () => {
           return;
         }
 
-        const { error } = await supabase.from('distributors').insert([
-          {
-            code: nextCode,
-            name: form.name.trim(),
-            description: form.description?.trim() || null,
-            agent_code: form.agent_code?.trim() || null,
-            mother_accounts_code: motherCodes
-          },
-        ]);
+      const { error } = await supabase.from('distributors').insert([
+  {
+    code: nextCode,
+    name: form.name.trim(),
+    description: form.description ? form.description.trim() : null,
+    agent_code: form.agent_code ? String(form.agent_code).trim() : null,
+    mother_accounts_code: motherCodes
+  },
+]);
 
         if (error) throw error;
 
@@ -337,7 +335,7 @@ const Distributor = () => {
   };
 
   const handleExport = () => {
-    const headers = ['ID', 'Code', 'Name', 'Description', 'Agent Code', 'Mother Accounts Code'];
+    const headers = ['ID', 'Code', 'Distributor Name', 'Description', 'Agent Code', 'Mother Accounts Code'];
     const rows = distributors.map(d => [
       d.id,
       d.code,
@@ -434,31 +432,28 @@ const Distributor = () => {
     e.target.value = '';
   };
 
-  const autoSave = debounce(async (updatedForm) => {
-    if (updatedForm.id && updatedForm.name.trim()) {
-      const motherCodes = motherAccounts
-        .filter(ma => selectedMotherAccounts.includes(ma.id))
-        .map(ma => ma.code)
-        .join(',') || null;
+const autoSave = debounce(async (updatedForm) => {
+  if (updatedForm.id && updatedForm.name && updatedForm.name.trim()) {
+    const { error } = await supabase
+      .from('distributors')
+      .update({
+        name: updatedForm.name.trim(),
+        description: updatedForm.description ? updatedForm.description.trim() : null,
+        agent_code: updatedForm.agent_code ? String(updatedForm.agent_code).trim() : null,
+        mother_accounts_code: updatedForm.mother_accounts_code || null
+      })
+      .eq('id', updatedForm.id);
 
-      const { error } = await supabase
-        .from('distributors')
-        .update({
-          name: updatedForm.name.trim(),
-          description: updatedForm.description?.trim() || null,
-          agent_code: updatedForm.agent_code?.trim() || null,
-          mother_accounts_code: motherCodes
-        })
-        .eq('id', updatedForm.id);
-
-      if (error) {
-        console.error('Auto-save error:', error.message);
-      } else {
-        console.log('Auto-saved changes');
-        fetchDistributors(); // optional: refresh list after autosave
-      }
+    if (error) {
+      console.error('Auto-save error:', error.message);
+    } else {
+      console.log('Auto-saved changes');
+      fetchDistributors();
     }
-  }, 1000);
+  }
+}, 1000);
+
+
 
   // Filtering distributors by searchTerm
   const filteredDistributors = distributors.filter(dist => {
@@ -655,7 +650,7 @@ const Distributor = () => {
 
         <input
           type="text"
-          placeholder="Search by name, code, description or agent"
+          placeholder="Search by distributor name, code, description or agent"
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           style={{
@@ -697,7 +692,7 @@ const Distributor = () => {
             <tr>
               <th style={thStyle}>ID</th>
               <th style={thStyle}>Code</th>
-              <th style={thStyle}>Name</th>
+              <th style={thStyle}>Distributor Name</th>
               <th style={thStyle}>Description</th>
               <th style={thStyle}>Agent Code</th>
               <th style={thStyle}>Mother Accounts Code</th>
@@ -827,7 +822,7 @@ const Distributor = () => {
                 readOnly
               />
 
-              <label>Name *</label>
+              <label>Distributor Name *</label>
               <input
                 style={inputStyle}
                 type="text"
@@ -894,7 +889,7 @@ const Distributor = () => {
                   {selectedAgentUser ? (
                     <div>
                       <div><strong>UserID:</strong> {selectedAgentUser.UserID}</div>
-                      <div><strong>Name:</strong> {selectedAgentUser.name}</div>
+                      <div><strong>Distributor Name:</strong> {selectedAgentUser.name}</div>
                     </div>
                   ) : (
                     <div style={{ color: '#666', fontStyle: 'italic' }}>No agent selected</div>
@@ -1038,7 +1033,7 @@ const Distributor = () => {
 
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <input
-                placeholder="Search by name or UserID"
+                placeholder="Search by Distributor Name or UserID"
                 value={accountUserSearch}
                 onChange={e => setAccountUserSearch(e.target.value)}
                 style={{ ...inputStyle, marginBottom: 0 }}
@@ -1060,7 +1055,7 @@ const Distributor = () => {
                 <thead>
                   <tr style={{ backgroundColor: '#f7f7f7' }}>
                     <th style={{ padding: 8, textAlign: 'left' }}>UserID</th>
-                    <th style={{ padding: 8, textAlign: 'left' }}>Name</th>
+                    <th style={{ padding: 8, textAlign: 'left' }}>Distributor Name</th>
                     <th style={{ padding: 8, textAlign: 'left' }}>Action</th>
                   </tr>
                 </thead>
@@ -1089,6 +1084,7 @@ const Distributor = () => {
                 </tbody>
               </table>
             </div>
+
             <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 type="button"
