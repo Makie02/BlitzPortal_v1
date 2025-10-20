@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
-import Swal from "sweetalert2"; // <---- import sweetalert2
+import Swal from "sweetalert2";
 import { supabase } from "../supabaseClient";
 
 const CoverVisa = () => {
@@ -19,178 +19,171 @@ const CoverVisa = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const [currentStep, setCurrentStep] = useState(1);
-  const [selectedDistributorUsername, setSelectedDistributorUsername] = useState("");
+  const [selectedAgentName, setSelectedAgentName] = useState("");
   const [selectedUsername, setSelectedUsername] = useState('');
   const [usernames, setUsernames] = useState([]);
   const [userDistributorsForSelected, setUserDistributorsForSelected] = useState([]);
-  // Auto-generate Visa Code on mount
+  const [submittedBudgets, setSubmittedBudgets] = useState([]);
+  const [editingBudget, setEditingBudget] = useState(null);
+  const [selectedDistributorUsername, setSelectedDistributorUsername] = useState("");
 
-  const handleFormChange = async (e) => {
-    const { name, value } = e.target;
+  
+const handleFormChange = async (e) => {
+  const { name, value } = e.target;
 
-    // Update formData with the new field value
-    setFormData((prev) => {
-      const updatedFormData = { ...prev, [name]: value };
-      return updatedFormData;
-    });
+  setFormData((prev) => ({ ...prev, [name]: value }));
 
-    if (name === "createForm") {
+  // 🧩 Handle when selecting username (createForm)
+  if (name === "createForm") {
+    setSelectedUsername(value);
 
-      setSelectedUsername(value);
-      setSelectedDistributorUsername(value);
+    if (value) {
+      console.log(`🧠 Selected username: ${value}`);
 
-      if (value) {
-        // Fetch distributors for selected username
-        const { data, error } = await supabase
-          .from('user_distributors')
-          .select('distributor_name')
-          .eq('username', value);
+      // 🔍 Fetch UserID from Account_Users
+      const { data: userData, error: userError } = await supabase
+        .from("Account_Users")
+        .select("UserID")
+        .eq("name", value)
+        .single();
 
-        if (error) {
-          console.error('Error fetching user distributors:', error);
+      if (userError) {
+        console.error("❌ Error fetching UserID:", userError);
+        setUserDistributorsForSelected([]);
+        setFilteredDistributors([]);
+      } else if (userData) {
+        const userId = userData.UserID;
+        console.log(`✅ Found UserID for "${value}":`, userId);
+
+        // 📦 Fetch distributors linked to this UserID
+        const { data: distData, error: distError } = await supabase
+          .from("distributors")
+          .select("id, name, code, agent_code")
+          .eq("agent_code", userId);
+
+        if (distError) {
+          console.error("❌ Error fetching distributors:", distError);
           setUserDistributorsForSelected([]);
+          setFilteredDistributors([]);
         } else {
-          setUserDistributorsForSelected(data.map(item => item.distributor_name));
+          console.log(`📋 Distributors fetched for UserID ${userId}:`, distData.length);
+          const distributorNames = distData.map((item) => item.name);
+          setUserDistributorsForSelected(distributorNames);
+          setFilteredDistributors(distData);
+        }
+      }
+    } else {
+      console.warn("⚠️ No username selected — clearing distributor data");
+      setUserDistributorsForSelected([]);
+      setFilteredDistributors([]);
+    }
+
+    setFormData((prev) => ({ ...prev, distributor: "" }));
+    setSelectedAgentName("");
+    return;
+  }
+
+  // 🏢 Handle when selecting distributor
+  if (name === "distributor") {
+    try {
+      const selectedDistributor = distributors.find((d) => d.code === Number(value));
+
+      if (!selectedDistributor) {
+        console.warn("⚠️ Distributor not found for code:", value);
+        setAccountTypes([]);
+        setSelectedAgentName("");
+        return;
+      }
+
+      console.log("🏢 Selected distributor:", selectedDistributor);
+
+      // 👤 Fetch agent name using agent_code
+      if (selectedDistributor.agent_code) {
+        console.log("🔗 Fetching agent name for agent_code:", selectedDistributor.agent_code);
+
+        const { data: agentData, error: agentError } = await supabase
+          .from("Account_Users")
+          .select("name")
+          .eq("UserID", selectedDistributor.agent_code)
+          .single();
+
+        if (agentError) {
+          console.warn("⚠️ Agent not found:", selectedDistributor.agent_code);
+          setSelectedAgentName("No agent assigned");
+        } else {
+          console.log(`👤 Found agent name: ${agentData.name}`);
+          setSelectedAgentName(agentData.name);
         }
       } else {
-        setUserDistributorsForSelected([]);
+        setSelectedAgentName("No agent assigned");
       }
 
-      // Reset distributor selection when username changes
-      setFormData(prev => ({ ...prev, distributor: '' }));
-      setSelectedDistributorUsername('');
-      return;
-    }
+      const isBadOrder = selectedDistributor.name === "BAD ORDER";
 
+      setFormData((prev) => ({
+        ...prev,
+        distributor: value,
+        distributorName: selectedDistributor.name || "",
+        categoryName: isBadOrder ? [] : prev.categoryName,
+        accountType: isBadOrder ? [] : prev.accountType,
+      }));
 
-    if (name === "distributor") {
-      try {
-        const selectedDistributor = distributors.find(
-          (d) => d.code === Number(value)
-        );
-
-        if (!selectedDistributor) {
-          console.warn("⚠️ Distributor not found for code:", value);
-          setAccountTypes([]);
-          return;
-        }
-
-        console.log("📦 Selected distributor:", selectedDistributor);
-
-        const { data: userDistributorData, error: userDistributorError } =
-          await supabase
-            .from("user_distributors")
-            .select("username")
-            .or(
-              `distributor_name.eq.${selectedDistributor.name
-              },distributor_name.eq.${selectedDistributor.name.replace(
-                " -",
-                "-"
-              )},distributor_name.eq.${selectedDistributor.name.replace(
-                "- ",
-                "-"
-              )}`
-            )
-            .single();
-
-        //if (userDistributorError) {
-        //    console.warn(
-        //      "⚠️ Username not found for distributor:",
-        //     selectedDistributor.name
-        //   );
-        //  setSelectedDistributorUsername("No user assigned");
-        //  } else {
-        //    setSelectedDistributorUsername(userDistributorData.username);
-        //   console.log("👤 Found username:", userDistributorData.username);
-        // }
-        const isBadOrder = selectedDistributor.name === "BAD ORDER";
-
-        setFormData((prev) => ({
-          ...prev,
-          distributor: value,
-          distributorName: selectedDistributor.name || "",
-          categoryName: isBadOrder ? [] : prev.categoryName,
-          accountType: isBadOrder ? [] : prev.accountType,
-        }));
-
-        if (isBadOrder) {
-          console.log("⛔ BAD ORDER selected → skipping categories");
-          setAccountTypes([]);
-          return;
-        }
-
-        // Fetch all categorydetails in batches
-        const batchSize = 1000;
-        let allData = [];
-        let hasMore = true;
-        let offset = 0;
-
-        console.log(
-          `🔍 Starting to fetch all categories for distributor ID: ${selectedDistributor.id}`
-        );
-
-        while (hasMore) {
-          console.log(
-            `📥 Fetching batch ${Math.floor(offset / batchSize) + 1
-            }... (offset: ${offset})`
-          );
-
-          const { data, error } = await supabase
-            .from("categorydetails")
-            .select("code, name, description")
-            .eq("principal_id", selectedDistributor.id)
-            .order("name", { ascending: true })
-            .range(offset, offset + batchSize - 1);
-
-          if (error) {
-            console.error("❌ Batch fetch error:", error);
-            throw error;
-          }
-
-          console.log(
-            `✅ Batch ${Math.floor(offset / batchSize) + 1} fetched: ${data?.length || 0
-            } records`
-          );
-
-          if (data && data.length > 0) {
-            allData = [...allData, ...data];
-            offset += batchSize;
-            hasMore = data.length === batchSize;
-            console.log(`📊 Total records so far: ${allData.length}`);
-          } else {
-            hasMore = false;
-            console.log("🏁 No more records to fetch");
-          }
-        }
-
-        if (allData.length === 0) {
-          console.log("⚠️ No categories found for this distributor");
-          setAccountTypes([]);
-          return;
-        }
-
-        const formatted = allData.map((item) => ({
-          code: item.code,
-          name: item.name,
-          description: item.description,
-        }));
-
-        setAccountTypes(formatted);
-        setAccountSearchTerm("");
-        setFormData((prev) => ({ ...prev, accountType: [] }));
-
-        console.log(
-          "✅ All formatted accountTypes set:",
-          formatted.length,
-          "records"
-        );
-        console.log("🧹 Reset formData.accountType after distributor change");
-      } catch (error) {
-        console.error("❌ Failed to fetch category details:", error.message);
+      if (isBadOrder) {
+        console.log("⛔ BAD ORDER selected — skipping categories");
         setAccountTypes([]);
+        return;
       }
+
+      // 🧾 Fetch categorydetails in batches
+      const batchSize = 1000;
+      let allData = [];
+      let hasMore = true;
+      let offset = 0;
+
+      console.log(`📥 Fetching categories for distributor ID: ${selectedDistributor.id}`);
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("categorydetails")
+          .select("code, name, description")
+          .eq("principal_id", selectedDistributor.id)
+          .order("name", { ascending: true })
+          .range(offset, offset + batchSize - 1);
+
+        if (error) throw error;
+
+        if (data?.length) {
+          allData = [...allData, ...data];
+          offset += batchSize;
+          hasMore = data.length === batchSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (!allData.length) {
+        console.log("⚠️ No categories found for this distributor");
+        setAccountTypes([]);
+        return;
+      }
+
+      const formatted = allData.map((item) => ({
+        code: item.code,
+        name: item.name,
+        description: item.description,
+      }));
+
+      setAccountTypes(formatted);
+      setAccountSearchTerm("");
+      setFormData((prev) => ({ ...prev, accountType: [] }));
+
+      console.log(`✅ Loaded ${formatted.length} category records`);
+    } catch (error) {
+      console.error("❌ Failed to fetch category details:", error.message);
+      setAccountTypes([]);
     }
-  };
+  }
+};
 
   const prevStep = () => {
     if (currentStep > 1) setCurrentStep(currentStep - 1);
@@ -201,7 +194,6 @@ const CoverVisa = () => {
 
   const handleFiles = (selectedFiles) => {
     const newFiles = Array.from(selectedFiles).map((file) => {
-      // Create preview URL for images
       if (file.type.startsWith("image/")) {
         file.preview = URL.createObjectURL(file);
       }
@@ -230,7 +222,6 @@ const CoverVisa = () => {
 
   const removeFile = (index) => {
     const updated = [...files];
-    // Revoke preview URL to avoid memory leaks
     if (updated[index].preview) {
       URL.revokeObjectURL(updated[index].preview);
     }
@@ -246,13 +237,9 @@ const CoverVisa = () => {
   };
 
   const [accountTypes, setAccountTypes] = useState([]);
-
-  //albert
   const [approvedExpenses, setApprovedExpenses] = useState(0);
   const [remainingBudget, setRemainingBudget] = useState(0);
 
-  //albert
-  // Add this useEffect to calculate remaining budget whenever amount budget or approved expenses change
   useEffect(() => {
     const amountBudget = parseFloat(formData.amountbadget) || 0;
     const remaining = amountBudget - approvedExpenses;
@@ -264,19 +251,17 @@ const CoverVisa = () => {
     const number = parseFloat(value);
     if (isNaN(number)) return value;
     return number.toLocaleString("en-US", {
-      maximumFractionDigits: 0, // No decimal places
+      maximumFractionDigits: 0,
     });
   };
 
-  //albert
   useEffect(() => {
     const fetchApprovedExpenses = async () => {
       if (!formData.visaCode) return;
 
       try {
-        // Fetch approved regular PWP budget expenses
         const { data, error } = await supabase
-          .from("approved_pwp_expenses") // Replace with your actual table name
+          .from("approved_pwp_expenses")
           .select("amount")
           .eq("visa_code", formData.visaCode)
           .eq("status", "approved");
@@ -286,7 +271,6 @@ const CoverVisa = () => {
           return;
         }
 
-        // Calculate total approved expenses
         const totalExpenses = data.reduce(
           (sum, expense) => sum + (parseFloat(expense.amount) || 0),
           0
@@ -299,6 +283,7 @@ const CoverVisa = () => {
 
     fetchApprovedExpenses();
   }, [formData.visaCode]);
+
   const [singleApprovals, setSingleApprovals] = useState([]);
   const [userApprovers, setUserApprovers] = useState([]);
   const [users, setUsers] = useState([]);
@@ -308,20 +293,17 @@ const CoverVisa = () => {
     const fetchData = async () => {
       setLoading(true);
 
-      // Fetch singleapprovals
       const { data: approvalsData, error: approvalsError } = await supabase
         .from("singleapprovals")
         .select("*")
         .order("created_at", { ascending: false });
 
-      // Fetch user approvers
       const { data: userApproversData, error: userApproversError } =
         await supabase
           .from("User_Approvers")
           .select("*")
           .order("created_at", { ascending: false });
 
-      // Fetch users for name lookup
       const { data: usersData, error: usersError } = await supabase
         .from("Account_Users")
         .select("name");
@@ -340,6 +322,7 @@ const CoverVisa = () => {
 
     fetchData();
   }, []);
+
   const [totalRemaining, setTotalRemaining] = React.useState(null);
 
   const fetchRemainingBalance = React.useCallback(async () => {
@@ -349,7 +332,7 @@ const CoverVisa = () => {
     const { data, error } = await supabase
       .from("amount_badget")
       .select("remainingbalance")
-      .eq("createduser", storedUser.id) // ✅ Query by user ID
+      .eq("createduser", storedUser.id)
       .or("Approved.is.null,Approved.eq.true");
 
     if (error) {
@@ -378,7 +361,7 @@ const CoverVisa = () => {
           event: "*",
           schema: "public",
           table: "amount_badget",
-          filter: `createduser=eq.${storedUser.id}`, // ✅ Filter by user ID
+          filter: `createduser=eq.${storedUser.id}`,
         },
         (payload) => {
           fetchRemainingBalance();
@@ -390,15 +373,9 @@ const CoverVisa = () => {
       supabase.removeChannel(subscription);
     };
   }, [fetchRemainingBalance]);
-  // Helper: get name from user_id
-
-  // Combine and normalize data into one array for the table
 
   const [accountSearchTerm, setAccountSearchTerm] = useState("");
 
-  // Toggle selection of accountType
-
-  // fetch account types
   useEffect(() => {
     const fetchAccounts = async () => {
       const { data, error } = await supabase
@@ -414,12 +391,9 @@ const CoverVisa = () => {
     fetchAccounts();
   }, []);
 
-  // toggle checkbox
-
   const [allCoverCodes, setAllCoverCodes] = useState([]);
   const [loadingCoverCode, setLoadingCoverCode] = useState(true);
 
-  // ---------------- Generate cover code ----------------
   const generateCoverCode = (existingCodes = []) => {
     const year = new Date().getFullYear();
     const prefix = `C${year}-`;
@@ -439,7 +413,6 @@ const CoverVisa = () => {
     return newCode;
   };
 
-  // ---------------- Fetch cover codes ----------------
   const fetchCoverCodes = async () => {
     try {
       console.log("⏳ Fetching cover codes...");
@@ -454,7 +427,6 @@ const CoverVisa = () => {
 
       setAllCoverCodes(codes);
 
-      // Generate new code if empty or already used
       if (!formData.coverCode || codes.includes(formData.coverCode)) {
         const newCode = generateCoverCode(codes);
         console.log("✏️ Updating formData with new cover code:", newCode);
@@ -468,15 +440,14 @@ const CoverVisa = () => {
     }
   };
 
-  // ---------------- Real-time polling ----------------
   useEffect(() => {
-    fetchCoverCodes(); // Initial fetch
+    fetchCoverCodes();
 
     const intervalId = setInterval(() => {
       fetchCoverCodes();
-    }, 5000); // Poll every 5 seconds
+    }, 5000);
 
-    return () => clearInterval(intervalId); // Cleanup
+    return () => clearInterval(intervalId);
   }, [formData.coverCode]);
 
   useEffect(() => {
@@ -492,7 +463,7 @@ const CoverVisa = () => {
     async function fetchDistributors() {
       const { data, error } = await supabase
         .from("distributors")
-        .select("id, name, code");
+        .select("id, name, code, agent_code");
       if (error) {
         console.error("Error fetching distributors:", error);
       } else {
@@ -502,19 +473,16 @@ const CoverVisa = () => {
 
     fetchDistributors();
   }, []);
+
   const selectedDistributor = distributors.find(
     (d) => d.code === formData.distributor
   );
   const selectedName = selectedDistributor ? selectedDistributor.name : "";
 
-
-
-
-  // 🔹 Utility function to convert files to Base64 with prefix
   const toBase64 = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.readAsDataURL(file); // includes "data:<type>;base64,..." prefix
+      reader.readAsDataURL(file);
       reader.onload = () => resolve(reader.result);
       reader.onerror = reject;
     });
@@ -538,7 +506,6 @@ const CoverVisa = () => {
     }
 
     try {
-      // ✅ Get logged-in user from localStorage
       const storedUser = localStorage.getItem("loggedInUser");
       const parsedUser = storedUser ? JSON.parse(storedUser) : null;
 
@@ -552,7 +519,6 @@ const CoverVisa = () => {
         return;
       }
 
-      // ✅ Fetch the user ID for the selected username from formData.createForm
       const { data: selectedUserData, error: userError } = await supabase
         .from("Account_Users")
         .select("UserID")
@@ -571,66 +537,131 @@ const CoverVisa = () => {
 
       const selectedUserId = selectedUserData.UserID;
 
-      // ✅ Insert into main cover_pwp
-      const dataToInsert = {
-        cover_code: formData.coverCode,
-        distributor_code: formData.distributor,
-        amount_badget: parseFloat(formData.amountbadget),
-        pwp_type: formData.coverType || "COVER_PWP",
-        remarks: formData.remarks,
-        notification: false,
-        createForm: selectedUserId, // save user ID
-      };
+      if (editingBudget) {
+        const { error: mainError } = await supabase
+          .from("cover_pwp")
+          .update({
+            distributor_code: formData.distributor,
+            amount_badget: parseFloat(formData.amountbadget),
+            remarks: formData.remarks,
+            createForm: selectedUserId,
+          })
+          .eq("cover_code", editingBudget.cover_code);
 
-      const { error: mainError } = await supabase
-        .from("cover_pwp")
-        .insert([dataToInsert]);
-      if (mainError) throw mainError;
+        if (mainError) throw mainError;
 
-      // ✅ Insert into amount_badget
-      const { error: budgetError } = await supabase.from("amount_badget").insert([
-        {
-          pwp_code: formData.coverCode,
-          amountbadget: parseFloat(formData.amountbadget),
-          createduser: selectedUserId,
-          distributor: formData.distributor,
-          remainingbalance: parseFloat(formData.amountbadget),
-          Approved: false,
-        },
-      ]);
-      if (budgetError) throw budgetError;
+        const { error: budgetError } = await supabase
+          .from("amount_badget")
+          .update({
+            amountbadget: parseFloat(formData.amountbadget),
+            distributor: formData.distributor,
+            remainingbalance: parseFloat(formData.amountbadget),
+            createduser: selectedUserId,
+            Approved: true,
+          })
+          .eq("pwp_code", editingBudget.cover_code);
 
-      // ✅ Handle file attachments with Base64 (with prefix)
-      if (files.length > 0) {
-        const attachmentInserts = [];
+        if (budgetError) throw budgetError;
 
-        for (const file of files) {
-          const base64Data = await toBase64(file);
-          attachmentInserts.push({
-            cover_code: formData.coverCode,
-            file_name: file.name,
-            file_type: file.type || null,
-            file_size: file.size || null,
-            file_data: base64Data, // ✅ full Base64 string with prefix
-          });
+        if (files.length > 0) {
+          const attachmentInserts = [];
+          for (const file of files) {
+            const base64Data = await toBase64(file);
+            attachmentInserts.push({
+              cover_code: editingBudget.cover_code,
+              file_name: file.name,
+              file_type: file.type || null,
+              file_size: file.size || null,
+              file_data: base64Data,
+            });
+          }
+
+          const { error: attachmentError } = await supabase
+            .from("cover_attachments")
+            .insert(attachmentInserts);
+
+          if (attachmentError) throw attachmentError;
         }
 
-        const { error: attachmentError } = await supabase
-          .from("cover_attachments")
-          .insert(attachmentInserts);
+        await Swal.fire({
+          icon: "success",
+          title: "Updated!",
+          text: "Budget updated successfully!",
+          confirmButtonText: "Great",
+        });
+      } else {
+        const dataToInsert = {
+          cover_code: formData.coverCode,
+          distributor_code: formData.distributor,
+          amount_badget: parseFloat(formData.amountbadget),
+          pwp_type: formData.coverType || "COVER_PWP",
+          remarks: formData.remarks,
+          notification: false,
+          createForm: selectedUserId,
+        };
 
-        if (attachmentError) throw attachmentError;
+        const { error: mainError } = await supabase
+          .from("cover_pwp")
+          .insert([dataToInsert]);
+        if (mainError) throw mainError;
+
+        const { error: budgetError } = await supabase.from("amount_badget").insert([
+          {
+            pwp_code: formData.coverCode,
+            amountbadget: parseFloat(formData.amountbadget),
+            createduser: selectedUserId,
+            distributor: formData.distributor,
+            remainingbalance: parseFloat(formData.amountbadget),
+            Approved: true,
+          },
+        ]);
+        if (budgetError) throw budgetError;
+
+        if (files.length > 0) {
+          const attachmentInserts = [];
+          for (const file of files) {
+            const base64Data = await toBase64(file);
+            attachmentInserts.push({
+              cover_code: formData.coverCode,
+              file_name: file.name,
+              file_type: file.type || null,
+              file_size: file.size || null,
+              file_data: base64Data,
+            });
+          }
+
+          const { error: attachmentError } = await supabase
+            .from("cover_attachments")
+            .insert(attachmentInserts);
+
+          if (attachmentError) throw attachmentError;
+        }
+
+        await Swal.fire({
+          icon: "success",
+          title: "Success!",
+          text: "Budget submitted successfully!",
+          confirmButtonText: "Great",
+        });
       }
 
-      await Swal.fire({
-        icon: "success",
-        title: "Success!",
-        text: "Form and attachments submitted successfully!",
-        confirmButtonText: "Great",
+      setFormData({
+        visaCode: "",
+        coverCode: "",
+        distributor: "",
+        principal: "",
+        accountType: "",
+        amountbadget: "",
+        PWPType: "COVER",
+        createForm: "",
+        Notification: false,
       });
-
-      window.location.reload();
-      setCurrentStep(2);
+      setFiles([]);
+      setEditingBudget(null);
+      setCurrentStep(1);
+      setSearchTerm("");
+      setSelectedUsername("");
+      setUserDistributorsForSelected([]);
     } catch (err) {
       console.error("Unexpected error during submit:", err);
       await Swal.fire({
@@ -642,6 +673,166 @@ const CoverVisa = () => {
     }
   };
 
+  const handleDeleteBudget = async (coverCode) => {
+    const result = await Swal.fire({
+      title: "Are you sure?",
+      text: "This will permanently delete the budget and all related data!",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const { error: attachError } = await supabase
+        .from("cover_attachments")
+        .delete()
+        .eq("cover_code", coverCode);
+
+      if (attachError) throw attachError;
+
+      const { error: budgetError } = await supabase
+        .from("amount_badget")
+        .delete()
+        .eq("pwp_code", coverCode);
+
+      if (budgetError) throw budgetError;
+
+      const { error: mainError } = await supabase
+        .from("cover_pwp")
+        .delete()
+        .eq("cover_code", coverCode);
+
+      if (mainError) throw mainError;
+
+      await Swal.fire({
+        icon: "success",
+        title: "Deleted!",
+        text: "Budget has been deleted.",
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error("Error deleting budget:", err);
+      await Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: "Failed to delete budget. Please try again.",
+        confirmButtonText: "OK",
+      });
+    }
+  };
+
+const handleEditBudget = async (budget) => {
+  console.log("🔧 Editing budget:", budget);
+  setEditingBudget(budget);
+
+  // 1️⃣ Get user info from createForm (UserID)
+  const { data: userData, error: userError } = await supabase
+    .from("Account_Users")
+    .select("name, UserID")
+    .eq("UserID", budget.createForm)
+    .single();
+
+  const username = userData ? userData.name : "";
+  const userId = userData ? userData.UserID : null;
+
+  console.log(`👤 Found user: ${username} (ID: ${userId})`);
+
+  // 2️⃣ Fetch ALL distributors from database
+  const { data: allDistributorsData, error: allDistError } = await supabase
+    .from('distributors')
+    .select('id, name, code, agent_code');
+
+  if (allDistError) {
+    console.error("❌ Error fetching all distributors:", allDistError);
+  }
+
+  // 3️⃣ Filter distributors that match this user's agent_code
+  let userDistributors = [];
+  
+  if (userId && allDistributorsData) {
+    const userIdString = String(userId);
+    
+    userDistributors = allDistributorsData.filter((dist) => {
+      if (!dist.agent_code) return false;
+
+      // Handle both array and comma-separated string
+      const agentCodes = Array.isArray(dist.agent_code)
+        ? dist.agent_code.map(String)
+        : String(dist.agent_code).split(',').map((c) => c.trim());
+
+      return agentCodes.includes(userIdString);
+    });
+
+    console.log(`📦 Found ${userDistributors.length} distributors for user ${username}`);
+    
+    // ✅ Update states
+    const distributorNames = userDistributors.map(item => item.name);
+    setUserDistributorsForSelected(distributorNames);
+    setFilteredDistributors(userDistributors);
+  }
+
+  // 4️⃣ Find the selected distributor from the budget
+  const selectedDist = allDistributorsData?.find(
+    (d) => d.code === parseInt(budget.distributor_code)
+  );
+  
+  console.log(`🏢 Selected distributor code: ${budget.distributor_code}`);
+  console.log(`🏢 Found distributor:`, selectedDist);
+
+  // 5️⃣ Get agent name for the selected distributor (for display purposes)
+  if (selectedDist && selectedDist.agent_code) {
+    const { data: agentData } = await supabase
+      .from("Account_Users")
+      .select("name")
+      .eq("UserID", selectedDist.agent_code)
+      .single();
+    
+    if (agentData) {
+      console.log(`👤 Agent for distributor: ${agentData.name}`);
+      setSelectedAgentName(agentData.name);
+    }
+  }
+
+  // 6️⃣ Set form data with ALL values
+  setFormData({
+    visaCode: "",
+    coverCode: budget.cover_code,
+    distributor: parseInt(budget.distributor_code), // ✅ Ensure it's a number
+    principal: "",
+    accountType: "",
+    amountbadget: budget.amount_badget?.toString() || "",
+    PWPType: "COVER",
+    createForm: username,
+    Notification: false,
+    remarks: budget.remarks || "",
+  });
+
+  // 7️⃣ Update UI states
+  setSearchTerm(username);
+  setSelectedUsername(username);
+
+  // 8️⃣ Fetch attachments
+  const { data: attachments, error: attachError } = await supabase
+    .from("cover_attachments")
+    .select("*")
+    .eq("cover_code", budget.cover_code);
+
+  if (!attachError && attachments) {
+    console.log(`📎 Found ${attachments.length} attachments`);
+  }
+
+  // 9️⃣ Go back to form
+  setCurrentStep(1);
+  
+  console.log("✅ Edit mode activated!");
+  console.log("✅ Distributor code set to:", parseInt(budget.distributor_code));
+  console.log("✅ Available distributors:", userDistributors.length);
+};
+
 
   const storedUser = localStorage.getItem("loggedInUser");
   const parsedUser = storedUser ? JSON.parse(storedUser) : null;
@@ -652,15 +843,29 @@ const CoverVisa = () => {
 
   useEffect(() => {
     const fetchUserDistributors = async () => {
+      const { data: userData, error: userError } = await supabase
+        .from("Account_Users")
+        .select("UserID")
+        .eq("name", loggedInUsername)
+        .single();
+
+      if (userError) {
+        console.error("[ERROR] Fetching user ID:", userError);
+        return;
+      }
+
+      const userId = userData.UserID;
+      console.log("[DEBUG] User ID:", userId);
+
       const { data, error } = await supabase
-        .from("user_distributors")
-        .select("distributor_name")
-        .eq("username", loggedInUsername);
+        .from("distributors")
+        .select("name")
+        .eq("agent_code", userId);
 
       if (error) {
-        console.error("[ERROR] Fetching user_distributors:", error);
+        console.error("[ERROR] Fetching distributors by agent_code:", error);
       } else {
-        const names = data.map((d) => d.distributor_name);
+        const names = data.map((d) => d.name);
         console.log("[DEBUG] Distributors assigned to user:", names);
         setUserDistributors(names);
       }
@@ -673,22 +878,44 @@ const CoverVisa = () => {
 
   useEffect(() => {
     const fetchDistributors = async () => {
-      const { data, error } = await supabase
-        .from("distributors")
-        .select("*")
-        .order("name", { ascending: true });
+      try {
+        console.log("🔍 Fetching ALL distributors...");
+        
+        let allDistributors = [];
+        let hasMore = true;
+        let offset = 0;
+        const batchSize = 1000;
 
-      if (error) {
-        console.error("[ERROR] Fetching distributors:", error);
-      } else {
-        setDistributors(data);
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from("distributors")
+            .select("*")
+            .order("name", { ascending: true })
+            .range(offset, offset + batchSize - 1);
 
-        // Filter distributors based on selected username or logged-in user
+          if (error) throw error;
+
+          if (data && data.length > 0) {
+            allDistributors = [...allDistributors, ...data];
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+            console.log(`📦 Batch fetched: ${data.length}, Total: ${allDistributors.length}`);
+          } else {
+            hasMore = false;
+          }
+        }
+
+        console.log(`✅ Total distributors fetched: ${allDistributors.length}`);
+        setDistributors(allDistributors);
+
         const distributorNames = selectedUsername ? userDistributorsForSelected : userDistributors;
-        const allowed = data.filter((dist) =>
+        const allowed = allDistributors.filter((dist) =>
           distributorNames.includes(dist.name)
         );
         setFilteredDistributors(allowed);
+        console.log(`✅ Filtered distributors: ${allowed.length}`);
+      } catch (error) {
+        console.error("[ERROR] Fetching distributors:", error);
       }
     };
 
@@ -700,7 +927,6 @@ const CoverVisa = () => {
       setFilteredDistributors([]);
     }
   }, [userDistributors, selectedUsername, userDistributorsForSelected]);
-
 
   const [approvalList, setApprovalList] = useState([]);
 
@@ -719,9 +945,9 @@ const CoverVisa = () => {
       }
     };
 
-
     fetchApprovalData();
   }, []);
+
   useEffect(() => {
     const fetchUsernames = async () => {
       const { data, error } = await supabase
@@ -749,19 +975,177 @@ const CoverVisa = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+
   const filteredUsernames = usernames.filter(username =>
     username.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  const handleSelectUsername = (username) => {
+const handleSelectUsername = async (username) => {
+  try {
     setSelectedUsername(username);
     setFormData({ ...formData, createForm: username });
     setSearchTerm(username);
     setIsOpen(false);
 
-    // Trigger the existing handleFormChange logic
-    handleFormChange({ target: { name: 'createForm', value: username } });
+    console.log(`👤 Selected username: ${username}`);
+
+    // 1️⃣ Get the agent_code (UserID) for this username
+    const { data: userData, error: userError } = await supabase
+      .from('Account_Users')
+      .select('UserID, name')
+      .eq('name', username)
+      .single();
+
+    if (userError || !userData) {
+      console.error('❌ Error fetching user info or no match:', userError);
+      setUserDistributorsForSelected([]);
+      setFilteredDistributors([]);
+      return;
+    }
+
+    const userAgentCode = String(userData.UserID); // make sure it's a string
+    console.log(`🆔 Found UserID (agent_code): ${userAgentCode} for ${username}`);
+
+    // 2️⃣ Fetch all distributors
+    const { data: distributorsData, error: distError } = await supabase
+      .from('distributors')
+      .select('*');
+
+    if (distError) {
+      console.error('❌ Error fetching distributors:', distError);
+      setUserDistributorsForSelected([]);
+      setFilteredDistributors([]);
+      return;
+    }
+
+    // 3️⃣ Filter distributors whose agent_code contains the userAgentCode
+    const matchingDistributors = distributorsData.filter((dist) => {
+      if (!dist.agent_code) return false;
+
+      // Handle both arrays and comma-separated strings
+      const agentCodes = Array.isArray(dist.agent_code)
+        ? dist.agent_code.map(String)
+        : dist.agent_code.split(',').map((c) => c.trim());
+
+      return agentCodes.includes(userAgentCode);
+    });
+
+    // 4️⃣ Extract distributor names and update UI
+    const distributorNames = matchingDistributors.map((d) => d.name);
+    setUserDistributorsForSelected(distributorNames);
+    setFilteredDistributors(matchingDistributors);
+
+    console.log(
+      `✅ Found ${matchingDistributors.length} distributor(s) for agent_code ${userAgentCode}:`,
+      distributorNames
+    );
+
+    // 5️⃣ Reset distributor selection in form
+    setFormData((prev) => ({ ...prev, distributor: '' }));
+  } catch (err) {
+    console.error('💥 Unexpected error in handleSelectUsername:', err);
+    setUserDistributorsForSelected([]);
+    setFilteredDistributors([]);
+  }
+};
+
+
+useEffect(() => {
+  const fetchSubmittedBudgets = async () => {
+    try {
+      // Fetch ALL cover_pwp records (no user filter)
+      const { data: coverData, error: coverError } = await supabase
+        .from("cover_pwp")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (coverError) {
+        console.error("Error fetching cover_pwp:", coverError);
+        return;
+      }
+
+      console.log("Fetched ALL cover_pwp data:", coverData);
+
+      // Fetch corresponding amount_badget data
+      if (coverData && coverData.length > 0) {
+        const coverCodes = coverData.map(item => item.cover_code);
+        
+        const { data: budgetData, error: budgetError } = await supabase
+          .from("amount_badget")
+          .select("pwp_code, remainingbalance, amountbadget")
+          .in("pwp_code", coverCodes);
+
+        if (budgetError) {
+          console.error("Error fetching amount_badget:", budgetError);
+        }
+
+        console.log("Fetched amount_badget data:", budgetData);
+
+        // Merge the data
+        const mergedData = coverData.map(cover => {
+          const budget = budgetData?.find(b => b.pwp_code === cover.cover_code);
+          return {
+            ...cover,
+            remainingbalance: budget?.remainingbalance || 0,
+            amountbadget_table: budget?.amountbadget || 0
+          };
+        });
+
+        console.log("Merged data:", mergedData);
+        setSubmittedBudgets(mergedData);
+      } else {
+        setSubmittedBudgets([]);
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setSubmittedBudgets([]);
+    }
   };
+
+  // ✅ Initial fetch
+  fetchSubmittedBudgets();
+
+  // ✅ Real-time subscription to cover_pwp changes
+  const coverSubscription = supabase
+    .channel("cover_pwp_realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "cover_pwp",
+      },
+      (payload) => {
+        console.log("Cover PWP changed:", payload);
+        fetchSubmittedBudgets();
+      }
+    )
+    .subscribe();
+
+  // ✅ Real-time subscription to amount_badget changes
+  const budgetSubscription = supabase
+    .channel("amount_badget_realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "amount_badget",
+      },
+      (payload) => {
+        console.log("Amount Budget changed:", payload);
+        fetchSubmittedBudgets();
+      }
+    )
+    .subscribe();
+
+  // ✅ Cleanup subscriptions
+  return () => {
+    supabase.removeChannel(coverSubscription);
+    supabase.removeChannel(budgetSubscription);
+  };
+}, []); // Empty dependency array - runs once on mount
+
+
 
   const handleInputChange = (e) => {
     setSearchTerm(e.target.value);
@@ -771,6 +1155,13 @@ const CoverVisa = () => {
       setFormData({ ...formData, createForm: '' });
     }
   };
+
+
+  const [currentPage, setCurrentPage] = useState(1);
+const itemsPerPage = 10; // Change this number to adjust rows per page
+
+const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
+
   return (
     <div style={{ padding: "30px", height: "90vh" }} className="containers">
       <div className="row align-items-center mb-4">
@@ -1102,193 +1493,182 @@ const CoverVisa = () => {
             </div>
           </div>
 
-          <div className="mt-4 d-flex justify-content-end gap-3">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleNext}
-            >
-              Next →
-            </button>
-          </div>
+         NEW CODE:
+<div className="mt-4 d-flex justify-content-between gap-3">
+  <button
+    type="button"
+    className="btn btn-outline-secondary"
+    onClick={() => setCurrentStep(2)}
+  >
+    View Submitted Budgets
+  </button>
+  <button type="submit" className="btn btn-success">
+    {editingBudget ? "Update Budget" : "Submit Budget"}
+  </button>
+</div>
         </form>
       )}
 
-      {currentStep === 2 && (
+{currentStep === 2 && (
+  <>
+    <div className="mb-4">
+      <h4 className="mb-3">Submitted Budgets</h4>
+
+      {submittedBudgets.length === 0 ? (
+        <div className="alert alert-info">No budgets submitted yet.</div>
+      ) : (
         <>
-          <div className="mb-3" style={{ textAlign: "right" }}>
-            <h5>
-              Total of Balances Budget:{" "}
-              <span style={{ color: "green" }}>
-                PHP {formatCurrency(formData.amountbadget)}
-              </span>
-            </h5>
+          <div className="table-responsive">
+            <table className="table table-bordered table-striped table-hover">
+              <thead className="table-primary">
+                <tr>
+                  <th>Cover Code</th>
+                  <th>Distributor</th>
+                  <th>Amount Budget</th>
+                  <th>Remaining Balance</th>
+                  <th>PWP Type</th>
+                  <th>Date Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {submittedBudgets
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map((budget) => {
+                    const dist = distributors.find(
+                      (d) =>
+                        String(d.code).trim() ===
+                        String(budget.distributor_code).trim()
+                    );
+
+                    return (
+                      <tr key={budget.id}>
+                        <td>{budget.cover_code}</td>
+
+                        {/* ✅ Distributor Name Conversion */}
+                        <td>
+                          {dist
+                            ? dist.name
+                            : `Code: ${budget.distributor_code || "N/A"}`}
+                        </td>
+
+                        <td className="text-end">
+                          ₱{formatCurrency(budget.amount_badget?.toString() || "0")}
+                        </td>
+
+                        <td className="text-end">
+                          ₱{formatCurrency(
+                            budget.remainingbalance?.toString() || "0"
+                          )}
+                        </td>
+
+                        <td>{budget.pwp_type || "COVER_PWP"}</td>
+
+                        <td>
+                          {budget.created_at
+                            ? new Date(budget.created_at).toLocaleDateString()
+                            : "-"}
+                        </td>
+
+                        <td>
+                          <button
+                            className="btn btn-sm btn-warning me-2"
+                            onClick={() => handleEditBudget(budget)}
+                            title="Edit Budget"
+                          >
+                            <i className="bi bi-pencil"></i> Edit
+                          </button>
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => handleDeleteBudget(budget.cover_code)}
+                            title="Delete Budget"
+                          >
+                            <i className="bi bi-trash"></i> Delete
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
           </div>
 
-          <h4 className="mb-3">Your Approval </h4>
-
-          <div className="table-responsive">
-            {loading ? (
-              <p>Loading approvals...</p>
-            ) : (
-              <table className="table table-bordered table-striped table-hover">
-                <thead className="table-success">
-                  <tr>
-                    <th>Approver</th>
-                    <th>Position</th>
-                    <th>Date Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {approvalList.length === 0 ? (
-                    <tr>
-                      <td colSpan="3" className="text-center">
-                        No approval data found.
-                      </td>
-                    </tr>
-                  ) : (
-                    approvalList.map(
-                      ({ id, username, allowed_to_approve, created_at }) => (
-                        <tr key={id}>
-                          <td>{username}</td>
-                          <td>
-                            {allowed_to_approve ? (
-                              <span className="badge bg-success">Allowed</span>
-                            ) : (
-                              <span className="badge bg-warning text-dark">
-                                Not Allowed
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            {created_at
-                              ? new Date(created_at).toLocaleDateString()
-                              : "-"}
-                          </td>
-                        </tr>
-                      )
-                    )
-                  )}
-                </tbody>
-              </table>
-            )}
-
-            <h4 className="mt-4">Attachments</h4>
-
-            <div
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onClick={() => fileInputRef.current.click()}
-              className="border border-primary rounded p-4 mb-3"
-              style={{
-                cursor: "pointer",
-                minHeight: "150px",
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "10px",
-                alignItems: "center",
-                justifyContent: files.length === 0 ? "center" : "flex-start",
-                backgroundColor: "#f8f9fa",
-                position: "relative",
-                transition: "background-color 0.3s",
-              }}
-            >
-              {files.length === 0 && (
-                <p className="text-muted">
-                  Drag & Drop files here or click to upload
-                </p>
-              )}
-
-              {files.map((file, index) => (
-                <div
-                  key={index}
-                  className="position-relative"
-                  style={{
-                    width: "100px",
-                    height: "100px",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    overflow: "hidden",
-                    textAlign: "center",
-                    padding: "5px",
-                    backgroundColor: "white",
-                    boxShadow: "0 0 4px rgba(0,0,0,0.1)",
-                  }}
-                >
-                  {file.type.startsWith("image/") ? (
-                    <img
-                      src={file.preview}
-                      alt={file.name}
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "80px",
-                        objectFit: "contain",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        wordWrap: "break-word",
-                        marginTop: "30px",
-                      }}
-                    >
-                      <i
-                        className="bi bi-file-earmark"
-                        style={{ fontSize: "28px", color: "#0d6efd" }}
-                      ></i>
-                      <div>
-                        {file.name.length > 15
-                          ? file.name.slice(0, 15) + "..."
-                          : file.name}
-                      </div>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(index);
-                    }}
-                    className="btn btn-sm btn-danger position-absolute top-0 end-0"
-                    style={{ borderRadius: "0 0 0 6px" }}
-                    title="Remove file"
-                  >
-                    &times;
-                  </button>
-                </div>
-              ))}
-
-              <input
-                type="file"
-                multiple
-                ref={fileInputRef}
-                onChange={handleFileInputChange}
-                style={{ display: "none" }}
-              />
+          {/* ✅ Pagination Controls */}
+          <div className="d-flex justify-content-between align-items-center mt-3">
+            <div>
+              Page {currentPage} of {totalPages}
             </div>
 
-            <div className="mb-3">
-              <label className="form-label">Remarks</label>
-              <textarea
-                name="remarks"
-                className="form-control"
-                value={formData.remarks}
-                onChange={handleFormChange}
-                rows={4}
-              />
-            </div>
-            <div className="mt-4 d-flex justify-content-between">
-              <button className="btn btn-outline-secondary" onClick={prevStep}>
-                ← Previous
+            <div>
+              <button
+                className="btn btn-secondary btn-sm me-2"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+              >
+                « First
               </button>
-              <button className="btn btn-success" onClick={handleSubmits}>
-                Submit To Approvers
-              </button>{" "}
+
+              <button
+                className="btn btn-secondary btn-sm me-2"
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                ‹ Prev
+              </button>
+
+              <button
+                className="btn btn-secondary btn-sm me-2"
+                onClick={() =>
+                  setCurrentPage((prev) =>
+                    Math.min(prev + 1, totalPages)
+                  )
+                }
+                disabled={currentPage === totalPages}
+              >
+                Next ›
+              </button>
+
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+              >
+                Last »
+              </button>
             </div>
           </div>
         </>
       )}
+    </div>
+
+    <div className="mt-4">
+      <button
+        className="btn btn-primary"
+        onClick={() => {
+          setCurrentStep(1);
+          setEditingBudget(null);
+          setFormData({
+            visaCode: "",
+            coverCode: "",
+            distributor: "",
+            principal: "",
+            accountType: "",
+            amountbadget: "",
+            PWPType: "COVER",
+            createForm: "",
+            Notification: false,
+          });
+          setFiles([]);
+          setSearchTerm("");
+          setSelectedUsername("");
+        }}
+      >
+        + Create New Budget
+      </button>
+    </div>
+  </>
+)}
 
       {currentStep === 3 && <></>}
     </div>
