@@ -833,236 +833,317 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
         });
     };
 
+    const buildCacheIndex = (cachedData, loggedInUserID, selectedDistributorCode) => {
+    const index = new Map();
+    const safeLower = (val) => 
+        typeof val === "string" ? val.trim().toLowerCase() : String(val ?? "").toLowerCase();
+
+    const userID = safeLower(loggedInUserID);
+    const distCode = safeLower(selectedDistributorCode);
+
+    // Build index: groupCode -> filtered records
+    cachedData.forEach(item => {
+        const groupCode = item.group_code;
+        const distributorCode = safeLower(item.distributor_code);
+        const agentCode = safeLower(item.agent_code);
+
+        // Filter once during indexing
+        if (distributorCode === distCode && agentCode === userID) {
+            if (!index.has(groupCode)) {
+                index.set(groupCode, []);
+            }
+            index.get(groupCode).push(item);
+        }
+    });
+
+    return index;
+};
+
     // ✅ UPDATED: Filter from cache instead of fetching
-    const fetchSubAccounts = async (mother) => {
-        try {
-            setSelectedMother(mother);
+// 🔍 FIXED: fetchSubAccounts with comprehensive debugging
+// ✅ FIXED: fetchSubAccounts without agent filter
+const fetchSubAccounts = async (mother) => {
+    try {
+        setSelectedMother(mother);
 
-            // prevent duplicate fetch
-            if (subAccounts[mother.id]) return;
-
-            console.log("🟡 Fetching sub-accounts for mother:", mother);
-
-            // ✅ Get distributor code
-            const distributorCode = selectedDistributor?.code;
-
-            if (!distributorCode) {
-                console.error("❌ No distributor selected!");
-                return;
-            }
-
-            // ✅ Use cached Accounts_List data
-            const cachedData = accountsListCache[distributorCode];
-
-            if (!cachedData || cachedData.length === 0) {
-                console.warn(
-                    "⚠️ No cached Accounts_List found. Please select distributor first."
-                );
-                return;
-            }
-
-            console.log(`⚡ Using cached data: ${cachedData.length} records`);
-
-            // ✅ Filter by group_code from cached data (SUPER FAST!)
-            const filteredByGroup = cachedData.filter(
-                (item) => item.group_code === mother.code
-            );
-
-            console.log(
-                `🔍 Filtered ${filteredByGroup.length} records for group_code: ${mother.code}`
-            );
-
-            if (!filteredByGroup.length) {
-                console.warn(`⚠️ No records found for group_code ${mother.code}`);
-                return;
-            }
-
-            // --- clean + normalize strings safely ---
-            const safeLower = (val) =>
-                typeof val === "string"
-                    ? val.trim().toLowerCase()
-                    : String(val ?? "").toLowerCase();
-
-            const loggedInUserID = safeLower(parsedUser?.UserID);
-            const selectedDistributorCode = safeLower(selectedDistributor?.code);
-
-            console.log("[DEBUG] Logged in UserID:", loggedInUserID);
-            console.log("Distributor_Code:", selectedDistributorCode);
-
-            // ✅ Filter by distributor + agent
-            const filteredData = filteredByGroup.filter((item) => {
-                const distributorCode = safeLower(item.distributor_code);
-                const agentCode = safeLower(item.agent_code);
-
-                const distributorMatch = distributorCode === selectedDistributorCode;
-                const agentMatch = agentCode === loggedInUserID;
-
-                return distributorMatch && agentMatch;
-            });
-
-            console.log(`🔍 After filter: ${filteredData.length} records`);
-
-            if (filteredData.length === 0) {
-                console.warn("⚠️ No matching data for this distributor and user.");
-                return;
-            }
-
-            // ✅ Remove duplicates (unique mother_code)
-            const uniqueData = Array.from(
-                new Map(
-                    filteredData.map((item) => [safeLower(item.mother_code), item])
-                ).values()
-            );
-
-            console.log(`✨ After dedup: ${uniqueData.length} unique records`);
-            console.log(
-                "🔍 Mother codes to lookup:",
-                uniqueData.map((d) => d.mother_code)
-            );
-
-            // ✅ Format for display using ALREADY CACHED motherAccountNamesMap
-            const formattedData = uniqueData
-                .map((item) => {
-                    const cleanCode = (item.mother_code || "").trim(); // 🔥 Trim tabs/spaces
-                    const displayName =
-                        motherAccountNamesMap[cleanCode] ||
-                        motherAccountNamesMap[item.mother_code] ||
-                        cleanCode;
-
-                    console.log(
-                        `🏷️ ${item.mother_code} -> ${displayName} (in map: ${motherAccountNamesMap[cleanCode] ? "✅" : "❌"
-                        })`
-                    );
-
-                    return {
-                        id: item.id,
-                        name: displayName,
-                        code: cleanCode,
-                        bp_code: item.bp_code ?? "",
-                        agent_code: item.agent_code ?? "",
-                        agent_name: agentNamesMap[item.agent_code] || item.agent_code,
-                        rawName: displayName.toUpperCase(),
-                    };
-                })
-                .sort((a, b) => {
-                    const isANonChain = a.rawName.includes("NON CHAIN");
-                    const isBNonChain = b.rawName.includes("NON CHAIN");
-                    if (isANonChain && !isBNonChain) return 1;
-                    if (!isANonChain && isBNonChain) return -1;
-                    return a.rawName.localeCompare(b.rawName);
-                })
-                .map(({ rawName, ...rest }) => rest);
-
-            console.log(
-                `[✅ FINAL] Displaying ${formattedData.length} mother account(s)`
-            );
-            console.table(formattedData);
-
-            setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
-        } catch (err) {
-            console.error("❌ Unexpected error fetching sub-accounts:", err);
+        // Prevent duplicate fetch
+        if (subAccounts[mother.id]) {
+            console.log("✅ Using cached sub-accounts");
+            return;
         }
-    };
 
+        console.log("🟡 Fetching sub-accounts for mother:", mother);
 
+        const distributorCode = selectedDistributor?.code;
+        if (!distributorCode) {
+            console.error("❌ No distributor selected!");
+            return;
+        }
+
+        // ✅ Use cached data
+        const cachedData = accountsListCache[distributorCode];
+        if (!cachedData?.length) {
+            console.warn("⚠️ No cached Accounts_List found.");
+            console.log("Available cache keys:", Object.keys(accountsListCache));
+            return;
+        }
+
+        console.log(`⚡ Using cached data: ${cachedData.length} records`);
+
+        // 🔍 DEBUG: Check what group_codes exist
+        const allGroupCodes = [...new Set(cachedData.map(item => item.group_code))];
+        console.log(`📊 Available group_codes (${allGroupCodes.length}):`, allGroupCodes.slice(0, 20));
+        console.log(`🎯 Looking for group_code: "${mother.code}"`);
+
+        // ✅ Filter by group_code
+        const filteredByGroup = cachedData.filter(
+            (item) => item.group_code === mother.code
+        );
+
+        console.log(`🔍 Filtered by group_code: ${filteredByGroup.length} records`);
+
+        if (!filteredByGroup.length) {
+            console.warn(`⚠️ No records found for group_code "${mother.code}"`);
+            
+            // 🔍 Try case-insensitive match
+            const caseInsensitiveMatch = cachedData.filter(
+                (item) => item.group_code?.toLowerCase() === mother.code?.toLowerCase()
+            );
+            console.log(`🔄 Case-insensitive match: ${caseInsensitiveMatch.length} records`);
+            
+            if (caseInsensitiveMatch.length === 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Sub-Accounts Found',
+                    text: `No records found for "${mother.name}"`,
+                    timer: 2000
+                });
+                return;
+            }
+        }
+
+        // Use filtered data (case-insensitive if needed)
+        const workingData = filteredByGroup.length > 0 
+            ? filteredByGroup 
+            : cachedData.filter(item => item.group_code?.toLowerCase() === mother.code?.toLowerCase());
+
+        // --- clean + normalize strings safely ---
+        const safeLower = (val) =>
+            typeof val === "string"
+                ? val.trim().toLowerCase()
+                : String(val ?? "").toLowerCase();
+
+        const selectedDistributorCode = safeLower(distributorCode);
+
+        console.log("🔑 [DEBUG] Matching criteria:");
+        console.log("  - Distributor Code:", selectedDistributorCode);
+
+        // 🔍 DEBUG: Show sample data before filtering
+        console.log("📝 Sample records (first 3):");
+        workingData.slice(0, 3).forEach((item, idx) => {
+            console.log(`  [${idx}] distributor_code: "${item.distributor_code}", mother_code: "${item.mother_code}"`);
+        });
+
+        // ✅ Filter by distributor ONLY (NO agent filter)
+        const filteredData = workingData.filter((item) => {
+            const distributorCode = safeLower(item.distributor_code);
+            const distributorMatch = distributorCode === selectedDistributorCode;
+
+            // 🔍 DEBUG: Log first few checks
+            if (workingData.indexOf(item) < 3) {
+                console.log(`🔍 Checking record:`, {
+                    distributor: `"${distributorCode}" ${distributorMatch ? '✅' : '❌'}`,
+                    mother_code: item.mother_code
+                });
+            }
+
+            return distributorMatch; // ✅ Only filter by distributor
+        });
+
+        console.log(`🔍 After distributor filter: ${filteredData.length} records`);
+
+        if (filteredData.length === 0) {
+            console.error("⚠️ No matching data for this distributor.");
+            
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Sub-Accounts',
+                text: `No sub-accounts found under "${mother.name}" for this distributor`,
+                timer: 3000
+            });
+            return;
+        }
+
+        // ✅ Remove duplicates (unique mother_code)
+        const uniqueData = Array.from(
+            new Map(
+                filteredData.map((item) => {
+                    const cleanCode = (item.mother_code || "").trim();
+                    return [cleanCode.toLowerCase(), { ...item, mother_code: cleanCode }];
+                })
+            ).values()
+        );
+
+        console.log(`✨ After dedup: ${uniqueData.length} unique records`);
+        console.log("🔍 Mother codes:", uniqueData.map((d) => d.mother_code));
+
+        // ✅ Format for display
+        const formattedData = uniqueData
+            .map((item) => {
+                const cleanCode = item.mother_code;
+                const displayName = motherAccountNamesMap[cleanCode] || 
+                                  motherAccountNamesMap[cleanCode.toLowerCase()] ||
+                                  cleanCode;
+
+                console.log(`🏷️ ${cleanCode} -> ${displayName}`);
+
+                return {
+                    id: item.id,
+                    name: displayName,
+                    code: cleanCode,
+                    bp_code: item.bp_code ?? "",
+                    agent_code: item.agent_code ?? "",
+                    agent_name: agentNamesMap[item.agent_code] || item.agent_code,
+                    rawName: displayName.toUpperCase(),
+                };
+            })
+            .sort((a, b) => {
+                const isANonChain = a.rawName.includes("NON CHAIN");
+                const isBNonChain = b.rawName.includes("NON CHAIN");
+                if (isANonChain && !isBNonChain) return 1;
+                if (!isANonChain && isBNonChain) return -1;
+                return a.rawName.localeCompare(b.rawName);
+            })
+            .map(({ rawName, ...rest }) => rest);
+
+        console.log(`[✅ FINAL] Displaying ${formattedData.length} mother account(s)`);
+        console.table(formattedData);
+
+        setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
+        
+        if (formattedData.length === 0) {
+            Swal.fire({
+                icon: 'info',
+                title: 'No Results',
+                text: 'No sub-accounts to display',
+                timer: 2000
+            });
+        }
+    } catch (err) {
+        console.error("❌ Unexpected error fetching sub-accounts:", err);
+        Swal.fire("Error", err.message, "error");
+    }
+};
     // ✅ UPDATED: Filter branches from cache
-    const fetchBranches = async (motherAccountCode) => {
-        try {
-            console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
+const fetchBranches = async (motherAccountCode) => {
+    try {
+        console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}`);
 
-            const distributorCode = selectedDistributor?.code;
-            if (!distributorCode) {
-                console.error("❌ No distributor selected!");
-                return;
-            }
-
-            // ✅ Use cached Accounts_List
-            const cachedData = accountsListCache[distributorCode];
-            if (!cachedData || cachedData.length === 0) {
-                console.warn("⚠️ No cached Accounts_List found.");
-                return;
-            }
-
-            // Filter by mother_code
-            const filteredData = cachedData.filter(
-                (item) => (item.mother_code || "").trim() === motherAccountCode.trim() && item.bp_code
-            );
-
-            if (filteredData.length === 0) {
-                console.warn("⚠️ No branches found for this mother account.");
-                setBranchTypes([]);
-                return;
-            }
-
-            // 🔥 Get all unique BP codes from filtered data
-            const allBpCodes = [...new Set(filteredData.map(row => (row.bp_code || "").trim()).filter(Boolean))];
-            console.log(`📊 Total unique BP codes to fetch: ${allBpCodes.length}`);
-
-            // 🔥 Fetch ALL BP names in batches (Supabase limit is 1000 per query)
-            let allBpData = [];
-            const batchSize = 1000;
-
-            for (let i = 0; i < allBpCodes.length; i += batchSize) {
-                const batch = allBpCodes.slice(i, i + batchSize);
-                const { data: bpData, error: bpError } = await supabase
-                    .from("Bp_Accounts")
-                    .select("bp_code, bp_name")
-                    .in("bp_code", batch);
-
-                if (bpError) {
-                    console.error("❌ Failed to fetch Bp_Accounts batch:", bpError);
-                    continue;
-                }
-
-                allBpData = [...allBpData, ...bpData];
-            }
-
-            console.log(`✅ Fetched ${allBpData.length} BP records`);
-
-            // Create mapping
-            const bpMap = {};
-            allBpData.forEach((bp) => {
-                if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
-            });
-
-            // Update global map
-            setBpNamesMap(prev => ({ ...prev, ...bpMap }));
-
-            // Map branches to names
-            let uniqueBranches = filteredData
-                .map((row) => {
-                    const bpCode = (row.bp_code || "").trim();
-                    if (!bpCode) return null;
-
-                    const branchName = bpMap[bpCode];
-
-                    return {
-                        id: row.id,
-                        name: branchName || bpCode,
-                        code: bpCode,
-                        bp_name: branchName || bpCode,
-                        status: row.status,
-                        distributor_code: row.distributor_code,
-                        agent_code: row.agent_code,
-                        agent_name: agentNamesMap[row.agent_code] || row.agent_code,
-                    };
-                })
-                .filter(Boolean);
-
-            // Sort alphabetically
-            uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
-
-            setBranchTypes(uniqueBranches);
-            console.log(`✨ Unique branches: ${uniqueBranches.length}`);
-            console.log(`🔍 Unmapped branches: ${uniqueBranches.filter(b => b.name === b.code).length}`);
-            console.table(uniqueBranches.slice(0, 10)); // Show first 10 only
-        } catch (err) {
-            console.error("❌ Error fetching branches:", err.message);
-            Swal.fire("Error", err.message, "error");
+        const distributorCode = selectedDistributor?.code;
+        if (!distributorCode) {
+            console.error("❌ No distributor selected!");
+            return;
         }
-    };
 
+        const cachedData = accountsListCache[distributorCode];
+        if (!cachedData?.length) {
+            console.warn("⚠️ No cached Accounts_List found.");
+            return;
+        }
 
+        // ⚡ Faster filter with single pass
+        const motherCodeTrimmed = motherAccountCode.trim();
+        const filteredData = [];
+        const bpCodesSet = new Set();
+
+        for (const item of cachedData) {
+            const itemMotherCode = (item.mother_code || "").trim();
+            if (itemMotherCode === motherCodeTrimmed && item.bp_code) {
+                filteredData.push(item);
+                bpCodesSet.add(item.bp_code.trim());
+            }
+        }
+
+        console.log(`📊 Found ${filteredData.length} branch records`);
+
+        if (filteredData.length === 0) {
+            console.warn("⚠️ No branches found for this mother account.");
+            setBranchTypes([]);
+            Swal.fire({
+                icon: 'info',
+                title: 'No Branches',
+                text: `No branches found for "${motherAccountCode}"`,
+                timer: 2000
+            });
+            return;
+        }
+
+        const allBpCodes = Array.from(bpCodesSet);
+        console.log(`📊 Total unique BP codes to fetch: ${allBpCodes.length}`);
+
+        // 🚀 PARALLEL batch fetching
+        const batchSize = 1000;
+        const batches = [];
+        
+        for (let i = 0; i < allBpCodes.length; i += batchSize) {
+            batches.push(allBpCodes.slice(i, i + batchSize));
+        }
+
+        const batchPromises = batches.map(batch =>
+            supabase
+                .from("Bp_Accounts")
+                .select("bp_code, bp_name")
+                .in("bp_code", batch)
+        );
+
+        const results = await Promise.all(batchPromises);
+        
+        const allBpData = results
+            .filter(result => !result.error)
+            .flatMap(result => result.data || []);
+
+        console.log(`✅ Fetched ${allBpData.length} BP records`);
+
+        // Build map
+        const bpMap = Object.fromEntries(
+            allBpData
+                .filter(bp => bp.bp_code)
+                .map(bp => [bp.bp_code.trim(), bp.bp_name])
+        );
+
+        setBpNamesMap(prev => ({ ...prev, ...bpMap }));
+
+        // Map branches with deduplication
+        const branchMap = new Map();
+        
+        for (const row of filteredData) {
+            const bpCode = (row.bp_code || "").trim();
+            if (!bpCode || branchMap.has(bpCode)) continue;
+
+            const branchName = bpMap[bpCode] || bpCode;
+            branchMap.set(bpCode, {
+                id: row.id,
+                name: branchName,
+                code: bpCode,
+                bp_name: branchName,
+                status: row.status,
+                distributor_code: row.distributor_code,
+                agent_code: row.agent_code,
+                agent_name: agentNamesMap[row.agent_code] || row.agent_code,
+            });
+        }
+
+        const uniqueBranches = Array.from(branchMap.values())
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        setBranchTypes(uniqueBranches);
+        console.log(`✨ Unique branches: ${uniqueBranches.length}`);
+        console.table(uniqueBranches.slice(0, 10));
+    } catch (err) {
+        console.error("❌ Error fetching branches:", err.message);
+        Swal.fire("Error", err.message, "error");
+    }
+};
 
     const [rawAmount, setRawAmount] = React.useState(formData.amountbadget || '');
 
