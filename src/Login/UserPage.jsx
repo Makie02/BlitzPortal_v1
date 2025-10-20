@@ -3,7 +3,7 @@ import defaultCover from '../Assets/bg.jpg';
 import { supabase } from '../supabaseClient';
 
 const TABS = [
-    { key: 'category', label: 'Category' }, // changed from 'brands'
+    { key: "distributor", label: "Distributor" },
     { key: 'approvers', label: 'Approvers' },
     { key: 'salesDivision', label: 'Sales Division' },
 
@@ -55,6 +55,164 @@ const renderValue = (value) => {
 
 
 const UserPage = ({ user, setCurrentView }) => {
+
+
+
+    // 🔹 State for distributor data
+    const [UserID, setUserId] = useState(null);
+    const [name, setname] = useState("");
+    const [distributorData, setDistributorData] = useState([]);
+    const [loadingDistributor, setLoadingDistributor] = useState(false);
+    const [errorDistributor, setErrorDistributor] = useState(null);
+
+    // ✅ Load logged-in user info
+    useEffect(() => {
+        const storedUser = localStorage.getItem("loggedInUser");
+        if (storedUser) {
+            try {
+                const userObj = JSON.parse(storedUser);
+                const extractedUserId = userObj.UserID || "Unknown ID";
+                const userName = userObj.name || "User";
+                setUserId(extractedUserId);
+                setname(userName);
+                console.log("[DEBUG] Logged in user info:");
+                console.log("UserID:", extractedUserId);
+                console.log("User Name:", userName);
+            } catch (err) {
+                console.error("[ERROR] Failed to parse loggedInUser:", err);
+                setname("User");
+            }
+        } else {
+            console.warn("[DEBUG] No loggedInUser found in localStorage.");
+        }
+    }, []);
+
+    // ✅ Fetch distributors for the logged-in user (by agent_code)
+    useEffect(() => {
+        const fetchDistributorsByAgent = async () => {
+            if (!UserID || UserID === "Unknown ID") {
+                console.warn("⚠️ No UserID found — skipping fetch.");
+                return;
+            }
+
+            console.log("🔍 Fetching distributors for agent_code:", UserID);
+            setLoadingDistributor(true);
+            setErrorDistributor(null);
+
+            try {
+                const { data, error } = await supabase
+                    .from("distributors")
+                    .select("id, code, name, description, agent_code, created_at");
+
+                if (error) throw error;
+                if (!data || data.length === 0) {
+                    console.warn("⚠️ No distributors found.");
+                    setDistributorData([]);
+                    return;
+                }
+
+                // ✅ Match distributors where their agent_code contains this UserID
+                const matchedDistributors = data.filter((d) => {
+                    if (!d.agent_code) return false;
+                    const agentCodes = d.agent_code
+                        .split(",")
+                        .map((c) => c.trim());
+                    return agentCodes.includes(String(UserID));
+                });
+
+                if (matchedDistributors.length > 0) {
+                    console.log("✅ Matching distributors:", matchedDistributors);
+                    setDistributorData(matchedDistributors);
+                } else {
+                    console.log("⚠️ No matching distributors for agent_code:", UserID);
+                    setDistributorData([]);
+                }
+            } catch (err) {
+                console.error("❌ Fetch error:", err.message);
+                setErrorDistributor(err.message);
+            } finally {
+                setLoadingDistributor(false);
+            }
+        };
+
+        fetchDistributorsByAgent();
+    }, [UserID]);
+
+    // ✅ Render distributors
+    const renderDistributor = () => {
+        if (loadingDistributor)
+            return <p style={{ textAlign: "center", color: "#555" }}>Loading distributors...</p>;
+        if (errorDistributor)
+            return <p style={{ color: "red", textAlign: "center" }}>Error: {errorDistributor}</p>;
+
+        if (!distributorData || distributorData.length === 0)
+            return <p style={{ textAlign: "center", fontStyle: "italic" }}>No distributors assigned.</p>;
+
+        return (
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))",
+                    gap: "16px",
+                    padding: "20px",
+                }}
+            >
+                {distributorData.map((dist) => (
+                    <div
+                        key={dist.id}
+                        style={{
+                            background: "white",
+                            borderRadius: "12px",
+                            boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
+                            padding: "20px",
+                            border: "1px solid #eee",
+                            transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                            cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-3px)";
+                            e.currentTarget.style.boxShadow = "0 6px 14px rgba(0,0,0,0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.08)";
+                        }}
+                    >
+                        <div style={{ borderBottom: "1px solid #eee", paddingBottom: "8px", marginBottom: "10px" }}>
+                            <h5 style={{ margin: 0, fontSize: "18px", fontWeight: "600", color: "#333" }}>
+                                {dist.name || "Unnamed Distributor"}
+                            </h5>
+                            <p style={{ margin: "4px 0", color: "#888", fontSize: "14px" }}>
+                                Code: <strong style={{ color: "#007bff" }}>{dist.code || "N/A"}</strong>
+                            </p>
+                        </div>
+
+                        {dist.description && (
+                            <p style={{ color: "#555", marginBottom: "10px" }}>
+                                {dist.description}
+                            </p>
+                        )}
+
+                        <p
+                            style={{
+                                fontSize: "12px",
+                                color: "#999",
+                                borderTop: "1px solid #f0f0f0",
+                                paddingTop: "8px",
+                            }}
+                        >
+                            Created at:{" "}
+                            <span style={{ color: "#666" }}>
+                                {dist.created_at ? new Date(dist.created_at).toLocaleString() : "N/A"}
+                            </span>
+                        </p>
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+
 
     const [categoryData, setCategoryData] = useState([]);
     useEffect(() => {
@@ -243,54 +401,70 @@ const UserPage = ({ user, setCurrentView }) => {
             fetchUserProfile();
         }
     }, [user]);
+    // Fetch both User_Approvers and Single_Approval
+    useEffect(() => {
+        const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+        const currentUserName = (currentUser?.name || "").toLowerCase().trim();
+        const userId = currentUser?.UserID;
+
+        if (activeTab === "approvers" && (userId || currentUserName)) {
+            fetchUserApprovers(userId);
+            fetchSingleApprovals(currentUserName);
+        }
+    }, [activeTab]);
+
+    // Combined approvers renderer
     const renderApprovers = () => {
-        if (loadingApprovers || loadingSingleApprovals) return <p>Loading approvers...</p>;
+        if (loadingApprovers || loadingSingleApprovals)
+            return <p>Loading approvers...</p>;
 
-        if (errorApprovers) return <p style={{ color: 'red' }}>Error: {errorApprovers}</p>;
-        if (errorSingleApprovals) return <p style={{ color: 'red' }}>Error: {errorSingleApprovals}</p>;
+        if (errorApprovers)
+            return <p style={{ color: "red" }}>Error: {errorApprovers}</p>;
 
-        // Combine both approvers arrays with mapped data to unify the display
+        if (errorSingleApprovals)
+            return <p style={{ color: "red" }}>Error: {errorSingleApprovals}</p>;
+
+        // Merge both sources
         const combinedApprovers = [
-            ...userApprovers.map(approver => ({
-                id: approver.id,
-                name: approver.Approver_Name || 'N/A',
-                type: approver.Type || 'User Approver',
+            ...(userApprovers || []).map((approver) => ({
+                id: `ua_${approver.id}`,
+                name: approver.Approver_Name || "N/A",
+                type: approver.Type || "User Approver",
             })),
-            ...singleApprovalApprovers.map(sa => ({
-                id: `single_${sa.id}`,  // unique key prefix to avoid clashes
-                name: sa.username || 'N/A',
-                type: 'Single Approval',
-            }))
+            ...(singleApprovalApprovers || []).map((sa) => ({
+                id: `sa_${sa.id}`,
+                name: sa.username || "N/A",
+                type: "Single Approval",
+            })),
         ];
 
-        if (combinedApprovers.length === 0) {
+        if (combinedApprovers.length === 0)
             return <p><i>No approvers assigned.</i></p>;
-        }
 
         return (
             <div
                 style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                    gap: '16px',
-                    marginTop: '10px',
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+                    gap: "16px",
+                    marginTop: "10px",
                 }}
             >
                 {combinedApprovers.map((approver) => (
                     <div
                         key={approver.id}
                         style={{
-                            border: '1px solid #ddd',
-                            padding: '12px',
-                            borderRadius: '8px',
-                            backgroundColor: '#f9f9f9',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                            border: "1px solid #ddd",
+                            padding: "12px",
+                            borderRadius: "8px",
+                            backgroundColor: "#f9f9f9",
+                            boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
                         }}
                     >
-                        <p style={{ margin: '4px 0' }}>
+                        <p style={{ margin: "4px 0" }}>
                             <strong>Name:</strong> {approver.name}
                         </p>
-                        <p style={{ margin: '4px 0' }}>
+                        <p style={{ margin: "4px 0" }}>
                             <strong>Type:</strong> {approver.type}
                         </p>
                     </div>
@@ -300,27 +474,36 @@ const UserPage = ({ user, setCurrentView }) => {
     };
 
 
+
     const [userApprovers, setUserApprovers] = useState([]);
     const [loadingApprovers, setLoadingApprovers] = useState(false);
     const [errorApprovers, setErrorApprovers] = useState(null);
 
-    const fetchUserApprovers = async (userId) => {
-        if (!userId) return [];
-
+    const fetchUserApprovers = async () => {
         setLoadingApprovers(true);
         setErrorApprovers(null);
 
         try {
+            // 🟢 Fetch all users from Single_Approval who are allowed to approve
             const { data, error } = await supabase
-                .from("User_Approvers")
+                .from("Single_Approval")
                 .select("*")
-                .eq("UserID", userId)
+                .eq("allowed_to_approve", true)
                 .order("created_at", { ascending: true });
 
             if (error) throw error;
-            setUserApprovers(data || []);
+
+            // 🧩 Format the data for display
+            const formattedData = (data || []).map((item) => ({
+                id: item.id,
+                Approver_Name: item.username,
+                Type: "Single Approval",
+                created_at: item.created_at,
+            }));
+
+            setUserApprovers(formattedData);
         } catch (err) {
-            console.error("Fetch approvers error:", err.message);
+            console.error("Fetch Single_Approval error:", err.message);
             setErrorApprovers(err.message);
         } finally {
             setLoadingApprovers(false);
@@ -487,46 +670,6 @@ const UserPage = ({ user, setCurrentView }) => {
 
 
 
-    const renderAssignedPlan = (assignedPlan) => {
-        if (!assignedPlan) return <p><i>No assigned plan.</i></p>;
-        return renderValue(assignedPlan);
-    };
-    const renderApproverss = () => {
-        if (loadingApprovers) return <p>Loading approvers...</p>;
-        if (errorApprovers) return <p style={{ color: 'red' }}>Error: {errorApprovers}</p>;
-        if (!userApprovers || userApprovers.length === 0) return <p><i>No approvers assigned.</i></p>;
-
-        return (
-            <div
-                style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                    gap: '16px',
-                    marginTop: '10px',
-                }}
-            >
-                {userApprovers.map((approver, idx) => (
-                    <div
-                        key={approver.id || idx}
-                        style={{
-                            border: '1px solid #ddd',
-                            padding: '12px',
-                            borderRadius: '8px',
-                            backgroundColor: '#f9f9f9',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                        }}
-                    >
-                        <p style={{ margin: '4px 0' }}>
-                            <strong>Name:</strong> {approver.Approver_Name || 'N/A'}
-                        </p>
-                        <p style={{ margin: '4px 0' }}>
-                            <strong>Type:</strong> {approver.Type || 'N/A'}
-                        </p>
-                    </div>
-                ))}
-            </div>
-        );
-    };
 
 
 
@@ -706,7 +849,7 @@ const UserPage = ({ user, setCurrentView }) => {
                     }}
                     key={activeTab}
                 >
-                    {activeTab === 'category' && renderCategory(categoryData)}
+                    {activeTab === 'distributor' && renderDistributor(distributorData)}
                     {activeTab === 'approvers' && renderApprovers()}
                     {activeTab === 'salesDivision' && renderValue(salesDivision)}
                 </div>
