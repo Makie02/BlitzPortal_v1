@@ -190,51 +190,9 @@ const handleFormChange = async (e) => {
   };
 
   const [files, setFiles] = useState([]);
-  const fileInputRef = useRef();
 
-  const handleFiles = (selectedFiles) => {
-    const newFiles = Array.from(selectedFiles).map((file) => {
-      if (file.type.startsWith("image/")) {
-        file.preview = URL.createObjectURL(file);
-      }
-      return file;
-    });
-    setFiles((prev) => [...prev, ...newFiles]);
-  };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFiles(e.dataTransfer.files);
-      e.dataTransfer.clearData();
-    }
-  };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleFileInputChange = (e) => {
-    handleFiles(e.target.files);
-  };
-
-  const removeFile = (index) => {
-    const updated = [...files];
-    if (updated[index].preview) {
-      URL.revokeObjectURL(updated[index].preview);
-    }
-    updated.splice(index, 1);
-    setFiles(updated);
-  };
-
-  const handleNext = (e) => {
-    e.preventDefault();
-    if (currentStep < 3) {
-      setCurrentStep(currentStep + 1);
-    }
-  };
 
   const [accountTypes, setAccountTypes] = useState([]);
   const [approvedExpenses, setApprovedExpenses] = useState(0);
@@ -487,191 +445,237 @@ const handleFormChange = async (e) => {
       reader.onerror = reject;
     });
 
-  const handleSubmits = async (e) => {
-    e.preventDefault();
+const handleSubmits = async (e) => {
+  e.preventDefault();
 
-    if (
-      !formData.coverCode ||
-      !formData.distributor ||
-      !formData.amountbadget ||
-      !formData.createForm
-    ) {
+  if (
+    !formData.coverCode ||
+    !formData.distributor ||
+    !formData.amountbadget ||
+    !formData.createForm
+  ) {
+    await Swal.fire({
+      icon: "warning",
+      title: "Missing fields",
+      text: "Please fill in all required fields including Assign Name.",
+      confirmButtonText: "OK",
+    });
+    return;
+  }
+
+  try {
+    const storedUser = localStorage.getItem("loggedInUser");
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+
+    if (!parsedUser) {
       await Swal.fire({
-        icon: "warning",
-        title: "Missing fields",
-        text: "Please fill in all required fields including Assign Name.",
+        icon: "error",
+        title: "Login Required",
+        text: "You must be logged in to submit.",
         confirmButtonText: "OK",
       });
       return;
     }
 
-    try {
-      const storedUser = localStorage.getItem("loggedInUser");
-      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    // ✅ Get UserID of the selected creator
+    const { data: selectedUserData, error: userError } = await supabase
+      .from("Account_Users")
+      .select("UserID")
+      .eq("name", formData.createForm)
+      .single();
 
-      if (!parsedUser) {
-        await Swal.fire({
-          icon: "error",
-          title: "Login Required",
-          text: "You must be logged in to submit.",
-          confirmButtonText: "OK",
-        });
-        return;
-      }
-
-      const { data: selectedUserData, error: userError } = await supabase
-        .from("Account_Users")
-        .select("UserID")
-        .eq("name", formData.createForm)
-        .single();
-
-      if (userError || !selectedUserData) {
-        await Swal.fire({
-          icon: "error",
-          title: "User Not Found",
-          text: "Could not find user ID for the selected name.",
-          confirmButtonText: "OK",
-        });
-        return;
-      }
-
-      const selectedUserId = selectedUserData.UserID;
-
-      if (editingBudget) {
-        const { error: mainError } = await supabase
-          .from("cover_pwp")
-          .update({
-            distributor_code: formData.distributor,
-            amount_badget: parseFloat(formData.amountbadget),
-            remarks: formData.remarks,
-            createForm: selectedUserId,
-          })
-          .eq("cover_code", editingBudget.cover_code);
-
-        if (mainError) throw mainError;
-
-        const { error: budgetError } = await supabase
-          .from("amount_badget")
-          .update({
-            amountbadget: parseFloat(formData.amountbadget),
-            distributor: formData.distributor,
-            remainingbalance: parseFloat(formData.amountbadget),
-            createduser: selectedUserId,
-            Approved: true,
-          })
-          .eq("pwp_code", editingBudget.cover_code);
-
-        if (budgetError) throw budgetError;
-
-        if (files.length > 0) {
-          const attachmentInserts = [];
-          for (const file of files) {
-            const base64Data = await toBase64(file);
-            attachmentInserts.push({
-              cover_code: editingBudget.cover_code,
-              file_name: file.name,
-              file_type: file.type || null,
-              file_size: file.size || null,
-              file_data: base64Data,
-            });
-          }
-
-          const { error: attachmentError } = await supabase
-            .from("cover_attachments")
-            .insert(attachmentInserts);
-
-          if (attachmentError) throw attachmentError;
-        }
-
-        await Swal.fire({
-          icon: "success",
-          title: "Updated!",
-          text: "Budget updated successfully!",
-          confirmButtonText: "Great",
-        });
-      } else {
-        const dataToInsert = {
-          cover_code: formData.coverCode,
-          distributor_code: formData.distributor,
-          amount_badget: parseFloat(formData.amountbadget),
-          pwp_type: formData.coverType || "COVER_PWP",
-          remarks: formData.remarks,
-          notification: false,
-          createForm: selectedUserId,
-        };
-
-        const { error: mainError } = await supabase
-          .from("cover_pwp")
-          .insert([dataToInsert]);
-        if (mainError) throw mainError;
-
-        const { error: budgetError } = await supabase.from("amount_badget").insert([
-          {
-            pwp_code: formData.coverCode,
-            amountbadget: parseFloat(formData.amountbadget),
-            createduser: selectedUserId,
-            distributor: formData.distributor,
-            remainingbalance: parseFloat(formData.amountbadget),
-            Approved: true,
-          },
-        ]);
-        if (budgetError) throw budgetError;
-
-        if (files.length > 0) {
-          const attachmentInserts = [];
-          for (const file of files) {
-            const base64Data = await toBase64(file);
-            attachmentInserts.push({
-              cover_code: formData.coverCode,
-              file_name: file.name,
-              file_type: file.type || null,
-              file_size: file.size || null,
-              file_data: base64Data,
-            });
-          }
-
-          const { error: attachmentError } = await supabase
-            .from("cover_attachments")
-            .insert(attachmentInserts);
-
-          if (attachmentError) throw attachmentError;
-        }
-
-        await Swal.fire({
-          icon: "success",
-          title: "Success!",
-          text: "Budget submitted successfully!",
-          confirmButtonText: "Great",
-        });
-      }
-
-      setFormData({
-        visaCode: "",
-        coverCode: "",
-        distributor: "",
-        principal: "",
-        accountType: "",
-        amountbadget: "",
-        PWPType: "COVER",
-        createForm: "",
-        Notification: false,
-      });
-      setFiles([]);
-      setEditingBudget(null);
-      setCurrentStep(1);
-      setSearchTerm("");
-      setSelectedUsername("");
-      setUserDistributorsForSelected([]);
-    } catch (err) {
-      console.error("Unexpected error during submit:", err);
+    if (userError || !selectedUserData) {
       await Swal.fire({
         icon: "error",
-        title: "Unexpected Error",
-        text: "Something went wrong. See console for details.",
+        title: "User Not Found",
+        text: "Could not find user ID for the selected name.",
         confirmButtonText: "OK",
       });
+      return;
     }
-  };
+
+    const selectedUserId = selectedUserData.UserID;
+
+    // ---------------------------
+    // ✳️ UPDATE EXISTING BUDGET
+    // ---------------------------
+    if (editingBudget) {
+      const { error: mainError } = await supabase
+        .from("cover_pwp")
+        .update({
+          distributor_code: formData.distributor,
+          amount_badget: parseFloat(formData.amountbadget),
+          remarks: formData.remarks,
+          createForm: selectedUserId,
+        })
+        .eq("cover_code", editingBudget.cover_code);
+
+      if (mainError) throw mainError;
+
+      const { error: budgetError } = await supabase
+        .from("amount_badget")
+        .update({
+          amountbadget: parseFloat(formData.amountbadget),
+          distributor: formData.distributor,
+          remainingbalance: parseFloat(formData.amountbadget),
+          createduser: selectedUserId,
+          Approved: true,
+        })
+        .eq("pwp_code", editingBudget.cover_code);
+
+      if (budgetError) throw budgetError;
+
+      // ✅ Insert into Approval_History (automatic Approved)
+      const { error: approvalError } = await supabase
+        .from("Approval_History")
+        .insert([
+          {
+            PwpCode: editingBudget.cover_code,
+            ApproverId: selectedUserId.toString(),
+            DateResponded: new Date().toISOString(),
+            Response: "Approved",
+            Type: "COVER_PWP",
+            Notication: true,
+            CreatedForm: parsedUser.name,
+          },
+        ]);
+      if (approvalError) throw approvalError;
+
+      // ✅ Handle file attachments
+      if (files.length > 0) {
+        const attachmentInserts = [];
+        for (const file of files) {
+          const base64Data = await toBase64(file);
+          attachmentInserts.push({
+            cover_code: editingBudget.cover_code,
+            file_name: file.name,
+            file_type: file.type || null,
+            file_size: file.size || null,
+            file_data: base64Data,
+          });
+        }
+
+        const { error: attachmentError } = await supabase
+          .from("cover_attachments")
+          .insert(attachmentInserts);
+
+        if (attachmentError) throw attachmentError;
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: "Updated!",
+        text: "Budget updated successfully and automatically approved!",
+        confirmButtonText: "Great",
+      });
+    }
+
+    // ---------------------------
+    // ✳️ CREATE NEW BUDGET
+    // ---------------------------
+    else {
+      const dataToInsert = {
+        cover_code: formData.coverCode,
+        distributor_code: formData.distributor,
+        amount_badget: parseFloat(formData.amountbadget),
+        pwp_type: formData.coverType || "COVER_PWP",
+        remarks: formData.remarks,
+        notification: false,
+        createForm: selectedUserId,
+      };
+
+      const { error: mainError } = await supabase
+        .from("cover_pwp")
+        .insert([dataToInsert]);
+      if (mainError) throw mainError;
+
+      const { error: budgetError } = await supabase.from("amount_badget").insert([
+        {
+          pwp_code: formData.coverCode,
+          amountbadget: parseFloat(formData.amountbadget),
+          createduser: selectedUserId,
+          distributor: formData.distributor,
+          remainingbalance: parseFloat(formData.amountbadget),
+          Approved: true,
+        },
+      ]);
+      if (budgetError) throw budgetError;
+
+      // ✅ Insert into Approval_History (automatic Approved)
+      const { error: approvalError } = await supabase
+        .from("Approval_History")
+        .insert([
+          {
+            PwpCode: formData.coverCode,
+            ApproverId:parsedUser.name ,
+            DateResponded: new Date().toISOString(),
+            Response: "Approved",
+            Type: "Allowed",
+            Notication: true,
+            CreatedForm: selectedUserId.toString(),
+          },
+        ]);
+      if (approvalError) throw approvalError;
+
+      // ✅ Handle file attachments
+      if (files.length > 0) {
+        const attachmentInserts = [];
+        for (const file of files) {
+          const base64Data = await toBase64(file);
+          attachmentInserts.push({
+            cover_code: formData.coverCode,
+            file_name: file.name,
+            file_type: file.type || null,
+            file_size: file.size || null,
+            file_data: base64Data,
+          });
+        }
+
+        const { error: attachmentError } = await supabase
+          .from("cover_attachments")
+          .insert(attachmentInserts);
+
+        if (attachmentError) throw attachmentError;
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: "Success!",
+        text: "Budget submitted and automatically approved!",
+        confirmButtonText: "Great",
+      });
+    }
+
+    // ✅ Reset form after success
+    setFormData({
+      visaCode: "",
+      coverCode: "",
+      distributor: "",
+      principal: "",
+      accountType: "",
+      amountbadget: "",
+      PWPType: "COVER",
+      createForm: "",
+      Notification: false,
+    });
+    setFiles([]);
+    setEditingBudget(null);
+    setCurrentStep(1);
+    setSearchTerm("");
+    setSelectedUsername("");
+    setUserDistributorsForSelected([]);
+  } catch (err) {
+    console.error("Unexpected error during submit:", err);
+    await Swal.fire({
+      icon: "error",
+      title: "Unexpected Error",
+      text: "Something went wrong. See console for details.",
+      confirmButtonText: "OK",
+    });
+  }
+};
+
+
 
   const handleDeleteBudget = async (coverCode) => {
     const result = await Swal.fire({
