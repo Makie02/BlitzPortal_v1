@@ -1,4 +1,4 @@
-import React, { useState, useEffect} from "react";
+import React, { useState, useEffect } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import Swal from "sweetalert2"; // <---- import sweetalert2
 import { supabase } from "../supabaseClient";
@@ -13,16 +13,16 @@ const Total = () => {
     PWPType: "COVER",
     Notification: false,
   });
-const [userPermissions, setUserPermissions] = useState({
-  create_budget: false,
-  view_budget: false,
-});
+  const [userPermissions, setUserPermissions] = useState({
+    create_budget: false,
+    view_budget: false,
+  });
 
   const [currentStep, setCurrentStep] = useState(1);
-const [displayedRemainingBudget, setDisplayedRemainingBudget] = useState(null);
+  const [displayedRemainingBudget, setDisplayedRemainingBudget] = useState(null);
 
   // Auto-generate Visa Code on mount
-const handleFormChange = async (e) => {
+  const handleFormChange = async (e) => {
     const { name, value } = e.target;
 
     // Update formData with the new field value
@@ -31,7 +31,7 @@ const handleFormChange = async (e) => {
       return updatedFormData;
     });
 
-     if (name === "distributor") {
+    if (name === "distributor") {
       console.log("🔍 Distributor field changed, fetching budget info...");
       console.log("Selected distributor code:", value);
 
@@ -62,23 +62,23 @@ const handleFormChange = async (e) => {
           console.error("❌ Error fetching budget:", budgetError);
           return;
         }
-        
+
         if (budgetData && budgetData.length > 0) {
           const budget = budgetData[0];
           console.log("💰 Budget data found:", budget);
-          
+
           // Auto-populate the amount budget and remaining budget
           const budgetAmount = budget.amountbadget || "";
           const remainingBalance = parseFloat(budget.remainingbalance) || 0;
-          
+
           setFormData((prev) => ({
             ...prev,
             amountbadget: budgetAmount,
           }));
-          
+
           setRemainingBudget(remainingBalance);
           setDisplayedRemainingBudget(remainingBalance);
-          
+
           await Swal.fire({
             icon: "success",
             title: "Budget Loaded",
@@ -98,7 +98,7 @@ const handleFormChange = async (e) => {
           }));
           setRemainingBudget(0);
           setDisplayedRemainingBudget(null);
-          
+
           await Swal.fire({
             icon: "info",
             title: "No Budget Found",
@@ -135,28 +135,28 @@ const handleFormChange = async (e) => {
   };
 
   useEffect(() => {
-  const checkUserPermissions = async () => {
-    const storedUser = JSON.parse(localStorage.getItem("loggedInUser"));
-    const username = storedUser?.name;
+    const checkUserPermissions = async () => {
+      const storedUser = JSON.parse(localStorage.getItem("loggedInUser"));
+      const username = storedUser?.name;
 
-    if (!username) return;
+      if (!username) return;
 
-    const { data, error } = await supabase
-      .from("TotalBudget")
-      .select("create_budget, view_budget")
-      .eq("username", username)
-      .single();
+      const { data, error } = await supabase
+        .from("TotalBudget")
+        .select("create_budget, view_budget")
+        .eq("username", username)
+        .single();
 
-    if (!error && data) {
-      setUserPermissions({
-        create_budget: data.create_budget || false,
-        view_budget: data.view_budget || false,
-      });
-    }
-  };
+      if (!error && data) {
+        setUserPermissions({
+          create_budget: data.create_budget || false,
+          view_budget: data.view_budget || false,
+        });
+      }
+    };
 
-  checkUserPermissions();
-}, []);
+    checkUserPermissions();
+  }, []);
 
   //albert
   useEffect(() => {
@@ -281,7 +281,7 @@ const handleFormChange = async (e) => {
   }, [fetchRemainingBalance]);
 
   // Helper: get name from user_id
- 
+
 
 
   // fetch account types
@@ -464,7 +464,7 @@ const handleFormChange = async (e) => {
       console.log("Amount budget inserted:", budgetInsert);
 
       // ✅ Handle file attachments
-  
+
 
       setCurrentStep(2);
     } catch (err) {
@@ -484,27 +484,108 @@ const handleFormChange = async (e) => {
 
   const [userDistributors, setUserDistributors] = useState([]);
   const [filteredDistributors, setFilteredDistributors] = useState([]);
+  const loggedInUserId = parsedUser?.id || parsedUser?.user_id || null;
+  console.log("[DEBUG] Logged in user ID:", loggedInUserId);
+  // useEffect(() => {
+  //   const fetchUserDistributors = async () => {
+  //     const { data, error } = await supabase
+  //       .from("user_distributors")
+  //       .select("distributor_name")
+  //       .eq("username", loggedInUsername);
+
+  //     if (error) {
+  //       console.error("[ERROR] Fetching user_distributors:", error);
+  //     } else {
+  //       const names = data.map((d) => d.distributor_name);
+  //       console.log("[DEBUG] Distributors assigned to user:", names);
+  //       setUserDistributors(names);
+  //     }
+  //   };
+
+  //   if (loggedInUsername !== "Unknown") {
+  //     fetchUserDistributors();
+  //   }
+  // }, [loggedInUsername]);
+
 
   useEffect(() => {
     const fetchUserDistributors = async () => {
-      const { data, error } = await supabase
-        .from("user_distributors")
-        .select("distributor_name")
-        .eq("username", loggedInUsername);
+      if (!loggedInUserId) {
+        console.warn("[WARN] No logged-in user ID found, skipping distributor fetch.");
+        return;
+      }
 
-      if (error) {
-        console.error("[ERROR] Fetching user_distributors:", error);
-      } else {
-        const names = data.map((d) => d.distributor_name);
-        console.log("[DEBUG] Distributors assigned to user:", names);
-        setUserDistributors(names);
+      console.log(`🔍 Logged in UserID: ${loggedInUserId}`);
+
+      try {
+        setLoading(true);
+
+        // 1️⃣ Fetch all distributors
+        const { data: distributorsData, error: distributorsError } = await supabase
+          .from("distributors")
+          .select("*")
+          .order("name", { ascending: true });
+
+        if (distributorsError) throw distributorsError;
+        if (!distributorsData || distributorsData.length === 0) {
+          console.warn("⚠️ No distributors found.");
+          Swal.fire("Notice", "No distributors found in the database.", "info");
+          return;
+        }
+
+        console.log(`📦 Total distributors fetched: ${distributorsData.length}`);
+
+        // 2️⃣ Filter only those where loggedInUserId is inside agent_code list
+        const filtered = distributorsData.filter((d) => {
+          const agentCodes = (d.agent_code || "")
+            .split(",")
+            .map((c) => c.trim())
+            .filter(Boolean);
+          return agentCodes.includes(String(loggedInUserId));
+        });
+
+        console.log(`✅ Distributors assigned to agent ${loggedInUserId}:`, filtered);
+
+        // 3️⃣ Fetch Account_Users for name lookup
+        const { data: usersData, error: usersError } = await supabase
+          .from("Account_Users")
+          .select("UserID, name");
+
+        if (usersError) throw usersError;
+
+        // 4️⃣ Create a map for UserID → name
+        const userMap = {};
+        usersData.forEach((u) => {
+          userMap[String(u.UserID)] = u.name;
+        });
+
+        // 5️⃣ Add readable agent names for display
+        const distributorsWithAgentNames = filtered.map((dist) => {
+          const agentCodes = (dist.agent_code || "")
+            .split(",")
+            .map((c) => c.trim())
+            .filter(Boolean);
+          const agentNames = agentCodes
+            .map((code) => userMap[code] || code)
+            .join(", ");
+          return { ...dist, agentNames };
+        });
+
+        console.log("📋 Distributors with agent names:", distributorsWithAgentNames);
+
+        // 6️⃣ Update state
+        setDistributors(distributorsWithAgentNames);
+        setFilteredDistributors(distributorsWithAgentNames);
+      } catch (err) {
+        console.error("[ERROR] Fetching distributors by agent_code:", err);
+        Swal.fire("Error", "Failed to load distributors.", "error");
+      } finally {
+        setLoading(false);
       }
     };
 
-    if (loggedInUsername !== "Unknown") {
-      fetchUserDistributors();
-    }
-  }, [loggedInUsername]);
+    fetchUserDistributors();
+  }, [loggedInUserId]);
 
   useEffect(() => {
     const fetchDistributors = async () => {
@@ -591,10 +672,10 @@ const handleFormChange = async (e) => {
             }}
           >
             {displayedRemainingBudget !== null
-          ? `₱${displayedRemainingBudget.toLocaleString()}`
-          : totalRemaining !== null
-          ? `₱${totalRemaining.toLocaleString()}`
-           : "Loading..."}
+              ? `₱${displayedRemainingBudget.toLocaleString()}`
+              : totalRemaining !== null
+                ? `₱${totalRemaining.toLocaleString()}`
+                : "Loading..."}
           </span>
         </div>
 
@@ -612,7 +693,7 @@ const handleFormChange = async (e) => {
               textAlign: "right",
             }}
           >
-       
+
           </h2>
           <div className="row g-3">
             <div
