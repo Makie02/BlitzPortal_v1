@@ -952,23 +952,46 @@ const handleEditBudget = async (budget) => {
     fetchApprovalData();
   }, []);
 
-  useEffect(() => {
-    const fetchUsernames = async () => {
+useEffect(() => {
+  const fetchNames = async () => {
+    try {
+      console.log("🔍 Fetching names from Account_Users...");
+
       const { data, error } = await supabase
-        .from('user_distributors')
-        .select('username')
-        .order('username', { ascending: true });
+        .from("Account_Users")
+        .select("name")
+        .order("name", { ascending: true });
 
       if (error) {
-        console.error('Error fetching usernames:', error);
-      } else {
-        const uniqueUsernames = [...new Set(data.map(item => item.username))];
-        setUsernames(uniqueUsernames);
+        console.error("❌ Error fetching names:", error.message);
+        return;
       }
-    };
 
-    fetchUsernames();
-  }, []);
+      if (!data || data.length === 0) {
+        console.warn("⚠️ No names found in Account_Users.");
+        setUsernames([]); // or setNames if your state is named differently
+        return;
+      }
+
+      // ✅ Remove duplicates and filter out null or empty names
+      const uniqueNames = [ 
+        ...new Set(
+          data
+            .map((item) => item.name?.trim())
+            .filter((name) => name && name !== "")
+        ),
+      ];
+
+      console.log("✅ Names fetched:", uniqueNames);
+      setUsernames(uniqueNames); // or setNames(uniqueNames)
+    } catch (err) {
+      console.error("❌ Unexpected error fetching names:", err);
+    }
+  };
+
+  fetchNames();
+}, []);
+
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -1285,7 +1308,7 @@ const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
                     style={{
                       position: 'absolute',
                       right: '20px',
-                      top: '8px',
+                      top: '2px',
                       color: 'green',
                       fontWeight: 'bold',
                       fontSize: '25px',
@@ -1444,7 +1467,7 @@ const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
                   style={{
                     position: "absolute",
                     right: "20px",
-                    top: "50%",
+                    top: "56%",
                     transform: "translateY(-20%)",
                     color: "green",
                     fontWeight: "bold",
@@ -1482,7 +1505,7 @@ const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
                   style={{
                     position: "absolute",
                     right: "20px",
-                    top: "50%",
+                    top: "56%",
                     transform: "translateY(-20%)",
                     color: "green",
                     fontWeight: "bold",
