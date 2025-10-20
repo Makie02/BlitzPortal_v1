@@ -251,11 +251,10 @@ const handleExportToPDF = async () => {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Approver</th>
               <th>PWP Code</th>
               <th>Response</th>
               <th>Date Responded</th>
-              <th>Created By</th>
+              <th>Assigne By</th>
               <th>Created At</th>
             </tr>
           </thead>
@@ -267,7 +266,6 @@ const handleExportToPDF = async () => {
       htmlContent += `
         <tr ${isApproved ? 'class="approved"' : ''}>
           <td>${item.id}</td>
-          <td>${getUserNameById(item.ApproverId)}</td> <!-- Convert ApproverId to name -->
           <td>${item.PwpCode || ''}</td>
           <td>${item.Response || ''}</td>
           <td>${item.DateResponded ? new Date(item.DateResponded).toLocaleString() : ''}</td>
@@ -580,13 +578,7 @@ const handleExportToPDF = async () => {
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>ID</th>
-                  <th style={{
-                    padding: '16px 20px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    fontSize: '14px',
-                    borderBottom: '2px solid #1565c0'
-                  }}>ApproverId</th>
+          
                   <th style={{
                     padding: '16px 20px',
                     textAlign: 'left',
@@ -665,14 +657,7 @@ const handleExportToPDF = async () => {
                         fontSize: '14px',
                         color: '#000000ff'
                       }}>{item.id}</td>
-                      <td style={{
-                        padding: '16px 20px',
-                        borderBottom: '1px solid #e0e0e0',
-                        fontSize: '14px',
-                        color: '#000000ff'
-                      }}>
-                        {getUserNameById(item.ApproverId)}
-                      </td>
+                  
 
                       <td style={{
                         padding: '16px 20px',
