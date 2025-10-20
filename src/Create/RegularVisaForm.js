@@ -26,33 +26,30 @@ const RegularVisaForm = () => {
   const [showPack, setShowPack] = useState(true);
   const [showCase, setShowCase] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      const { data: userApproversData, error: userApproversError } =
-        await supabase
-          .from("User_Approvers")
-          .select("*")
-          .order("created_at", { ascending: false });
+ useEffect(() => {
+  const fetchData = async () => {
+    setLoading(true);
 
-      // Fetch users for name lookup
+    try {
+      // ✅ Fetch only Account_Users table
       const { data: usersData, error: usersError } = await supabase
         .from("Account_Users")
-        .select("UserID, name");
+        .select("UserID, name")
+        .order("created_at", { ascending: false });
 
-      // if (approvalsError) console.error('Error fetching approvals:', approvalsError);
-      if (userApproversError)
-        console.error("Error fetching user approvers:", userApproversError);
-      if (usersError) console.error("Error fetching users:", usersError);
+      if (usersError) throw usersError;
 
-      // setSingleApprovals(approvalsData || []);
-      setUserApprovers(userApproversData || []);
       setUsers(usersData || []);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
-    fetchData();
-  }, []);
+  fetchData();
+}, []);
+
 
 
 
@@ -1610,41 +1607,85 @@ const fetchBranches = async (motherAccountCode) => {
   console.log("[DEBUG] Logged in user ID:", loggedInUserId);
 
    // ✅ Fetch distributors assigned to the logged-in agent
-  useEffect(() => {
-    const fetchDistributorsByAgent = async () => {
-      if (!loggedInUserId) {
-        console.warn("[WARN] No logged in user ID found, skipping distributor fetch.");
-        return;
-      }
+useEffect(() => {
+  const fetchDistributorsByAgent = async () => {
+    if (!loggedInUserId) {
+      console.warn("[WARN] No logged-in user ID found, skipping distributor fetch.");
+      return;
+    }
 
-      console.log(`🔍 Fetching distributors for agent_code: ${loggedInUserId}`);
+    console.log(`🔍 Logged in UserID: ${loggedInUserId}`);
 
-      const { data, error } = await supabase
+    try {
+      setLoading(true);
+
+      // 1️⃣ Fetch all distributors
+      const { data: distributorsData, error: distributorsError } = await supabase
         .from("distributors")
         .select("*")
-        .eq("agent_code", loggedInUserId) // Filter distributors by agent
         .order("name", { ascending: true });
 
-      if (error) {
-        console.error("[ERROR] Fetching distributors by agent_code:", error);
-        Swal.fire("Error", "Failed to load distributors.", "error");
+      if (distributorsError) throw distributorsError;
+      if (!distributorsData || distributorsData.length === 0) {
+        console.warn("⚠️ No distributors found.");
+        Swal.fire("Notice", "No distributors found in the database.", "info");
         return;
       }
 
-      if (!data || data.length === 0) {
-        console.warn("⚠️ No distributors found for this agent.");
-        Swal.fire("Notice", "No distributors assigned to your account.", "info");
-      } else {
-        console.log("✅ Distributors loaded:", data);
-      }
+      console.log(`📦 Total distributors fetched: ${distributorsData.length}`);
 
-      // Store the distributors
-      setDistributors(data || []);
-      setFilteredDistributors(data || []);
-    };
+      // 2️⃣ Filter only those where loggedInUserId is inside agent_code list
+      const filtered = distributorsData.filter((d) => {
+        const agentCodes = (d.agent_code || "")
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean);
+        return agentCodes.includes(String(loggedInUserId));
+      });
 
-    fetchDistributorsByAgent();
-  }, [loggedInUserId]);
+      console.log(`✅ Distributors assigned to agent ${loggedInUserId}:`, filtered);
+
+      // 3️⃣ Fetch Account_Users for name lookup
+      const { data: usersData, error: usersError } = await supabase
+        .from("Account_Users")
+        .select("UserID, name");
+
+      if (usersError) throw usersError;
+
+      // 4️⃣ Create a map for UserID → name
+      const userMap = {};
+      usersData.forEach((u) => {
+        userMap[String(u.UserID)] = u.name;
+      });
+
+      // 5️⃣ Add readable agent names for display
+      const distributorsWithAgentNames = filtered.map((dist) => {
+        const agentCodes = (dist.agent_code || "")
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean);
+        const agentNames = agentCodes
+          .map((code) => userMap[code] || code)
+          .join(", ");
+        return { ...dist, agentNames };
+      });
+
+      console.log("📋 Distributors with agent names:", distributorsWithAgentNames);
+
+      // 6️⃣ Update state
+      setDistributors(distributorsWithAgentNames);
+      setFilteredDistributors(distributorsWithAgentNames);
+    } catch (err) {
+      console.error("[ERROR] Fetching distributors by agent_code:", err);
+      Swal.fire("Error", "Failed to load distributors.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchDistributorsByAgent();
+}, [loggedInUserId]);
+
 
   const [approvalList, setApprovalList] = useState([]);
 
