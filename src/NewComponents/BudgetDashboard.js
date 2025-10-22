@@ -10,90 +10,104 @@ export default function CoverPWPBudgetTable() {
     const [approvedDetails, setApprovedDetails] = useState({});
     const [loadingDetails, setLoadingDetails] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-useEffect(() => {
-    const fetchData = async () => {
-        try {
-            // Fetch Cover PWP
-            const { data: coverData, error: coverError } = await supabase
-                .from("cover_pwp")
-                .select("cover_code, distributor_code, amount_badget, created_at, createForm")
-                .order("id", { ascending: true });
+    const [rows, setRows] = useState([]);
+    const [monthlyTrend, setMonthlyTrend] = useState([]);
+    const [ppeTrend, setPpeTrend] = useState([]);
+    const [totalBudget, setTotalBudget] = React.useState(null);
+    const [totalRemaining, setTotalRemaining] = React.useState(null);
+    const [distributorCount, setDistributorCount] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
 
-            if (coverError) throw coverError;
+    // Get user info
+    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+    const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
+    const role = currentUser?.role?.toLowerCase() || "";
+    const storedUser = JSON.parse(localStorage.getItem('user'));
+    const userName = storedUser?.name?.toLowerCase().trim();
+    const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
 
-            // Fetch Approved History
-            const { data: approvedData, error: approvedError } = await supabase
-                .from("approved_history_budget")
-                .select("cover_pwp_code, credit_budget")
-                .order("id", { ascending: true });
+    console.log("User name:", currentUser?.name || "");
+    console.log("Role:", role);
 
-            if (approvedError) throw approvedError;
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                // Fetch Cover PWP
+                const { data: coverData, error: coverError } = await supabase
+                    .from("cover_pwp")
+                    .select("cover_code, distributor_code, amount_badget, created_at, createForm")
+                    .order("id", { ascending: true });
 
-            // Fetch Distributors
-            const { data: distributorsData, error: distributorsError } = await supabase
-                .from("distributors")
-                .select("code, name");
+                if (coverError) throw coverError;
 
-            if (distributorsError) throw distributorsError;
+                // Fetch Account_Users to map UserID to name
+                const { data: usersData, error: usersError } = await supabase
+                    .from("Account_Users")
+                    .select("UserID, name");
 
-            // Fetch amount_badget table for remainingbalance
-            const { data: amountBadgetData, error: amountBadgetError } = await supabase
-                .from("amount_badget")
-                .select("pwp_code, remainingbalance");
+                if (usersError) throw usersError;
 
-            if (amountBadgetError) throw amountBadgetError;
+                // Fetch Distributors
+                const { data: distributorsData, error: distributorsError } = await supabase
+                    .from("distributors")
+                    .select("code, name");
 
-            // Create map of distributor codes to names
-            const distributorMap = {};
-            distributorsData.forEach((dist) => {
-                distributorMap[dist.code] = dist.name;
-            });
+                if (distributorsError) throw distributorsError;
 
-            // Create map for approved history
-            const approvedMap = {};
-            approvedData.forEach((appr) => {
-                const key = appr.cover_pwp_code;
-                if (!key) return;
-                if (!approvedMap[key]) {
-                    approvedMap[key] = { credit_budget: 0 };
-                }
-                approvedMap[key].credit_budget += Number(appr.credit_budget || 0);
-            });
+                // Fetch amount_badget table for remainingbalance
+                const { data: amountBadgetData, error: amountBadgetError } = await supabase
+                    .from("amount_badget")
+                    .select("pwp_code, remainingbalance");
 
-            // Create map for remainingbalance from amount_badget table
-            const remainingBalanceMap = {};
-            amountBadgetData.forEach((entry) => {
-                remainingBalanceMap[entry.pwp_code] = Number(entry.remainingbalance || 0);
-            });
+                if (amountBadgetError) throw amountBadgetError;
 
-            // Merge everything
-            const combined = coverData.map((cov) => {
-                const key = cov.cover_code;
-                const aprov = approvedMap[key] || { credit_budget: 0 };
-                const distributorName = distributorMap[cov.distributor_code] || `Code: ${cov.distributor_code}`;
-                const remainingBalance = remainingBalanceMap[key] ?? 0;
+                // Create map of UserID to name
+                const userMap = {};
+                usersData.forEach((user) => {
+                    userMap[user.UserID] = user.name;
+                });
 
-                return {
-                    cover_code: key,
-                    distributor_name: distributorName,
-                    budget2025: cov.amount_badget || 0,
-                    totalApprovedPWP: aprov.credit_budget,
-                    remainingBudget: remainingBalance, // ← Now from amount_badget
-                    created_at: cov.created_at,
-                    createForm: cov.createForm,
-                };
-            });
+                // Create map of distributor codes to names
+                const distributorMap = {};
+                distributorsData.forEach((dist) => {
+                    distributorMap[dist.code] = dist.name;
+                });
 
-            setRows(combined);
-        } catch (err) {
-            console.error("Error fetching combined data:", err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
+                // Create map for remainingbalance from amount_badget table
+                const remainingBalanceMap = {};
+                amountBadgetData.forEach((entry) => {
+                    remainingBalanceMap[entry.pwp_code] = Number(entry.remainingbalance || 0);
+                });
 
-    fetchData();
-}, []);
+                // Merge everything
+                const combined = coverData.map((cov) => {
+                    const key = cov.cover_code;
+                    const distributorName = distributorMap[cov.distributor_code] || `Code: ${cov.distributor_code}`;
+                    const remainingBalance = remainingBalanceMap[key] ?? 0;
+                    const createdByName = userMap[cov.createForm] || cov.createForm || "Unknown";
+
+                    return {
+                        cover_code: key,
+                        distributor_name: distributorName,
+                        budget2025: cov.amount_badget || 0,
+                        remainingBudget: remainingBalance,
+                        created_at: cov.created_at,
+                        createdByName: createdByName,
+                        createForm: cov.createForm,
+                    };
+                });
+
+                setRows(combined);
+            } catch (err) {
+                console.error("Error fetching combined data:", err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, []);
 
     const fetchApprovedDetails = async (coverCode) => {
         setLoadingDetails(true);
@@ -128,8 +142,24 @@ useEffect(() => {
         }
     };
 
-    // Filter rows based on search query (case-insensitive)
+    // Filter rows based on user role & createForm
+    const userFilteredRows = rows.filter((entry) => {
+        if (role === "admin") return true;
+        return String(entry.createForm || "").toLowerCase().trim() === currentUserId;
+    });
 
+    // Filter userFilteredRows further based on search query
+    const filteredRows = userFilteredRows.filter(
+        (row) =>
+            row.cover_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            row.distributor_name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    // Pagination logic (MUST be after filteredRows is defined)
+    const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedRows = filteredRows.slice(startIndex, endIndex);
 
     // Export to Excel handler
     const exportToExcel = () => {
@@ -138,9 +168,9 @@ useEffect(() => {
             "Cover PWP Code": row.cover_code,
             Distributor: row.distributor_name,
             "Budget for 2025": row.budget2025,
-            "Total Approved PWP": row.totalApprovedPWP,
             "Remaining Budget": row.remainingBudget,
-            "Created Form": row.createForm,
+            "Created At": row.created_at ? new Date(row.created_at).toLocaleString() : "-",
+            "Created By": row.createdByName,
         }));
 
         const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -158,98 +188,20 @@ useEffect(() => {
         saveAs(blob, "budget_data.xlsx");
     };
 
+    // Reset to page 1 when search query changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery]);
 
-
-
-
-
-    const [rows, setRows] = useState([]);
-    // ... other states
-
-    // Get user info
-    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-    const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
-    const role = currentUser?.role?.toLowerCase() || "";
-
-    // Filter rows based on user role & createForm
-    const userFilteredRows = rows.filter((entry) => {
-        if (role === "admin") return true;
-        return (entry.createForm || "").toLowerCase().trim() === currentUserId;
-    });
-
-    // Filter userFilteredRows further based on search query
-    const filteredRows = userFilteredRows.filter(
-        (row) =>
-            row.cover_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            row.distributor_name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    // Calculate sum of remainingBudget for userFilteredRows
-
-    // Styles (unchanged except for search and button container)
-    const containerStyle = {
-        padding: "40px 20px",
-        maxWidth: "1600px",
-        margin: "0 auto",
-        fontFamily: "Arial, sans-serif",
-        color: "#333",
+    const handlePageChange = (pageNumber) => {
+        setCurrentPage(pageNumber);
+        setExpandedRow(null); // Close expanded rows when changing pages
     };
 
-    const titleStyle = {
-        fontSize: "28px",
-        fontWeight: "bold",
-        marginBottom: "20px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
+    const handleItemsPerPageChange = (e) => {
+        setItemsPerPage(Number(e.target.value));
+        setCurrentPage(1);
     };
-
-    const searchExportContainer = {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "15px",
-        gap: "10px",
-        flexWrap: "wrap",
-    };
-
-    const searchInputStyle = {
-        padding: "8px 12px",
-        fontSize: "14px",
-        borderRadius: "6px",
-        border: "1px solid #ccc",
-        flexGrow: 1,
-        maxWidth: "300px",
-    };
-
-    const exportButtonStyle = {
-        padding: "8px 16px",
-        fontSize: "14px",
-        borderRadius: "6px",
-        border: "none",
-        backgroundColor: "#2563eb",
-        color: "#fff",
-        cursor: "pointer",
-        transition: "background-color 0.3s",
-    };
-
-    const exportButtonHover = (e) => {
-        e.currentTarget.style.backgroundColor = "#1e40af";
-    };
-
-    const exportButtonLeave = (e) => {
-        e.currentTarget.style.backgroundColor = "#2563eb";
-    };
-
-    // (The rest of your styles unchanged, you can keep the existing ones)
-
-    // ...your existing styles like tableContainerStyle, tableStyle, etc.
-
-
-
-    const [totalBudget, setTotalBudget] = React.useState(null);
-
-
 
     useEffect(() => {
         async function fetchMonthlyTrends() {
@@ -281,14 +233,12 @@ useEffect(() => {
                 a.month.localeCompare(b.month)
             );
 
-            setMonthlyTrend(monthlyTrendArray);       // For Approved + Disapproved
-            setPpeTrend(monthlyTrendArray);           // For Cancelled only (can filter later if needed)
+            setMonthlyTrend(monthlyTrendArray);
+            setPpeTrend(monthlyTrendArray);
         }
 
         fetchMonthlyTrends();
     }, []);
-
-    const [totalRemaining, setTotalRemaining] = React.useState(null);
 
     const fetchRemainingBalance = React.useCallback(async () => {
         const storedUser = JSON.parse(localStorage.getItem('user'));
@@ -329,7 +279,7 @@ useEffect(() => {
                     filter: `createduser=eq.${storedUser.name}`
                 },
                 (payload) => {
-                    fetchRemainingBalance(); // ✅ will re-filter automatically
+                    fetchRemainingBalance();
                 }
             )
             .subscribe();
@@ -338,16 +288,6 @@ useEffect(() => {
             supabase.removeChannel(subscription);
         };
     }, [fetchRemainingBalance]);
-    const [monthlyTrend, setMonthlyTrend] = useState([]);  // Line data for Approved + Disapproved
-    const [ppeTrend, setPpeTrend] = useState([]);      // Line data for Cancelled
-
-    const [distributorCount, setDistributorCount] = useState(null);
-    const storedUser = JSON.parse(localStorage.getItem('user'));
-    const userName = storedUser?.name?.toLowerCase().trim();  // Normalize for safety
-    const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-
-    console.log("User name:", currentUser?.name || "");
-    console.log("Role:", role);
 
     useEffect(() => {
         if (!currentUserId) return;
@@ -357,7 +297,7 @@ useEffect(() => {
                 const { data, error } = await supabase
                     .from('user_distributors')
                     .select('id')
-                    .eq('username', currentUser?.name); // must match DB exactly
+                    .eq('username', currentUser?.name);
 
                 if (error) throw error;
 
@@ -370,6 +310,43 @@ useEffect(() => {
 
         fetchDistributors();
     }, [currentUserId]);
+
+    // Styles
+    const containerStyle = {
+        padding: "40px 20px",
+        maxWidth: "1600px",
+        margin: "0 auto",
+        fontFamily: "Arial, sans-serif",
+        color: "#333",
+    };
+
+    const titleStyle = {
+        fontSize: "28px",
+        fontWeight: "bold",
+        marginBottom: "20px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+    };
+
+    const searchExportContainer = {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "15px",
+        gap: "10px",
+        flexWrap: "wrap",
+    };
+
+    const searchInputStyle = {
+        padding: "8px 12px",
+        fontSize: "14px",
+        borderRadius: "6px",
+        border: "1px solid #ccc",
+        flexGrow: 1,
+        maxWidth: "300px",
+    };
+
     return (
         <div style={containerStyle}>
             <div style={titleStyle}>
@@ -377,7 +354,7 @@ useEffect(() => {
                     <span style={{ marginLeft: "10px" }}>Total Marketing Per Status</span>
                 </h1>
             </div>
-            {/* Distributor Count Card */}
+
             {/* Cards Container */}
             <div style={{
                 display: 'flex',
@@ -479,7 +456,7 @@ useEffect(() => {
                         fontWeight: '700',
                         letterSpacing: '0.04em',
                     }}>
-                        Remaining Balance
+                        Remaining Balanced
                     </div>
                     <div style={{
                         fontSize: '32px',
@@ -491,10 +468,6 @@ useEffect(() => {
                     </div>
                 </div>
             </div>
-
-
-
-
 
             <div style={searchExportContainer}>
                 <input
@@ -533,7 +506,6 @@ useEffect(() => {
                     <FaFileExcel size={20} />
                     Export to Excel
                 </button>
-
             </div>
 
             {loading ? (
@@ -541,168 +513,286 @@ useEffect(() => {
                     Loading records...
                 </div>
             ) : (
-                <div style={{
-                    overflowX: "auto",
-                    backgroundColor: "#fff",
-                    borderRadius: "10px",
-                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                    border: "1px solid #ddd",
-                }}>
-                    <table style={{
-                        width: "100%",
-                        borderCollapse: "collapse",
-                        fontSize: "14px",
+                <>
+                    <div style={{
+                        overflowX: "auto",
+                        backgroundColor: "#fff",
+                        borderRadius: "10px",
+                        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+                        border: "1px solid #ddd",
                     }}>
-                        <thead style={{
-                            backgroundColor: "#2563eb",
-                            color: "#fff",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.05em",
+                        <table style={{
+                            width: "100%",
+                            borderCollapse: "collapse",
+                            fontSize: "14px",
                         }}>
-                            <tr>
-                                <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #ccc" }}>Cover PWP Code</th>
-                                <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #ccc" }}>Distributor</th>
-                                <th style={{ padding: "12px 16px", textAlign: "right", borderBottom: "1px solid #ccc" }}>Budget for 2025</th>
-                                <th style={{ padding: "12px 16px", textAlign: "right", borderBottom: "1px solid #ccc" }}>Total Approved PWP</th>
-                                <th style={{ padding: "12px 16px", textAlign: "right", borderBottom: "1px solid #ccc" }}>Remaining Budget</th>
-                                <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #ccc" }}>Created Form</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredRows.length > 0 ? (
-                                filteredRows.map((row, idx) => (
-                                    <React.Fragment key={row.cover_code}>
-                                        <tr
-                                            style={{
-                                                backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f9fafb",
-                                                transition: "background-color 0.3s",
-                                                cursor: "pointer",
-                                            }}
-                                            onClick={() => handleRowClick(row.cover_code)}
-                                            onMouseEnter={(e) =>
-                                                (e.currentTarget.style.backgroundColor = "#eff6ff")
-                                            }
-                                            onMouseLeave={(e) =>
-                                            (e.currentTarget.style.backgroundColor =
-                                                idx % 2 === 0 ? "#ffffff" : "#f9fafb")
-                                            }
-                                        >
-                                            <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle" }}>{row.cover_code}</td>
-                                            <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle" }}>{row.distributor_name}</td>
-                                            <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle", textAlign: "right" }}>
-                                                ₱
-                                                {Number(row.budget2025).toLocaleString(undefined, {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                })}
-                                            </td>
-                                            <td
+                            <thead style={{
+                                backgroundColor: "#2563eb",
+                                color: "#fff",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.05em",
+                            }}>
+                                <tr>
+                                    <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #ccc" }}>Cover PWP Code</th>
+                                    <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #ccc" }}>Distributor</th>
+                                    <th style={{ padding: "12px 16px", textAlign: "right", borderBottom: "1px solid #ccc" }}>Budget for 2025</th>
+                                    <th style={{ padding: "12px 16px", textAlign: "right", borderBottom: "1px solid #ccc" }}>Remaining Budget</th>
+                                    <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #ccc" }}>Created At</th>
+                                    <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #ccc" }}>Created By</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginatedRows.length > 0 ? (
+                                    paginatedRows.map((row, idx) => (
+                                        <React.Fragment key={row.cover_code}>
+                                            <tr
                                                 style={{
-                                                    padding: "12px 16px",
-                                                    borderTop: "1px solid #eee",
-                                                    verticalAlign: "middle",
-                                                    textAlign: "right",
-                                                    color: Number(row.totalApprovedPWP) === 0 ? "#999" : "#000", // optional: gray for Pending
-                                                    fontStyle: Number(row.totalApprovedPWP) === 0 ? "italic" : "normal", // optional
+                                                    backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f9fafb",
+                                                    transition: "background-color 0.3s",
+                                                    cursor: "pointer",
+                                                }}
+                                                onClick={() => handleRowClick(row.cover_code)}
+                                                onMouseEnter={(e) =>
+                                                    (e.currentTarget.style.backgroundColor = "#eff6ff")
+                                                }
+                                                onMouseLeave={(e) =>
+                                                (e.currentTarget.style.backgroundColor =
+                                                    idx % 2 === 0 ? "#ffffff" : "#f9fafb")
+                                                }
+                                            >
+                                                <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle" }}>{row.cover_code}</td>
+                                                <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle" }}>{row.distributor_name}</td>
+                                                <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle", textAlign: "right" }}>
+                                                    ₱
+                                                    {Number(row.budget2025).toLocaleString(undefined, {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                    })}
+                                                </td>
+                                                <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle", textAlign: "right" }}>
+                                                    ₱
+                                                    {Number(row.remainingBudget).toLocaleString(undefined, {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                    })}
+                                                </td>
+                                                <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle" }}>
+                                                    {row.created_at ? new Date(row.created_at).toLocaleString() : "-"}
+                                                </td>
+                                                <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle" }}>{row.createdByName}</td>
+                                            </tr>
+
+                                            {expandedRow === row.cover_code && (
+                                                <tr style={{ backgroundColor: "#f0f4ff" }}>
+                                                    <td colSpan="6" style={{ padding: "16px" }}>
+                                                        {loadingDetails && !approvedDetails[row.cover_code] ? (
+                                                            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100px", fontSize: "16px", color: "#555" }}>
+                                                                Loading details...
+                                                            </div>
+                                                        ) : approvedDetails[row.cover_code] && approvedDetails[row.cover_code].length > 0 ? (
+                                                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>ID</th>
+                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>PWP Code</th>
+                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Response</th>
+                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Type</th>
+                                                                        <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Remaining Balance</th>
+                                                                        <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Credit Budget</th>
+                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Date Responded</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {approvedDetails[row.cover_code].map((detail) => (
+                                                                        <tr key={detail.id}>
+                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.id}</td>
+                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.pwp_code}</td>
+                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.response}</td>
+                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.type}</td>
+                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
+                                                                                ₱
+                                                                                {detail.remaining_balance !== null
+                                                                                    ? Number(detail.remaining_balance).toLocaleString(undefined, {
+                                                                                        minimumFractionDigits: 2,
+                                                                                        maximumFractionDigits: 2,
+                                                                                    })
+                                                                                    : "-"}
+                                                                            </td>
+                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
+                                                                                ₱
+                                                                                {detail.credit_budget !== null
+                                                                                    ? Number(detail.credit_budget).toLocaleString(undefined, {
+                                                                                        minimumFractionDigits: 2,
+                                                                                        maximumFractionDigits: 2,
+                                                                                    })
+                                                                                    : "-"}
+                                                                            </td>
+                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
+                                                                                {detail.date_responded
+                                                                                    ? new Date(detail.date_responded).toLocaleString()
+                                                                                    : "-"}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        ) : (
+                                                            <div style={{ textAlign: "center", padding: "20px", color: "#999", fontWeight: "500" }}>
+                                                                No data.
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="6" style={{ textAlign: "center", padding: "20px", color: "#999", fontWeight: "500" }}>
+                                            No records found.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination Controls */}
+                  {filteredRows.length > 0 && (
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '15px 20px',
+                            backgroundColor: '#f9fafb',
+                            borderTop: '1px solid #ddd',
+                            flexWrap: 'wrap',
+                            gap: '10px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '14px', color: '#555' }}>Rows per page:</span>
+                                <select 
+                                    value={itemsPerPage} 
+                                    onChange={handleItemsPerPageChange}
+                                    style={{
+                                        padding: '6px 10px',
+                                        fontSize: '14px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #ccc',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value={5}>5</option>
+                                    <option value={10}>10</option>
+                                    <option value={25}>25</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                                <span style={{ fontSize: '14px', color: '#555', marginLeft: '15px' }}>
+                                    Showing {startIndex + 1} to {Math.min(endIndex, filteredRows.length)} of {filteredRows.length} entries
+                                </span>
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '5px' }}>
+                                <button
+                                    onClick={() => handlePageChange(1)}
+                                    disabled={currentPage === 1}
+                                    style={{
+                                        padding: '8px 12px',
+                                        fontSize: '14px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #ccc',
+                                        backgroundColor: currentPage === 1 ? '#f0f0f0' : '#fff',
+                                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                        color: currentPage === 1 ? '#999' : '#333'
+                                    }}
+                                >
+                                    First
+                                </button>
+                                <button
+                                    onClick={() => handlePageChange(currentPage - 1)}
+                                    disabled={currentPage === 1}
+                                    style={{
+                                        padding: '8px 12px',
+                                        fontSize: '14px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #ccc',
+                                        backgroundColor: currentPage === 1 ? '#f0f0f0' : '#fff',
+                                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                        color: currentPage === 1 ? '#999' : '#333'
+                                    }}
+                                >
+                                    Previous
+                                </button>
+                                
+                                {[...Array(totalPages)].map((_, index) => {
+                                    const pageNumber = index + 1;
+                                    if (
+                                        pageNumber === 1 ||
+                                        pageNumber === totalPages ||
+                                        (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+                                    ) {
+                                        return (
+                                            <button
+                                                key={pageNumber}
+                                                onClick={() => handlePageChange(pageNumber)}
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    fontSize: '14px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid #ccc',
+                                                    backgroundColor: currentPage === pageNumber ? '#2563eb' : '#fff',
+                                                    color: currentPage === pageNumber ? '#fff' : '#333',
+                                                    cursor: 'pointer',
+                                                    fontWeight: currentPage === pageNumber ? 'bold' : 'normal'
                                                 }}
                                             >
-                                                {Number(row.totalApprovedPWP) === 0 ? (
-                                                    "Pending"
-                                                ) : (
-                                                    <>
-                                                        ₱
-                                                        {Number(row.totalApprovedPWP).toLocaleString(undefined, {
-                                                            minimumFractionDigits: 2,
-                                                            maximumFractionDigits: 2,
-                                                        })}
-                                                    </>
-                                                )}
-                                            </td>
-
-                                            <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle", textAlign: "right" }}>
-                                                ₱
-                                                {Number(row.remainingBudget).toLocaleString(undefined, {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                })}
-                                            </td>
-                                            <td style={{ padding: "12px 16px", borderTop: "1px solid #eee", verticalAlign: "middle" }}>{row.createForm}</td>
-                                        </tr>
-
-                                        {expandedRow === row.cover_code && (
-                                            <tr style={{ backgroundColor: "#f0f4ff" }}>
-                                                <td colSpan="6" style={{ padding: "16px" }}>
-                                                    {loadingDetails && !approvedDetails[row.cover_code] ? (
-                                                        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100px", fontSize: "16px", color: "#555" }}>
-                                                            Loading details...
-                                                        </div>
-                                                    ) : approvedDetails[row.cover_code] && approvedDetails[row.cover_code].length > 0 ? (
-                                                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                                                            <thead>
-                                                                <tr>
-                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>ID</th>
-                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>PWP Code</th>
-                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Response</th>
-                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Type</th>
-                                                                    <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Remaining Balance</th>
-                                                                    <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Credit Budget</th>
-                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Date Responded</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {approvedDetails[row.cover_code].map((detail) => (
-                                                                    <tr key={detail.id}>
-                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.id}</td>
-                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.pwp_code}</td>
-                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.response}</td>
-                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.type}</td>
-                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
-                                                                            ₱
-                                                                            {detail.remaining_balance !== null
-                                                                                ? Number(detail.remaining_balance).toLocaleString(undefined, {
-                                                                                    minimumFractionDigits: 2,
-                                                                                    maximumFractionDigits: 2,
-                                                                                })
-                                                                                : "-"}
-                                                                        </td>
-                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
-                                                                            ₱
-                                                                            {detail.credit_budget !== null
-                                                                                ? Number(detail.credit_budget).toLocaleString(undefined, {
-                                                                                    minimumFractionDigits: 2,
-                                                                                    maximumFractionDigits: 2,
-                                                                                })
-                                                                                : "-"}
-                                                                        </td>
-                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
-                                                                            {detail.date_responded
-                                                                                ? new Date(detail.date_responded).toLocaleString()
-                                                                                : "-"}
-                                                                        </td>
-                                                                    </tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                    ) : (
-                                                        <div style={{ textAlign: "center", padding: "20px", color: "#999", fontWeight: "500" }}>
-                                                            No data.
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </React.Fragment>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan="6" style={{ textAlign: "center", padding: "20px", color: "#999", fontWeight: "500" }}>
-                                        No records found.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                                                {pageNumber}
+                                            </button>
+                                        );
+                                    } else if (
+                                        pageNumber === currentPage - 2 ||
+                                        pageNumber === currentPage + 2
+                                    ) {
+                                        return <span key={pageNumber} style={{ padding: '8px 4px' }}>...</span>;
+                                    }
+                                    return null;
+                                })}
+                                
+                                <button
+                                    onClick={() => handlePageChange(currentPage + 1)}
+                                    disabled={currentPage === totalPages}
+                                    style={{
+                                        padding: '8px 12px',
+                                        fontSize: '14px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #ccc',
+                                        backgroundColor: currentPage === totalPages ? '#f0f0f0' : '#fff',
+                                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                        color: currentPage === totalPages ? '#999' : '#333'
+                                    }}
+                                >
+                                    Next
+                                </button>
+                                <button
+                                    onClick={() => handlePageChange(totalPages)}
+                                    disabled={currentPage === totalPages}
+                                    style={{
+                                        padding: '8px 12px',
+                                        fontSize: '14px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #ccc',
+                                        backgroundColor: currentPage === totalPages ? '#f0f0f0' : '#fff',
+                                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                        color: currentPage === totalPages ? '#999' : '#333'
+                                    }}
+                                >
+                                    Last
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );
