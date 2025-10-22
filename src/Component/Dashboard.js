@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -203,6 +203,13 @@ export default function Dashboard() {
 
     fetchApprovalHistory();
   }, []);
+
+
+  const [totalRemaining, setTotalRemaining] = useState(null);
+  const [distributorBalances, setDistributorBalances] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch monthly trends (existing code)
   useEffect(() => {
     async function fetchMonthlyTrends() {
       const { data: records, error } = await supabase
@@ -218,7 +225,7 @@ export default function Dashboard() {
 
       records.forEach(({ Response, DateResponded }) => {
         const status = Response === "Declined" ? "Disapproved" : Response;
-        const month = new Date(DateResponded).toISOString().slice(0, 7); // "YYYY-MM"
+        const month = new Date(DateResponded).toISOString().slice(0, 7);
 
         if (!monthlyMap[month]) {
           monthlyMap[month] = { month };
@@ -233,69 +240,122 @@ export default function Dashboard() {
         a.month.localeCompare(b.month)
       );
 
-      setMonthlyTrend(monthlyTrendArray);       // For Approved + Disapproved
-      setPpeTrend(monthlyTrendArray);           // For Cancelled only (can filter later if needed)
+      setMonthlyTrend(monthlyTrendArray);
+      setPpeTrend(monthlyTrendArray);
     }
 
     fetchMonthlyTrends();
   }, []);
 
-  const [totalRemaining, setTotalRemaining] = React.useState(null);
 
-  const fetchRemainingBalance = React.useCallback(async () => {
-    const storedUser = JSON.parse(localStorage.getItem('user'));
-    if (!storedUser || (!storedUser.UserID && !storedUser.id)) return;
+  const [showDistModal, setShowDistModal] = useState(false);
 
-    // Determine user id
-    const userId = storedUser.UserID ?? storedUser.id;
-
-    const { data, error } = await supabase
-      .from('amount_badget')
-      .select('remainingbalance')
-      .eq('createduser', userId) // ✅ filter by UserID column
-      .or('Approved.is.null,Approved.eq.true'); // Only include Approved = true or null
-
-    if (error) {
-      console.error('Error fetching remaining balance:', error);
+  // Fetch remaining balances - Total and by Distributor
+  const fetchRemainingBalance = useCallback(async () => {
+    setLoading(true);
+    const storedUser = JSON.parse(localStorage.getItem("user"));
+    if (!storedUser || (!storedUser.UserID && !storedUser.id)) {
+      setLoading(false);
       return;
     }
 
-    const total = data.reduce((acc, item) => acc + parseFloat(item.remainingbalance), 0);
-    setTotalRemaining(total);
-  }, []);
-
-  React.useEffect(() => {
-    const storedUser = JSON.parse(localStorage.getItem('user'));
-    if (!storedUser || (!storedUser.UserID && !storedUser.id)) return;
-
     const userId = storedUser.UserID ?? storedUser.id;
 
-    fetchRemainingBalance();
+    const { data: budgetData, error: budgetError } = await supabase
+      .from("amount_badget")
+      .select("remainingbalance, distributor")
+      .eq("createduser", userId)
+      .or("Approved.is.null,Approved.eq.true");
 
-    const subscription = supabase
-      .channel('public:amount_badget')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'amount_badget',
-          filter: `createduserid=eq.${userId}` // ✅ also filter subscriptions by UserID
-        },
-        (payload) => {
-          fetchRemainingBalance(); // auto-refresh when table changes
+    if (budgetError) {
+      console.error("Error fetching remaining balance:", budgetError);
+      setLoading(false);
+      return;
+    }
+
+    const total = budgetData.reduce(
+      (acc, item) => acc + parseFloat(item.remainingbalance || 0),
+      0
+    );
+    setTotalRemaining(total);
+
+    const distributorCodes = [
+      ...new Set(
+        budgetData.map((item) => item.distributor).filter((code) => code != null)
+      ),
+    ];
+
+    if (distributorCodes.length > 0) {
+      const { data: distributorData, error: distError } = await supabase
+        .from("distributors")
+        .select("code, name")
+        .in("code", distributorCodes);
+
+      if (distError) {
+        console.error("Error fetching distributors:", distError);
+      }
+
+      const codeToNameMap = {};
+      if (distributorData) {
+        distributorData.forEach((dist) => {
+          codeToNameMap[dist.code] = dist.name;
+        });
+      }
+
+      const distBalances = {};
+      budgetData.forEach((item) => {
+        if (item.distributor) {
+          if (!distBalances[item.distributor]) {
+            distBalances[item.distributor] = 0;
+          }
+          distBalances[item.distributor] += parseFloat(
+            item.remainingbalance || 0
+          );
         }
-      )
-      .subscribe();
+      });
 
-    return () => {
-      supabase.removeChannel(subscription);
-    };
+      const distArray = Object.entries(distBalances).map(([code, balance]) => ({
+        code,
+        name: codeToNameMap[code] || code,
+        balance,
+      }));
+
+      setDistributorBalances(distArray);
+    } else {
+      setDistributorBalances([]);
+    }
+
+    setLoading(false);
+  }, []);
+
+  // Initial fetch
+  useEffect(() => {
+    const storedUser = JSON.parse(localStorage.getItem("user"));
+    if (!storedUser || (!storedUser.UserID && !storedUser.id)) return;
+    fetchRemainingBalance();
   }, [fetchRemainingBalance]);
 
 
+  const [animatedTotal, setAnimatedTotal] = useState(0);
 
+  // Animate total remaining balance
+  useEffect(() => {
+    if (totalRemaining == null) return;
 
+    let start = 0;
+    const duration = 1000; // 1 second
+    const increment = totalRemaining / (duration / 16);
+    const interval = setInterval(() => {
+      start += increment;
+      if (start >= totalRemaining) {
+        start = totalRemaining;
+        clearInterval(interval);
+      }
+      setAnimatedTotal(start);
+    }, 16);
+
+    return () => clearInterval(interval);
+  }, [totalRemaining]);
 
   return (
     <div style={{ display: "flex", justifyContent: "center", padding: "20px" }}>
@@ -304,7 +364,7 @@ export default function Dashboard() {
           style={{
             fontSize: "2rem",
             fontWeight: "800",
-            marginBottom: "0.5rem",
+            marginBottom: "1.5rem",
             color: "#111827",
             textAlign: "center",
             letterSpacing: "1.5px",
@@ -313,166 +373,211 @@ export default function Dashboard() {
           Total Marketing per Status
         </h1>
 
-        {/* Remaining Balances Badge */}
+        {/* ========== Remaining Balance Section ========== */}
+        <div
+          style={{
+            padding: "30px",
+            background: "linear-gradient(135deg, #f0fdfa 0%, #ecfdf5 100%)",
+            borderRadius: "20px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+            maxWidth: "1400px",
+            margin: "0 auto 40px auto",
+            position: "relative",
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "25px",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "1.6rem",
+                fontWeight: "700",
+                color: "#065f46",
+                margin: 0,
+              }}
+            >
+              Remaining Balance Overview
+            </h2>
 
-        <style>
-          {`
-    /* Responsive flex container */
-    .dashboard-container {
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap; /* allow wrapping on small screens */
-      gap: 1rem;
-      margin: 2rem 0;
-      padding: 0 1rem;
-    }
-
-    /* Card base styles */
-    .card {
-      flex: 1 1 280px; /* grow, shrink, base width */
-      max-width: 320px;
-      background: white;
-      border-radius: 0.75rem;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.07);
-      padding: 1.25rem 1.75rem 1.75rem 1.75rem;
-      position: relative;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
-      cursor: default;
-    }
-
-    .card:hover {
-      transform: scale(1.05);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-    }
-
-    /* Reload button container */
-    .reload-button-container {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background-color: transparent;
-      transition: background-color 0.25s ease, transform 0.2s ease;
-      cursor: pointer;
-      z-index: 20;
-    }
-    .reload-button-container:hover {
-      background-color: #d1fae5; /* subtle green bg on hover */
-      transform: scale(1.1);
-    }
-
-    /* Tooltip styling */
-    .tooltip-text {
-      visibility: hidden;
-      width: 180px;
-      background-color: rgba(31, 41, 55, 0.9);
-      color: #fff;
-      text-align: center;
-      border-radius: 6px;
-      padding: 6px 0;
-      position: absolute;
-      z-index: 25;
-      bottom: 140%;
-      right: 50%;
-      margin-right: -75px;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-      font-size: 0.75rem;
-      pointer-events: none;
-      user-select: none;
-      white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    }
-
-    /* Show tooltip on hover of the button container */
-    .reload-button-container:hover > .tooltip-text {
-      visibility: visible;
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    /* Responsive charts height */
-    .chart-container {
-      width: 100%;
-      height: 80px;
-      margin-top: 0.5rem;
-    }
-
-    /* Text styles */
-    .remaining-label {
-      font-size: 1rem;
-      color: #374151;
-      margin-bottom: 0.5rem;
-      font-weight: 600;
-    }
-
-    .remaining-value {
-      font-size: 1.8rem;
-      color: #10b981;
-      font-weight: 700;
-    }
-
-    .remaining-subtext {
-      margin-top: 1rem;
-      color: #6b7280;
-      font-size: 0.875rem;
-    }
-
-    .status-label {
-      font-weight: 600;
-      font-size: 1rem;
-      margin-bottom: 0.25rem;
-      color: #374151;
-    }
-
-    /* Responsive tweaks */
-    @media (max-width: 480px) {
-      .remaining-value {
-        font-size: 1.4rem;
-      }
-      .chart-container {
-        height: 60px;
-      }
-    }
-  `}
-        </style>
-
-        <div className="dashboard-container">
-          {/* Remaining Balances card */}
-          <div className="card" style={{ paddingTop: "2.5rem" }}>
-            {/* Reload button */}
-            <div className="reload-button-container" onClick={fetchRemainingBalance} role="button" tabIndex={0} aria-label="Reload remaining balance" onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fetchRemainingBalance(); }}>
+            <button
+              onClick={fetchRemainingBalance}
+              disabled={loading}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                transform: loading ? "rotate(360deg)" : "none",
+                transition: "transform 0.6s ease",
+              }}
+              title="Reload Remaining Balance"
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
-                stroke="#10b981"
+                stroke="#059669"
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 viewBox="0 0 24 24"
-                width="24"
-                height="24"
+                width="28"
+                height="28"
               >
-                {/* Circular arrow icon */}
                 <path d="M4 4v5h.582a7 7 0 1 1-1.16 7.89" />
                 <polyline points="4 9 9 9 7 7" />
               </svg>
-              <span className="tooltip-text">Reload remaining balance</span>
-            </div>
-
-            <div className="remaining-label">Remaining Balances</div>
-            <div className="remaining-value">
-              {totalRemaining !== null ? `₱${totalRemaining.toLocaleString()}` : "Loading..."}
-            </div>
-            <div className="remaining-subtext">Budget left for this period</div>
+            </button>
           </div>
 
-          {/* Status Cards from Data */}
+          {/* Two-column layout */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "20px",
+            }}
+          >
+            {/* Left: Total Remaining Balance */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
+                borderRadius: "16px",
+                padding: "30px",
+                color: "white",
+                boxShadow: "0 6px 18px rgba(16,185,129,0.4)",
+                width: "100%",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ fontSize: "1rem", opacity: 0.9, marginBottom: "10px" }}>
+                Total Remaining Balance
+              </div>
+              <div
+                style={{
+                  fontSize: "2.8rem",
+                  fontWeight: "800",
+                  marginBottom: "8px",
+                  transition: "0.3s ease-in-out",
+                }}
+              >
+                ₱
+                {animatedTotal.toLocaleString("en-PH", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </div>
+              <div style={{ fontSize: "0.95rem", opacity: 0.85 }}>
+                Budget left for this period
+              </div>
+            </div>
+
+            {/* Right: Distributor Balances */}
+            <div
+              style={{
+                backgroundColor: "white",
+                borderRadius: "16px",
+                padding: "20px",
+                boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
+                overflowY: "auto",
+                maxHeight: "280px",
+              }}
+            >
+              <h3
+                style={{
+                  margin: "0 0 15px 0",
+                  fontSize: "1.2rem",
+                  color: "#065f46",
+                  borderBottom: "1px solid #e5e7eb",
+                  paddingBottom: "5px",
+                }}
+              >
+                Distributor Balances
+              </h3>
+
+              {distributorBalances.length === 0 ? (
+                <p
+                  style={{
+                    textAlign: "center",
+                    color: "#6b7280",
+                    marginTop: "20px",
+                  }}
+                >
+                  No distributor data available.
+                </p>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                  }}
+                >
+                  {distributorBalances.map((dist) => (
+                    <div
+                      key={dist.code}
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #f0fdfa 0%, #ecfdf5 100%)",
+                        borderRadius: "10px",
+                        padding: "12px",
+                        boxShadow: "0 3px 8px rgba(0,0,0,0.05)",
+                        transition: "transform 0.2s ease",
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.transform = "scale(1.02)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.transform = "scale(1)")
+                      }
+                    >
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          color: "#065f46",
+                          marginBottom: "4px",
+                          fontSize: "0.95rem",
+                        }}
+                      >
+                        {dist.name}
+                      </div>
+                      <div
+                        style={{
+                          color: "#10b981",
+                          fontWeight: 700,
+                          fontSize: "1.1rem",
+                        }}
+                      >
+                        ₱
+                        {dist.balance.toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ========== Status Cards Section ========== */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+            gap: "20px",
+            margin: "40px 0",
+          }}
+        >
           {data.map(({ label, value, color }) => {
             const isLineChart =
               label === "Approved" || label === "Disapproved" || label === "Cancelled";
@@ -484,22 +589,32 @@ export default function Dashboard() {
             return (
               <div
                 key={label}
-                className="card"
-                aria-label={`${label} count is ${value}`}
-                role="region"
+                style={{
+                  background: "#fff",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                  textAlign: "center",
+                }}
               >
-                <div className="status-label">{label}</div>
-                <div style={{ color, fontWeight: 700, fontSize: "1.5rem" }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    color: "#374151",
+                    marginBottom: "8px",
+                    fontSize: "1.1rem",
+                  }}
+                >
+                  {label}
+                </div>
+                <div style={{ color, fontWeight: 800, fontSize: "1.6rem" }}>
                   {value.toLocaleString()}
                 </div>
 
-                <div className="chart-container">
+                <div style={{ width: "100%", height: "80px", marginTop: "10px" }}>
                   <ResponsiveContainer width="100%" height="100%">
                     {isLineChart ? (
-                      <LineChart
-                        data={lineData}
-                        margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-                      >
+                      <LineChart data={lineData}>
                         <XAxis dataKey="month" hide />
                         <YAxis hide />
                         <Tooltip />
@@ -513,15 +628,9 @@ export default function Dashboard() {
                         />
                       </LineChart>
                     ) : (
-                      <BarChart
-                        data={[{ name: label, value }]}
-                        margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-                      >
+                      <BarChart data={[{ name: label, value }]}>
                         <XAxis dataKey="name" hide />
-                        <YAxis
-                          hide
-                          domain={[0, Math.max(...data.map((d) => d.value)) * 1.1]}
-                        />
+                        <YAxis hide />
                         <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
                       </BarChart>
                     )}
@@ -532,16 +641,22 @@ export default function Dashboard() {
           })}
         </div>
 
-
-        {/* Main Charts */}
-        <div style={chartsGrid}>
+        {/* ========== Charts Section ========== */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))",
+            gap: "24px",
+            marginBottom: "50px",
+          }}
+        >
           {/* Bar Chart */}
-          <div style={cardStyle}>
+          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
             <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
               Market Status Bar Chart
             </h3>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+              <BarChart data={data}>
                 <XAxis dataKey="label" />
                 <YAxis />
                 <Tooltip />
@@ -555,21 +670,13 @@ export default function Dashboard() {
           </div>
 
           {/* Pie Chart */}
-          <div style={cardStyle}>
+          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
             <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
               Market Status Pie Chart
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie
-                  data={data}
-                  dataKey="value"
-                  nameKey="label"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  label
-                >
+                <Pie data={data} dataKey="value" nameKey="label" outerRadius={100} label>
                   {data.map((entry) => (
                     <Cell key={entry.label} fill={entry.color} />
                   ))}
@@ -580,13 +687,13 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Line Chart: Approved / Disapproved */}
-          <div style={cardStyle}>
+          {/* Approved / Disapproved Line Chart */}
+          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
             <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
               Monthly Approved
             </h3>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={monthlyTrend} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+              <LineChart data={monthlyTrend}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
@@ -598,13 +705,13 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Line Chart: Cancelled */}
-          <div style={cardStyle}>
+          {/* Cancelled Line Chart */}
+          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
             <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
               Cancelled Trend
             </h3>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={ppeTrend} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+              <LineChart data={ppeTrend}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
@@ -615,7 +722,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    </div >
+    </div>
+
 
   );
 }
