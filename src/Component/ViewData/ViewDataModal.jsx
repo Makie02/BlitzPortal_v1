@@ -40,7 +40,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
         account_type: 'Account Type',
         activity: 'Activity',
         pwptype: 'PWP Type',
-        promoScheme: 'Promo Scheme',
+
         activityDurationFrom: 'Activity From',
         activityDurationTo: 'Activity To',
         isPartOfCoverPwp: 'Is Part of Cover PWP',
@@ -54,7 +54,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
         created_at: 'Created At',
         createForm: 'Created Form',
         distributor: 'Distributor',
-
+        promoScheme: 'Promo Scheme',
         categoryName: 'Category Name',
         sku: 'SKU',
         accounts: 'Accounts',
@@ -576,7 +576,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
 
                                 if (
                                     type === 'Regular PWP' &&
-                                    ['amount_badget', 'amountbadget', , 'id', 'promoScheme', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'sku', 'YearBudget'].includes(key)
+                                    ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'sku', 'YearBudget'].includes(key)
                                 ) return false;
 
                                 if (key.toLowerCase() === 'accounts') return accountsBudgetList.length > 0;
@@ -814,7 +814,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
 
 
 
-                 
+
 
                 </div>
                 {skuListing.length === 0 && accountsBudgetList.length > 0 && (
@@ -1080,6 +1080,6 @@ const ViewDataModal = ({ visaCode, onClose }) => {
             </div >
         </div >
     );
-}; 
+};
 
 export default ViewDataModal;
