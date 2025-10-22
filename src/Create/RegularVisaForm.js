@@ -3360,6 +3360,7 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                   justifyContent: "space-between",
                                   alignItems: "center",
                                 }}
+                                // Sa onClick ng mother account selection
                                 onClick={() => {
                                   console.log('🔍 Selected Mother Account:', opt);
                                   console.log('📋 Code:', opt.code);
@@ -3368,11 +3369,20 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
 
                                   setSelectedMother(opt);
                                   fetchSubAccounts(opt);
+
                                   if (opt.name === "NON-CHAIN") {
                                     setShowBranchInput(false);
-                                    setFormData((prev) => ({ ...prev, accountType: [] }));
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      accountType: [],
+                                      branchType: [] // ✅ Clear branch data
+                                    }));
                                   } else {
                                     setShowBranchInput(true);
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      branchType: [] // ✅ Clear branch data
+                                    }));
                                   }
                                 }}
                               >
@@ -3442,16 +3452,18 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                       }
                                       setFormData((prev) => ({
                                         ...prev,
-                                        accountType: updated
+                                        accountType: updated,
+                                        branchType: [] // ✅ Clear branches
                                       }));
                                       setShowBranchInput(false);
                                     } else {
                                       setFormData((prev) => ({
                                         ...prev,
-                                        accountType: s.id
+                                        accountType: s.id,
+                                        branchType: [] // ✅ Clear branches
                                       }));
                                       setShowBranchInput(true);
-                                      fetchBranches(s.code);
+                                      fetchBranches(s.code, s.group_code);
                                     }
                                   }}
                                   id={`sub_${s.id}`}
@@ -5475,7 +5487,6 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                         <th>Approver</th>
                         <th>Position</th>
 
-                        <th>Date Created</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -5506,11 +5517,7 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                   </span>
                                 )}
                               </td>
-                              <td>
-                                {created_at
-                                  ? new Date(created_at).toLocaleDateString()
-                                  : "-"}
-                              </td>
+
                             </tr>
                           )
                         )
