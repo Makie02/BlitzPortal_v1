@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import Swal from "sweetalert2";
+import { Modal, Button, Spinner } from "react-bootstrap";
 
 export default function AccountsListManager() {
     const [data, setData] = useState([]);
@@ -42,53 +43,426 @@ export default function AccountsListManager() {
     const itemsPerPage = 7;
     const exportMenuRef = useRef(null);
     const importMenuRef = useRef(null);
+    const [totalCount, setTotalCount] = useState(0); // 👈 Add this line
+    const [duplicatesChecked, setDuplicatesChecked] = useState(false); // ✅ track if check has been done
 
+
+    // 🔹 Handle file selection
+
+    // 🔹 Delete a row in preview
+    const deleteImportRow = (index) => {
+        const newData = [...importData];
+        newData.splice(index, 1);
+        setImportData(newData);
+    };
+
+    // 🔹 Check duplicates
+    const checkExistingRecords = async () => {
+        if (!importData.length) return;
+        setChecking(true);
+
+        const { data: existing, error } = await supabase
+            .from("Accounts_List")
+            .select("bp_code");
+
+        if (error) {
+            Swal.fire("Error", "Failed to check duplicates", "error");
+            setChecking(false);
+            return;
+        }
+
+        setExistingRows(existing);
+        setChecking(false);
+        setDuplicatesChecked(true); // ✅ mark as checked
+    };
+
+    // 🔹 Import data into DB
+    const importDataToDB = async () => {
+        if (!importData.length) return;
+        setImporting(true);
+
+        const newRows = importData.filter(
+            (row) =>
+                !existingRows.some(
+                    (ex) =>
+                        ex.bp_code.trim().toUpperCase() === row.bp_code.trim().toUpperCase()
+                )
+        );
+
+        const { error } = await supabase.from("Accounts_List").insert(newRows);
+        setImporting(false);
+
+        if (error) {
+            Swal.fire("Error", "Import failed.", "error");
+        } else {
+            Swal.fire("Success", "Data imported successfully!", "success");
+            setShowExcelModal(false);
+            setImportData([]);
+            setDuplicatesChecked(true); // ✅ mark as checked
+
+        }
+    };
+
+    const handleImportMother = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const data = await readExcelFile(file);
+        if (!data.length) return;
+
+        if (data.length > 40000) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Too Many Rows!',
+                text: `Excel contains ${data.length.toLocaleString()} rows. Maximum allowed is 40,000 rows.`,
+                confirmButtonText: 'OK'
+            });
+            return;
+        }
+
+        // ✅ Display file and data immediately
+        setFileName(file.name);
+        setImportData(data);
+        setCurrentPageExcel(1);
+        setTotalRows(data.length);
+        setProcessedRows(0);
+        setProgressPercent(0);
+        setDuplicatesChecked(true); // ✅ mark as checked
+
+        // ✅ Automatically check for duplicates
+        await checkExistingRecords();
+
+
+        let successCount = 0;
+        let failedRows = [];
+        let skippedRows = []; // ✅ for already-existing rows
+
+        // ✅ Fetch reference tables
+        const [
+            { data: motherAccounts },
+            { data: agentAccounts },
+            { data: bpAccounts },
+            { data: distributorAccounts }
+        ] = await Promise.all([
+            supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
+            supabase.from('Account_Users').select('UserID, name'),
+            supabase.from('Bp_Accounts').select('bp_code, bp_name'),
+            supabase.from('distributors').select('code, name')
+        ]);
+
+        const groupNameToCodeMap = {};
+        motherAccounts?.forEach(m => {
+            if (m.group_name && m.group_code) {
+                const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
+                groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
+            }
+        });
+
+        const motherLookup = {};
+        motherAccounts?.forEach(m => {
+            const groupCode = m.group_code?.toString().trim();
+            const exactName = m.name?.toString().trim().toLowerCase();
+            const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+            if (!groupCode || !m.name) return;
+            if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
+            motherLookup[groupCode][exactName] = m.dscode;
+            motherLookup[groupCode][normalizedName] = m.dscode;
+        });
+
+        const findMotherCode = (rawMotherName, resolvedGroupCode) => {
+            const groupCode = resolvedGroupCode?.toString().trim();
+            if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
+
+            const exactName = rawMotherName.toString().trim().toLowerCase();
+            const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+            const availableNames = motherLookup[groupCode];
+
+            if (availableNames[exactName]) return availableNames[exactName];
+            if (availableNames[normalizedName]) return availableNames[normalizedName];
+            const fuzzyMatch = Object.keys(availableNames).find(dbName =>
+                dbName.includes(normalizedName) || normalizedName.includes(dbName)
+            );
+            if (fuzzyMatch) return availableNames[fuzzyMatch];
+            return Object.values(availableNames)[0];
+        };
+
+        const createMap = (arr, key1, key2) => {
+            const map = {};
+            arr?.forEach(item => {
+                if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
+                if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
+            });
+            return map;
+        };
+
+        const agentMap = createMap(agentAccounts, 'name', 'UserID');
+        const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
+        const distributorMap = createMap(distributorAccounts, 'name', 'code');
+        const bpNameMap = {};
+        bpAccounts?.forEach(b => {
+            if (b.bp_code && b.bp_name)
+                bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
+        });
+
+        const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
+
+        const BATCH_SIZE = 500;
+        const chunks = [];
+        for (let i = 0; i < data.length; i += BATCH_SIZE) {
+            chunks.push(data.slice(i, i + BATCH_SIZE));
+        }
+
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+
+            const records = chunk.map((row, idx) => {
+                const actualRowNumber = i * BATCH_SIZE + idx + 2;
+
+                const rawGroup = row.group_code?.toString().trim() || '';
+                const rawMother = row.mother_code?.toString().trim() || '';
+                const rawAgent = row.agent_code?.toString().trim() || '';
+                const rawBp = row.bp_code?.toString().trim() || '';
+                const rawDist = row.distributor_code?.toString().trim() || '';
+
+                let groupCode = rawGroup;
+                if (!isCode(rawGroup)) {
+                    groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
+                }
+
+                let motherCode = rawMother;
+                if (!isCode(rawMother)) {
+                    motherCode = findMotherCode(rawMother, groupCode);
+                }
+
+                const agentCode = isCode(rawAgent)
+                    ? rawAgent
+                    : (agentMap[rawAgent.toLowerCase()] || rawAgent);
+
+                const bpCode = isCode(rawBp)
+                    ? rawBp
+                    : (bpMap[rawBp.toLowerCase()] || rawBp);
+
+                const bpName =
+                    bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
+                    row.bp_name ||
+                    null;
+
+                const distributorCode = isCode(rawDist)
+                    ? rawDist
+                    : (distributorMap[rawDist.toLowerCase()] || rawDist);
+
+                return {
+                    distributor_code: distributorCode,
+                    mother_code: motherCode,
+                    bp_code: bpCode,
+                    bp_name: bpName,
+                    agent_code: agentCode,
+                    group_code: groupCode,
+                    _rowNumber: actualRowNumber
+                };
+            });
+
+            // ✅ Check existing in Accounts_List before insert
+            const bpCodes = records.map(r => r.bp_code).filter(Boolean);
+            const { data: existingRows, error: checkError } = await supabase
+                .from('Accounts_List')
+                .select('bp_code')
+                .in('bp_code', bpCodes);
+
+            if (checkError) {
+                console.error('❌ Error checking existing:', checkError);
+            }
+
+            const existingCodes = new Set(existingRows?.map(r => r.bp_code.toLowerCase()) || []);
+
+            const newRecords = records.filter(r => !existingCodes.has(r.bp_code.toLowerCase()));
+            const skipped = records.filter(r => existingCodes.has(r.bp_code.toLowerCase()));
+            skippedRows.push(...skipped.map(r => r._rowNumber));
+
+            const recordsToInsert = newRecords.map(r => {
+                const { _rowNumber, ...record } = r;
+                return record;
+            });
+
+            if (recordsToInsert.length > 0) {
+                const { data: insertedData, error } = await supabase
+                    .from('Accounts_List')
+                    .insert(recordsToInsert)
+                    .select();
+
+                if (error) {
+                    console.error('Insert error:', error);
+                    records.forEach((r) => {
+                        failedRows.push({
+                            row: r._rowNumber,
+                            error: error.message,
+                            ...r,
+                        });
+                    });
+                } else {
+                    successCount += insertedData?.length || recordsToInsert.length;
+                }
+            }
+
+            const processed = Math.min((i + 1) * BATCH_SIZE, data.length);
+            setProcessedRows(processed);
+            setProgressPercent(Math.round((processed / data.length) * 100));
+            await new Promise(res => setTimeout(res, 50));
+        }
+
+        setUploading(false);
+
+        // ✅ Summary
+        const failedCount = failedRows.length;
+        const skippedCount = skippedRows.length;
+        const totalProcessed = data.length;
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Import Finished!',
+            html: `
+        <div style="text-align:left;">
+          <p><strong>✅ Imported:</strong> ${successCount}</p>
+          <p><strong>❌ Failed:</strong> ${failedCount}</p>
+          <p><strong>📊 Total:</strong> ${totalProcessed}</p>
+        </div>
+      `,
+            confirmButtonText: 'OK',
+            willClose: () => fetchAccountsList()
+        });
+    };
+
+    // 🔹 Modal visibility
+
+    // 🔹 Excel import data
+    const [importData, setImportData] = useState([]);
+    const [existingRows, setExistingRows] = useState([]);
+    const [fileName, setFileName] = useState("");
+    const [importing, setImporting] = useState(false);
+    const [checking, setChecking] = useState(false);
+
+    // 🔹 Pagination
+    const [currentPageExcel, setCurrentPageExcel] = useState(1);
+    const rowsPerPageExcel = 10;
+    const indexOfLastRowExcel = currentPageExcel * rowsPerPageExcel;
+    const indexOfFirstRowExcel = indexOfLastRowExcel - rowsPerPageExcel;
+    const currentRowsExcel = importData.slice(indexOfFirstRowExcel, indexOfLastRowExcel);
+    const totalPagesExcel = Math.ceil(importData.length / rowsPerPageExcel);
+
+    // 🔹 File ref
+    const fileInputRef = useRef(null);
     // Fetch and clean data on mount
     useEffect(() => {
         fetchAndCleanData();
     }, []);
 
-    const fetchAndCleanData = async () => {
+    const fetchAndCleanData = async (page = 1, search = "") => {
         try {
-            const batchSize = 1000;
-            let allData = [];
-            let hasMore = true;
-            let offset = 0;
+            setLoading(true);
+            const batchSize = 8; // show 8 rows at a time
+            const offset = (page - 1) * batchSize;
 
-            // 🧩 Step 1: Fetch all data in batches
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from("Accounts_List")
-                    .select("*")
-                    .order("id", { ascending: true })
-                    .range(offset, offset + batchSize - 1);
+            let query = supabase
+                .from("Accounts_List")
+                .select("*", { count: "exact" })
+                .order("id", { ascending: true })
+                .range(offset, offset + batchSize - 1);
 
-                if (error) {
-                    console.error("Error fetching data:", error);
-                    break;
-                }
-
-                if (data && data.length > 0) {
-                    allData = [...allData, ...data];
-                    offset += batchSize;
-                    hasMore = data.length === batchSize;
-                } else {
-                    hasMore = false;
-                }
+            // 🔍 Apply search filter only if there's a search term
+            if (search.trim()) {
+                query = query.or(
+                    `bp_name.ilike.%${search}%,mother_code.ilike.%${search}%`
+                );
             }
 
-            console.log(`✅ Loaded ${allData.length} records`);
+            const { data: pageData, error, count } = await query;
 
-            // 🧩 Step 2: Auto-remove duplicates based on mother_code + bp_code
-            const uniqueData = await autoRemoveDuplicatesOnLoad(allData);
+            if (error) throw error;
 
-            // 🧩 Step 3: Set state with cleaned data
-            setData(uniqueData);
+            // 🧩 Clean duplicates
+            const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
+
+            // 🧩 Update data
+            if (page === 1) {
+                setData(uniqueData);
+            } else {
+                setData((prev) => {
+                    const existingIds = new Set(prev.map((x) => x.id));
+                    const newRows = uniqueData.filter((x) => !existingIds.has(x.id));
+                    return [...prev, ...newRows];
+                });
+            }
+
+            setTotalCount(count || 0);
+            setLoading(false);
         } catch (err) {
             console.error("Error:", err);
             Swal.fire("Error", err.message, "error");
+            setLoading(false);
         }
     };
+
+
+    useEffect(() => {
+        const delay = setTimeout(() => {
+            fetchAndCleanData(1, searchTerm);
+        }, 400); // wait 400ms after typing stops
+
+        return () => clearTimeout(delay);
+    }, [searchTerm]);
+
+
+    // 🔍 Filter logic
+    const filteredData = data.filter((row) => {
+        if (!searchTerm.trim()) return true;
+        const search = searchTerm.toLowerCase();
+        return (
+            row.bp_name?.toLowerCase().includes(search) ||
+            row.mother_code?.toLowerCase().includes(search)
+        );
+    });
+
+    // 🧮 Pagination (based on filtered data)
+    const totalPages = Math.ceil(totalCount / itemsPerPage);
+    const indexOfLastItem = currentPage * itemsPerPage;
+    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+    const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
+
+
+
+
+    const handleNextPage = async () => {
+        if (currentPage < totalPages) {
+            const nextPage = currentPage + 1;
+            setCurrentPage(nextPage);
+
+            // Fetch new data only if not loaded yet
+            const alreadyLoaded = data.length >= nextPage * itemsPerPage;
+            if (!alreadyLoaded) {
+                await fetchAndCleanData(nextPage);
+            }
+        }
+    };
+    const handleFirstPage = () => {
+        if (currentPage !== 1) setCurrentPage(1);
+    };
+
+    const handleLastPage = async () => {
+        if (currentPage !== totalPages) {
+            setCurrentPage(totalPages);
+
+            const alreadyLoaded = data.length >= totalPages * itemsPerPage;
+            if (!alreadyLoaded) {
+                await fetchAndCleanData(totalPages);
+            }
+        }
+    };
+
+
+    const handlePrevPage = () => {
+        if (currentPage > 1) setCurrentPage((p) => p - 1);
+    };
+
 
     // ✅ Duplicate cleaner function (keeps first entry, deletes the rest)
     const autoRemoveDuplicatesOnLoad = async (data) => {
@@ -161,25 +535,10 @@ export default function AccountsListManager() {
     };
 
     // Filtered data
-    const filteredData = data.filter(row => {
-        const term = searchTerm.toLowerCase();
-        const fields = [
-            row.distributor_code,
-            row.mother_code,
-            row.bp_code,
-            row.agent_code,
-            row.group_code
-        ];
-        return fields.some(f => (f?.toString() || '').toLowerCase().includes(term));
-    });
+    // 🔍 Filter logic: only bp_name and mother_code
+
 
     // Pagination
-    const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-
-
-    const currentItems = showAll ? filteredData : filteredData.slice(indexOfFirstItem, indexOfLastItem);
 
     // Fetch dropdowns
     const fetchDistributors = async () => {
@@ -483,379 +842,8 @@ export default function AccountsListManager() {
         // Save data as-is to your Accounts_List or process as needed
     };
 
-    
-const handleImportMother = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
 
-  const data = await readExcelFile(file);
-  if (!data.length) return;
-
-  // ✅ Check 40K limit
-  if (data.length > 40000) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Too Many Rows!',
-      text: `Excel contains ${data.length.toLocaleString()} rows. Maximum allowed is 40,000 rows.`,
-      confirmButtonText: 'OK'
-    });
-    return;
-  }
-
-  setUploading(true);
-  setTotalRows(data.length);
-  setProcessedRows(0);
-  setProgressPercent(0);
-
-  // ✅ Track success and failures
-  let successCount = 0;
-  let failedRows = [];
-
-  // ✅ Fetch reference tables
-  const [
-    { data: motherAccounts },
-    { data: agentAccounts },
-    { data: bpAccounts },
-    { data: distributorAccounts }
-  ] = await Promise.all([
-    supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
-    supabase.from('Account_Users').select('UserID, name'),
-    supabase.from('Bp_Accounts').select('bp_code, bp_name'),
-    supabase.from('distributors').select('code, name')
-  ]);
-
-  // ✅ STEP 1: Create Group Name → Group Code mapping
-  const groupNameToCodeMap = {};
-  motherAccounts?.forEach(m => {
-    if (m.group_name && m.group_code) {
-      const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
-      groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
-    }
-  });
-
-  console.log('📋 Group Name to Code Map:', groupNameToCodeMap);
-
-  // ✅ STEP 2: Build Mother lookup by Group Code + Name
-  // Structure: groupCode → { normalizedName → dscode, exactName → dscode }
-  const motherLookup = {};
-
-  motherAccounts?.forEach(m => {
-    const groupCode = m.group_code?.toString().trim();
-    const exactName = m.name?.toString().trim().toLowerCase();
-    
-    // Normalize: remove punctuation and extra spaces
-    const normalizedName = exactName
-      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!groupCode || !m.name) return;
-
-    if (!motherLookup[groupCode]) {
-      motherLookup[groupCode] = {};
-    }
-
-    // Store both exact and normalized versions
-    motherLookup[groupCode][exactName] = m.dscode;
-    motherLookup[groupCode][normalizedName] = m.dscode;
-  });
-
-  console.log('🔍 Mother Lookup by Group:', motherLookup);
-
-  // ✅ Helper: Find mother_code using Group Code priority
-  const findMotherCode = (rawMotherName, resolvedGroupCode) => {
-    const groupCode = resolvedGroupCode?.toString().trim();
-    
-    if (!groupCode || !motherLookup[groupCode]) {
-      console.error(`❌ No mothers found for group code: ${groupCode}`);
-      return rawMotherName; // Return original if group not found
-    }
-
-    const exactName = rawMotherName.toString().trim().toLowerCase();
-    const normalizedName = exactName
-      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const availableNames = motherLookup[groupCode];
-
-    // Priority 1: Exact match
-    if (availableNames[exactName]) {
-      console.log(`✅ Exact match: "${rawMotherName}" → ${availableNames[exactName]}`);
-      return availableNames[exactName];
-    }
-
-    // Priority 2: Normalized match (ignores punctuation)
-    if (availableNames[normalizedName]) {
-      console.log(`✅ Normalized match: "${rawMotherName}" → ${availableNames[normalizedName]}`);
-      return availableNames[normalizedName];
-    }
-
-    // Priority 3: Partial match (fuzzy)
-    const nameKeys = Object.keys(availableNames);
-    const fuzzyMatch = nameKeys.find(dbName => 
-      dbName.includes(normalizedName) || normalizedName.includes(dbName)
-    );
-
-    if (fuzzyMatch) {
-      console.log(`✅ Fuzzy match: "${rawMotherName}" matched "${fuzzyMatch}" → ${availableNames[fuzzyMatch]}`);
-      return availableNames[fuzzyMatch];
-    }
-
-    // Priority 4: Return first available dscode in this group (last resort)
-    const firstDscode = Object.values(availableNames)[0];
-    console.warn(`⚠️ Using first available dscode for group ${groupCode}: "${rawMotherName}" → ${firstDscode}`);
-    return firstDscode;
-  };
-
-  // ✅ Helper maps for other codes
-  const createMap = (arr, key1, key2) => {
-    const map = {};
-    arr?.forEach(item => {
-      if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
-      if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
-    });
-    return map;
-  };
-
-  const agentMap = createMap(agentAccounts, 'name', 'UserID');
-  const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
-  const distributorMap = createMap(distributorAccounts, 'name', 'code');
-
-  const bpNameMap = {};
-  bpAccounts?.forEach(b => {
-    if (b.bp_code && b.bp_name) {
-      bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
-    }
-  });
-
-  const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
-
-  // ✅ Process data in batches
-  const BATCH_SIZE = 500;
-  const chunks = [];
-  for (let i = 0; i < data.length; i += BATCH_SIZE) {
-    chunks.push(data.slice(i, i + BATCH_SIZE));
-  }
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-
-    const records = chunk.map((row, idx) => {
-      const actualRowNumber = i * BATCH_SIZE + idx + 2; // +2 for Excel header row
-      
-      const rawGroup = row.group_code?.toString().trim() || '';
-      const rawMother = row.mother_code?.toString().trim() || '';
-      const rawAgent = row.agent_code?.toString().trim() || '';
-      const rawBp = row.bp_code?.toString().trim() || '';
-      const rawDist = row.distributor_code?.toString().trim() || '';
-
-      // 🎯 STEP 1: Convert Group Code FIRST
-      let groupCode = rawGroup;
-      if (!isCode(rawGroup)) {
-        groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
-        console.log(`📌 Group converted: "${rawGroup}" → ${groupCode}`);
-      }
-
-      // 🎯 STEP 2: Use resolved Group Code to find Mother Code
-      let motherCode = rawMother;
-      if (!isCode(rawMother)) {
-        motherCode = findMotherCode(rawMother, groupCode);
-      } else {
-        console.log(`✅ Mother code already valid: ${rawMother}`);
-      }
-
-      // 🎯 STEP 3: Resolve other codes
-      const agentCode = isCode(rawAgent)
-        ? rawAgent
-        : (agentMap[rawAgent.toLowerCase()] || rawAgent);
-
-      const bpCode = isCode(rawBp)
-        ? rawBp
-        : (bpMap[rawBp.toLowerCase()] || rawBp);
-
-      const bpName =
-        bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
-        row.bp_name ||
-        null;
-
-      const distributorCode = isCode(rawDist)
-        ? rawDist
-        : (distributorMap[rawDist.toLowerCase()] || rawDist);
-
-      return {
-        distributor_code: distributorCode,
-        mother_code: motherCode,
-        bp_code: bpCode,
-        bp_name: bpName,
-        agent_code: agentCode,
-        group_code: groupCode,
-        _rowNumber: actualRowNumber // Track row number for error reporting
-      };
-    });
-
-    // ✅ Remove _rowNumber before insert
-    const recordsToInsert = records.map(r => {
-      const { _rowNumber, ...record } = r;
-      return record;
-    });
-
-    const { data: insertedData, error } = await supabase
-      .from('Accounts_List')
-      .insert(recordsToInsert)
-      .select();
-
-    if (error) {
-      console.error('Insert error:', error);
-      // Track failed rows with detailed error info
-      records.forEach((r, idx) => {
-        failedRows.push({
-          row: r._rowNumber,
-          distributor_code: r.distributor_code,
-          mother_code: r.mother_code,
-          bp_code: r.bp_code,
-          bp_name: r.bp_name,
-          agent_code: r.agent_code,
-          group_code: r.group_code,
-          error: error.message,
-          error_code: error.code,
-          error_details: error.details || 'N/A'
-        });
-      });
-    } else {
-      // Count successful inserts
-      successCount += insertedData?.length || recordsToInsert.length;
-    }
-
-    const processed = Math.min((i + 1) * BATCH_SIZE, data.length);
-    setProcessedRows(processed);
-    setProgressPercent(Math.round((processed / data.length) * 100));
-    await new Promise(res => setTimeout(res, 50));
-  }
-
-  setUploading(false);
-
-  // ✅ Show detailed results
-  const failedCount = failedRows.length;
-  const totalProcessed = data.length;
-
-  if (failedCount === 0) {
-    // ✅ All successful
-    let countdown = 3;
-    Swal.fire({
-      icon: 'success',
-      title: 'Import Completed!',
-      html: `
-        <div style="text-align: left; padding: 10px;">
-          <p><strong>✅ Successfully imported:</strong> ${successCount.toLocaleString()} rows</p>
-          <p><strong>📊 Total processed:</strong> ${totalProcessed.toLocaleString()} rows</p>
-          <p><strong>❌ Failed:</strong> 0 rows</p>
-        </div>
-        <br>Closing in <b>${countdown}</b> seconds...
-      `,
-      showConfirmButton: false,
-      timer: countdown * 1000,
-      timerProgressBar: true,
-      didOpen: () => {
-        const b = Swal.getHtmlContainer().querySelector('b');
-        const timer = setInterval(() => {
-          countdown--;
-          if (b) b.textContent = countdown;
-          if (countdown <= 0) clearInterval(timer);
-        }, 1000);
-      },
-      willClose: () => fetchAccountsList()
-    });
-  } else {
-    // ⚠️ Some failed - Show detailed error report
-    const failedRowNumbers = failedRows.slice(0, 20).map(f => f.row).join(', ');
-    const moreFailures = failedCount > 20 ? `... and ${failedCount - 20} more` : '';
-
-    // Create downloadable error report
-    const createErrorReport = () => {
-      const headers = ['Excel Row', 'Error Message', 'Error Code', 'Distributor', 'Mother', 'BP Code', 'Agent', 'Group'];
-      const csvContent = [
-        headers.join(','),
-        ...failedRows.map(f => [
-          f.row,
-          `"${f.error.replace(/"/g, '""')}"`,
-          f.error_code || 'N/A',
-          f.distributor_code || '',
-          f.mother_code || '',
-          f.bp_code || '',
-          f.agent_code || '',
-          f.group_code || ''
-        ].join(','))
-      ].join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `import_errors_${new Date().getTime()}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    };
-
-    // Group errors by type
-    const errorTypes = {};
-    failedRows.forEach(f => {
-      const errorKey = f.error_code || f.error;
-      if (!errorTypes[errorKey]) {
-        errorTypes[errorKey] = { count: 0, example: f.row };
-      }
-      errorTypes[errorKey].count++;
-    });
-
-    const errorSummary = Object.entries(errorTypes)
-      .map(([error, info]) => `<li><strong>${error}:</strong> ${info.count} rows (e.g., row ${info.example})</li>`)
-      .join('');
-
-    Swal.fire({
-      icon: 'warning',
-      title: 'Import Completed with Errors',
-      html: `
-        <div style="text-align: left; padding: 10px;">
-          <p><strong>✅ Successfully imported:</strong> ${successCount.toLocaleString()} rows</p>
-          <p><strong>❌ Failed to import:</strong> ${failedCount.toLocaleString()} rows</p>
-          <p><strong>📊 Total processed:</strong> ${totalProcessed.toLocaleString()} rows</p>
-          <hr>
-          <p><strong>Error Summary:</strong></p>
-          <ul style="font-size: 12px; text-align: left; max-height: 150px; overflow-y: auto;">
-            ${errorSummary}
-          </ul>
-          <hr>
-          <p><strong>First 20 Failed Rows:</strong></p>
-          <p style="color: #d33; font-size: 12px;">${failedRowNumbers}${moreFailures}</p>
-          <p style="font-size: 11px; color: #666;">Click "Download Error Report" to see all failed rows with details</p>
-        </div>
-      `,
-      showCancelButton: true,
-      confirmButtonText: '📥 Download Error Report',
-      cancelButtonText: 'Close',
-      confirmButtonColor: '#3085d6',
-      cancelButtonColor: '#d33',
-      willClose: () => fetchAccountsList()
-    }).then((result) => {
-      if (result.isConfirmed) {
-        createErrorReport();
-        Swal.fire({
-          icon: 'success',
-          title: 'Error Report Downloaded!',
-          text: 'Check your downloads folder for the CSV file.',
-          timer: 2000,
-          showConfirmButton: false
-        });
-      }
-    });
-
-    // Log detailed errors to console
-    console.error('❌ Failed Rows Details:', failedRows);
-    console.table(failedRows);
-  }
-};
+    const [showExcelModal, setShowExcelModal] = useState(false);
 
 
 
@@ -882,45 +870,92 @@ const handleImportMother = async (e) => {
 
 
 
- const handleExport = (type) => {
-    if (!data || data.length === 0) {
-        Swal.fire('Error', 'No data to export', 'error');
-        return;
-    }
+    // State
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [exportProgress, setExportProgress] = useState({ fetched: 0, total: 0, type: "" });
 
-    // ✅ Added bp_name
-    const headers = [
-        'distributor_code',
-        'mother_code',
-        'bp_code',
-        'bp_name',  // 👈 added this
-        'agent_code',
-        'group_code',
-        'status'
-    ];
+    // Updated handleExport
+    const handleExport = async (type) => {
+        try {
+            setShowExportModal(true);
+            setExportProgress({ fetched: 0, total: 0, type });
 
-    let exportData = [];
+            const headers = [
+                "distributor_code",
+                "mother_code",
+                "bp_code",
+                "bp_name",
+                "agent_code",
+                "group_code",
+                "status",
+            ];
 
-    if (type === 'template') {
-        // Export an empty row with all headers
-        exportData = [Object.fromEntries(headers.map(k => [k, ""]))];
-    } else if (type === 'all') {
-        exportData = data.map(row => {
-            const obj = {};
-            headers.forEach(k => obj[k] = row[k] ?? '');
-            return obj;
-        });
-    }
+            let exportData = [];
 
-    // ✅ Generate Excel
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'AccountsList');
-    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
-    saveAs(blob, `accounts_list_${type}.xlsx`);
-    setShowExportMenu(false);
-};
+            if (type === "template") {
+                exportData = [Object.fromEntries(headers.map((k) => [k, ""]))];
+                setExportProgress({ fetched: 1, total: 1, type });
+            } else if (type === "all") {
+                const batchSize = 1000;
+                let allData = [];
+                let offset = 0;
+                let hasMore = true;
+
+                while (hasMore) {
+                    const { data, error } = await supabase
+                        .from("Accounts_List")
+                        .select("*")
+                        .order("id", { ascending: true })
+                        .range(offset, offset + batchSize - 1);
+
+                    if (error) throw error;
+
+                    if (data && data.length > 0) {
+                        allData = [...allData, ...data];
+                        offset += batchSize;
+                        hasMore = data.length === batchSize;
+                        setExportProgress({ fetched: allData.length, total: allData.length + (hasMore ? batchSize : 0), type });
+                    } else {
+                        hasMore = false;
+                        setExportProgress({ fetched: allData.length, total: allData.length, type });
+                    }
+                }
+
+                if (allData.length === 0) {
+                    Swal.fire("Error", "No data to export", "error");
+                    setShowExportModal(false);
+                    return;
+                }
+
+                exportData = allData.map((row) => {
+                    const obj = {};
+                    headers.forEach((k) => (obj[k] = row[k] ?? ""));
+                    return obj;
+                });
+            }
+
+            // Small delay to display progress modal nicely
+            await new Promise((res) => setTimeout(res, 500));
+
+            // Generate Excel
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "AccountsList");
+            const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+            const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+            saveAs(blob, `accounts_list_${type}.xlsx`);
+
+            setShowExportModal(false);
+        } catch (err) {
+            console.error("Export Error:", err);
+            Swal.fire("Error", err.message, "error");
+            setShowExportModal(false);
+        } finally {
+            setShowExportMenu(false);
+        }
+    };
+
+
 
     // Close menus on outside click
     useEffect(() => {
@@ -1151,15 +1186,13 @@ const handleImportMother = async (e) => {
                             {/* All Data */}
                             <div
                                 style={styles.menuItem}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = '#e8f0fe')}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
-                                onClick={() => {
-                                    handleExport('all');
-                                    setShowExportMenu(false);
-                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#e8f0fe")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "white")}
+                                onClick={() => handleExport("all")}
                             >
                                 📊 Export All Data
                             </div>
+
 
                             {/* Tagging */}
                             <div
@@ -1173,6 +1206,40 @@ const handleImportMother = async (e) => {
                             >
                                 🏷️ Export for Tagging
                             </div>
+                            <Modal show={showExportModal} centered>
+                                <Modal.Header>
+                                    <Modal.Title>📊 Exporting Data...</Modal.Title>
+                                </Modal.Header>
+                                <Modal.Body>
+                                    {exportProgress.type === "template" ? (
+                                        <p>Preparing template...</p>
+                                    ) : (
+                                        <>
+                                            <p>
+                                                Fetched {exportProgress.fetched} / {exportProgress.total} records
+                                            </p>
+                                            <div
+                                                style={{
+                                                    width: "100%",
+                                                    height: "10px",
+                                                    background: "#eee",
+                                                    borderRadius: "5px",
+                                                    overflow: "hidden",
+                                                }}
+                                            >
+                                                <div
+                                                    style={{
+                                                        width: `${Math.min((exportProgress.fetched / exportProgress.total) * 100, 100)}%`,
+                                                        height: "100%",
+                                                        background: "#0d6efd",
+                                                        transition: "width 0.2s",
+                                                    }}
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                </Modal.Body>
+                            </Modal>
 
                             {/* Multiple (Agent / Distributor / Mother) */}
                             <div
@@ -1225,6 +1292,7 @@ const handleImportMother = async (e) => {
                 </div>
 
                 {/* Import Button */}
+                {/* === Import Menu === */}
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowImportMenu(!showImportMenu)}
@@ -1240,38 +1308,262 @@ const handleImportMother = async (e) => {
 
                     {showImportMenu && (
                         <div ref={importMenuRef} style={styles.menu}>
-                            {/* Upload Excel */}
-                       
-
-                            {/* Extract Data Mother */}
                             <div
                                 style={styles.menuItem}
                                 onMouseEnter={(e) => (e.currentTarget.style.background = '#e8f0fe')}
                                 onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
-                                onClick={() => document.getElementById('mother-upload').click()}
+                                onClick={() => {
+                                    setShowImportMenu(false);
+                                    setShowExcelModal(true);
+                                }}
                             >
-                                 Upload Excel File
+                                📥 Upload Excel File
                             </div>
                         </div>
                     )}
 
-                    {/* Hidden file inputs */}
-                    <input
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={handleImportExcel}
-                        style={{ display: 'none' }}
-                        id="excel-upload"
-                    />
+                    {/* === Import Excel Modal === */}
+                    {showExcelModal && (
+                        <div
+                            style={{
+                                position: "fixed",
+                                top: 0,
+                                left: 0,
+                                width: "100%",
+                                height: "100%",
+                                backgroundColor: "rgba(0,0,0,0.5)",
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                                zIndex: 1050,
+                            }}
+                            onClick={() => {
+                                setShowExcelModal(false);
+                                setImportData([]);
+                                setExistingRows([]);
+                                setDuplicatesChecked(false);
+                                setFileName('');
+                                setProcessedRows(0);
+                                setProgressPercent(0);
+                            }}
+                        >
+                            <div
+                                style={{
+                                    width: "1500px",
+                                    maxHeight: "90vh",
+                                    backgroundColor: "white",
+                                    borderRadius: "8px",
+                                    overflowY: "auto",
+                                    padding: "20px",
+                                    boxShadow: "0 0 20px rgba(0,0,0,0.3)",
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Header */}
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
+                                    <h4>📥 Import from Excel</h4>
+                                    <button
+                                        onClick={() => {
+                                            setShowExcelModal(false);
+                                            setImportData([]);
+                                            setExistingRows([]);
+                                            setDuplicatesChecked(false);
+                                            setFileName('');
+                                            setProcessedRows(0);
+                                            setProgressPercent(0);
+                                        }}
+                                        style={{ background: "transparent", border: "none", fontSize: "20px", cursor: "pointer" }}
+                                    >
+                                        ×
+                                    </button>
+                                </div>
 
-                    <input
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={handleImportMother}
-                        style={{ display: 'none' }}
-                        id="mother-upload"
-                    />
+                                {/* File Input */}
+                                <div className="mb-3">
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        accept=".xlsx,.xls,.csv"
+                                        onChange={handleImportMother}
+                                        className="form-control"
+                                    />
+                                    {fileName && <div className="mt-2 text-muted">Selected File: <b>{fileName}</b></div>}
+                                </div>
+
+                                {/* Check Duplicates Button */}
+                                {importData.length > 0 && (
+                                    <Button
+                                        variant="warning"
+                                        size="sm"
+                                        onClick={checkExistingRecords}
+                                        disabled={checking}
+                                        style={{ marginBottom: "10px" }}
+                                    >
+                                        {checking ? (
+                                            <>
+                                                <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                                                Checking...
+                                            </>
+                                        ) : (
+                                            "🔍 Check for Duplicates"
+                                        )}
+                                    </Button>
+                                )}
+
+                                {/* Table */}
+                                {importData.length > 0 && (
+                                    <div className="table-responsive mt-2">
+                                        <table style={{ ...tableStyle, width: "100%", fontSize: "1.1rem" }}>
+                                            <thead style={{ backgroundColor: "#0d6efd", color: "white" }}>
+                                                <tr>
+                                                    <th style={{ ...thStyle, minWidth: "120px" }}>Distributor Code</th>
+                                                    <th style={{ ...thStyle, minWidth: "120px" }}>Mother Code</th>
+                                                    <th style={{ ...thStyle, minWidth: "120px" }}>BP Code</th>
+                                                    <th style={{ ...thStyle, minWidth: "150px" }}>BP Name</th>
+                                                    <th style={{ ...thStyle, minWidth: "120px" }}>Agent Code</th>
+                                                    <th style={{ ...thStyle, minWidth: "120px" }}>Group Code</th>
+                                                    <th style={{ ...thStyle, minWidth: "100px" }}>Status</th>
+                                                    <th style={{ ...thStyle, minWidth: "100px" }}>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {currentRowsExcel.map((row, idx) => {
+                                                    const isDuplicate = existingRows.some(
+                                                        (r) => r.bp_code.trim().toUpperCase() === row.bp_code.trim().toUpperCase()
+                                                    );
+                                                    return (
+                                                        <tr
+                                                            key={idx}
+                                                            style={{
+                                                                backgroundColor: isDuplicate ? "#ffcccc" : "white",
+                                                                color: isDuplicate ? "#b30000" : "black",
+                                                                fontWeight: isDuplicate ? 600 : "normal",
+                                                            }}
+                                                        >
+                                                            <td style={tdStyle}>{row.distributor_code}</td>
+                                                            <td style={tdStyle}>{row.mother_code}</td>
+                                                            <td style={tdStyle}>{row.bp_code}</td>
+                                                            <td style={tdStyle}>{row.bp_name}</td>
+                                                            <td style={tdStyle}>{row.agent_code}</td>
+                                                            <td style={tdStyle}>{row.group_code}</td>
+                                                            <td style={tdStyle}>{isDuplicate ? "Duplicate" : "New"}</td>
+                                                            <td style={{ textAlign: "center" }}>
+                                                                <Button
+                                                                    variant={isDuplicate ? "danger" : "secondary"}
+                                                                    size="sm"
+                                                                    onClick={() => {
+                                                                        const actualIndex = indexOfFirstRowExcel + idx;
+                                                                        const updatedData = importData.filter((_, i) => i !== actualIndex);
+                                                                        setImportData(updatedData);
+
+                                                                        const remainingDuplicates = updatedData.filter((r) =>
+                                                                            existingRows.some(
+                                                                                (ex) => ex.bp_code.trim().toUpperCase() === r.bp_code.trim().toUpperCase()
+                                                                            )
+                                                                        );
+                                                                        setExistingRows(remainingDuplicates);
+                                                                        if (remainingDuplicates.length === 0) setDuplicatesChecked(false);
+                                                                    }}
+                                                                    style={{ padding: "6px 12px", fontSize: "14px" }}
+                                                                >
+                                                                    {isDuplicate ? "🗑️ Delete" : "🗑️ Remove"}
+                                                                </Button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+
+                                {/* Progress */}
+                                {uploading && (
+                                    <div style={{ marginTop: 10 }}>
+                                        <div>Processing {processedRows}/{totalRows} rows</div>
+                                        <div style={{ width: '100%', height: '8px', background: '#eee', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
+                                            <div style={{ width: `${progressPercent}%`, height: '100%', background: '#28a745' }} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Pagination */}
+                                {importData.length > 0 && (
+                                    <div className="d-flex justify-content-between align-items-center mt-2">
+                                        <small>
+                                            Showing {indexOfFirstRowExcel + 1}–{Math.min(indexOfLastRowExcel, importData.length)} of {importData.length}
+                                        </small>
+                                        <div>
+                                            <Button
+                                                variant="outline-dark"
+                                                size="sm"
+                                                disabled={currentPageExcel === 1}
+                                                onClick={() => setCurrentPageExcel((p) => p - 1)}
+                                                className="me-2"
+                                            >
+                                                ⬅ Prev
+                                            </Button>
+                                            <span className="mx-2">Page {currentPageExcel} of {totalPagesExcel}</span>
+                                            <Button
+                                                variant="outline-dark"
+                                                size="sm"
+                                                disabled={currentPageExcel === totalPagesExcel}
+                                                onClick={() => setCurrentPageExcel((p) => p + 1)}
+                                            >
+                                                Next ➡
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Footer Buttons */}
+                                <div style={{ marginTop: "20px", textAlign: "right" }}>
+                                    <button
+                                        onClick={() => {
+                                            setShowExcelModal(false);
+                                            setImportData([]);
+                                            setExistingRows([]);
+                                            setDuplicatesChecked(false);
+                                            setFileName('');
+                                            setProcessedRows(0);
+                                            setProgressPercent(0);
+                                        }}
+                                        style={{
+                                            padding: "6px 12px",
+                                            marginRight: "10px",
+                                            backgroundColor: "#6c757d",
+                                            color: "white",
+                                            border: "none",
+                                            borderRadius: "4px",
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        Close
+                                    </button>
+                                    <button
+                                        onClick={importDataToDB}
+                                        disabled={importing || importData.length === 0 || !duplicatesChecked}
+                                        style={{
+                                            padding: "6px 12px",
+                                            backgroundColor: "#28a745",
+                                            color: "white",
+                                            border: "none",
+                                            borderRadius: "4px",
+                                            cursor: importing || importData.length === 0 || !duplicatesChecked ? "not-allowed" : "pointer",
+                                        }}
+                                    >
+                                        {importing ? "Importing..." : "📤 Import"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
+
+
+
+
 
 
 
@@ -1301,56 +1593,110 @@ const handleImportMother = async (e) => {
             </div>
 
 
+            {/* 🔍 Search and Toggle Show All */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 15 }}>
-                <input type="text" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={styles.searchInput} />
-                <button onClick={() => setShowAll(!showAll)} style={styles.btn}>{showAll ? 'Paginate' : 'Show All'}</button>
+                <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                        const value = e.target.value;
+                        setSearchTerm(value);
+                        fetchAndCleanData(1, value); // 👈 fetch data again with filter
+                    }}
+                    style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        border: '1px solid #ccc',
+                        borderRadius: 4,
+                    }}
+                />
+                <button
+                    onClick={() => setShowAll(!showAll)}
+                    style={{
+                        padding: '8px 16px',
+                        backgroundColor: showAll ? '#6c757d' : '#007bff',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                    }}
+                >
+                    {showAll ? 'Paginate' : 'Show All'}
+                </button>
             </div>
 
-            <div style={{ overflowX: 'auto', margin: '20px 0', fontFamily: 'Arial, sans-serif' }}>
-                <table style={{
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    minWidth: '800px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                }}>
+            {/* 🧾 Table */}
+            <div
+                style={{
+                    overflowX: 'auto',
+                    margin: '20px 0',
+                    fontFamily: 'Arial, sans-serif',
+                }}
+            >
+                <table
+                    style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        minWidth: '800px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    }}
+                >
                     <thead>
-                        <tr style={{ backgroundColor: '#007BFF', color: '#fff', textAlign: 'left' }}>
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>Distributor</th>
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>Mother Code</th>
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>BP Code</th>
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>BP Name</th>
-
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>Agent Code</th>
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>Group Code</th>
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>Status</th>
-                            <th style={{ padding: '12px 15px', borderBottom: '2px solid #0056b3' }}>Actions</th>
+                        <tr
+                            style={{
+                                backgroundColor: '#007BFF',
+                                color: '#fff',
+                                textAlign: 'left',
+                            }}
+                        >
+                            <th style={{ padding: '12px 15px' }}>Distributor</th>
+                            <th style={{ padding: '12px 15px' }}>Mother Code</th>
+                            <th style={{ padding: '12px 15px' }}>BP Code</th>
+                            <th style={{ padding: '12px 15px' }}>BP Name</th>
+                            <th style={{ padding: '12px 15px' }}>Agent Code</th>
+                            <th style={{ padding: '12px 15px' }}>Group Code</th>
+                            <th style={{ padding: '12px 15px' }}>Status</th>
+                            <th style={{ padding: '12px 15px' }}>Actions</th>
                         </tr>
                     </thead>
+
                     <tbody>
+                        {/* 🔄 Upload progress bar */}
                         {uploading && (
                             <tr>
-                                <td colSpan={7} style={{ padding: '10px 15px' }}>
+                                <td colSpan={8} style={{ padding: '10px 15px' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                        <div style={{
-                                            background: '#e0e0e0',
-                                            borderRadius: 5,
-                                            overflow: 'hidden',
-                                            height: 20,
-                                        }}>
-                                            <div style={{
-                                                width: `${progressPercent}%`,
-                                                height: '100%',
-                                                background: 'linear-gradient(90deg, #4f46e5, #3b82f6)',
-                                                transition: 'width 0.3s ease-in-out',
-                                                textAlign: 'center',
-                                                color: 'white',
-                                                fontWeight: 600,
-                                            }}>
+                                        <div
+                                            style={{
+                                                background: '#e0e0e0',
+                                                borderRadius: 5,
+                                                overflow: 'hidden',
+                                                height: 20,
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    width: `${progressPercent}%`,
+                                                    height: '100%',
+                                                    background: 'linear-gradient(90deg, #4f46e5, #3b82f6)',
+                                                    transition: 'width 0.3s ease-in-out',
+                                                    textAlign: 'center',
+                                                    color: 'white',
+                                                    fontWeight: 600,
+                                                }}
+                                            >
                                                 {processedRows} / {totalRows} rows
                                             </div>
                                         </div>
                                         {countdown > 0 && (
-                                            <div style={{ textAlign: 'center', fontWeight: 'bold', color: '#1d4ed8' }}>
+                                            <div
+                                                style={{
+                                                    textAlign: 'center',
+                                                    fontWeight: 'bold',
+                                                    color: '#1d4ed8',
+                                                }}
+                                            >
                                                 Completed! Closing in {countdown}...
                                             </div>
                                         )}
@@ -1359,77 +1705,138 @@ const handleImportMother = async (e) => {
                             </tr>
                         )}
 
-
-                        {currentItems.length ? currentItems.map(row => (
-                            <tr key={row.id} style={{ borderBottom: '1px solid #ddd', transition: 'background 0.3s', cursor: 'pointer' }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#f1f7ff'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                <td style={{ padding: '10px 15px' }}>{row.distributor_code}</td>
-                                <td style={{ padding: '10px 15px' }}>{row.mother_code}</td>
-                                <td style={{ padding: '10px 15px' }}>{row.bp_code}</td>
-                                <td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
-
-                                <td style={{ padding: '10px 15px' }}>{row.agent_code}</td>
-                                <td style={{ padding: '10px 15px' }}>{row.group_code}</td>
-                                <td style={{ padding: '10px 15px', fontWeight: 'bold', color: row.status ? 'green' : 'red' }}>
-                                    {row.status ? 'Active' : 'Inactive'}
-                                </td>
-                                <td style={{ padding: '10px 15px', display: 'flex', gap: '8px' }}>
-                                    <button onClick={() => handleEdit(row)}
+                        {/* 🧭 Display Data (Filtered + Paginated) */}
+                        {(showAll ? filteredData : currentItems).length ? (
+                            (showAll ? filteredData : currentItems).map((row) => (
+                                <tr
+                                    key={row.id}
+                                    style={{
+                                        borderBottom: '1px solid #ddd',
+                                        transition: 'background 0.3s',
+                                        cursor: 'pointer',
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f7ff')}
+                                    onMouseLeave={(e) =>
+                                        (e.currentTarget.style.background = 'transparent')
+                                    }
+                                >
+                                    <td style={{ padding: '10px 15px' }}>{row.distributor_code}</td>
+                                    <td style={{ padding: '10px 15px' }}>{row.mother_code}</td>
+                                    <td style={{ padding: '10px 15px' }}>{row.bp_code}</td>
+                                    <td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
+                                    <td style={{ padding: '10px 15px' }}>{row.agent_code}</td>
+                                    <td style={{ padding: '10px 15px' }}>{row.group_code}</td>
+                                    <td
                                         style={{
-                                            padding: '6px 12px',
-                                            backgroundColor: '#28a745',
-                                            color: '#fff',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer'
-                                        }}>
-                                        Edit
-                                    </button>
-                                    <button onClick={() => handleDelete(row.id)}
-                                        style={{
-                                            padding: '6px 12px',
-                                            backgroundColor: '#dc3545',
-                                            color: '#fff',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer'
-                                        }}>
-                                        Delete
-                                    </button>
-                                </td>
-                            </tr>
-                        )) : !uploading && (
-                            <tr>
-                                <td colSpan={7} style={{ textAlign: 'center', padding: 20, color: '#777' }}>No records</td>
-                            </tr>
+                                            padding: '10px 15px',
+                                            fontWeight: 'bold',
+                                            color: row.status ? 'green' : 'red',
+                                        }}
+                                    >
+                                        {row.status ? 'Active' : 'Inactive'}
+                                    </td>
+                                    <td style={{ padding: '10px 15px', display: 'flex', gap: '8px' }}>
+                                        <button
+                                            onClick={() => handleEdit(row)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                backgroundColor: '#28a745',
+                                                color: '#fff',
+                                                border: 'none',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(row.id)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                backgroundColor: '#dc3545',
+                                                color: '#fff',
+                                                border: 'none',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        ) : (
+                            !uploading && (
+                                <tr>
+                                    <td
+                                        colSpan={8}
+                                        style={{ textAlign: 'center', padding: 20, color: '#777' }}
+                                    >
+                                        No records
+                                    </td>
+                                </tr>
+                            )
                         )}
                     </tbody>
-
                 </table>
 
-                {filteredData.length > 0 && !showAll && (
-                    <div style={{ marginTop: 15, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}>
-                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
-                            style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #ccc', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}>
+                {/* 📄 Pagination Controls (NO Last button) */}
+                {!showAll && totalCount > 0 && (
+                    <div
+                        style={{
+                            marginTop: 15,
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: 10,
+                        }}
+                    >
+                        <button
+                            onClick={handleFirstPage}
+                            disabled={currentPage === 1}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 4,
+                                border: '1px solid #ccc',
+                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                            }}
+                        >
                             First
                         </button>
-                        <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}
-                            style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #ccc', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}>
+
+                        <button
+                            onClick={handlePrevPage}
+                            disabled={currentPage === 1}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 4,
+                                border: '1px solid #ccc',
+                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                            }}
+                        >
                             Previous
                         </button>
-                        <span>Page {currentPage} of {totalPages}</span>
-                        <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages}
-                            style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #ccc', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}>
+
+                        <span>
+                            Page {currentPage} of {totalPages}
+                        </span>
+
+                        <button
+                            onClick={handleNextPage}
+                            disabled={currentPage === totalPages}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 4,
+                                border: '1px solid #ccc',
+                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                            }}
+                        >
                             Next
-                        </button>
-                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
-                            style={{ padding: '6px 12px', borderRadius: 4, border: '1px solid #ccc', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}>
-                            Last
                         </button>
                     </div>
                 )}
             </div>
+
 
 
 
@@ -2588,6 +2995,10 @@ const styles = {
     pagination: { display: 'flex', justifyContent: 'center', gap: 10, marginTop: 15, padding: 10 },
     pageBtn: { padding: '6px 12px', border: '1px solid #ccc', background: 'white', cursor: 'pointer', borderRadius: 4 }
 };
+const tableStyle = { width: "100%", borderCollapse: "collapse" };
+const thStyle = { border: "1px solid #ccc", padding: "8px", textAlign: "center" };
+const tdStyle = { border: "1px solid #ccc", padding: "8px", textAlign: "center" };
+
 
 const modalStyles = {
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
