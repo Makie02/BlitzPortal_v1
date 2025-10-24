@@ -4,7 +4,7 @@ import { supabase } from "../supabaseClient";
 import RecordViewModal from "./RecordViewModal";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-
+import PDFViewModal from "./PDFViewModal";
 function RecordsPage() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,7 +27,7 @@ function RecordsPage() {
   );
 
   const REGULAR_COLUMNS = useMemo(
-    () => ['id', 'regularpwpcode', 'distributor', 'pwptype', 'created_at', 'createForm'],
+    () => ['id', 'regularpwpcode', 'distributor', 'pwptype', 'created_at', 'branchType', 'createForm'],
     []
   );
   const handleViewRecord = (record) => {
@@ -182,6 +182,8 @@ function RecordsPage() {
             item.account_type,
             item.accountType,
             item.pwp_type,
+            item.branchType,
+
             item.pwptype,
             item.createForm
           ];
@@ -259,6 +261,17 @@ function RecordsPage() {
 
 
 
+
+  const [showPDFModal, setShowPDFModal] = useState(false);
+  const [selectedPDFRecord, setSelectedPDFRecord] = useState(null);
+
+  // 3. Add handler function
+  const handleViewPDF = (record) => {
+    setSelectedPDFRecord(record);
+    setShowPDFModal(true);
+  };
+
+
   const exportToExcel = () => {
     if (!filteredData.length) return;
 
@@ -282,60 +295,60 @@ function RecordsPage() {
   };
 
 
-  
-const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
 
-const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-const currentUserId = currentUser?.UserID ? Number(currentUser.UserID) : null;
-const role = currentUser?.role || "";
+  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
 
-const filteredData = useMemo(() => {
-  if (role === 'admin') return data;
+  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+  const currentUserId = currentUser?.UserID ? Number(currentUser.UserID) : null;
+  const role = currentUser?.role || "";
 
-  return data.filter(row => {
-    const createForm = row.createForm;
+  const filteredData = useMemo(() => {
+    if (role === 'admin') return data;
 
-    if (!createForm) return false;
+    return data.filter(row => {
+      const createForm = row.createForm;
 
-    // Normalize string for comparison
-    if (typeof createForm === 'string') {
-      const createFormStr = createForm.toLowerCase().trim();
+      if (!createForm) return false;
 
-      // Check if createForm string matches username
-      if (createFormStr === currentUserName) return true;
+      // Normalize string for comparison
+      if (typeof createForm === 'string') {
+        const createFormStr = createForm.toLowerCase().trim();
 
-      // Also, if createForm looks like a number string, compare with UserID
-      const createFormNum = Number(createFormStr);
-      if (!isNaN(createFormNum) && createFormNum === currentUserId) return true;
+        // Check if createForm string matches username
+        if (createFormStr === currentUserName) return true;
+
+        // Also, if createForm looks like a number string, compare with UserID
+        const createFormNum = Number(createFormStr);
+        if (!isNaN(createFormNum) && createFormNum === currentUserId) return true;
+
+        return false;
+      }
+
+      // If createForm is a number, compare directly to UserID
+      if (typeof createForm === 'number') {
+        return createForm === currentUserId;
+      }
 
       return false;
+    });
+  }, [data, currentUserName, currentUserId, role]);
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    async function fetchUsers() {
+      const { data, error } = await supabase
+        .from('Account_Users')
+        .select('UserID, name');
+
+      if (error) {
+        console.error('Error fetching users:', error);
+      } else {
+        setUsers(data || []);
+      }
     }
 
-    // If createForm is a number, compare directly to UserID
-    if (typeof createForm === 'number') {
-      return createForm === currentUserId;
-    }
-
-    return false;
-  });
-}, [data, currentUserName, currentUserId, role]);
-const [users, setUsers] = useState([]);
-
-useEffect(() => {
-  async function fetchUsers() {
-    const { data, error } = await supabase
-      .from('Account_Users')
-      .select('UserID, name');
-
-    if (error) {
-      console.error('Error fetching users:', error);
-    } else {
-      setUsers(data || []);
-    }
-  }
-
-  fetchUsers();
-}, []);
+    fetchUsers();
+  }, []);
 
   // Pagination using filteredData
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
@@ -398,30 +411,30 @@ useEffect(() => {
   };
 
 
-useEffect(() => {
-  async function fetchUsers() {
-    const { data, error } = await supabase
-      .from('Account_Users')
-      .select('UserID, name');
-    if (error) {
-      console.error('Failed to fetch users:', error);
-    } else {
-      setUsers(data || []);
+  useEffect(() => {
+    async function fetchUsers() {
+      const { data, error } = await supabase
+        .from('Account_Users')
+        .select('UserID, name');
+      if (error) {
+        console.error('Failed to fetch users:', error);
+      } else {
+        setUsers(data || []);
+      }
     }
-  }
 
-  fetchUsers();
-}, []);
+    fetchUsers();
+  }, []);
 
-const userIdToNameMap = useMemo(() => {
-  const map = new Map();
-  users.forEach(user => {
-    if (user.UserID && user.name) {
-      map.set(user.UserID, user.name.toLowerCase().trim());
-    }
-  });
-  return map;
-}, [users]);
+  const userIdToNameMap = useMemo(() => {
+    const map = new Map();
+    users.forEach(user => {
+      if (user.UserID && user.name) {
+        map.set(user.UserID, user.name.toLowerCase().trim());
+      }
+    });
+    return map;
+  }, [users]);
   const formatColumnName = (colName) => {
     return colName
       .replace(/_/g, ' ')
@@ -453,49 +466,49 @@ const userIdToNameMap = useMemo(() => {
     fetchDistributorMap();
   }, []);
 
- const getUserNameById = (userId) => {
-  if (!userId) return '-';
-  
-  // If it's already a string (name), return it in uppercase
-  if (typeof userId === 'string' && isNaN(Number(userId))) {
-    return userId.toUpperCase();
-  }
-  
-  // Convert to number and lookup in map
-  const numericId = Number(userId);
-  const userName = userIdToNameMap.get(numericId);
-  
-  return userName ? userName.toUpperCase() : String(userId); // return uppercase or fallback
-};
-  const formatCellValue = (value, colName) => {
-  if (!value && value !== 0) return '-';
+  const getUserNameById = (userId) => {
+    if (!userId) return '-';
 
-  if (colName === "distributor" || colName === "distributor_code") {
-    const strCode = String(value).trim();
-    const name = distributorMap[strCode];
-    console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
-    return name || strCode;
-  }
-  
-  // Convert UserID to name for createForm column
-  if (colName === "createForm") {
-    return getUserNameById(value);
-  }
-  
-  if (colName === 'created_at' && value) {
-    try {
-      return new Date(value).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric"
-      });
-    } catch {
-      return value;
+    // If it's already a string (name), return it in uppercase
+    if (typeof userId === 'string' && isNaN(Number(userId))) {
+      return userId.toUpperCase();
     }
-  }
 
-  return String(value);
-};
+    // Convert to number and lookup in map
+    const numericId = Number(userId);
+    const userName = userIdToNameMap.get(numericId);
+
+    return userName ? userName.toUpperCase() : String(userId); // return uppercase or fallback
+  };
+  const formatCellValue = (value, colName) => {
+    if (!value && value !== 0) return '-';
+
+    if (colName === "distributor" || colName === "distributor_code") {
+      const strCode = String(value).trim();
+      const name = distributorMap[strCode];
+      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
+    }
+
+    // Convert UserID to name for createForm column
+    if (colName === "createForm") {
+      return getUserNameById(value);
+    }
+
+    if (colName === 'created_at' && value) {
+      try {
+        return new Date(value).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+      } catch {
+        return value;
+      }
+    }
+
+    return String(value);
+  };
   // Define styles object
   const styles = {
     td: {
@@ -641,7 +654,7 @@ const userIdToNameMap = useMemo(() => {
               <div className="filter-item">
                 <input
                   type="text"
-                  placeholder="🔍 Search by Code, AccountType...."
+                  placeholder="🔍 Search Customer...."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
@@ -850,29 +863,52 @@ const userIdToNameMap = useMemo(() => {
                     {getStatusBadge(row.approval_status)}
                   </td>
                   <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <button
-                      onClick={() => handleViewRecord(row)}
-                      style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#2196f3',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        margin: '0 auto',
-                        transition: 'background-color 0.2s ease'
-                      }}
-                      onMouseOver={(e) => e.target.style.backgroundColor = '#1976d2'}
-                      onMouseOut={(e) => e.target.style.backgroundColor = '#2196f3'}
-                    >
-                      🔍 View
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                      {/* View Button */}
+                      <button
+                        onClick={() => handleViewRecord(row)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#1976d2',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => (e.target.style.backgroundColor = '#115293')}
+                        onMouseLeave={(e) => (e.target.style.backgroundColor = '#1976d2')}
+                      >
+                        🔍 View
+                      </button>
+
+                      {/* PDF Button */}
+                      <button
+                        onClick={() => handleViewPDF(row)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#d32f2f',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => (e.target.style.backgroundColor = '#9a0007')}
+                        onMouseLeave={(e) => (e.target.style.backgroundColor = '#d32f2f')}
+                      >
+                        📄 PDF
+                      </button>
+                    </div>
+
+
                   </td>
+
+
                 </tr>
               ))}
             </tbody>
@@ -948,6 +984,16 @@ const userIdToNameMap = useMemo(() => {
           onClose={() => {
             setShowModal(false);
             setSelectedRecord(null);
+          }}
+        />
+      )}
+
+      {showPDFModal && (
+        <PDFViewModal
+          record={selectedPDFRecord}
+          onClose={() => {
+            setShowPDFModal(false);
+            setSelectedPDFRecord(null);
           }}
         />
       )}
