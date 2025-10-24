@@ -783,7 +783,7 @@ const Total = () => {
                 style={{ paddingRight: "30px" }}
               />
             </div>
-            <div className="col-md-3" style={{ position: "relative" }}>
+            {/* <div className="col-md-3" style={{ position: "relative" }}>
               <label className="form-label" style={{ color: "#888" }}>
                 Marketing Type
               </label>
@@ -820,7 +820,7 @@ const Total = () => {
                   ✓
                 </span>
               )}
-            </div>
+            </div> */}
           </div>
         </form>
       )}
