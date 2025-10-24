@@ -1480,7 +1480,7 @@ const CoverVisa = () => {
                 </span>
               )}
             </div>
-            <div className="col-md-3" style={{ position: "relative" }}>
+            {/* <div className="col-md-3" style={{ position: "relative" }}>
               <label className="form-label" style={{ color: "#888" }}>
                 Marketing Type
               </label>
@@ -1517,10 +1517,10 @@ const CoverVisa = () => {
                   ✓
                 </span>
               )}
-            </div>
+            </div> */}
           </div>
 
-          NEW CODE:
+          {/* NEW CODE: */}
           <div className="mt-4 d-flex justify-content-between gap-3">
             <button
               type="button"
