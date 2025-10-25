@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from "react";
 import "./ApprovalsPage.css";
 import Swal from "sweetalert2";
@@ -9,8 +10,35 @@ export default function ApprovalsPage() {
   const currentUser = storedUser ? JSON.parse(storedUser) : null;
   const [modalVisaCode, setModalVisaCode] = React.useState(null);
   const [openDropdownIndex, setOpenDropdownIndex] = useState(null);
-  const dropdownRefs = useRef([]);// Add this state at the top with other states
+  const dropdownRefs = useRef([]);
   const [userNames, setUserNames] = useState({});
+
+  const [distributors, setDistributors] = useState([]);
+
+  useEffect(() => {
+    const fetchDistributors = async () => {
+      const { data, error } = await supabase
+        .from("distributors")
+        .select("code, name");
+
+      if (error) {
+        console.error("Error fetching distributors:", error);
+      } else {
+        setDistributors(data);
+      }
+    };
+
+    fetchDistributors();
+  }, []);
+
+  const getDistributorName = (code) => {
+    const distributor = distributors.find(
+      (d) => Number(d.code) === Number(code)
+    );
+    return distributor ? distributor.name : `Code: ${code}`;
+  };
+
+
 
   // Add this useEffect to fetch all user names and create a lookup map
   useEffect(() => {
@@ -36,11 +64,11 @@ export default function ApprovalsPage() {
     fetchUserNames();
   }, []);
 
-
   // Add this helper function
   const getUserNameById = (userId) => {
     return userNames[userId] || ` ${userId}`;
   };
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
@@ -64,8 +92,28 @@ export default function ApprovalsPage() {
   };
 
   const [approvals, setApprovals] = useState([]);
+  const [approvalHistory, setApprovalHistory] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+
+  // Fetch approval history FIRST
+  useEffect(() => {
+    const fetchApprovalHistory = async () => {
+      const { data, error } = await supabase
+        .from("Approval_History")
+        .select("*");
+
+      if (error) {
+        console.error("Error fetching approval history:", error);
+        setApprovalHistory([]);
+      } else {
+        setApprovalHistory(data || []);
+      }
+    };
+
+    fetchApprovalHistory();
+  }, []);
+
 
   function getLatestResponseStatus(visaCode, approvalHistory) {
     const filtered = approvalHistory.filter((a) => a.PwpCode === visaCode);
@@ -220,7 +268,6 @@ export default function ApprovalsPage() {
   const [toDate, setToDate] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [todayOnly, setTodayOnly] = useState(false);
-  const [filteredData, setFilteredData] = useState(approvals || []);
   const [totalPages, setTotalPages] = useState(1);
   const pageSize = 10;
 
@@ -234,100 +281,109 @@ export default function ApprovalsPage() {
     setCurrentPage(1);
   }, [visaTypeFilter, statusFilter, fromDate, toDate, searchTerm, todayOnly]);
 
-  useEffect(() => {
-    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+  // FIXED FILTERING LOGIC
+
+  // ✅ Now filteredData can safely use all of these
+  const filteredData = approvals.filter((entry) => {
     const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-    const role = currentUser?.role || "";
+    const role = currentUser?.role?.toLowerCase() || "";
+    const entryDate = entry.created_at ? new Date(entry.created_at) : null;
 
-    const newFilteredData = approvals.filter((entry) => {
-      const entryStatus = entry.status?.toLowerCase();
-      const createdFormName = entry.createForm?.toLowerCase();
-      const entryDate = entry.created_at ? new Date(entry.created_at) : null;
+    if (visaTypeFilter) {
+      const code = entry.code?.toUpperCase() || "";
+      let type = "";
 
-      const matchesSearch = (() => {
-        const distributorName = getDistributorName(entry.distributor)
-          ?.toLowerCase()
-          .trim();
+      if (code.startsWith("R")) type = "REGULAR";
+      else if (code.startsWith("CL")) type = "CLAIMS";
+      else if (code.startsWith("C")) type = "COVER";
 
-        const searchValue = searchTerm.toLowerCase().trim();
-
-        return (
-          distributorName.includes(searchValue) ||
-          Object.values(entry).join(" ").toLowerCase().includes(searchValue)
-        );
-      })();
+      if (type !== visaTypeFilter) return false;
+    }
 
 
+    if (searchTerm) {
+      const searchValue = searchTerm.toLowerCase().trim();
+      const distributorName = getDistributorName(entry.distributor)?.toLowerCase() || "";
+      const userName = getUserNameById(entry.createForm)?.toLowerCase() || "";
+      const codeMatch = entry.code?.toLowerCase().includes(searchValue);
+      const createdFormMatch = (entry.createForm || "").toLowerCase().includes(searchValue);
 
-      const matchesStatus = statusFilter
-        ? entryStatus === statusFilter.toLowerCase()
-        : true;
+      const matchesSearch =
+        codeMatch ||
+        distributorName.includes(searchValue) ||
+        userName.includes(searchValue) ||
+        createdFormMatch;
 
-      const matchesDateRange =
-        fromDate && toDate
-          ? (() => {
-            if (!entryDate) return false;
-            const from = new Date(fromDate);
-            const to = new Date(toDate);
-            return entryDate >= from && entryDate <= to;
-          })()
-          : true;
+      if (!matchesSearch) return false;
+    }
 
-      const matchesToday = todayOnly
-        ? (() => {
-          if (!entryDate) return false;
-          const now = new Date();
-          return (
-            entryDate.getFullYear() === now.getFullYear() &&
-            entryDate.getMonth() === now.getMonth() &&
-            entryDate.getDate() === now.getDate()
-          );
-        })()
-        : true;
+    if (statusFilter) {
+      const entryStatus = getLatestResponseStatus(entry.code, approvalHistory);
+      const normalizedEntryStatus = entryStatus.toLowerCase();
+      const normalizedStatusFilter = statusFilter.toLowerCase();
 
-      const isUserAllowed =
-        role === "admin"
-          ? true
-          : createdFormName
-            ? (allowedApproverNames.includes(createdFormName) ||
-              createdFormName === myName.toLowerCase()) &&
-            createdFormName === currentUserName
-            : true;
+      if (
+        normalizedStatusFilter === "revision" ||
+        normalizedStatusFilter === "sent back for revision"
+      ) {
+        if (
+          normalizedEntryStatus !== "sent back for revision" &&
+          normalizedEntryStatus !== "revision"
+        ) {
+          return false;
+        }
+      } else if (normalizedEntryStatus !== normalizedStatusFilter) {
+        return false;
+      }
+    }
 
-      return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesDateRange &&
-        matchesToday &&
-        isUserAllowed
-      );
-    });
+    // 4. DATE RANGE FILTER
+    if (fromDate && toDate && entryDate) {
+      const from = new Date(fromDate);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
 
-    setFilteredData(newFilteredData);
-  }, [
-    approvals,
-    visaTypeFilter,
-    statusFilter,
-    fromDate,
-    toDate,
-    searchTerm,
-    todayOnly,
-    allowedApproverNames,
-    myName,
-  ]);
+      if (entryDate < from || entryDate > to) return false;
+    }
+
+    // 5. TODAY ONLY FILTER
+    if (todayOnly && entryDate) {
+      const now = new Date();
+      const isToday =
+        entryDate.getFullYear() === now.getFullYear() &&
+        entryDate.getMonth() === now.getMonth() &&
+        entryDate.getDate() === now.getDate();
+
+      if (!isToday) return false;
+    }
+
+    // 6. USER PERMISSION FILTER
+    const createdFormName = (entry.createForm || "").toLowerCase().trim();
+    if (role !== "admin") {
+      if (createdFormName !== currentUserName) return false;
+    }
+
+    return true;
+  });
 
   useEffect(() => {
     setTotalPages(Math.ceil(filteredData.length / pageSize));
   }, [filteredData]);
 
-  const paginatedData = filteredData
-    .filter((entry) => {
-      if (!visaTypeFilter) return true;
-      const firstLetter = entry.code?.charAt(0).toUpperCase();
-      let type = "";
-      if (firstLetter === "R") type = "REGULAR";
-      else if (firstLetter === "C") type = "COVER";
-      return type === visaTypeFilter;
+  const paginatedData = [...filteredData]
+    .sort((a, b) => {
+      const getPriority = (code) => {
+        if (code.startsWith("R")) return 1;
+        if (code.startsWith("CL")) return 2;
+        return 3;
+      };
+
+      const priorityA = getPriority(a.code);
+      const priorityB = getPriority(b.code);
+
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      return new Date(b.created_at) - new Date(a.created_at);
     })
     .slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -431,24 +487,8 @@ export default function ApprovalsPage() {
     fetchUserDetails();
   }, [approvalSetting, currentUser?.UserID]);
 
-  const [approvalHistory, setApprovalHistory] = useState([]);
 
-  useEffect(() => {
-    const fetchApprovalHistory = async () => {
-      const { data, error } = await supabase
-        .from("Approval_History")
-        .select("*");
 
-      if (error) {
-        console.error("Error fetching approval history:", error);
-        setApprovalHistory([]);
-      } else {
-        setApprovalHistory(data);
-      }
-    };
-
-    fetchApprovalHistory();
-  }, []);
 
   const handleDeclineClick = async (entryCode) => {
     const entry = approvals.find((item) => item.code === entryCode);
@@ -783,31 +823,6 @@ export default function ApprovalsPage() {
     }
   };
 
-  const [distributors, setDistributors] = useState([]);
-
-  useEffect(() => {
-    const fetchDistributors = async () => {
-      const { data, error } = await supabase
-        .from("distributors")
-        .select("code, name");
-
-      if (error) {
-        console.error("Error fetching distributors:", error);
-      } else {
-        setDistributors(data);
-      }
-    };
-
-    fetchDistributors();
-  }, []);
-
-  const getDistributorName = (code) => {
-    const distributor = distributors.find(
-      (d) => Number(d.code) === Number(code)
-    );
-    return distributor ? distributor.name : `Code: ${code}`;
-  };
-
   return (
     <div
       style={{
@@ -894,6 +909,8 @@ export default function ApprovalsPage() {
             <option value="">All Marketing Types</option>
             <option value="REGULAR">REGULAR</option>
             <option value="COVER">COVER</option>
+            <option value="CLAIMS">CLAIMS</option>
+
           </select>
         </div>
 
@@ -1026,10 +1043,23 @@ export default function ApprovalsPage() {
                   const role = currentUser?.role?.toLowerCase() || "";
 
                   if (role === "admin") return true;
-
                   return (entry.createForm || "").toLowerCase().trim() === currentUserId;
                 })
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .sort((a, b) => {
+                  const getPriority = (code) => {
+                    if (code.startsWith("R")) return 1;   // Regular first
+                    if (code.startsWith("CL")) return 2;  // CL second
+                    return 3;                             // Others
+                  };
+
+                  const priorityA = getPriority(a.code);
+                  const priorityB = getPriority(b.code);
+
+                  if (priorityA !== priorityB) return priorityA - priorityB;
+
+                  // If same category, sort newest first
+                  return new Date(b.created_at) - new Date(a.created_at);
+                })
                 .map((entry, index) => {
                   const status = getLatestResponseStatus(entry.code, approvalHistory);
                   const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
