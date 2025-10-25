@@ -103,6 +103,8 @@ const UserManagement = ({ setCurrentView }) => {
 
     fetchUsers();
   }, []);
+
+
   const [disableDays, setDisableDays] = useState(null);
   const deleteAccountUser = async (userId, userName) => {
     if (!userId) {
@@ -657,39 +659,39 @@ const UserManagement = ({ setCurrentView }) => {
   };
 
 
-const [showPasswordConfirmModal, setShowPasswordConfirmModal] = useState(false);
-const [confirmPassword, setConfirmPassword] = useState('');
-const [passwordError, setPasswordError] = useState('');
+  const [showPasswordConfirmModal, setShowPasswordConfirmModal] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
 
- let attemptCount = 0;
-let lockoutUntil = null;
+  let attemptCount = 0;
+  let lockoutUntil = null;
 
-const openCreateModal = async () => {
-  const now = new Date().getTime();
+  const openCreateModal = async () => {
+    const now = new Date().getTime();
 
-  // Lockout check
-  if (lockoutUntil && now < lockoutUntil) {
-    const secondsLeft = Math.ceil((lockoutUntil - now) / 1000);
-    await Swal.fire({
-      icon: 'warning',
-      title: 'Too many attempts',
-      html: `Please wait <b>${secondsLeft}</b> seconds before trying again.`,
-    });
-    return;
-  }
+    // Lockout check
+    if (lockoutUntil && now < lockoutUntil) {
+      const secondsLeft = Math.ceil((lockoutUntil - now) / 1000);
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Too many attempts',
+        html: `Please wait <b>${secondsLeft}</b> seconds before trying again.`,
+      });
+      return;
+    }
 
-  // Reset lockout if time passed
-  if (lockoutUntil && now >= lockoutUntil) {
-    attemptCount = 0;
-    lockoutUntil = null;
-  }
+    // Reset lockout if time passed
+    if (lockoutUntil && now >= lockoutUntil) {
+      attemptCount = 0;
+      lockoutUntil = null;
+    }
 
-  let passwordVisible = false;
+    let passwordVisible = false;
 
-  const { value: password } = await Swal.fire({
-    title: 'Enter Password',
-    html: `
+    const { value: password } = await Swal.fire({
+      title: 'Enter Password',
+      html: `
       <div style="display: flex; align-items: center; position: relative;">
         <input id="swal-password-input" type="password" class="swal2-input" placeholder="Enter password" style="padding-right: 40px;" />
         <span id="toggle-password-icon"
@@ -698,74 +700,74 @@ const openCreateModal = async () => {
         </span>
       </div>
     `,
-    focusConfirm: false,
-    showCancelButton: true,
-    confirmButtonText: 'Confirm',
-    cancelButtonText: 'Cancel',
-    preConfirm: () => {
-      const input = document.getElementById('swal-password-input').value;
-      if (!input) {
-        Swal.showValidationMessage('Please enter a password');
-        return;
-      }
-      return input;
-    },
-    didOpen: () => {
-      const input = document.getElementById('swal-password-input');
-      const toggleIcon = document.getElementById('toggle-password-icon');
-
-      toggleIcon.addEventListener('click', () => {
-        passwordVisible = !passwordVisible;
-        input.type = passwordVisible ? 'text' : 'password';
-        toggleIcon.textContent = passwordVisible ? '🙈' : '👁️';
-      });
-
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          Swal.clickConfirm();
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Confirm',
+      cancelButtonText: 'Cancel',
+      preConfirm: () => {
+        const input = document.getElementById('swal-password-input').value;
+        if (!input) {
+          Swal.showValidationMessage('Please enter a password');
+          return;
         }
-      });
-    },
-  });
+        return input;
+      },
+      didOpen: () => {
+        const input = document.getElementById('swal-password-input');
+        const toggleIcon = document.getElementById('toggle-password-icon');
 
-  if (!password) return; // Cancelled
+        toggleIcon.addEventListener('click', () => {
+          passwordVisible = !passwordVisible;
+          input.type = passwordVisible ? 'text' : 'password';
+          toggleIcon.textContent = passwordVisible ? '🙈' : '👁️';
+        });
 
-  if (password === 'QSIT') { // <-- Change your correct password here
-    setNewUserData({
-      name: '',
-      role: '',
-      email: '',
-      username: '',
-      password: '',
-      position: '',
-      group: '',
-      contactNumber: '',
-      isActive: true,
-      profilePicture: '',
-      licensekey: '',
-      PermissionRole: '',
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            Swal.clickConfirm();
+          }
+        });
+      },
     });
-    setModalType('create');
-    attemptCount = 0; // reset attempts on success
-  } else {
-    attemptCount++;
-    if (attemptCount >= 5) {
-      lockoutUntil = new Date().getTime() + 60 * 1000; // lockout 1 minute
-      await Swal.fire({
-        icon: 'error',
-        title: 'Too many failed attempts',
-        text: 'You are locked out for 1 minute.',
+
+    if (!password) return; // Cancelled
+
+    if (password === 'QSIT') { // <-- Change your correct password here
+      setNewUserData({
+        name: '',
+        role: '',
+        email: '',
+        username: '',
+        password: '',
+        position: '',
+        group: '',
+        contactNumber: '',
+        isActive: true,
+        profilePicture: '',
+        licensekey: '',
+        PermissionRole: '',
       });
+      setModalType('create');
+      attemptCount = 0; // reset attempts on success
     } else {
-      await Swal.fire({
-        icon: 'error',
-        title: 'Incorrect password',
-        text: `Please try again. (${5 - attemptCount} attempt(s) left)`,
-      });
-      openCreateModal(); // Retry modal
+      attemptCount++;
+      if (attemptCount >= 5) {
+        lockoutUntil = new Date().getTime() + 60 * 1000; // lockout 1 minute
+        await Swal.fire({
+          icon: 'error',
+          title: 'Too many failed attempts',
+          text: 'You are locked out for 1 minute.',
+        });
+      } else {
+        await Swal.fire({
+          icon: 'error',
+          title: 'Incorrect password',
+          text: `Please try again. (${5 - attemptCount} attempt(s) left)`,
+        });
+        openCreateModal(); // Retry modal
+      }
     }
-  }
-};
+  };
 
 
 
@@ -822,7 +824,7 @@ const openCreateModal = async () => {
   // Your existing Firebase function (unchanged)
 
   const handleCreateUserSubmit = async (e) => {
-    e.preventDefault(); // prevent default form submission
+    e.preventDefault();
 
     if (!newUserData.licensekey || newUserData.licensekey.trim() === '') {
       Swal.fire({
@@ -834,7 +836,8 @@ const openCreateModal = async () => {
     }
 
     try {
-      const result = await saveNewUser(); // your existing saveNewUser function
+      const result = await saveNewUser(); // Supabase-only function
+
       Swal.fire({
         icon: 'success',
         title: 'User Created!',
@@ -846,10 +849,10 @@ const openCreateModal = async () => {
       setModalType(null); // close modal
       setNewUserData({}); // reset form state
 
-      // Reload the page after the success alert closes
+      // Optional: reload or update local state
       setTimeout(() => {
         window.location.reload();
-      }, 2500); // same delay as Swal timer
+      }, 2500);
 
     } catch (error) {
       Swal.fire({
@@ -866,7 +869,7 @@ const openCreateModal = async () => {
 
     const licenseKey = newUserData.licensekey?.trim();
 
-    // 🔒 Step 0: Check for duplicate license key BEFORE any inserts
+    // Step 0: Check for duplicate license key
     if (licenseKey) {
       const { data: existingLicense, error: licenseCheckError } = await supabase
         .from('license_keys')
@@ -874,18 +877,11 @@ const openCreateModal = async () => {
         .eq('licensekey', licenseKey)
         .maybeSingle();
 
-      if (licenseCheckError) {
-        console.error('License key lookup error:', licenseCheckError);
-        throw licenseCheckError;
-      }
-
-      if (existingLicense) {
-        // ⛔ License key already exists — throw error and stop here
-        throw new Error(`License key "${licenseKey}" already exists. Please use a different one.`);
-      }
+      if (licenseCheckError) throw licenseCheckError;
+      if (existingLicense) throw new Error(`License key "${licenseKey}" already exists. Please use a different one.`);
     }
 
-    // ✅ Step 1: Get max UserID
+    // Step 1: Get max UserID
     const { data: maxUserIdData, error: maxUserIdError } = await supabase
       .from('Account_Users')
       .select('UserID')
@@ -893,10 +889,7 @@ const openCreateModal = async () => {
       .limit(1)
       .single();
 
-    if (maxUserIdError && maxUserIdError.code !== 'PGRST116') {
-      console.error('Error fetching max UserID:', maxUserIdError);
-      throw maxUserIdError;
-    }
+    if (maxUserIdError && maxUserIdError.code !== 'PGRST116') throw maxUserIdError;
 
     let newUserID = (maxUserIdData?.UserID ?? 0) + 1;
 
@@ -907,58 +900,46 @@ const openCreateModal = async () => {
       .eq('UserID', newUserID)
       .limit(1);
 
-    if (fetchError) {
-      console.error('Error checking existing user:', fetchError);
-      throw fetchError;
-    }
-
+    if (fetchError) throw fetchError;
     if (existingUsers.length > 0) newUserID++;
 
-    // ✅ Step 3: Insert new user
+    // Step 3: Insert new user
     const userDataToSave = {
       UserID: newUserID,
       role: keyType,
       name: newUserData.name || null,
-      salesGroup: newUserData.salesGroup || null,  // Convert empty string to null
+      salesGroup: newUserData.salesGroup || null,
       email: newUserData.email || null,
-      position: newUserData.position || null,      // Convert empty string to null
-      department: newUserData.department || null,  // Convert empty string to null
+      position: newUserData.position || null,
+      department: newUserData.department || null,
       contactNumber: newUserData.contactNumber || null,
-      isActive: newUserData.isActive ?? true,      // Default to true if undefined
+      isActive: newUserData.isActive ?? true,
       profilePicture: newUserData.profilePicture || null,
       username: newUserData.username,
       password: newUserData.password,
       licensekey: licenseKey || null,
-      PermissionRole: newUserData.PermissionRole || null,  // Convert empty string to null
+      PermissionRole: newUserData.PermissionRole || null,
     };
+
     const { data: insertedUsers, error: insertError } = await supabase
       .from('Account_Users')
       .insert(userDataToSave)
       .select('id');
 
-    if (insertError) {
-      console.error('Insert error:', insertError);
-      throw insertError;
-    }
-
-    if (!insertedUsers || insertedUsers.length === 0 || !insertedUsers[0]) {
-      console.error('User insert returned no data or unexpected format:', insertedUsers);
+    if (insertError) throw insertError;
+    if (!insertedUsers || insertedUsers.length === 0 || !insertedUsers[0])
       throw new Error('User insert returned no data');
-    }
 
     const userId = insertedUsers[0].id;
 
-    // ✅ Step 4: Add default security settings
+    // Step 4: Add default security settings
     const { data: existingSettings, error: settingsFetchError } = await supabase
       .from('Account_SecuritySettings')
       .select('UserCode')
       .eq('UserCode', newUserID.toString())
       .limit(1);
 
-    if (settingsFetchError) {
-      console.error('Error checking user settings:', settingsFetchError);
-      throw settingsFetchError;
-    }
+    if (settingsFetchError) throw settingsFetchError;
 
     if (!existingSettings || existingSettings.length === 0) {
       const defaultSettings = {
@@ -974,13 +955,10 @@ const openCreateModal = async () => {
         .from('Account_SecuritySettings')
         .insert(defaultSettings);
 
-      if (settingsInsertError) {
-        console.error('Settings insert error:', settingsInsertError);
-        throw settingsInsertError;
-      }
+      if (settingsInsertError) throw settingsInsertError;
     }
 
-    // ✅ Step 5: Insert new license key
+    // Step 5: Insert new license key
     if (licenseKey) {
       let validUntil = null;
       const storedUserRaw = localStorage.getItem('selectedLicenseUser');
@@ -1007,35 +985,7 @@ const openCreateModal = async () => {
         .from('license_keys')
         .insert(licenseKeyRecord);
 
-      if (licenseInsertError) {
-        console.error('License key insert error:', licenseInsertError);
-        throw licenseInsertError;
-      }
-
-      // ✅ Update Firestore license user to isTaken = true safely
-      try {
-        const storedUser = JSON.parse(localStorage.getItem('selectedLicenseUser'));
-        if (storedUser?.id) {
-          const licenseDocRef = doc(db, "LicenseUsers", storedUser.id);
-          const docSnap = await getDoc(licenseDocRef);
-
-          if (docSnap.exists()) {
-            await updateDoc(licenseDocRef, {
-              isTaken: true,
-            });
-            console.log(`✅ Firestore: Marked license ID ${storedUser.id} as taken`);
-          } else {
-            // Document does not exist, create it instead of update
-            await setDoc(licenseDocRef, { isTaken: true }, { merge: true });
-            console.log(`⚠️ Firestore: LicenseUsers/${storedUser.id} didn't exist, created with isTaken=true`);
-          }
-        } else {
-          console.warn("⚠️ Could not find stored license user ID to update in Firestore");
-        }
-      } catch (error) {
-        console.error("❌ Failed to update isTaken in Firestore:", error);
-        throw error;
-      }
+      if (licenseInsertError) throw licenseInsertError;
     }
 
     return { id: userId, UserID: newUserID };
@@ -1121,106 +1071,108 @@ const openCreateModal = async () => {
     }
     return false;
   }
-  const saveEditedUser = async (e) => {
-    e.preventDefault();
-    if (!selectedUser || !supabaseUserId || !originalSupabaseData) return;
+const saveEditedUser = async (e) => {
+  e.preventDefault();
+  if (!selectedUser || !supabaseUserId || !originalSupabaseData) return;
 
-    try {
-      // 1. Check duplicate license key if needed
-      if (showLicenseUpdate && editUserData.licensekey) {
-        const duplicate = await isLicenseKeyDuplicate(editUserData.licensekey, supabaseUserId);
-        if (duplicate) {
-          Swal.fire('Duplicate License', 'This license key is already assigned to another user.', 'error')
-            .then(() => window.location.reload());
-          return;
-        }
+  try {
+    // 1️⃣ Optional duplicate license check
+    if (showLicenseUpdate && editUserData.licensekey) {
+      const duplicate = await isLicenseKeyDuplicate(editUserData.licensekey, supabaseUserId);
+      if (duplicate) {
+        Swal.fire(
+          "Duplicate License",
+          "This license key is already assigned to another user.",
+          "error"
+        ).then(() => window.location.reload());
+        return;
       }
+    }
 
-      // 2. Build payload for user update
-      // NOTE: Use IDs here from editUserData, assuming they are saved as IDs in the form.
-      const updatePayload = {
-        role: editUserData.keyType,
-        name: editUserData.name || null,
-        salesGroup: editUserData.salesGroup || null,
-        email: editUserData.email || null,
-        position: editUserData.position || null,
-        department: editUserData.department || null,
-        contactNumber: editUserData.contactNumber || null,
-        profilePicture: editUserData.profilePicture || null,
-        username: editUserData.username || null,
-        password: editUserData.password || null,
-        PermissionRole: editUserData.PermissionRole || null,
+    // 2️⃣ Prepare user update payload
+    const updatePayload = {
+      role: editUserData.keyType || null,
+      name: editUserData.name || null,
+      salesGroup: editUserData.salesGroup || null,
+      email: editUserData.email || null,
+      position: editUserData.position || null,
+      department: editUserData.department || null,
+      contactNumber: editUserData.contactNumber || null,
+      profilePicture: editUserData.profilePicture || null,
+      username: editUserData.username || null,
+      password: editUserData.password || null,
+      PermissionRole: editUserData.PermissionRole || null,
+      ...(showLicenseUpdate && { licensekey: editUserData.licensekey || null }),
+    };
+
+    // Remove undefined values
+    Object.keys(updatePayload).forEach(
+      (key) => updatePayload[key] === undefined && delete updatePayload[key]
+    );
+
+    // 3️⃣ Update main Account_Users table
+    const { error: userUpdateError } = await supabase
+      .from("Account_Users")
+      .update(updatePayload)
+      .eq("id", supabaseUserId);
+
+    if (userUpdateError) throw userUpdateError;
+
+    // 4️⃣ Sync license_keys table by UserID
+    if (showLicenseUpdate && editUserData.licensekey) {
+      const licensePayload = {
+        licensekey: editUserData.licensekey,
+        status: "Active",
+        valid_until: convertToPostgresDate(editUserData.subscriptionEnd),
+        UserID: originalSupabaseData?.UserID || null,
       };
 
+      // Check if license record already exists for this UserID
+      const { data: existingLicense, error: checkError } = await supabase
+        .from("license_keys")
+        .select("KEY")
+        .eq("UserID", originalSupabaseData?.UserID)
+        .maybeSingle();
 
-      if (showLicenseUpdate) {
-        updatePayload.licensekey = editUserData.licensekey || null;
+      if (checkError) throw checkError;
+
+      if (existingLicense) {
+        // ✅ Update existing license record
+        const { error: licenseUpdateError } = await supabase
+          .from("license_keys")
+          .update(licensePayload)
+          .eq("UserID", originalSupabaseData?.UserID);
+
+        if (licenseUpdateError) throw licenseUpdateError;
+      } else {
+        // ✅ Insert new license record if none found
+        const { error: licenseInsertError } = await supabase
+          .from("license_keys")
+          .insert([licensePayload]);
+
+        if (licenseInsertError) throw licenseInsertError;
       }
-
-      // Clean undefined
-      Object.keys(updatePayload).forEach(
-        (key) => updatePayload[key] === undefined && delete updatePayload[key]
-      );
-
-      // 3. Update main user record
-      const { error: userUpdateError } = await supabase
-        .from('Account_Users')
-        .update(updatePayload)
-        .eq('id', supabaseUserId);
-
-      if (userUpdateError) throw userUpdateError;
-
-      // 4. Update license_keys table if needed (same as before)
-      if (showLicenseUpdate && editUserData.licensekey) {
-        const { data: existingLicense, error: licenseFetchError } = await supabase
-          .from('license_keys')
-          .select('id')
-          .eq('licensekey', editUserData.licensekey)
-          .limit(1);
-
-        if (licenseFetchError) throw licenseFetchError;
-
-        const licensePayload = {
-          UserKey: supabaseUserId,
-          UserID: originalSupabaseData?.UserID,
-          status: 'Active',
-          valid_until: convertToPostgresDate(editUserData.subscriptionEnd),
-        };
-
-        if (existingLicense && existingLicense.length > 0) {
-          const licenseId = existingLicense[0].id;
-
-          const { error: licenseUpdateError } = await supabase
-            .from('license_keys')
-            .update(licensePayload)
-            .eq('id', licenseId);
-
-          if (licenseUpdateError) throw licenseUpdateError;
-        } else {
-          const { error: licenseInsertError } = await supabase
-            .from('license_keys')
-            .insert([{ licensekey: editUserData.licensekey, ...licensePayload }]);
-
-          if (licenseInsertError) throw licenseInsertError;
-        }
-      }
-
-      localStorage.removeItem('selectedLicenseUser');
-      localStorage.removeItem('selectedLicenseKey');
-
-      // 5. Show success and reset
-      Swal.fire('Success', 'User updated successfully!', 'success').then(() => {
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-        }
-        setModalType(null);
-        window.location.reload();
-      });
-
-    } catch (error) {
-      Swal.fire('Error', error.message || 'Failed to update user', 'error');
     }
-  };
+
+    // 5️⃣ Cleanup + Success
+    localStorage.removeItem("selectedLicenseUser");
+    localStorage.removeItem("selectedLicenseKey");
+
+    Swal.fire("Success", "User updated successfully!", "success").then(() => {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      setModalType(null);
+      window.location.reload();
+    });
+  } catch (error) {
+    console.error("Save Edited User Error:", error);
+    Swal.fire("Error", error.message || "Failed to update user", "error");
+  }
+};
+
+
+
   const convertToPostgresDate = (input) => {
     if (!input) return null;
 
@@ -1966,67 +1918,155 @@ const openCreateModal = async () => {
   }, [selectedService]);
 
 
-
   const handleRowClick = async (user) => {
+    const newIsTaken = !user.isTaken; // toggle
+    const userRef = doc(
+      db,
+      "services",
+      selectedService.id,
+      "clients",
+      selectedClientId,
+      "users",
+      user.id
+    );
+
     try {
-      const userRef = doc(
-        db,
-        "services",
-        selectedService.id,
-        "clients",
-        client.id,
-        "users",
-        user.id
-      );
+      // Update Firestore
+      await setDoc(userRef, { isTaken: newIsTaken }, { merge: true });
 
-      // ✅ Set isTaken with merge (creates document if it doesn't exist)
-      await setDoc(userRef, { isTaken: true }, { merge: true });
-
-      // ✅ Local UI state update
-      setUsers(prev =>
-        prev.map(u =>
-          u.id === user.id ? { ...u, isTaken: true } : u
-        )
-      );
-
-      // ✅ Save to localStorage
-      localStorage.setItem("selectedLicenseUser", JSON.stringify(user));
-      const licenseKey = user.licenseKey || '';
-      localStorage.setItem("selectedLicenseKey", licenseKey);
-
-      // ✅ Set form values
-      setNewUserData(prev => ({
+      // Update local state
+      setUsersByClient(prev => ({
         ...prev,
-        licensekey: licenseKey,
-        userCode: user.userCode || '',
-        subscriptionStart: user.subscriptionStart,
-        subscriptionEnd: user.subscriptionEnd,
+        [selectedClientId]: prev[selectedClientId].map(u =>
+          u.id === user.id ? { ...u, isTaken: newIsTaken } : u
+        ),
       }));
 
-      setSelectedUser(user);
+      if (newIsTaken) {
+        const licenseKey = user.licenseKey || '';
+        localStorage.setItem("selectedLicenseUser", JSON.stringify({ ...user, isTaken: true }));
+        localStorage.setItem("selectedLicenseKey", licenseKey);
+
+        setNewUserData(prev => ({
+          ...prev,
+          licensekey: licenseKey,
+          userCode: user.userCode || '',
+          subscriptionStart: user.subscriptionStart,
+          subscriptionEnd: user.subscriptionEnd,
+        }));
+
+        setSelectedUser({ ...user, isTaken: true });
+
+        await Swal.fire({
+          icon: 'success',
+          title: 'License Assigned!',
+          text: `User ${user.userCode || user.id} marked as taken.`,
+          confirmButtonColor: '#3085d6',
+          confirmButtonText: 'OK'
+        });
+      } else {
+        localStorage.removeItem("selectedLicenseUser");
+        localStorage.removeItem("selectedLicenseKey");
+        setSelectedUser(null);
+        setNewUserData({
+          licensekey: '',
+          userCode: '',
+          subscriptionStart: null,
+          subscriptionEnd: null,
+        });
+
+        await Swal.fire({
+          icon: 'info',
+          title: 'License Released',
+          text: `User ${user.userCode || user.id} is now available.`,
+          confirmButtonColor: '#6c757d',
+          confirmButtonText: 'OK'
+        });
+      }
+
       setLicenseModalOpen(false);
 
-      // ✅ Success alert
-      await Swal.fire({
-        icon: 'success',
-        title: 'License Assigned!',
-        text: `User ${user.userCode || user.id} marked as taken.`,
-        confirmButtonColor: '#3085d6',
-        confirmButtonText: 'OK'
-      });
-
     } catch (error) {
-      console.error("❌ Failed to mark license as taken:", error);
-
+      console.error("❌ Failed to toggle license:", error);
       await Swal.fire({
         icon: 'error',
         title: 'Error!',
-        text: 'Failed to assign the license.',
+        text: 'Failed to toggle the license.',
         confirmButtonColor: '#d33',
         confirmButtonText: 'Close'
       });
     }
   };
+
+
+const RenewhandleRowClick = async (user) => {
+  if (!user || !user.licenseKey) return;
+
+  try {
+    const newIsTaken = !user.isTaken; // toggle isTaken
+
+    // ✅ Firestore document reference
+    const userRef = doc(
+      db,
+      "services",
+      selectedService.id,
+      "clients",
+      selectedClientId,
+      "users",
+      user.id
+    );
+
+    // ✅ 1. Update Firestore record
+    await setDoc(userRef, { isTaken: newIsTaken }, { merge: true });
+
+    // ✅ 2. Update local state to reflect change
+    setUsersByClient((prev) => ({
+      ...prev,
+      [selectedClientId]: prev[selectedClientId].map((u) =>
+        u.id === user.id ? { ...u, isTaken: newIsTaken } : u
+      ),
+    }));
+
+    // ✅ 3. Update form fields
+    setEditUserData((prev) => ({
+      ...prev,
+      licensekey: user.licenseKey,
+      subscriptionStart: user.subscriptionStart,
+      subscriptionEnd: user.subscriptionEnd,
+    }));
+
+    // ✅ 4. Save to localStorage with updated `isTaken: true`
+    localStorage.setItem(
+      "selectedLicenseUser",
+      JSON.stringify({ ...user, isTaken: true })
+    );
+    localStorage.setItem("selectedLicenseKey", user.licenseKey);
+
+    // ✅ 5. Log for debugging
+    console.log("🎯 Selected License Data:", {
+      licenseKey: user.licenseKey,
+      userCode: user.userCode || "N/A",
+      subscriptionStart: user.subscriptionStart,
+      subscriptionEnd: user.subscriptionEnd,
+      isTaken: newIsTaken,
+    });
+
+    // ✅ 6. Close modal and show success alert
+    setLicenseModalOpen(false);
+    await Swal.fire({
+      icon: "success",
+      title: "License Selected",
+      text: `License ${user.licenseKey} has been selected.`,
+      confirmButtonColor: "#3085d6",
+    });
+  } catch (err) {
+    console.error("❌ Error selecting license:", err);
+    Swal.fire("Error", err.message || "Failed to select license", "error");
+  }
+};
+
+
+
 
   const handleRowClickedit = (user) => {
     console.log('Clicked user:', user);
@@ -2182,15 +2222,15 @@ const openCreateModal = async () => {
   };
 
   const handleSelectAll = () => {
-  // Select all filtered distributors
-  const allFilteredNames = filteredDistributors.map(d => d.name);
-  setSelectedDistributors(allFilteredNames);
-};
+    // Select all filtered distributors
+    const allFilteredNames = filteredDistributors.map(d => d.name);
+    setSelectedDistributors(allFilteredNames);
+  };
 
-const handleClearAll = () => {
-  // Clear all selections
-  setSelectedDistributors([]);
-};
+  const handleClearAll = () => {
+    // Clear all selections
+    setSelectedDistributors([]);
+  };
 
   const [savedDistributors, setSavedDistributors] = useState([]);
 
@@ -2334,7 +2374,7 @@ const handleClearAll = () => {
         text: `${newDistributorsToSave.length} new distributor(s) saved successfully!`,
         confirmButtonColor: '#3085d6',
       });
-    setModalType(null);
+      setModalType(null);
 
       // Refresh saved distributors list
       await fetchSavedDistributors(supabaseUsername);
@@ -2726,6 +2766,112 @@ const handleClearAll = () => {
 
 
 
+
+  // 🧩 Function to remove a license key
+  const handleRemoveLicenseKey = async (key, setEditUserData) => {
+    if (!key) return;
+
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: 'This will permanently delete the license key from the database.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, delete it',
+      cancelButtonText: 'Cancel',
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      // 🗑️ Delete license key from Supabase
+      const { error: deleteError } = await supabase
+        .from('license_keys')
+        .delete()
+        .eq('licensekey', key);
+
+      if (deleteError) {
+        console.error('Error deleting license key:', deleteError);
+        await Swal.fire('Error', 'Failed to delete license key.', 'error');
+        return;
+      }
+
+      // 🧹 Clear the form state
+      setEditUserData(prev => ({ ...prev, licensekey: '' }));
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Deleted!',
+        text: 'License key has been permanently removed.',
+        timer: 1800,
+        showConfirmButton: false,
+      });
+
+    } catch (err) {
+      console.error('Unexpected error while deleting license key:', err);
+      await Swal.fire('Error', 'Unexpected error occurred.', 'error');
+    }
+  };
+const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
+  if (!currentKey) {
+    await Swal.fire(
+      'No License Key',
+      'This user does not have a license key to renew.',
+      'info'
+    );
+    return;
+  }
+
+  const result = await Swal.fire({
+    title: 'Renew License Key?',
+    text: 'This will clear the current license key and allow selecting a new one.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, renew it',
+    cancelButtonText: 'Cancel',
+  });
+
+  if (!result.isConfirmed) return;
+
+  try {
+    // 🧹 Step 1: Clear licensekey in frontend form
+    setEditUserData((prev) => ({ ...prev, licensekey: '' }));
+
+    // 🧭 Step 2: Clear licensekey in Supabase (no deletion)
+    const { error: updateError } = await supabase
+      .from('Account_Users') // ✅ your actual table name
+      .update({ licensekey: '' })
+      .eq('licensekey', currentKey);
+
+    if (updateError) {
+      console.error('Error clearing old license key:', updateError);
+      await Swal.fire('Error', 'Failed to clear old license key.', 'error');
+      return;
+    }
+
+    // 🪄 Step 3: Show modal to pick a new license
+    fetchLicenseCards();
+    setLicenseModalOpen(true);
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'License Key Cleared',
+      text: 'Now select a new license key to renew the subscription.',
+      timer: 2000,
+      showConfirmButton: false,
+    });
+  } catch (err) {
+    console.error('Unexpected error during license renewal:', err);
+    await Swal.fire(
+      'Error',
+      'Unexpected error occurred while renewing license.',
+      'error'
+    );
+  }
+};
+
+
+
   return (
     <Container fluid className="py-4">
       <h2 className="my-4">User Management</h2>
@@ -2891,7 +3037,7 @@ const handleClearAll = () => {
                       >
                         <FaUserShield />
                       </Button>
-                      <Button
+                      {/* <Button
                         variant="outline-warning"
                         size="sm"
                         onClick={() => openModal(user, 'Distributor')}
@@ -2918,7 +3064,7 @@ const handleClearAll = () => {
                         className="mb-1"
                       >
                         <FaListAlt />
-                      </Button>
+                      </Button> */}
 
                       <Button
                         variant="outline-info"
@@ -3004,7 +3150,7 @@ const handleClearAll = () => {
 
 
 
-  
+
 
       {/* Create Modals */}
 
@@ -3125,7 +3271,13 @@ const handleClearAll = () => {
                   </div>
                 </Form.Group>
 
-                <Modal show={licenseModalOpen} onHide={() => setLicenseModalOpen(false)} centered size="xl" scrollable>
+                <Modal
+                  show={licenseModalOpen}
+                  onHide={() => setLicenseModalOpen(false)}
+                  centered
+                  size="xl"
+                  scrollable
+                >
                   <Modal.Header closeButton>
                     <Modal.Title>Select License Key</Modal.Title>
                   </Modal.Header>
@@ -3288,37 +3440,18 @@ const handleClearAll = () => {
                                               </tr>
                                             </thead>
                                             <tbody>
-                                              {usersByClient[client.id].map((user) => {
+                                              {usersByClient[selectedClientId]?.map((user) => {
                                                 const isTaken = user.isTaken;
-
-                                                // Colors & styles for taken and available users
-                                                const rowStyle = {
-                                                  cursor: isTaken ? "default" : "pointer",
-                                                  backgroundColor: isTaken ? "#e9ecef" : "transparent",
-                                                  color: isTaken ? "#6c757d" : "inherit",
-                                                  pointerEvents: isTaken ? "none" : "auto",
-                                                  transition: "background-color 0.3s ease",
-                                                };
-
-                                                const hoverBg = isTaken ? "#dee2e6" : "#cff4fc";
 
                                                 return (
                                                   <tr
                                                     key={user.id}
-                                                    style={rowStyle}
-                                                    onClick={() => !isTaken && handleRowClick(user)}
-                                                    onMouseEnter={(e) => {
-                                                      e.currentTarget.style.backgroundColor = hoverBg;
+                                                    style={{
+                                                      cursor: "default",
+                                                      backgroundColor: isTaken ? "#e9ecef" : "transparent",
+                                                      color: isTaken ? "#6c757d" : "inherit",
+                                                      transition: "background-color 0.3s ease",
                                                     }}
-                                                    onMouseLeave={(e) => {
-                                                      e.currentTarget.style.backgroundColor = rowStyle.backgroundColor;
-                                                    }}
-                                                    aria-disabled={isTaken}
-                                                    aria-label={
-                                                      isTaken
-                                                        ? `User ${user.userCode || 'N/A'} is taken`
-                                                        : `Select user ${user.userCode || 'N/A'}`
-                                                    }
                                                   >
                                                     <td>{user.licenseKey}</td>
                                                     <td>{user.userCode || "N/A"}</td>
@@ -3327,15 +3460,21 @@ const handleClearAll = () => {
                                                         ? new Date(user.createdAt.seconds * 1000).toLocaleString()
                                                         : "Unknown"}
                                                     </td>
-                                                    <td
-                                                      style={{
-                                                        backgroundColor: isTaken ? "#f8d7da" : "transparent",
-                                                        color: isTaken ? "#721c24" : "inherit",
-                                                        fontWeight: "600",
-                                                        textAlign: "center",
-                                                      }}
-                                                    >
-                                                      {isTaken ? "Yes" : "No"}
+                                                    <td className="text-center">
+                                                      <div className="form-check form-switch d-flex justify-content-center align-items-center">
+                                                        <input
+                                                          className="form-check-input"
+                                                          type="checkbox"
+                                                          checked={isTaken}
+                                                          onChange={(e) => {
+                                                            e.stopPropagation();
+                                                            handleRowClick(user);
+                                                          }}
+                                                        />
+                                                        <label className="form-check-label ms-1">
+                                                          {isTaken ? "Yes" : "No"}
+                                                        </label>
+                                                      </div>
                                                     </td>
                                                     <td>{formatDate(user.subscriptionStart)}</td>
                                                     <td>{formatDate(user.subscriptionEnd)}</td>
@@ -3343,6 +3482,8 @@ const handleClearAll = () => {
                                                 );
                                               })}
                                             </tbody>
+
+
                                           </table>
                                         </div>
                                       ) : (
@@ -3704,74 +3845,17 @@ const handleClearAll = () => {
                           name="licensekey"
                           value={editUserData.licensekey || ''}
                           onChange={handleEditUserChange}
+                          readOnly // prevent manual typing when renewing
                         />
 
                         {/* Browse Button */}
+                     
+                        {/* Renew Button */}
                         <button
                           type="button"
                           className="glass-button"
-                          onClick={() => {
-                            fetchLicenseCards();
-                            setLicenseModalOpen(true);
-                          }}
-                          title="Browse license keys"
-                          style={{
-                            position: 'absolute',
-                            top: '50%',
-                            right: 36,
-                            transform: 'translateY(-50%)',
-                            border: 'none',
-                            background: 'transparent',
-                            fontSize: '18px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          🔍
-                        </button>
-
-                        {/* Remove Button */}
-                        <button
-                          type="button"
-                          className="glass-button"
-                          title="Remove License Key"
-                          onClick={async () => {
-                            const key = editUserData.licensekey;
-                            if (!key) return;
-
-                            const result = await Swal.fire({
-                              title: 'Are you sure?',
-                              text: 'Do you want to remove this license key?',
-                              icon: 'warning',
-                              showCancelButton: true,
-                              confirmButtonText: 'Yes, remove it',
-                              cancelButtonText: 'No, keep it',
-                              reverseButtons: true,
-                            });
-
-                            if (result.isConfirmed) {
-                              try {
-                                const { error: updateError } = await supabase
-                                  .from('license_keys')
-                                  .update({
-                                    UserID: 0,
-                                    status: 'Inactive',
-                                    UserKey: null,
-                                  })
-                                  .eq('licensekey', key);
-
-                                if (updateError) {
-                                  console.error('Error resetting license key:', updateError);
-                                  Swal.fire('Error', 'Failed to reset license key', 'error');
-                                } else {
-                                  setEditUserData(prev => ({ ...prev, licensekey: '' }));
-                                  Swal.fire('Success', 'License key removed successfully.', 'success');
-                                }
-                              } catch (err) {
-                                console.error('Unexpected error:', err);
-                                Swal.fire('Error', 'Unexpected error occurred', 'error');
-                              }
-                            }
-                          }}
+                          title="Renew License Key"
+                          onClick={() => handleRenewLicenseKey(editUserData.licensekey, setEditUserData)}
                           style={{
                             position: 'absolute',
                             top: '50%',
@@ -3780,64 +3864,81 @@ const handleClearAll = () => {
                             border: 'none',
                             background: 'transparent',
                             fontSize: '18px',
-                            color: '#dc3545',
+                            color: '#198754', // Bootstrap green
                             cursor: 'pointer',
                           }}
                         >
-                          ❌
+                          ♻️
                         </button>
-
                       </div>
                     </Form.Group>
                   ) : null}
+
                 </>
 
 
                 {/** License Key Selector Modal — shared between Create and Edit */}
-                <Modal show={licenseModalOpen} onHide={() => setLicenseModalOpen(false)} centered size="xl">
+
+                <Modal
+                  show={licenseModalOpen}
+                  onHide={() => setLicenseModalOpen(false)}
+                  centered
+                  size="xl"
+                  scrollable
+                >
                   <Modal.Header closeButton>
                     <Modal.Title>Select License Key</Modal.Title>
                   </Modal.Header>
 
                   <Modal.Body>
                     {loading ? (
-                      <p>Loading license keys…</p>
+                      <div className="text-center py-5">
+                        <div className="spinner-border text-primary" role="status" aria-label="Loading">
+                          <span className="visually-hidden">Loading license keys…</span>
+                        </div>
+                        <p className="mt-3 mb-0 text-muted">Loading license keys…</p>
+                      </div>
                     ) : (
                       <>
-                        {/* Service License Cards */}
+                        {/* License Service Cards */}
                         {!viewingServiceDetails && (
-                          <div className="d-flex flex-wrap justify-content-start gap-3 mb-4">
+                          <div className="d-flex flex-wrap gap-3 justify-content-start mb-4">
                             {filteredServices.length === 0 ? (
-                              <p>No license keys found.</p>
+                              <p className="text-muted fst-italic">No license keys found.</p>
                             ) : (
                               filteredServices.map((item) => (
                                 <div
                                   key={item.id}
-                                  className="card shadow-sm border-secondary"
+                                  className="card shadow-sm border border-secondary"
                                   style={{
                                     width: "18rem",
                                     cursor: "pointer",
-                                    opacity: 1,
+                                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
                                   }}
                                   onClick={async () => {
                                     setSelectedService(item);
                                     setClients([]);
                                     setUsersByClient({});
                                     setLoadingUsers(true);
-                                    setViewingServiceDetails(true); // 👈 Show detail view
+                                    setViewingServiceDetails(true);
 
                                     try {
                                       const clientsRef = collection(db, "services", item.id, "clients");
                                       const clientSnap = await getDocs(clientsRef);
-                                      const clientList = clientSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                      const clientList = clientSnap.docs.map((doc) => ({
+                                        id: doc.id,
+                                        ...doc.data(),
+                                      }));
                                       setClients(clientList);
 
                                       const usersMap = {};
-
                                       for (const client of clientList) {
                                         const usersRef = collection(db, "services", item.id, "clients", client.id, "users");
                                         const userSnap = await getDocs(usersRef);
-                                        usersMap[client.id] = userSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                        usersMap[client.id] = userSnap.docs.map((doc) => ({
+                                          id: doc.id,
+                                          ...doc.data(),
+                                        }));
                                       }
 
                                       setUsersByClient(usersMap);
@@ -3849,15 +3950,33 @@ const handleClearAll = () => {
                                       setLoadingUsers(false);
                                     }
                                   }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = "scale(1.03)";
+                                    e.currentTarget.style.boxShadow = "0 4px 15px rgba(0, 0, 0, 0.15)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = "none";
+                                    e.currentTarget.style.boxShadow = "none";
+                                  }}
+                                  aria-label={`Select license service ${item.name || "Unnamed"}`}
                                 >
                                   <div className="card-body">
-                                    <h5 className="card-title">ID: {item.id}</h5>
-                                    <h6 className="card-subtitle mb-2 text-primary">
+                                    <h5 className="card-title text-truncate" title={item.id}>
+                                      ID: {item.id}
+                                    </h5>
+                                    <h6
+                                      className="card-subtitle mb-2 text-primary text-truncate"
+                                      title={item.name || "N/A"}
+                                    >
                                       Name: {item.name || "N/A"}
                                     </h6>
-                                    <p className="card-text">
-                                      <strong>Created:</strong>{" "}
-                                      {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleString() : "Unknown"}
+                                    <p className="card-text text-muted mb-0">
+                                      <small>
+                                        <strong>Created:</strong>{" "}
+                                        {item.createdAt
+                                          ? new Date(item.createdAt.seconds * 1000).toLocaleString()
+                                          : "Unknown"}
+                                      </small>
                                     </p>
                                   </div>
                                 </div>
@@ -3866,16 +3985,15 @@ const handleClearAll = () => {
                           </div>
                         )}
 
-
                         {/* Client Details Card */}
                         {selectedService && (
                           <div className="card border-info shadow-sm mt-3">
                             <div className="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                              <span>
+                              <h5 className="mb-0">
                                 {viewingClient
                                   ? `Client Details for Service ID: ${selectedService.id}`
                                   : `Clients for Service ID: ${selectedService.id}`}
-                              </span>
+                              </h5>
 
                               {viewingClient && (
                                 <button
@@ -3884,6 +4002,7 @@ const handleClearAll = () => {
                                     setViewingClient(false);
                                     setSelectedClientId(null);
                                   }}
+                                  aria-label="Back to client list"
                                 >
                                   ← Back to Clients
                                 </button>
@@ -3892,30 +4011,42 @@ const handleClearAll = () => {
 
                             <div className="card-body">
                               {loadingUsers ? (
-                                <p>Loading client info...</p>
+                                <div className="text-center py-5">
+                                  <div className="spinner-border text-info" role="status" aria-label="Loading clients and users">
+                                    <span className="visually-hidden">Loading client info...</span>
+                                  </div>
+                                  <p className="mt-3 mb-0 text-muted">Loading client info...</p>
+                                </div>
                               ) : clients.length === 0 ? (
-                                <p>No clients found for this service.</p>
+                                <p className="text-muted fst-italic">No clients found for this service.</p>
                               ) : viewingClient && selectedClientId ? (
-                                // Show selected client details
                                 (() => {
-                                  const client = clients.find(c => c.id === selectedClientId);
-                                  if (!client) return <p>Client not found.</p>;
+                                  const client = clients.find((c) => c.id === selectedClientId);
+                                  if (!client) return <p className="text-danger">Client not found.</p>;
 
                                   return (
-                                    <div>
-                                      <h5>{client.name || "Client Name N/A"}</h5>
-                                      <p><strong>Client ID:</strong> {client.id}</p>
+                                    <>
+                                      <h5 className="mb-2">{client.name || "Client Name N/A"}</h5>
+                                      <p className="mb-3">
+                                        <strong>Client ID:</strong> {client.id}
+                                      </p>
 
-                                      <h6 className="mt-3">Users</h6>
+                                      <h6 className="mb-3">Users</h6>
+
                                       {usersByClient[client.id]?.length > 0 ? (
-                                        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                          <table className="table table-bordered table-sm mb-0">
+                                        <div
+                                          style={{ maxHeight: "300px", overflowY: "auto" }}
+                                          className="table-responsive"
+                                          tabIndex={0}
+                                          aria-label="Users table"
+                                        >
+                                          <table className="table table-bordered table-hover table-sm mb-0 align-middle">
                                             <thead
                                               style={{
-                                                position: 'sticky',
+                                                position: "sticky",
                                                 top: 0,
-                                                backgroundColor: '#007bff',  // Bright blue background color
-                                                color: '#ffffff',            // White text for contrast
+                                                backgroundColor: "#0d6efd",
+                                                color: "#fff",
                                                 zIndex: 1,
                                               }}
                                             >
@@ -3923,86 +4054,93 @@ const handleClearAll = () => {
                                                 <th>License ID</th>
                                                 <th>User Code</th>
                                                 <th>Date Created</th>
-                                                <th>Is Taken?</th>
+                                                <th>Is Taken?</th> {/* ✅ Added column */}
                                                 <th>Subscription Start</th>
                                                 <th>Subscription End</th>
                                               </tr>
                                             </thead>
 
                                             <tbody>
-                                              {usersByClient[client.id].map(user => {
-                                                const isTaken = user.isTaken;
+                                              {usersByClient[selectedClientId]?.map((user) => (
+                                                <tr
+                                                  key={user.id}
+                                                  onClick={() => RenewhandleRowClick(user)} // ✅ Click row to select
+                                                  style={{
+                                                    cursor: "pointer",
+                                                    transition: "background-color 0.3s ease",
+                                                    backgroundColor: user.isTaken ? "#e9ecef" : "white",
+                                                    color: user.isTaken ? "#6c757d" : "inherit",
+                                                  }}
+                                                  onMouseEnter={(e) => {
+                                                    if (!user.isTaken) e.currentTarget.style.backgroundColor = "#f8f9fa";
+                                                  }}
+                                                  onMouseLeave={(e) => {
+                                                    if (!user.isTaken) e.currentTarget.style.backgroundColor = "white";
+                                                  }}
+                                                >
+                                                  <td>{user.licenseKey}</td>
+                                                  <td>{user.userCode || "N/A"}</td>
+                                                  <td>
+                                                    {user.createdAt
+                                                      ? new Date(user.createdAt.seconds * 1000).toLocaleString()
+                                                      : "Unknown"}
+                                                  </td>
 
-                                                // Default bg and color, change on hover
-                                                const defaultBg = isTaken ? '#e0e0e0' : 'transparent';
-                                                const defaultColor = isTaken ? '#6c757d' : 'inherit';
-                                                const hoverBg = isTaken ? '#d6d6d6' : '#d1ecf1'; // Slightly different hover for taken vs not taken
+                                                  {/* ✅ Is Taken column */}
+                                                  <td>
+                                                    {user.isTaken ? (
+                                                      <span className="badge bg-secondary">Taken</span>
+                                                    ) : (
+                                                      <span className="badge bg-success">Available</span>
+                                                    )}
+                                                  </td>
 
-                                                return (
-                                                  <tr
-                                                    key={user.id}
-                                                    style={{
-                                                      cursor: 'pointer',   // always pointer to show clickable
-                                                      backgroundColor: defaultBg,
-                                                      color: defaultColor,
-                                                      // Remove pointerEvents to allow clicking even if isTaken is true
-                                                      transition: 'background-color 0.3s ease',
-                                                    }}
-                                                    onClick={() => handleRowClickedit(user)} // remove the !isTaken condition, allow always clickable
-                                                    onMouseEnter={(e) => {
-                                                      e.currentTarget.style.backgroundColor = hoverBg;
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                      e.currentTarget.style.backgroundColor = defaultBg;
-                                                    }}
-                                                  >
-
-                                                    <td>{user.licenseKey}</td>
-                                                    <td>{user.userCode || "N/A"}</td>
-                                                    <td>{user.createdAt ? new Date(user.createdAt.seconds * 1000).toLocaleString() : "Unknown"}</td>
-                                                    <td
-                                                      style={{
-                                                        color: isTaken ? '#ecececff' : 'inherit',
-                                                        backgroundColor: isTaken ? '#f1a7adff' : 'transparent', // light gray bg for "Yes"
-                                                        padding: '0.5rem' // optional for better spacing
-                                                      }}
-                                                    >
-                                                      {isTaken ? "Yes" : "No"}
-                                                    </td>                                                    <td>{formatDate(user.subscriptionStart)}</td>
-                                                    <td>{formatDate(user.subscriptionEnd)}</td>
-                                                  </tr>
-                                                );
-                                              })}
+                                                  <td>{formatDate(user.subscriptionStart)}</td>
+                                                  <td>{formatDate(user.subscriptionEnd)}</td>
+                                                </tr>
+                                              ))}
                                             </tbody>
-
 
                                           </table>
                                         </div>
-
                                       ) : (
-                                        <p>No users found for this client.</p>
+                                        <p className="text-muted fst-italic">No users found for this client.</p>
                                       )}
-                                    </div>
+                                    </>
                                   );
                                 })()
                               ) : (
-                                // Show client cards to pick from
-                                clients.map(client => (
+                                // Clients list
+                                clients.map((client) => (
                                   <div
                                     key={client.id}
-                                    className="card mb-3 shadow-sm"
-                                    style={{
-                                      border: "1px solid #ccc",
-                                      cursor: "pointer",
-                                    }}
+                                    className="card mb-3 shadow-sm border border-secondary"
+                                    style={{ cursor: "pointer", transition: "background-color 0.15s ease" }}
                                     onClick={() => {
                                       setSelectedClientId(client.id);
                                       setViewingClient(true);
                                     }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.backgroundColor = "#e9ecef";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.backgroundColor = "white";
+                                    }}
+                                    aria-label={`Select client ${client.name || "Unnamed"}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        setSelectedClientId(client.id);
+                                        setViewingClient(true);
+                                      }
+                                    }}
                                   >
                                     <div className="card-body">
-                                      <h5>{client.name || "Client Name N/A"}</h5>
-                                      <p className="mb-0"><strong>Client ID:</strong> {client.id}</p>
+                                      <h5 className="mb-1">{client.name || "Client Name N/A"}</h5>
+                                      <p className="mb-0">
+                                        <strong>Client ID:</strong> {client.id}
+                                      </p>
                                     </div>
                                   </div>
                                 ))
@@ -4010,14 +4148,9 @@ const handleClearAll = () => {
                             </div>
                           </div>
                         )}
-
-
-
-
                       </>
                     )}
                   </Modal.Body>
-
                 </Modal>
 
 
@@ -4199,6 +4332,7 @@ const handleClearAll = () => {
           </Modal.Footer>
         </Form>
       </Modal >
+
 
 
 
@@ -4731,65 +4865,65 @@ const handleClearAll = () => {
           )}
         </Modal.Body>
 
-<Modal.Footer style={{ padding: '16px 24px', backgroundColor: '#f8f9fa', borderTop: '1px solid #dee2e6' }}>
-  <div className="d-flex justify-content-between align-items-center w-100">
-    <div className="d-flex gap-2">
-      <Button
-        variant="success"
-        onClick={handleSelectAll}
-        style={{
-          padding: '10px 24px',
-          borderRadius: '6px',
-          fontWeight: '500'
-        }}
-      >
-        ✓ Select All
-      </Button>
-      <Button
-        variant="danger"
-        onClick={handleClearAll}
-        style={{
-          padding: '10px 24px',
-          borderRadius: '6px',
-          fontWeight: '500'
-        }}
-      >
-        ✗ Clear All
-      </Button>
-      <span className="ms-3 align-self-center text-muted">
-        Selected: {selectedDistributors.length} / {filteredDistributors.length}
-      </span>
-    </div>
-    
-    <div className="d-flex gap-2">
-      <Button
-        variant="secondary"
-        onClick={() => setModalType(null)}
-        style={{
-          padding: '10px 24px',
-          borderRadius: '6px',
-          fontWeight: '500'
-        }}
-      >
-        Close
-      </Button>
-      <Button
-        variant="primary"
-        onClick={handleSaveDistributors}
-        disabled={selectedDistributors.length === 0}
-        style={{
-          padding: '10px 24px',
-          borderRadius: '6px',
-          fontWeight: '500',
-          backgroundColor: selectedDistributors.length === 0 ? '#6c757d' : '#5b8fa3',
-          border: 'none'
-        }}
-      >
-        Save Changes
-      </Button>
-    </div>
-  </div>
-</Modal.Footer>
+        <Modal.Footer style={{ padding: '16px 24px', backgroundColor: '#f8f9fa', borderTop: '1px solid #dee2e6' }}>
+          <div className="d-flex justify-content-between align-items-center w-100">
+            <div className="d-flex gap-2">
+              <Button
+                variant="success"
+                onClick={handleSelectAll}
+                style={{
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  fontWeight: '500'
+                }}
+              >
+                ✓ Select All
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleClearAll}
+                style={{
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  fontWeight: '500'
+                }}
+              >
+                ✗ Clear All
+              </Button>
+              <span className="ms-3 align-self-center text-muted">
+                Selected: {selectedDistributors.length} / {filteredDistributors.length}
+              </span>
+            </div>
+
+            <div className="d-flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setModalType(null)}
+                style={{
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  fontWeight: '500'
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSaveDistributors}
+                disabled={selectedDistributors.length === 0}
+                style={{
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  fontWeight: '500',
+                  backgroundColor: selectedDistributors.length === 0 ? '#6c757d' : '#5b8fa3',
+                  border: 'none'
+                }}
+              >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </Modal.Footer>
       </Modal>
 
 
