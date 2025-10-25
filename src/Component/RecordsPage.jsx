@@ -11,7 +11,7 @@ function RecordsPage() {
   const [error, setError] = useState(null);
   const [columns, setColumns] = useState([]);
   const [updating] = useState(false);
-  const [filter, setFilter] = useState("all"); // all | cover | regular
+  const [filter, setFilter] = useState("regular"); // all | cover | regular
   const [statusFilter, setStatusFilter] = useState("all"); // all | approved | declined | sent_back | cancelled
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
