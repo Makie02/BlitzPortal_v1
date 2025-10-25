@@ -635,9 +635,7 @@ function RecordsPage() {
                 lineHeight: '1.4',
                 fontStyle: 'italic'
               }}>
-                {data.length} records found {filter !== 'all' && (
-                  <span style={{ color: '#0d47a1' }}>({filter.replaceAll("_", " ")} only)</span>
-                )}
+              
               </p>
             </div>
 
