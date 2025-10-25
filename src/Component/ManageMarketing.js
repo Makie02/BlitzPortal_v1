@@ -12,7 +12,7 @@ function EnhancedDatabaseInterface() {
   const [editingData, setEditingData] = useState({});
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [updating, setUpdating] = useState(false);
-  const [filter, setFilter] = useState("all"); // all | cover | regular
+  const [filter, setFilter] = useState("regular"); // all | cover | regular
   const [statusFilter, setStatusFilter] = useState("all"); // all | approved | declined | sent_back | cancelled
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -965,9 +965,7 @@ const createdBy = {
                 lineHeight: '1.4',
                 fontStyle: 'italic'
               }}>
-                {data.length} records found {filter !== 'all' && (
-                  <span style={{ color: '#0d47a1' }}>({filter.replaceAll("_", " ")} only)</span>
-                )}
+               
               </p>
             </div>
 
