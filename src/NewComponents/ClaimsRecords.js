@@ -26,47 +26,45 @@ function ClaimsRecords() {
     'createForm'       
   ], []);
 
-
-
   // Helper function to convert codes to readable text
-const convertCodeToText = useCallback((code, type, accountTypesMap, distributorsMap) => {
-  if (!code) return '-';
-  
-  // 🔁 ACCOUNT TYPES LOGIC
-  if (type === 'account_types') {
-    let codes = [];
+  const convertCodeToText = useCallback((code, type, accountTypesMap, distributorsMap) => {
+    if (!code) return '-';
+    
+    // 🔁 ACCOUNT TYPES LOGIC
+    if (type === 'account_types') {
+      let codes = [];
 
-    // ✅ JSON array (e.g. "['A123', 'B456']")
-    if (typeof code === 'string' && code.includes('[')) {
-      try {
-        codes = JSON.parse(code.replace(/'/g, '"'));
-      } catch {
-        // fallback kung hindi valid JSON
-        const matches = code.match(/[A-Z0-9]+/g);
-        if (matches) codes = matches;
+      // ✅ JSON array (e.g. "['A123', 'B456']")
+      if (typeof code === 'string' && code.includes('[')) {
+        try {
+          codes = JSON.parse(code.replace(/'/g, '"'));
+        } catch {
+          // fallback kung hindi valid JSON
+          const matches = code.match(/[A-Z0-9]+/g);
+          if (matches) codes = matches;
+        }
+      } else {
+        // ✅ Single code
+        codes = [code];
       }
-    } else {
-      // ✅ Single code
-      codes = [code];
+
+      // ✅ Convert each code to text name
+      return codes
+        .map(singleCode => {
+          const cleanCode = singleCode.toString().trim().toUpperCase();
+          return accountTypesMap.get(cleanCode) || ` (${cleanCode})`;
+        })
+        .join(', ');
     }
 
-    // ✅ Convert each code to text name
-    return codes
-      .map(singleCode => {
-        const cleanCode = singleCode.toString().trim().toUpperCase();
-        return accountTypesMap.get(cleanCode) || `Unknown (${cleanCode})`;
-      })
-      .join(', ');
-  }
+    // 🔁 DISTRIBUTOR LOGIC
+    if (type === 'distributor') {
+      const cleanCode = code.toString().trim();
+      return distributorsMap.get(cleanCode) || ` Distributor (${cleanCode})`;
+    }
 
-  // 🔁 DISTRIBUTOR LOGIC
-  if (type === 'distributor') {
-    const cleanCode = code.toString().trim();
-    return distributorsMap.get(cleanCode) || `Unknown Distributor (${cleanCode})`;
-  }
-
-  return code;
-}, []);
+    return code;
+  }, []);
 
   // Helper function to format cell values
   const formatCellValue = useCallback((value, colName, accountTypesMap, distributorsMap) => {
@@ -136,98 +134,107 @@ const convertCodeToText = useCallback((code, type, accountTypesMap, distributors
   }, []);
 
   // Main fetch function
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-const fetchData = useCallback(async () => {
-  try {
-    setLoading(true);
-    setError(null);
+      const [distributorsResult, claimsResult, usersResult] = await Promise.all([
+        supabase.from("distributors").select("code, name"),
+        supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }).limit(100),
+        supabase.from("Account_Users").select("id, name")
+      ]);
 
-    const [distributorsResult, claimsResult] = await Promise.all([
-      supabase.from("distributors").select("code, name"),
-      supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }).limit(100)
-    ]);
+      if (distributorsResult.error) throw distributorsResult.error;
+      if (claimsResult.error) throw claimsResult.error;
+      if (usersResult.error) throw usersResult.error;
 
-    if (distributorsResult.error) throw distributorsResult.error;
-    if (claimsResult.error) throw claimsResult.error;
+      // Step 1 — Build users map (ID -> Name)
+      const usersMap = new Map();
+      usersResult.data?.forEach(user => {
+        usersMap.set(user.id.toString(), user.name);
+      });
 
-    // Step 1 — Kunin ang lahat ng needed account_types codes mula sa claims
-    const neededAccountTypeCodes = new Set();
-    (claimsResult.data || []).forEach(item => {
-      if (item.account_types) {
-        if (typeof item.account_types === "string" && item.account_types.includes("[")) {
-          try {
-            const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
-            codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
-          } catch (innerErr) {
-            console.error("Error parsing account_types:", innerErr);
-            const matches = item.account_types.match(/[A-Z0-9]+/g);
-            if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
+      console.log("✅ Users Map:", Array.from(usersMap.entries()));
+
+      // Step 2 — Kunin ang lahat ng needed account_types codes mula sa claims
+      const neededAccountTypeCodes = new Set();
+      (claimsResult.data || []).forEach(item => {
+        if (item.account_types) {
+          if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+            try {
+              const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+              codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
+            } catch (innerErr) {
+              console.error("Error parsing account_types:", innerErr);
+              const matches = item.account_types.match(/[A-Z0-9]+/g);
+              if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
+            }
+          } else {
+            neededAccountTypeCodes.add(item.account_types.trim());
           }
-        } else {
-          neededAccountTypeCodes.add(item.account_types.trim());
         }
-      }
-    });
+      });
 
-    // Step 2 — Fetch only those account_types from categorydetails
-    const { data: accountTypesData, error: accountTypesError } = await supabase
-      .from("categorydetails")
-      .select("code, name")
-      .in("code", Array.from(neededAccountTypeCodes));
+      // Step 3 — Fetch only those account_types from categorydetails
+      const { data: accountTypesData, error: accountTypesError } = await supabase
+        .from("categorydetails")
+        .select("code, name")
+        .in("code", Array.from(neededAccountTypeCodes));
 
-    if (accountTypesError) throw accountTypesError;
+      if (accountTypesError) throw accountTypesError;
 
-    // Step 3 — Build maps
-    const distributorsMap = new Map();
-    const accountTypesMap = new Map();
+      // Step 4 — Build maps
+      const distributorsMap = new Map();
+      const accountTypesMap = new Map();
 
-    distributorsResult.data?.forEach(distributor => {
-      distributorsMap.set(distributor.code.toString(), distributor.name);
-    });
+      distributorsResult.data?.forEach(distributor => {
+        distributorsMap.set(distributor.code.toString(), distributor.name);
+      });
 
-    accountTypesData?.forEach(accountType => {
-      accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
-    });
+      accountTypesData?.forEach(accountType => {
+        accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
+      });
 
-    console.log("✅ Account Types Map:", Array.from(accountTypesMap.entries()));
+      console.log("✅ Account Types Map:", Array.from(accountTypesMap.entries()));
 
-    // Step 4 — Process claims
-    const processedData = (claimsResult.data || []).map((item) => ({
-      ...filterColumns(item, CLAIMS_COLUMNS),
-      source: "Claims_pwp",
-      code_pwp: item.code_pwp || item.code || item.claim_code,
-      distributor_text: convertCodeToText(item.distributor, 'distributor', accountTypesMap, distributorsMap),
-      account_types_text: (() => {
-        let codes = [];
-        if (typeof item.account_types === "string" && item.account_types.includes("[")) {
-          try {
-            codes = JSON.parse(item.account_types.replace(/'/g, '"'));
-          } catch (innerErr) {
-            console.error("Error parsing account_types in map:", innerErr);
-            const matches = item.account_types.match(/[A-Z0-9]+/g);
-            if (matches) codes = matches;
+      // Step 5 — Process claims and convert createForm ID to name
+      const processedData = (claimsResult.data || []).map((item) => ({
+        ...filterColumns(item, CLAIMS_COLUMNS),
+        source: "Claims_pwp",
+        code_pwp: item.code_pwp || item.code || item.claim_code,
+        distributor_text: convertCodeToText(item.distributor, 'distributor', accountTypesMap, distributorsMap),
+        account_types_text: (() => {
+          let codes = [];
+          if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+            try {
+              codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+            } catch (innerErr) {
+              console.error("Error parsing account_types in map:", innerErr);
+              const matches = item.account_types.match(/[A-Z0-9]+/g);
+              if (matches) codes = matches;
+            }
+          } else {
+            codes = [item.account_types];
           }
-        } else {
-          codes = [item.account_types];
-        }
-        return codes
-          .map(code => accountTypesMap.get(code?.toString().trim()) || `Unknown (${code})`)
-          .join(", ");
-      })()
-    }));
+          return codes
+            .map(code => accountTypesMap.get(code?.toString().trim()) || ` ${code}`)
+            .join(", ");
+        })(),
+        createForm_name: usersMap.get(item.createForm?.toString()) || item.createForm || '-'
+      }));
 
-    setColumns(CLAIMS_COLUMNS);
-    setData(processedData);
-    setCurrentPage(1);
+      setColumns(CLAIMS_COLUMNS);
+      setData(processedData);
+      setCurrentPage(1);
 
-  } catch (err) {
-    console.error("❌ fetchData error:", err);
-    setError(`Unexpected error: ${err?.message || err}`);
-  } finally {
-    setLoading(false);
-  }
-}, [CLAIMS_COLUMNS, filterColumns, convertCodeToText]);
-
+    } catch (err) {
+      console.error("❌ fetchData error:", err);
+      setError(`Unexpected error: ${err?.message || err}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [CLAIMS_COLUMNS, filterColumns, convertCodeToText]);
 
   // Event handlers
   const handleViewRecord = useCallback((record) => {
@@ -240,24 +247,25 @@ const fetchData = useCallback(async () => {
     setSelectedRecord(null);
   }, []);
 
-
   // Filter data based on current user (unless admin)
-const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-const role = currentUser?.role || "";
+  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+  const role = currentUser?.role || "";
 
-const filteredData = useMemo(() => {
-  if (role === 'admin') return data;
-  return data.filter(row => row.createForm?.toLowerCase().trim() === currentUserName);
-}, [data, currentUserName, role]);
+  const filteredData = useMemo(() => {
+    if (role === 'admin') return data;
+    return data.filter(row => {
+      const creatorName = row.createForm_name?.toLowerCase().trim() || "";
+      return creatorName === currentUserName;
+    });
+  }, [data, currentUserName, role]);
 
-// Pagination using filteredData
-const totalPages = Math.ceil(filteredData.length / rowsPerPage);
-const paginatedData = filteredData.slice(
-  (currentPage - 1) * rowsPerPage,
-  currentPage * rowsPerPage
-);
-
+  // Pagination using filteredData
+  const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
 
   // Status badge component
   const getStatusBadge = useCallback((status) => {
@@ -314,6 +322,7 @@ const paginatedData = filteredData.slice(
 
   // Format column names
   const formatColumnName = useCallback((colName) => {
+    if (colName === 'createForm') return 'Created By';
     return colName
       .replace(/_/g, ' ')
       .replace(/\b\w/g, l => l.toUpperCase())
@@ -328,6 +337,9 @@ const paginatedData = filteredData.slice(
     }
     if (col === 'account_types') {
       return row.account_types_text || '-';
+    }
+    if (col === 'createForm') {
+      return row.createForm_name || '-';
     }
     if (col === 'created_at' && row[col]) {
       try {
