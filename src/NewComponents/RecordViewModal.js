@@ -12,43 +12,99 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
   const handleDownloadExcel = () => {
     if (!fullRecord) return;
 
-    // Convert record to a 2D array (header + values)
-    const worksheetData = [
-      ["Field", "Value"],
-      ...Object.entries(fullRecord).map(([key, value]) => [
-        formatColumnName(key),
-        formatCellValue(value, key),
-      ]),
-    ];
-
-    // Create worksheet and workbook
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Record");
+
+    // 1️⃣ Full Record Sheet (Horizontal)
+    const recordFields = Object.keys(fullRecord).map(formatColumnName);
+    const recordValues = Object.keys(fullRecord).map((key) =>
+      formatCellValue(fullRecord[key], key)
+    );
+
+    const recordSheetData = [recordFields, recordValues]; // 2 rows: header + values
+    const recordSheet = XLSX.utils.aoa_to_sheet(recordSheetData);
+    XLSX.utils.book_append_sheet(workbook, recordSheet, "Record Details");
+
+    // 2️⃣ Claims_Badorder Sheet (same as before)
+    if (badorderData.length > 0) {
+      const badorderSheetData = [
+        ["Category", "Amount"],
+        ...badorderData.map((row) => [row.category, Number(row.amount || 0)]),
+        ["Total", badorderData.reduce((sum, r) => sum + Number(r.amount || 0), 0)],
+      ];
+      const badorderSheet = XLSX.utils.aoa_to_sheet(badorderSheetData);
+      XLSX.utils.book_append_sheet(workbook, badorderSheet, "Claims_Badorder");
+    }
+
+    // 3️⃣ Claims_AccountBudgetTable Sheet (same as before)
+    if (accountBudgetData.length > 0) {
+      const accountSheetData = [
+        ["Account Code", "Account Name", "Budget"],
+        ...accountBudgetData.map((row) => [
+          row.account_code,
+          row.account_name,
+          Number(row.budget || 0),
+        ]),
+        [
+          "Total",
+          "",
+          accountBudgetData.reduce((sum, r) => sum + Number(r.budget || 0), 0),
+        ],
+      ];
+      const accountSheet = XLSX.utils.aoa_to_sheet(accountSheetData);
+      XLSX.utils.book_append_sheet(workbook, accountSheet, "Account_Budget");
+    }
 
     // Generate Excel file
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
-
-    // Save file
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
     const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
     saveAs(blob, `Record_${fullRecord.id}.xlsx`);
   };
+
 
   // ✅ categorydetails map
   const [categoryMap, setCategoryMap] = useState({});
   // ✅ distributors map
   const [distributorMap, setDistributorMap] = useState({});
 
+  const [badorderData, setBadorderData] = useState([]);
+  const [accountBudgetData, setAccountBudgetData] = useState([]);
+
   useEffect(() => {
     if (record) {
       fetchFullRecord();
       fetchCategoryMap();
       fetchDistributorMap();
+      fetchBadorderData();
+      fetchAccountBudgetData();
     }
   }, [record]);
+  const fetchBadorderData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("Claims_Badorder")
+        .select("*")
+        .eq("code_pwp", record.code_pwp || "");
+
+      if (error) throw error;
+      setBadorderData(data || []);
+    } catch (err) {
+      console.error("❌ Failed to fetch Claims_Badorder:", err.message);
+    }
+  };
+
+  const fetchAccountBudgetData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("Claims_AccountBudgetTable")
+        .select("*")
+        .eq("code_pwp", record.code_pwp || "");
+
+      if (error) throw error;
+      setAccountBudgetData(data || []);
+    } catch (err) {
+      console.error("❌ Failed to fetch Claims_AccountBudgetTable:", err.message);
+    }
+  };
 
   // ✅ Fetch categorydetails (with pagination up to 80k+)
   const fetchCategoryMap = async () => {
@@ -258,19 +314,44 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
             <>
               <button
                 onClick={handleDownloadExcel}
-                style={{ ...deleteBtn, backgroundColor: "#1976d2", marginRight: "12px" }}
+                style={{
+                  backgroundColor: "#1976d2",
+                  color: "#fff",
+                  padding: "10px 18px",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "500",
+                  marginRight: "12px",
+                  transition: "all 0.2s ease-in-out",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#1565c0"}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#1976d2"}
               >
                 📥 Download Excel
               </button>
+
               <button
                 onClick={() => confirmDelete(fullRecord, record.source || "regular_pwp")}
                 disabled={deleting}
-                style={deleteBtn}
+                style={{
+                  backgroundColor: deleting ? "#b0b0b0" : "#d32f2f",
+                  color: "#fff",
+                  padding: "10px 18px",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: deleting ? "not-allowed" : "pointer",
+                  fontWeight: "500",
+                  transition: "all 0.2s ease-in-out",
+                }}
+                onMouseEnter={(e) => !deleting && (e.currentTarget.style.backgroundColor = "#c62828")}
+                onMouseLeave={(e) => !deleting && (e.currentTarget.style.backgroundColor = "#d32f2f")}
               >
                 {deleting ? "⏳ Deleting..." : "🗑️ Delete Record"}
               </button>
             </>
           )}
+
         </div>
 
 
@@ -316,15 +397,121 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
           ) : (
             fullRecord && (
               <div style={gridBox}>
-                {Object.entries(fullRecord).map(([key, value]) => (
-                  <div key={key} style={gridItem}>
-                    <div style={colLabel}>{formatColumnName(key)}</div>
-                    <div style={colValue}>{formatCellValue(value, key)}</div>
-                  </div>
-                ))}
+                {Object.entries(fullRecord)
+                  .filter(([key]) =>
+                    !["id", "category_codes", "notification"].includes(key.toLowerCase())
+                  )
+                  .map(([key, value]) => (
+                    <div key={key} style={gridItem}>
+                      <div style={colLabel}>{formatColumnName(key)}</div>
+                      <div style={colValue}>{formatCellValue(value, key)}</div>
+                    </div>
+                  ))}
+
               </div>
             )
           )}
+
+          {/* ✅ Claims_Badorder Table */}
+          {badorderData.length > 0 && (
+            <div style={{ marginTop: "30px" }}>
+              <h4 style={{ marginBottom: "10px", color: "#1565c0" }}>Claims Badorder</h4>
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Category</th>
+                      <th style={thStyle}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {badorderData.map((row) => (
+                      <tr key={row.id}>
+                        <td style={tdStyle}>{row.category}</td>
+                        <td style={tdStyle}>{Number(row.amount).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+
+                  {/* ✅ Total Footer */}
+                  <tfoot>
+                    <tr>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          fontWeight: "bold",
+                          textAlign: "right",
+                          backgroundColor: "#f5f5f5",
+                        }}
+                      >
+                        Total:
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          fontWeight: "bold",
+                          color: "#2e7d32",
+                          backgroundColor: "#f5f5f5",
+                        }}
+                      >
+                        {badorderData
+                          .reduce((sum, row) => sum + Number(row.amount || 0), 0)
+                          .toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+
+          {/* ✅ Claims_AccountBudgetTable */}
+          {accountBudgetData.length > 0 && (
+            <div style={{ marginTop: "30px" }}>
+              <h4 style={{ marginBottom: "10px", color: "#1565c0" }}>
+                Claims Account Budget Table
+              </h4>
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Account Code</th>
+                      <th style={thStyle}>Account Name</th>
+                      <th style={thStyle}>Budget</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accountBudgetData.map((row) => (
+                      <tr key={row.id}>
+                        <td style={tdStyle}>{row.account_code}</td>
+                        <td style={tdStyle}>{row.account_name}</td>
+                        <td style={tdStyle}>
+                          {Number(row.budget).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+
+                  {/* ✅ Table Footer for Total */}
+                  <tfoot>
+                    <tr>
+                      <td colSpan="2" style={{ ...tdStyle, fontWeight: "bold", textAlign: "right" }}>
+                        Total:
+                      </td>
+                      <td style={{ ...tdStyle, fontWeight: "bold", color: "#2e7d32" }}>
+                        {accountBudgetData
+                          .reduce((sum, row) => sum + Number(row.budget || 0), 0)
+                          .toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+
         </div>
 
         {/* Footer */}
@@ -337,23 +524,203 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
 };
 
 // 💅 Inline styles
-const modalOverlay = { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" };
-const modalContainer = { backgroundColor: "white", borderRadius: "12px", maxWidth: "800px", maxHeight: "90vh", width: "100%", display: "flex", flexDirection: "column", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" };
-const modalHeader = { padding: "24px 30px", backgroundColor: "#1976d2", color: "white", borderRadius: "12px 12px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" };
-const closeBtn = { backgroundColor: "rgba(255,255,255,0.2)", color: "white", border: "none", borderRadius: "50%", width: "40px", height: "40px", cursor: "pointer", fontSize: "18px", display: "flex", alignItems: "center", justifyContent: "center" };
-const deleteBar = { padding: "16px 30px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #e0e0e0", display: "flex", justifyContent: "flex-end" };
-const deleteBtn = { padding: "8px 16px", backgroundColor: "#d32f2f", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "500" };
-const confirmOverlay = { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "12px", zIndex: 10 };
-const confirmBox = { backgroundColor: "white", padding: "30px", borderRadius: "12px", maxWidth: "400px", textAlign: "center" };
-const cancelBtn = { padding: "10px 20px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px" };
-const deleteConfirmBtn = { padding: "10px 20px", backgroundColor: "#d32f2f", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px" };
-const detailsBox = { flex: 1, overflow: "auto", padding: "30px" };
-const retryBtn = { padding: "8px 16px", backgroundColor: "#1976d2", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px" };
-const gridBox = { display: "grid", gap: "20px", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" };
-const gridItem = { padding: "16px", backgroundColor: "#f8f9fa", borderRadius: "8px", border: "1px solid #e0e0e0" };
-const colLabel = { fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase", marginBottom: "8px" };
-const colValue = { fontSize: "14px", color: "#333", wordBreak: "break-word", whiteSpace: "normal" };
-const footerBar = { padding: "20px 30px", backgroundColor: "#f5f5f5", borderTop: "1px solid #e0e0e0", borderRadius: "0 0 12px 12px", display: "flex", justifyContent: "flex-end" };
-const closeFooterBtn = { padding: "10px 20px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "500" };
+// 💅 Refined Styles (Modern Design)
+const modalOverlay = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: "rgba(0, 0, 0, 0.55)",
+  backdropFilter: "blur(4px)",
+  zIndex: 1000,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "20px",
+};
+
+const modalContainer = {
+  backgroundColor: "#ffffff",
+  borderRadius: "16px",
+  maxWidth: "880px",
+  maxHeight: "90vh",
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+};
+
+const modalHeader = {
+  padding: "22px 30px",
+  background: "linear-gradient(135deg, #1976d2 0%, #1565c0 100%)",
+  color: "white",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+};
+
+const closeBtn = {
+  backgroundColor: "rgba(255,255,255,0.15)",
+  color: "white",
+  border: "none",
+  borderRadius: "50%",
+  width: "38px",
+  height: "38px",
+  fontSize: "22px",
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+};
+closeBtn[':hover'] = { backgroundColor: "rgba(255,255,255,0.3)" };
+
+const deleteBar = {
+  padding: "14px 28px",
+  backgroundColor: "#f8f9fa",
+  borderBottom: "1px solid #e5e5e5",
+  display: "flex",
+  justifyContent: "flex-end",
+  flexWrap: "wrap",
+  gap: "10px",
+};
+
+const baseButton = {
+  padding: "10px 18px",
+  border: "none",
+  borderRadius: "8px",
+  color: "white",
+  fontSize: "14px",
+  fontWeight: "600",
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+};
+
+const deleteBtn = {
+  ...baseButton,
+  background: "linear-gradient(135deg, #d32f2f, #b71c1c)",
+};
+const downloadBtn = {
+  ...baseButton,
+  background: "linear-gradient(135deg, #1976d2, #0d47a1)",
+};
+
+const confirmOverlay = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "rgba(0, 0, 0, 0.6)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: "16px",
+  zIndex: 10,
+};
+
+const confirmBox = {
+  backgroundColor: "white",
+  padding: "32px",
+  borderRadius: "12px",
+  boxShadow: "0 6px 24px rgba(0,0,0,0.25)",
+  maxWidth: "400px",
+  textAlign: "center",
+};
+
+const cancelBtn = {
+  ...baseButton,
+  backgroundColor: "#757575",
+};
+
+const deleteConfirmBtn = {
+  ...baseButton,
+  background: "linear-gradient(135deg, #d32f2f, #b71c1c)",
+};
+
+const detailsBox = {
+  flex: 1,
+  overflowY: "auto",
+  padding: "28px",
+  backgroundColor: "#fafafa",
+};
+
+const retryBtn = {
+  ...baseButton,
+  background: "linear-gradient(135deg, #1976d2, #0d47a1)",
+};
+
+const gridBox = {
+  display: "grid",
+  gap: "16px",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+};
+
+const gridItem = {
+  padding: "16px",
+  backgroundColor: "white",
+  borderRadius: "10px",
+  border: "1px solid #e0e0e0",
+  boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+  transition: "transform 0.15s ease, box-shadow 0.15s ease",
+};
+gridItem[':hover'] = {
+  transform: "translateY(-2px)",
+  boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+};
+
+const colLabel = {
+  fontSize: "12px",
+  fontWeight: "700",
+  color: "#616161",
+  textTransform: "uppercase",
+  marginBottom: "6px",
+  letterSpacing: "0.5px",
+};
+
+const colValue = {
+  fontSize: "14px",
+  color: "#212121",
+  wordBreak: "break-word",
+  lineHeight: "1.4",
+};
+
+const footerBar = {
+  padding: "16px 28px",
+  backgroundColor: "#f1f1f1",
+  borderTop: "1px solid #e0e0e0",
+  display: "flex",
+  justifyContent: "flex-end",
+};
+
+const closeFooterBtn = {
+  ...baseButton,
+  backgroundColor: "#757575",
+};
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "collapse",
+  backgroundColor: "white",
+  borderRadius: "8px",
+  overflow: "hidden",
+  boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
+};
+
+const thStyle = {
+  padding: "10px 12px",
+  backgroundColor: "#1976d2",
+  color: "white",
+  textAlign: "left",
+  fontSize: "13px",
+  fontWeight: 600,
+};
+
+const tdStyle = {
+  padding: "10px 12px",
+  borderBottom: "1px solid #e0e0e0",
+  fontSize: "13px",
+  color: "#333",
+  verticalAlign: "top",
+};
+
 
 export default RecordViewModal;
