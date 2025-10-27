@@ -1933,7 +1933,6 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
             category_codes: formData.categoryCode || [],
             category_names: formData.categoryName || [],
             amount_budget: amountBudget,
-            remaining_budget: remainingBudget,
             createForm,
             pwp_type: "CLAIMS",
             notification: formData.notification || false,
@@ -2007,7 +2006,6 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
             budget: parseFloat(row.budget) || 0,
             created_at: row.created_at || new Date().toISOString(),
             total: totalBudget,
-            remaining_budget: remaining // ✅ Add remaining budget here
         }));
 
         try {
@@ -2060,7 +2058,6 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
             remarks: formData.remarks || '',
             created_at: new Date().toISOString(),
             total: totalAmount,
-            remaining_budget: amountBadgetMinusTotal,  // <- Use this value
         }));
 
         try {
