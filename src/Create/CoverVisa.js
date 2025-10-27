@@ -371,7 +371,7 @@ const handleFormChange = async (e) => {
     return newCode;
   };
 
-  const fetchCoverCodes = async () => {
+const fetchCoverCodes = async () => {
     try {
       console.log("⏳ Fetching cover codes...");
       const { data, error } = await supabase
@@ -385,7 +385,8 @@ const handleFormChange = async (e) => {
 
       setAllCoverCodes(codes);
 
-      if (!formData.coverCode || codes.includes(formData.coverCode)) {
+      // Only generate new code if we're NOT editing
+      if (!editingBudget && (!formData.coverCode || codes.includes(formData.coverCode))) {
         const newCode = generateCoverCode(codes);
         console.log("✏️ Updating formData with new cover code:", newCode);
         setFormData((prev) => ({ ...prev, coverCode: newCode }));
@@ -954,23 +955,48 @@ const handleEditBudget = async (budget) => {
     fetchApprovalData();
   }, []);
 
-  useEffect(() => {
-    const fetchUsernames = async () => {
-      const { data, error } = await supabase
-        .from('user_distributors')
-        .select('username')
-        .order('username', { ascending: true });
+useEffect(() => {
+  const fetchUsernames = async () => {
+    // ✅ Fetch from Account_Users instead of user_distributors
+    const { data, error } = await supabase
+      .from('Account_Users')
+      .select('name')
+      .order('name', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching usernames:', error);
-      } else {
-        const uniqueUsernames = [...new Set(data.map(item => item.username))];
-        setUsernames(uniqueUsernames);
+    if (error) {
+      console.error('Error fetching usernames:', error);
+    } else {
+      const uniqueUsernames = [...new Set(data.map(item => item.name))];
+      setUsernames(uniqueUsernames);
+      console.log('✅ Loaded usernames from Account_Users:', uniqueUsernames);
+    }
+  };
+
+  fetchUsernames();
+  
+  // ✅ Set up realtime subscription for Account_Users changes
+   const subscription = supabase
+    .channel('account_users_changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'Account_Users',
+      },
+      (payload) => {
+        console.log('Account_Users changed:', payload);
+        fetchUsernames(); // Refresh usernames when table changes
       }
-    };
+    )
+    .subscribe();
 
-    fetchUsernames();
-  }, []);
+  return () => {
+    supabase.removeChannel(subscription);
+  };
+}, []);
+
+
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -1657,24 +1683,26 @@ const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
     <div className="mt-4">
       <button
         className="btn btn-primary"
-        onClick={() => {
-          setCurrentStep(1);
-          setEditingBudget(null);
-          setFormData({
-            visaCode: "",
-            coverCode: "",
-            distributor: "",
-            principal: "",
-            accountType: "",
-            amountbadget: "",
-            PWPType: "COVER",
-            createForm: "",
-            Notification: false,
-          });
-          setFiles([]);
-          setSearchTerm("");
-          setSelectedUsername("");
-        }}
+       nClick={() => {
+setFormData({
+  visaCode: "",
+  coverCode: "",
+  distributor: "",
+  principal: "",
+  accountType: "",
+  amountbadget: "",
+  PWPType: "COVER",
+  createForm: "",
+  Notification: false,
+});
+setFiles([]);
+setEditingBudget(null);
+setCurrentStep(1);
+setSearchTerm("");
+setSelectedUsername("");
+setUserDistributorsForSelected([]);
+setFilteredDistributors([]); // ✅ Clear filtered distributors
+}}
       >
         + Create New Budget
       </button>
