@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient'; // iyong supabase client config dito
+import { supabase } from '../supabaseClient';
+import Swal from 'sweetalert2';
 // import ng lahat ng components mo
 import UserRole from '../NewComponents/UserRole';
 import Distributor from '../NewComponents/DISTRIBUTOR';
@@ -28,42 +29,36 @@ import Sub_3rdmotherAccounts from '../NewComponents/Sub_3_mother_account.js';
 import UserList from '../NewComponents/UserList.jsx';
 import MasterDataBranch from '../NewComponents/MasterdataBranch.jsx';
 import Bp_Account from '../NewComponents/Bp_Account.jsx';
+
 const References = ({ setCurrentView }) => {
-  const [view, setView] = useState(null); // selected view
-  const [user, setUser] = useState(null); // logged in user from Account_Users
-  const [userPermissions, setUserPermissions] = useState(null); // modules_permissions row matched
+  const [view, setView] = useState(null);
+  const [user, setUser] = useState(null);
+  const [userPermissions, setUserPermissions] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sortOption, setSortOption] = useState('all'); // sorting state
 
-  // Cards info + what boolean flag each card corresponds to
+  // Cards info + what boolean flag each card corresponds to + CATEGORY
   const cards = [
-    { id: 1, title: "DISTRIBUTOR", flag: 'distributor' },
-    // { id: 2, title: "DISTRIBUTOR-LISTING", flag: 'distributor_listing' },
-    { id: 3, title: "MODULE", flag: 'module' },
-    { id: 4, title: "ACTIVITY", flag: 'activity' },
-    { id: 5, title: "DEPARTMENT", flag: 'department' },
-    { id: 6, title: "USER ROLE", flag: 'user_role' },
-    { id: 7, title: "SALESGROUP", flag: 'salesgroup' },
-    { id: 8, title: "POSITION", flag: 'position' },
-    { id: 9, title: "LISTING-ACTIVITY", flag: 'listing_activity' },
-    { id: 10, title: "CATEGORY", flag: 'category' },
-    { id: 11, title: "CATEGORY-LIST-SKU/s", flag: 'category_list_skus' },
-    { id: 12, title: "APPROVAL-SETTING", flag: 'approval_setting' },
-    { id: 13, title: "BUDGET-VIEW", flag: 'budget_view' },
-    { id: 14, title: "404-PAGE", flag: 'page_404' },
-    { id: 15, title: "CLAIMS-lISTING-ACTIVITY", flag: 'claims_listing_activity' },
-    { id: 16, title: "LICENSE", flag: 'license' },
-    // { id: 17, title: "CUSTOMER-GROUP", flag: 'customer_group' },
-    { id: 18, title: "GROUP-ACCOUNT", flag: 'monther_account' },
-    { id: 19, title: "MOTHER-ACCOUNT", flag: 'sub_mother_account' },
-    // { id: 20, title: "BP-ACCOUNT", flag: 'sub_3rd_mother_account' },
-    { id: 21, title: "USER-LIST", flag: 'userList' },
-    { id: 22, title: "Bp Accounts", flag: 'Bp_Account' },
-
-    { id: 23, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch' },
-
-
-
-
+    { id: 1, title: "DISTRIBUTOR", flag: 'distributor', category: 'accounts', requirePassword: false },
+    { id: 3, title: "MODULE", flag: 'module', category: 'settings', requirePassword: true },
+    { id: 4, title: "ACTIVITY", flag: 'activity', category: 'activities', requirePassword: false },
+    { id: 5, title: "DEPARTMENT", flag: 'department', category: 'organization', requirePassword: false },
+    { id: 6, title: "USER ROLE", flag: 'user_role', category: 'organization', requirePassword: false },
+    { id: 7, title: "SALESGROUP", flag: 'salesgroup', category: 'organization', requirePassword: false },
+    { id: 8, title: "POSITION", flag: 'position', category: 'organization', requirePassword: false },
+    { id: 9, title: "LISTING-ACTIVITY", flag: 'listing_activity', category: 'activities', requirePassword: false },
+    { id: 10, title: "CATEGORY", flag: 'category', category: 'products', requirePassword: false },
+    { id: 11, title: "CATEGORY-LIST-SKU/s", flag: 'category_list_skus', category: 'products', requirePassword: false },
+    { id: 12, title: "APPROVAL-SETTING", flag: 'approval_setting', category: 'settings', requirePassword: false },
+    { id: 13, title: "BUDGET-VIEW", flag: 'budget_view', category: 'finance', requirePassword: false },
+    { id: 14, title: "404-PAGE", flag: 'page_404', category: 'settings', requirePassword: false },
+    { id: 15, title: "CLAIMS-lISTING-ACTIVITY", flag: 'claims_listing_activity', category: 'activities', requirePassword: false },
+    { id: 16, title: "LICENSE", flag: 'license', category: 'settings', requirePassword: true },
+    { id: 18, title: "GROUP-ACCOUNT", flag: 'monther_account', category: 'accounts', requirePassword: false },
+    { id: 19, title: "MOTHER-ACCOUNT", flag: 'sub_mother_account', category: 'accounts', requirePassword: false },
+    { id: 21, title: "USER-LIST", flag: 'userList', category: 'organization', requirePassword: false },
+    { id: 22, title: "Bp Accounts", flag: 'Bp_Account', category: 'accounts', requirePassword: false },
+    { id: 23, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch', category: 'accounts', requirePassword: false },
   ];
 
   useEffect(() => {
@@ -71,7 +66,6 @@ const References = ({ setCurrentView }) => {
       setLoading(true);
 
       try {
-        // Assume you already have user ID stored in localStorage or auth session
         const storedUser = localStorage.getItem('loggedInUser');
         if (!storedUser) {
           setLoading(false);
@@ -79,7 +73,6 @@ const References = ({ setCurrentView }) => {
         }
         const loggedInUser = JSON.parse(storedUser);
 
-        // Fetch user from Account_Users with ReferencePermission
         const { data: userData, error: userError } = await supabase
           .from('Account_Users')
           .select('*')
@@ -89,7 +82,6 @@ const References = ({ setCurrentView }) => {
         if (userError) throw userError;
         setUser(userData);
 
-        // Fetch modules_permissions where code = user.ReferencePermission
         if (userData.ReferencePermission) {
           const { data: permData, error: permError } = await supabase
             .from('modules_permissions')
@@ -113,17 +105,81 @@ const References = ({ setCurrentView }) => {
     fetchUserAndPermissions();
   }, []);
 
-  const handleClick = (card) => {
+  const handleClick = async (card) => {
     if (!userPermissions) {
-      alert('Permissions not loaded yet');
+      Swal.fire({
+        icon: 'warning',
+        title: 'Oops!',
+        text: 'Permissions not loaded yet',
+        confirmButtonColor: '#007bff',
+      });
       return;
     }
 
-    // Check if permission flag for this card is true
-    if (userPermissions[card.flag]) {
-      setView(card.title);
+    if (!userPermissions[card.flag]) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Access Denied',
+        text: `You don't have permission to access ${card.title}`,
+        confirmButtonColor: '#dc3545',
+      });
+      return;
+    }
+
+    // Check if password is required
+    if (card.requirePassword) {
+      const result = await Swal.fire({
+        title: '🔒 Password Required',
+        text: `Enter password to access ${card.title}`,
+        input: 'password',
+        inputPlaceholder: 'Enter password',
+        showCancelButton: true,
+        confirmButtonText: 'Submit',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#007bff',
+        cancelButtonColor: '#6c757d',
+        inputValidator: (value) => {
+          if (!value) {
+            return 'Password is required!';
+          }
+        }
+      });
+
+      if (result.isConfirmed) {
+        if (result.value === 'QSIT') {
+          Swal.fire({
+            icon: 'success',
+            title: 'Access Granted!',
+            text: `Welcome to ${card.title}`,
+            timer: 1500,
+            showConfirmButton: false,
+          });
+          setView(card.title);
+        } else {
+          Swal.fire({
+            icon: 'error',
+            title: 'Wrong Password!',
+            text: 'Access denied. Please try again.',
+            confirmButtonColor: '#dc3545',
+          });
+        }
+      }
     } else {
-      alert(`Access denied for ${card.title}`);
+      // No password required
+      setView(card.title);
+    }
+  };
+
+  // Filter cards based on sort option
+  const getFilteredCards = () => {
+    let filtered = cards.filter(card => userPermissions[card.flag]);
+    
+    if (sortOption === 'all') {
+      return filtered;
+    } else if (sortOption === 'alphabetical') {
+      return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+    } else {
+      return filtered.filter(card => card.category === sortOption);
     }
   };
 
@@ -184,36 +240,77 @@ const References = ({ setCurrentView }) => {
         {view === 'USER-LIST' && <UserList />}
         {view === 'LIST-BP_ACCOUNT' && <MasterDataBranch />}
         {view === 'Bp Accounts' && <Bp_Account />}
-
-
-
-
       </div>
     );
   }
 
+  const filteredCards = getFilteredCards();
+
   return (
-    <div
-      className="card-grid"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '20px',
-        padding: '20px',
-        maxWidth: '1300px',
-        margin: '0 auto',
-      }}
-    >
-      {cards
-        .filter(card => userPermissions[card.flag]) // <-- only show if user has permission
-        .map((card) => (
+    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+      {/* Header with Sort Dropdown */}
+      <div style={{ 
+        marginBottom: '30px', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '15px'
+      }}>
+        <h1 style={{ margin: 0, color: '#333', fontSize: '28px', fontWeight: '700' }}>
+          Reference Modules
+        </h1>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <label style={{ fontWeight: '600', color: '#555', fontSize: '14px' }}>
+            Sort by:
+          </label>
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              border: '2px solid #ddd',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              backgroundColor: 'white',
+              color: '#333',
+              outline: 'none',
+            }}
+          >
+            <option value="all">All Modules</option>
+            <option value="alphabetical">A-Z Alphabetical</option>
+            <option value="accounts">Accounts</option>
+            <option value="organization">Organization</option>
+            <option value="activities">Activities</option>
+            <option value="products">Products</option>
+            <option value="finance">Finance</option>
+            <option value="settings">Settings</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Cards Grid */}
+      <div
+        className="card-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '20px',
+        }}
+      >
+        {filteredCards.map((card) => (
           <button
             key={card.id}
             className="card-button"
             onClick={() => handleClick(card)}
             style={{
-              background: 'linear-gradient(to bottom right, #ffffff, #f0f0f0)',
-              border: '1px solid #ccc',
+              background: card.requirePassword 
+                ? 'linear-gradient(to bottom right, #fff3cd, #ffeaa7)' 
+                : 'linear-gradient(to bottom right, #ffffff, #f0f0f0)',
+              border: card.requirePassword ? '1px solid #ffc107' : '1px solid #ccc',
               borderRadius: '12px',
               fontSize: '16px',
               fontWeight: '600',
@@ -224,30 +321,46 @@ const References = ({ setCurrentView }) => {
               boxShadow: '0 4px 10px rgba(0, 0, 0, 0.06)',
               transition: 'transform 0.2s ease, box-shadow 0.2s ease, background 0.3s ease',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
+              gap: '8px',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.background = 'linear-gradient(to bottom right, #e9f5ff, #dbefff)';
-              e.currentTarget.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.12)';
-              e.currentTarget.style.borderColor = '#99cfff';
-              e.currentTarget.style.color = '#1d5ea8';
+              if (card.requirePassword) {
+                e.currentTarget.style.background = 'linear-gradient(to bottom right, #ffeaa7, #fdcb6e)';
+                e.currentTarget.style.boxShadow = '0 8px 16px rgba(255, 193, 7, 0.3)';
+              } else {
+                e.currentTarget.style.background = 'linear-gradient(to bottom right, #e9f5ff, #dbefff)';
+                e.currentTarget.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.12)';
+                e.currentTarget.style.borderColor = '#99cfff';
+                e.currentTarget.style.color = '#1d5ea8';
+              }
               e.currentTarget.style.transform = 'translateY(-5px)';
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = 'linear-gradient(to bottom right, #ffffff, #f0f0f0)';
-              e.currentTarget.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.06)';
-              e.currentTarget.style.borderColor = '#ccc';
-              e.currentTarget.style.color = '#333';
+              if (card.requirePassword) {
+                e.currentTarget.style.background = 'linear-gradient(to bottom right, #fff3cd, #ffeaa7)';
+                e.currentTarget.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.06)';
+                e.currentTarget.style.borderColor = '#ffc107';
+              } else {
+                e.currentTarget.style.background = 'linear-gradient(to bottom right, #ffffff, #f0f0f0)';
+                e.currentTarget.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.06)';
+                e.currentTarget.style.borderColor = '#ccc';
+                e.currentTarget.style.color = '#333';
+              }
               e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
+            {card.requirePassword && (
+              <span style={{ fontSize: '24px' }}>🔒</span>
+            )}
             {card.title}
           </button>
         ))}
+      </div>
     </div>
   );
-
 };
 
 export default References;
