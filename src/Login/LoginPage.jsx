@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './LoginPage.css';
 import logo from '../Assets/blitz portal logo (1).png';
-import { FaUser, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
 import Swal from 'sweetalert2';
 
@@ -17,82 +17,113 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
         console.clear();
 
         try {
-            // Step 1: Fetch user from Supabase
-            const { data: users, error: supaError } = await supabase
+            // Step 1: Get user credentials
+            const { data: users, error: userError } = await supabase
                 .from('Account_Users')
                 .select('*')
                 .eq('username', email)
-                .eq('password', password) // ⚠️ Insecure! Use hashing in production
+                .eq('password', password)
                 .limit(1);
 
-            if (supaError) throw new Error(`Supabase error: ${supaError.message}`);
-
+            if (userError) throw new Error(userError.message);
             if (!users || users.length === 0) {
-                setError('Invalid username or password');
                 await Swal.fire({
                     icon: 'error',
                     title: 'Login Failed',
-                    text: 'Invalid username or password',
-                    confirmButtonText: 'OK',
+                    text: 'Invalid username or password.',
                 });
                 return;
             }
 
             const matchedUser = users[0];
 
-            // Step 1.5: Check user status (disabled or not)
+            // Step 2: Check user status (active/disabled)
             const { data: statusData, error: statusError } = await supabase
                 .from('User_Status')
                 .select('*')
                 .eq('UserID', matchedUser.UserID)
-                .single();
+                .maybeSingle();
 
-            if (statusError && statusError.code !== 'PGRST116')
-                throw new Error(`User status error: ${statusError.message}`);
+            if (statusError && statusError.code !== 'PGRST116') {
+                console.error('Status error:', statusError);
+                throw new Error('Failed to fetch user status.');
+            }
 
+            // ✅ If record exists, check if disabled
+            // ✅ Check user status in User_Status
             if (statusData) {
-                if (!statusData.isActive) {
-                    const nowMs = Date.now();
-                    if (!statusData.disableUntil || nowMs < statusData.disableUntil) {
-                        setError('Your account is disabled. Please contact support.');
-                        await Swal.fire({
-                            icon: 'error',
-                            title: 'Account Disabled',
-                            text: 'Your account is disabled. Please contact support.',
-                            confirmButtonText: 'OK',
-                        });
-                        return;
+                const { isActive, disableUntil } = statusData;
+
+                if (!isActive) {
+                    let title = 'Account Disabled';
+                    let htmlMessage = 'Your account is currently disabled. Please contact support.';
+
+                    if (disableUntil) {
+                        const disableDate = new Date(disableUntil);
+                        const now = new Date();
+
+                        if (disableDate > now) {
+                            // Calculate remaining days
+                            const diffTime = disableDate - now;
+                            const remainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            const formattedDate = disableDate.toLocaleString('en-US', {
+                                weekday: 'long',
+                                month: 'long',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                            });
+
+                            htmlMessage = `
+          <p style="font-size:16px; color:#555;">
+            ⛔ Your account has been <b>temporarily disabled</b>.
+          </p>
+          <p style="margin-top:10px;">
+            It will be re-enabled on:<br>
+            <b style="color:#e74c3c;">${formattedDate}</b><br>
+            <span style="font-size:14px; color:#888;">(${remainingDays} day${remainingDays > 1 ? 's' : ''} remaining)</span>
+          </p>
+        `;
+                        }
                     }
+
+                    await Swal.fire({
+                        icon: 'error',
+                        title: title,
+                        html: htmlMessage,
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#3085d6',
+                    });
+
+                    return;
                 }
             }
 
-            // Step 2: Load license keys from localStorage
+
+            // Step 3: Check license key from localStorage
             const savedKeys = JSON.parse(localStorage.getItem('licenseKeys') || '[]');
             const userLicense = savedKeys.find((key) => key.UserID === matchedUser.UserID);
 
             if (!userLicense) {
-                setError('No active subscription found for this user.');
                 await Swal.fire({
                     icon: 'error',
                     title: 'Subscription Required',
-                    text: 'No active subscription found for this user. Please contact support or your administrator to activate your subscription.',
-                    confirmButtonText: 'OK',
+                    text: 'No active subscription found for this user.',
                 });
                 return;
             }
 
             if (userLicense.status === 'Expired') {
-                setError('Your license key is expired. Please renew your license.');
                 await Swal.fire({
                     icon: 'error',
                     title: 'License Expired',
-                    text: 'Your license key is expired. Please renew your license.',
-                    confirmButtonText: 'OK',
+                    text: 'Your license key has expired. Please renew your license.',
                 });
                 return;
             }
 
-            // Step 3: Check expiration and calculate days left
+            // Step 4: Check expiration
             let daysLeft = null;
             let showExpiryWarning = false;
 
@@ -102,11 +133,7 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 const diffTime = expiryDate - now;
                 daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-                console.log(`📆 License expires in ${daysLeft} day(s)`);
-
-                if (daysLeft <= 5 && daysLeft >= 0) {
-                    showExpiryWarning = true;
-                }
+                if (daysLeft <= 5 && daysLeft >= 0) showExpiryWarning = true;
             }
 
             const enrichedUser = {
@@ -115,7 +142,6 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 ...matchedUser,
             };
 
-            // Save to localStorage
             localStorage.setItem('loggedInUser', JSON.stringify(enrichedUser));
             localStorage.setItem('loggedIn', 'true');
 
@@ -129,23 +155,21 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
 
             await saveRecentActivity(enrichedUser.UserID);
 
-            // Show success alert with expiration notice
             await Swal.fire({
                 title: 'Login Successful',
                 html: `
-                    Welcome, <strong>${enrichedUser.name || enrichedUser.username}</strong>!
-                    ${showExpiryWarning
+          Welcome, <strong>${enrichedUser.name || enrichedUser.username}</strong>!
+          ${showExpiryWarning
                         ? `<br /><br /><span style="color:#e74c3c; font-weight:bold;">⚠️ Your license will expire in ${daysLeft} day(s)</span>`
                         : ''
                     }
-                `,
+        `,
                 icon: 'success',
                 timer: 3000,
                 showConfirmButton: false,
                 timerProgressBar: true,
             });
 
-            // Navigate to dashboard
             setLoggedInUser(enrichedUser);
             setCurrentView('Dashboard');
         } catch (err) {
@@ -156,24 +180,21 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 icon: 'error',
                 title: 'Login Failed',
                 text: err.message || 'Unexpected error during login.',
-                confirmButtonText: 'OK',
             });
         }
     };
 
     const saveAuditLog = async (log) => {
         try {
-            const { error } = await supabase
-                .from('AuditLogs')
-                .insert([{
+            const { error } = await supabase.from('AuditLogs').insert([
+                {
                     action: log.Action,
                     userId: log.UserId,
                     timestamp: log.DateCreated,
-                    metadata: log.metadata || null
-                }]);
-
+                    metadata: log.metadata || null,
+                },
+            ]);
             if (error) console.error('❌ Audit log error:', error.message);
-            else console.log('✅ Audit log saved to Supabase');
         } catch (err) {
             console.error('❌ Error saving audit log:', err);
         }
@@ -183,7 +204,6 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
         try {
             const ipRes = await fetch('https://api.ipify.org?format=json');
             const { ip } = await ipRes.json();
-
             const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
             const geo = await geoRes.json();
 
@@ -196,12 +216,8 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 action: 'Login',
             };
 
-            const { error } = await supabase
-                .from('RecentActivity')
-                .insert([entry]);
-
-            if (error) console.error('❌ Recent activity error:', error.message);
-            else console.log('✅ Activity saved to Supabase');
+            const { error } = await supabase.from('RecentActivity').insert([entry]);
+            if (error) console.error('❌ Activity log error:', error.message);
         } catch (err) {
             console.error('❌ Failed to log recent activity:', err);
         }
@@ -224,7 +240,6 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
             <img src={logo} alt="Logo" className="top-login-logo fade-slide desktop-logo" />
 
             <div className="login-container glass">
-
                 <div className="login-left">
                     <div className="mobile-logo-wrapper">
                         <img src={logo} alt="Logo" className="mobile-login-logo fade-slide" />
@@ -258,7 +273,10 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                                     placeholder="Enter password"
                                     required
                                 />
-                                <span className="toggle-password" onClick={() => setShowPassword(!showPassword)}>
+                                <span
+                                    className="toggle-password"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                >
                                     {showPassword ? <FaEyeSlash /> : <FaEye />}
                                 </span>
                             </div>
@@ -266,19 +284,28 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
 
                         {error && <p className="error-message fade-slide delay-2">{error}</p>}
 
-                        <button type="submit" className="login-button fade-slide delay-2">Login</button>
+                        <button type="submit" className="login-button fade-slide delay-2">
+                            Login
+                        </button>
                     </form>
+
                     <footer className="login-footer">
                         <div>Version 1.0.0</div>
-                        <div style={{ marginTop: "6px", fontSize: "14px", color: "#64748b" }}>
-                            Powered By <span style={{ fontWeight: "600", color: "#3b82f6" }}>Ichthus Technology</span>
+                        <div
+                            style={{
+                                marginTop: '6px',
+                                fontSize: '14px',
+                                color: '#64748b',
+                            }}
+                        >
+                            Powered By{' '}
+                            <span style={{ fontWeight: '600', color: '#3b82f6' }}>
+                                Ichthus Technology
+                            </span>
                         </div>
                     </footer>
-
                 </div>
-
             </div>
-
         </div>
     );
 }
