@@ -31,12 +31,6 @@ const UserManagement = ({ setCurrentView }) => {
   // Modal states
   const [selectedUser, setSelectedUser] = useState(null);
   const [modalType, setModalType] = useState(null); // 'edit', 'approvers', 'brands', 'deactivate', 'create'
-  const DisableDurations = [
-    { label: 'Enable Account', value: 0 },    // <-- new option to enable account
-    { label: '1 day disable account', value: 1 },
-    { label: '3 days disable account', value: 3 },
-    { label: '7 days disable account', value: 7 },
-  ];
 
   // New User form state (for 'create' modal)
   const [newUserData, setNewUserData] = useState({
@@ -144,6 +138,55 @@ const UserManagement = ({ setCurrentView }) => {
     }
   };
 
+
+  const DisableDurations = [
+    { label: "Enable Now", value: 0 },
+    { label: "1 Day", value: 1 },
+    { label: "3 Days", value: 3 },
+    { label: "7 Days", value: 7 },
+    { label: "3 Weeks", value: 21 },
+    { label: "1 Month", value: 30 },
+    { label: "1 Year", value: 365 },
+  ];
+
+  const [userStatus, setUserStatus] = useState(null);
+
+  // ✅ Fetch user status whenever modal opens
+  useEffect(() => {
+    if (modalType === "deactivate" && supabaseUserID) {
+      fetchUserStatus();
+    }
+  }, [modalType]);
+
+  const fetchUserStatus = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("User_Status")
+        .select("*")
+        .eq("UserID", supabaseUserID)
+        .maybeSingle();
+
+      if (error) throw error;
+      setUserStatus(data || { isActive: true });
+
+      // ✅ If user has disableUntil, calculate remaining days and preselect
+      if (data?.disableUntil) {
+        const diffDays = Math.ceil(
+          (new Date(data.disableUntil) - new Date()) / (1000 * 60 * 60 * 24)
+        );
+        const matched = DisableDurations.find((d) => d.value === diffDays);
+        setDisableDays(matched ? matched.value : null);
+      } else {
+        setDisableDays(data?.isActive ? 0 : null);
+      }
+    } catch (err) {
+      console.error("Fetch status error:", err);
+      setUserStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  };
   const handleDeactivate = async () => {
     if (!selectedUser || disableDays === null) return;
 
@@ -153,45 +196,64 @@ const UserManagement = ({ setCurrentView }) => {
         throw new Error("Supabase User ID not provided.");
       }
 
-      if (disableDays === 0) {
-        // ✅ Enable account in Supabase
-        const { error } = await supabase
-          .from('User_Status')
-          .upsert({
-            UserID: supabaseUserID,
-            isActive: true,
-            disableUntil: null,
-          }, { onConflict: 'UserID' });
+      const { data: existing, error: fetchError } = await supabase
+        .from("User_Status")
+        .select("UserID")
+        .eq("UserID", supabaseUserID)
+        .maybeSingle();
 
-        if (error) throw error;
+      if (fetchError) throw fetchError;
 
-        Swal.fire('Success', 'User account enabled.', 'success');
-      } else {
-        // ❌ Disable account for N days
-        const disableUntil = Date.now() + disableDays * 24 * 60 * 60 * 1000;
+      const disableUntil =
+        disableDays === 0
+          ? null
+          : new Date(Date.now() + disableDays * 24 * 60 * 60 * 1000).toISOString();
 
-        const { error } = await supabase
-          .from('User_Status')
-          .upsert({
-            UserID: supabaseUserID,
-            isActive: false,
+      let error;
+
+      if (existing) {
+        ({ error } = await supabase
+          .from("User_Status")
+          .update({
+            isActive: disableDays === 0,
             disableUntil,
-          }, { onConflict: 'UserID' });
-
-        if (error) throw error;
-
-        Swal.fire('Success', `User disabled for ${disableDays} day(s).`, 'success');
+          })
+          .eq("UserID", supabaseUserID));
+      } else {
+        ({ error } = await supabase.from("User_Status").insert({
+          UserID: supabaseUserID,
+          isActive: disableDays === 0,
+          disableUntil,
+          created_at: new Date().toISOString(),
+        }));
       }
 
-      // Reset modal state
-      setModalType(null);
+      if (error) throw error;
+
+      if (disableDays === 0) {
+        Swal.fire("Success", "User account enabled.", "success");
+      } else {
+        const label =
+          DisableDurations.find((d) => d.value === disableDays)?.label ||
+          `${disableDays} day(s)`;
+        Swal.fire("Success", `User disabled for ${label}.`, "success");
+      }
+
+      // ✅ Refresh status display immediately
+      fetchUserStatus();
+
+      // Reset form
       setDisableDays(null);
     } catch (error) {
-      Swal.fire('Error', error.message || 'Failed to update user status.', 'error');
+      console.error(error);
+      Swal.fire("Error", error.message || "Failed to update user status.", "error");
     } finally {
       setLoading(false);
     }
   };
+
+
+
   const [search, setSearch] = useState('');
   // Get unique options for filters dynamically
   //const groups = useMemo(() => [...new Set(users.map(u => u.group))], [users]); "if want i access yung all sa database"
@@ -474,6 +536,21 @@ const UserManagement = ({ setCurrentView }) => {
             setSavedMother(savedData || []); // ✅ and this one
           }
         }
+        // Step 6: Fetch user status for deactivate modal
+        if (type === 'deactivate') {
+          const { data: statusData, error: statusError } = await supabase
+            .from('User_Status')
+            .select('*')
+            .eq('UserID', userFromSupabase.UserID)
+            .maybeSingle();
+
+          if (statusError) {
+            console.error('Error fetching user status:', statusError);
+          } else {
+            setUserStatus(statusData || { isActive: true, disableUntil: null });
+          }
+        }
+
 
       }
 
@@ -1071,105 +1148,105 @@ const UserManagement = ({ setCurrentView }) => {
     }
     return false;
   }
-const saveEditedUser = async (e) => {
-  e.preventDefault();
-  if (!selectedUser || !supabaseUserId || !originalSupabaseData) return;
+  const saveEditedUser = async (e) => {
+    e.preventDefault();
+    if (!selectedUser || !supabaseUserId || !originalSupabaseData) return;
 
-  try {
-    // 1️⃣ Optional duplicate license check
-    if (showLicenseUpdate && editUserData.licensekey) {
-      const duplicate = await isLicenseKeyDuplicate(editUserData.licensekey, supabaseUserId);
-      if (duplicate) {
-        Swal.fire(
-          "Duplicate License",
-          "This license key is already assigned to another user.",
-          "error"
-        ).then(() => window.location.reload());
-        return;
+    try {
+      // 1️⃣ Optional duplicate license check
+      if (showLicenseUpdate && editUserData.licensekey) {
+        const duplicate = await isLicenseKeyDuplicate(editUserData.licensekey, supabaseUserId);
+        if (duplicate) {
+          Swal.fire(
+            "Duplicate License",
+            "This license key is already assigned to another user.",
+            "error"
+          ).then(() => window.location.reload());
+          return;
+        }
       }
-    }
 
-    // 2️⃣ Prepare user update payload
-    const updatePayload = {
-      role: editUserData.keyType || null,
-      name: editUserData.name || null,
-      salesGroup: editUserData.salesGroup || null,
-      email: editUserData.email || null,
-      position: editUserData.position || null,
-      department: editUserData.department || null,
-      contactNumber: editUserData.contactNumber || null,
-      profilePicture: editUserData.profilePicture || null,
-      username: editUserData.username || null,
-      password: editUserData.password || null,
-      PermissionRole: editUserData.PermissionRole || null,
-      ...(showLicenseUpdate && { licensekey: editUserData.licensekey || null }),
-    };
-
-    // Remove undefined values
-    Object.keys(updatePayload).forEach(
-      (key) => updatePayload[key] === undefined && delete updatePayload[key]
-    );
-
-    // 3️⃣ Update main Account_Users table
-    const { error: userUpdateError } = await supabase
-      .from("Account_Users")
-      .update(updatePayload)
-      .eq("id", supabaseUserId);
-
-    if (userUpdateError) throw userUpdateError;
-
-    // 4️⃣ Sync license_keys table by UserID
-    if (showLicenseUpdate && editUserData.licensekey) {
-      const licensePayload = {
-        licensekey: editUserData.licensekey,
-        status: "Active",
-        valid_until: convertToPostgresDate(editUserData.subscriptionEnd),
-        UserID: originalSupabaseData?.UserID || null,
+      // 2️⃣ Prepare user update payload
+      const updatePayload = {
+        role: editUserData.keyType || null,
+        name: editUserData.name || null,
+        salesGroup: editUserData.salesGroup || null,
+        email: editUserData.email || null,
+        position: editUserData.position || null,
+        department: editUserData.department || null,
+        contactNumber: editUserData.contactNumber || null,
+        profilePicture: editUserData.profilePicture || null,
+        username: editUserData.username || null,
+        password: editUserData.password || null,
+        PermissionRole: editUserData.PermissionRole || null,
+        ...(showLicenseUpdate && { licensekey: editUserData.licensekey || null }),
       };
 
-      // Check if license record already exists for this UserID
-      const { data: existingLicense, error: checkError } = await supabase
-        .from("license_keys")
-        .select("KEY")
-        .eq("UserID", originalSupabaseData?.UserID)
-        .maybeSingle();
+      // Remove undefined values
+      Object.keys(updatePayload).forEach(
+        (key) => updatePayload[key] === undefined && delete updatePayload[key]
+      );
 
-      if (checkError) throw checkError;
+      // 3️⃣ Update main Account_Users table
+      const { error: userUpdateError } = await supabase
+        .from("Account_Users")
+        .update(updatePayload)
+        .eq("id", supabaseUserId);
 
-      if (existingLicense) {
-        // ✅ Update existing license record
-        const { error: licenseUpdateError } = await supabase
+      if (userUpdateError) throw userUpdateError;
+
+      // 4️⃣ Sync license_keys table by UserID
+      if (showLicenseUpdate && editUserData.licensekey) {
+        const licensePayload = {
+          licensekey: editUserData.licensekey,
+          status: "Active",
+          valid_until: convertToPostgresDate(editUserData.subscriptionEnd),
+          UserID: originalSupabaseData?.UserID || null,
+        };
+
+        // Check if license record already exists for this UserID
+        const { data: existingLicense, error: checkError } = await supabase
           .from("license_keys")
-          .update(licensePayload)
-          .eq("UserID", originalSupabaseData?.UserID);
+          .select("KEY")
+          .eq("UserID", originalSupabaseData?.UserID)
+          .maybeSingle();
 
-        if (licenseUpdateError) throw licenseUpdateError;
-      } else {
-        // ✅ Insert new license record if none found
-        const { error: licenseInsertError } = await supabase
-          .from("license_keys")
-          .insert([licensePayload]);
+        if (checkError) throw checkError;
 
-        if (licenseInsertError) throw licenseInsertError;
+        if (existingLicense) {
+          // ✅ Update existing license record
+          const { error: licenseUpdateError } = await supabase
+            .from("license_keys")
+            .update(licensePayload)
+            .eq("UserID", originalSupabaseData?.UserID);
+
+          if (licenseUpdateError) throw licenseUpdateError;
+        } else {
+          // ✅ Insert new license record if none found
+          const { error: licenseInsertError } = await supabase
+            .from("license_keys")
+            .insert([licensePayload]);
+
+          if (licenseInsertError) throw licenseInsertError;
+        }
       }
+
+      // 5️⃣ Cleanup + Success
+      localStorage.removeItem("selectedLicenseUser");
+      localStorage.removeItem("selectedLicenseKey");
+
+      Swal.fire("Success", "User updated successfully!", "success").then(() => {
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        setModalType(null);
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error("Save Edited User Error:", error);
+      Swal.fire("Error", error.message || "Failed to update user", "error");
     }
-
-    // 5️⃣ Cleanup + Success
-    localStorage.removeItem("selectedLicenseUser");
-    localStorage.removeItem("selectedLicenseKey");
-
-    Swal.fire("Success", "User updated successfully!", "success").then(() => {
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      setModalType(null);
-      window.location.reload();
-    });
-  } catch (error) {
-    console.error("Save Edited User Error:", error);
-    Swal.fire("Error", error.message || "Failed to update user", "error");
-  }
-};
+  };
 
 
 
@@ -1999,71 +2076,71 @@ const saveEditedUser = async (e) => {
   };
 
 
-const RenewhandleRowClick = async (user) => {
-  if (!user || !user.licenseKey) return;
+  const RenewhandleRowClick = async (user) => {
+    if (!user || !user.licenseKey) return;
 
-  try {
-    const newIsTaken = !user.isTaken; // toggle isTaken
+    try {
+      const newIsTaken = !user.isTaken; // toggle isTaken
 
-    // ✅ Firestore document reference
-    const userRef = doc(
-      db,
-      "services",
-      selectedService.id,
-      "clients",
-      selectedClientId,
-      "users",
-      user.id
-    );
+      // ✅ Firestore document reference
+      const userRef = doc(
+        db,
+        "services",
+        selectedService.id,
+        "clients",
+        selectedClientId,
+        "users",
+        user.id
+      );
 
-    // ✅ 1. Update Firestore record
-    await setDoc(userRef, { isTaken: newIsTaken }, { merge: true });
+      // ✅ 1. Update Firestore record
+      await setDoc(userRef, { isTaken: newIsTaken }, { merge: true });
 
-    // ✅ 2. Update local state to reflect change
-    setUsersByClient((prev) => ({
-      ...prev,
-      [selectedClientId]: prev[selectedClientId].map((u) =>
-        u.id === user.id ? { ...u, isTaken: newIsTaken } : u
-      ),
-    }));
+      // ✅ 2. Update local state to reflect change
+      setUsersByClient((prev) => ({
+        ...prev,
+        [selectedClientId]: prev[selectedClientId].map((u) =>
+          u.id === user.id ? { ...u, isTaken: newIsTaken } : u
+        ),
+      }));
 
-    // ✅ 3. Update form fields
-    setEditUserData((prev) => ({
-      ...prev,
-      licensekey: user.licenseKey,
-      subscriptionStart: user.subscriptionStart,
-      subscriptionEnd: user.subscriptionEnd,
-    }));
+      // ✅ 3. Update form fields
+      setEditUserData((prev) => ({
+        ...prev,
+        licensekey: user.licenseKey,
+        subscriptionStart: user.subscriptionStart,
+        subscriptionEnd: user.subscriptionEnd,
+      }));
 
-    // ✅ 4. Save to localStorage with updated `isTaken: true`
-    localStorage.setItem(
-      "selectedLicenseUser",
-      JSON.stringify({ ...user, isTaken: true })
-    );
-    localStorage.setItem("selectedLicenseKey", user.licenseKey);
+      // ✅ 4. Save to localStorage with updated `isTaken: true`
+      localStorage.setItem(
+        "selectedLicenseUser",
+        JSON.stringify({ ...user, isTaken: true })
+      );
+      localStorage.setItem("selectedLicenseKey", user.licenseKey);
 
-    // ✅ 5. Log for debugging
-    console.log("🎯 Selected License Data:", {
-      licenseKey: user.licenseKey,
-      userCode: user.userCode || "N/A",
-      subscriptionStart: user.subscriptionStart,
-      subscriptionEnd: user.subscriptionEnd,
-      isTaken: newIsTaken,
-    });
+      // ✅ 5. Log for debugging
+      console.log("🎯 Selected License Data:", {
+        licenseKey: user.licenseKey,
+        userCode: user.userCode || "N/A",
+        subscriptionStart: user.subscriptionStart,
+        subscriptionEnd: user.subscriptionEnd,
+        isTaken: newIsTaken,
+      });
 
-    // ✅ 6. Close modal and show success alert
-    setLicenseModalOpen(false);
-    await Swal.fire({
-      icon: "success",
-      title: "License Selected",
-      text: `License ${user.licenseKey} has been selected.`,
-      confirmButtonColor: "#3085d6",
-    });
-  } catch (err) {
-    console.error("❌ Error selecting license:", err);
-    Swal.fire("Error", err.message || "Failed to select license", "error");
-  }
-};
+      // ✅ 6. Close modal and show success alert
+      setLicenseModalOpen(false);
+      await Swal.fire({
+        icon: "success",
+        title: "License Selected",
+        text: `License ${user.licenseKey} has been selected.`,
+        confirmButtonColor: "#3085d6",
+      });
+    } catch (err) {
+      console.error("❌ Error selecting license:", err);
+      Swal.fire("Error", err.message || "Failed to select license", "error");
+    }
+  };
 
 
 
@@ -2812,65 +2889,97 @@ const RenewhandleRowClick = async (user) => {
       await Swal.fire('Error', 'Unexpected error occurred.', 'error');
     }
   };
-const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
-  if (!currentKey) {
-    await Swal.fire(
-      'No License Key',
-      'This user does not have a license key to renew.',
-      'info'
-    );
-    return;
-  }
-
-  const result = await Swal.fire({
-    title: 'Renew License Key?',
-    text: 'This will clear the current license key and allow selecting a new one.',
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonText: 'Yes, renew it',
-    cancelButtonText: 'Cancel',
-  });
-
-  if (!result.isConfirmed) return;
-
-  try {
-    // 🧹 Step 1: Clear licensekey in frontend form
-    setEditUserData((prev) => ({ ...prev, licensekey: '' }));
-
-    // 🧭 Step 2: Clear licensekey in Supabase (no deletion)
-    const { error: updateError } = await supabase
-      .from('Account_Users') // ✅ your actual table name
-      .update({ licensekey: '' })
-      .eq('licensekey', currentKey);
-
-    if (updateError) {
-      console.error('Error clearing old license key:', updateError);
-      await Swal.fire('Error', 'Failed to clear old license key.', 'error');
+  const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
+    if (!currentKey) {
+      await Swal.fire(
+        'No License Key',
+        'This user does not have a license key to renew.',
+        'info'
+      );
       return;
     }
 
-    // 🪄 Step 3: Show modal to pick a new license
-    fetchLicenseCards();
-    setLicenseModalOpen(true);
-
-    await Swal.fire({
-      icon: 'success',
-      title: 'License Key Cleared',
-      text: 'Now select a new license key to renew the subscription.',
-      timer: 2000,
-      showConfirmButton: false,
+    const result = await Swal.fire({
+      title: 'Renew License Key?',
+      text: 'This will clear the current license key and allow selecting a new one.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, renew it',
+      cancelButtonText: 'Cancel',
     });
-  } catch (err) {
-    console.error('Unexpected error during license renewal:', err);
-    await Swal.fire(
-      'Error',
-      'Unexpected error occurred while renewing license.',
-      'error'
-    );
-  }
-};
+
+    if (!result.isConfirmed) return;
+
+    try {
+      // 🧹 Step 1: Clear licensekey in frontend form
+      setEditUserData((prev) => ({ ...prev, licensekey: '' }));
+
+      // 🧭 Step 2: Clear licensekey in Supabase (no deletion)
+      const { error: updateError } = await supabase
+        .from('Account_Users') // ✅ your actual table name
+        .update({ licensekey: '' })
+        .eq('licensekey', currentKey);
+
+      if (updateError) {
+        console.error('Error clearing old license key:', updateError);
+        await Swal.fire('Error', 'Failed to clear old license key.', 'error');
+        return;
+      }
+
+      // 🪄 Step 3: Show modal to pick a new license
+      fetchLicenseCards();
+      setLicenseModalOpen(true);
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'License Key Cleared',
+        text: 'Now select a new license key to renew the subscription.',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error('Unexpected error during license renewal:', err);
+      await Swal.fire(
+        'Error',
+        'Unexpected error occurred while renewing license.',
+        'error'
+      );
+    }
+  };
 
 
+  // First fetch users
+
+
+  // Then fetch statuses when users are loaded
+  useEffect(() => {
+    if (users.length === 0) return; // Don't run if no users yet
+
+    const fetchUserStatuses = async () => {
+      try {
+        const { data: statuses, error } = await supabase
+          .from('User_Status')
+          .select('*');
+
+        if (error) throw error;
+
+        setUsers(prev =>
+          prev.map(user => {
+            const status = statuses.find(s => s.UserID === user.id); // CHECK: user.id or user.UserID?
+            return {
+              ...user,
+              isActive: status ? status.isActive : true,
+              disableUntil: status ? status.disableUntil : null,
+            };
+          })
+        );
+      } catch (err) {
+        console.error('❌ Failed to fetch user statuses:', err);
+      }
+    };
+
+    fetchUserStatuses();
+  }, [users.length]); // Re-run when users change
 
   return (
     <Container fluid className="py-4">
@@ -2960,7 +3069,13 @@ const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
             return (
               <Col key={user.id}>
                 <Card className="shadow-sm h-100">
-                  <Card.Body>
+                  <Card.Body
+                    style={{
+                      opacity: user.isActive ? 1 : 0.5,
+                      filter: user.isActive ? 'none' : 'grayscale(100%)',
+                      transition: 'all 0.3s ease',
+                    }}
+                  >
                     {showExpiryWarning && (
                       <div
                         style={{
@@ -3000,11 +3115,17 @@ const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
 
                       <Col xs={12} sm={8}>
                         <Card.Title>{user.name}</Card.Title>
-                        <Card.Subtitle className="mb-2 text-muted">{user.role}</Card.Subtitle>
+                        <Card.Subtitle className="mb-2 text-muted">
+                          {user.role}{' '}
+                          {!user.isActive && (
+                            <Badge bg="secondary" style={{ marginLeft: '6px' }}>
+                              Disabled
+                            </Badge>
+                          )}
+                        </Card.Subtitle>
                         <Card.Text>
-                          <strong>Position:</strong> {
-                            positionsList.find(pos => pos.code === user.position)?.name || user.position
-                          }
+                          <strong>Position:</strong>{' '}
+                          {positionsList.find(pos => pos.code === user.position)?.name || user.position}
                           <br />
                           <strong>Email:</strong> {user.email}
                           <br />
@@ -3012,7 +3133,8 @@ const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
                           <br />
                           <strong>Department:</strong>{' '}
                           <Badge bg="secondary">
-                            {departmentsList.find(dept => dept.code === user.department)?.name || user.department}
+                            {departmentsList.find(dept => dept.code === user.department)?.name ||
+                              user.department}
                           </Badge>
                         </Card.Text>
                       </Col>
@@ -3849,7 +3971,7 @@ const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
                         />
 
                         {/* Browse Button */}
-                     
+
                         {/* Renew Button */}
                         <button
                           type="button"
@@ -5363,55 +5485,125 @@ const handleRenewLicenseKey = async (currentKey, setEditUserData) => {
 
 
 
-      <Modal show={modalType === "deactivate" ? true : undefined} onHide={() => setModalType(null)} centered>
+      <Modal
+        show={modalType === "deactivate"}
+        onHide={() => setModalType(null)}
+        centered
+      >
         <Modal.Header closeButton>
-          <Modal.Title>Deactivate / Enable / Delete User {selectedUser?.name}</Modal.Title>
+          <Modal.Title>
+            Deactivate / Enable / Delete User {selectedUser?.name}
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <p>Select duration to disable the account or enable it:</p>
-          {DisableDurations.map(({ label, value }) => (
-            <Form.Check
-              key={value}
-              type="radio"
-              label={label}
-              name="disableDuration"
-              value={value}
-              checked={disableDays === value}
-              onChange={() => setDisableDays(value)}
-              disabled={loading}
-              className="mb-2"
-            />
-          ))}
+          {loading ? (
+            <div className="text-center py-3">Loading user status...</div>
+          ) : (
+            <>
+              <p>
+                Current Status:{" "}
+                <strong
+                  style={{
+                    color: userStatus?.isActive ? "green" : "red",
+                  }}
+                >
+                  {userStatus?.isActive ? "Active" : "Disabled"}
+                </strong>
+              </p>
+
+              {userStatus?.disableUntil && (
+                <p>
+                  Disabled until:{" "}
+                  <strong>{new Date(userStatus.disableUntil).toLocaleString()}</strong>
+                </p>
+              )}
+
+              <hr />
+              <p>Select duration to disable the account or enable it:</p>
+
+              {DisableDurations.map(({ label, value }) => {
+                const isCurrent =
+                  (userStatus?.isActive && value === 0) ||
+                  (!userStatus?.isActive &&
+                    userStatus?.disableUntil &&
+                    Math.ceil(
+                      (new Date(userStatus.disableUntil) - new Date()) /
+                      (1000 * 60 * 60 * 24)
+                    ) === value);
+
+                return (
+                  <Form.Check
+                    key={value}
+                    type="radio"
+                    label={
+                      <>
+                        {label}
+                        {isCurrent && (
+                          <span
+                            style={{
+                              color: "#16a34a",
+                              fontWeight: "bold",
+                              marginLeft: 8,
+                            }}
+                          >
+                            ✅ Current
+                          </span>
+                        )}
+                      </>
+                    }
+                    name="disableDuration"
+                    value={value}
+                    checked={disableDays === value}
+                    onChange={() => setDisableDays(value)}
+                    disabled={loading}
+                    className="mb-2"
+                  />
+                );
+              })}
+            </>
+          )}
         </Modal.Body>
+
+
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setModalType(null)} disabled={loading}>
+          <Button
+            variant="secondary"
+            onClick={() => setModalType(null)}
+            disabled={loading}
+          >
             Cancel
           </Button>
 
-          {/* Delete button */}
           <Button
             variant="outline-danger"
-            onClick={() => deleteAccountUser(selectedUser?.id, selectedUser?.name)}
+            onClick={() =>
+              deleteAccountUser(selectedUser?.id, selectedUser?.name)
+            }
             disabled={loading}
           >
             Delete Account
           </Button>
 
-
-
-
-          {/* Enable/Deactivate button */}
           {disableDays === 0 ? (
-            <Button variant="success" onClick={handleDeactivate} disabled={loading}>
+            <Button
+              variant="success"
+              onClick={handleDeactivate}
+              disabled={loading}
+            >
               {loading ? "Processing..." : "Enable"}
             </Button>
           ) : (
-            <Button variant="danger" onClick={handleDeactivate} disabled={!disableDays || loading}>
+            <Button
+              variant="danger"
+              onClick={handleDeactivate}
+              disabled={!disableDays || loading}
+            >
               {loading ? "Processing..." : "Deactivate"}
             </Button>
           )}
         </Modal.Footer>
       </Modal>
+
 
 
       <Modal show={modalType === "CreateMarketPermissions" ? true : undefined} onHide={() => setModalType(null)} centered>
