@@ -607,57 +607,57 @@ export default function AccountsListManager() {
 
 
 
-// ✅ Fetch first 1,000 records for initial modal load
-const fetchBpAccounts = async () => {
-    const batchSize = 1000;
-    let allData = [];
-    let hasMore = true;
-    let offset = 0;
+    // ✅ Fetch first 1,000 records for initial modal load
+    const fetchBpAccounts = async () => {
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
 
-    console.log("🚀 Starting full Bp_Accounts data fetch...");
+        console.log("🚀 Starting full Bp_Accounts data fetch...");
 
-    try {
-        while (hasMore) {
-            console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
+        try {
+            while (hasMore) {
+                console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
 
-            const { data, error } = await supabase
-                .from("Bp_Accounts")
-                .select("bp_code, bp_name")
-                .order("bp_name", { ascending: true })
-                .range(offset, offset + batchSize - 1);
+                const { data, error } = await supabase
+                    .from("Bp_Accounts")
+                    .select("bp_code, bp_name")
+                    .order("bp_name", { ascending: true })
+                    .range(offset, offset + batchSize - 1);
 
-            if (error) {
-                console.error("❌ Error during batch fetch:", error);
-                throw error;
+                if (error) {
+                    console.error("❌ Error during batch fetch:", error);
+                    throw error;
+                }
+
+                console.log(`✅ Fetched ${data?.length || 0} records this batch`);
+
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize; // keep looping if batch full
+                } else {
+                    hasMore = false;
+                }
             }
 
-            console.log(`✅ Fetched ${data?.length || 0} records this batch`);
-
-            if (data && data.length > 0) {
-                allData = [...allData, ...data];
-                offset += batchSize;
-                hasMore = data.length === batchSize; // keep looping if batch full
-            } else {
-                hasMore = false;
+            if (allData.length === 0) {
+                console.warn("⚠️ No records found in Bp_Accounts");
+                setBpAccounts([]);
+                return;
             }
-        }
 
-        if (allData.length === 0) {
-            console.warn("⚠️ No records found in Bp_Accounts");
+            // ✅ Update state
+            setBpAccounts(allData);
+            console.log(`🎉 Successfully loaded ${allData.length} BP accounts`);
+        } catch (err) {
+            console.error("🔥 Error fetching Bp_Accounts:", err);
             setBpAccounts([]);
-            return;
         }
+    };
 
-        // ✅ Update state
-        setBpAccounts(allData);
-        console.log(`🎉 Successfully loaded ${allData.length} BP accounts`);
-    } catch (err) {
-        console.error("🔥 Error fetching Bp_Accounts:", err);
-        setBpAccounts([]);
-    }
-};
-
-// ✅ Fetch ALL records only during search
+    // ✅ Fetch ALL records only during search
 
 
 
@@ -692,6 +692,8 @@ const fetchBpAccounts = async () => {
         setNewRecord(prev => ({
             ...prev,
             mother_code: selected.dscode,
+            group_code: selected.group_code,
+
         }));
         setShowMotherModal(false);
     };
@@ -2164,6 +2166,7 @@ const fetchBpAccounts = async () => {
                                         name="group_code"
                                         value={newRecord.group_code || ''}
                                         onChange={handleTaggingChange}
+                                        disabled
                                         style={{
                                             flex: 1,
                                             padding: '10px 12px',
@@ -2716,6 +2719,7 @@ const fetchBpAccounts = async () => {
                                         name="group_code"
                                         value={newRecord.group_code || ''}
                                         onChange={handleTaggingChange}
+                                        disabled
                                         style={{
                                             flex: 1,
                                             padding: '10px 12px',
