@@ -551,23 +551,115 @@ export default function AccountsListManager() {
     };
 
     const fetchMotherAccounts = async () => {
-        const { data, error } = await supabase
-            .from("sub_mother_account")
-            .select("dscode, name, group_code, group_name")
-            .eq("status", true)
-            .order("name", { ascending: true });
-        if (error) console.error(error);
-        else setMotherAccounts(data);
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
+
+        console.log("🚀 Starting full sub_mother_account data fetch...");
+
+        try {
+            while (hasMore) {
+                console.log(
+                    `📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
+                );
+
+                const { data, error } = await supabase
+                    .from("sub_mother_account")
+                    .select("dscode, name, group_code, group_name")
+                    .eq("status", true)
+                    .order("name", { ascending: true })
+                    .range(offset, offset + batchSize - 1);
+
+                if (error) {
+                    console.error("❌ Error during batch fetch:", error);
+                    throw error;
+                }
+
+                console.log(
+                    `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+                );
+
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize;
+                    console.log(`📊 Total records so far: ${allData.length}`);
+                } else {
+                    hasMore = false;
+                    console.log("🏁 Finished fetching all sub_mother_account data");
+                }
+            }
+
+            if (allData.length === 0) {
+                console.warn("⚠️ No active mother accounts found");
+                setMotherAccounts([]);
+                return;
+            }
+
+            // ✅ Set all fetched data into state
+            setMotherAccounts(allData);
+            console.log(`🎉 Successfully loaded ${allData.length} mother accounts`);
+        } catch (err) {
+            console.error("🔥 Error fetching sub_mother_account:", err);
+        }
     };
 
+
     const fetchBpAccounts = async () => {
-        const { data, error } = await supabase
-            .from("Bp_Accounts")
-            .select("bp_code, bp_name")
-            .order("bp_name", { ascending: true });
-        if (error) console.error(error);
-        else setBpAccounts(data);
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
+
+        console.log("🚀 Starting full Bp_Accounts data fetch...");
+
+        try {
+            while (hasMore) {
+                console.log(
+                    `📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
+                );
+
+                const { data, error } = await supabase
+                    .from("Bp_Accounts")
+                    .select("bp_code, bp_name")
+                    .order("bp_name", { ascending: true })
+                    .range(offset, offset + batchSize - 1);
+
+                if (error) {
+                    console.error("❌ Error during batch fetch:", error);
+                    throw error;
+                }
+
+                console.log(
+                    `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+                );
+
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize;
+                    console.log(`📊 Total records so far: ${allData.length}`);
+                } else {
+                    hasMore = false;
+                    console.log("🏁 Finished fetching all Bp_Accounts data");
+                }
+            }
+
+            if (allData.length === 0) {
+                console.warn("⚠️ No records found in Bp_Accounts");
+                setBpAccounts([]);
+                return;
+            }
+
+            // ✅ Set all fetched data into state
+            setBpAccounts(allData);
+            console.log(`🎉 Successfully loaded ${allData.length} BP accounts`);
+        } catch (err) {
+            console.error("🔥 Error fetching Bp_Accounts:", err);
+        }
     };
+
 
     const fetchAgents = async () => {
         const { data, error } = await supabase
