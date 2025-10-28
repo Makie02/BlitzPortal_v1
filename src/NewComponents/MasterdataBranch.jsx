@@ -606,59 +606,60 @@ export default function AccountsListManager() {
     };
 
 
-    const fetchBpAccounts = async () => {
-        const batchSize = 1000;
-        let allData = [];
-        let hasMore = true;
-        let offset = 0;
 
-        console.log("🚀 Starting full Bp_Accounts data fetch...");
+// ✅ Fetch first 1,000 records for initial modal load
+const fetchBpAccounts = async () => {
+    const batchSize = 1000;
+    let allData = [];
+    let hasMore = true;
+    let offset = 0;
 
-        try {
-            while (hasMore) {
-                console.log(
-                    `📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
-                );
+    console.log("🚀 Starting full Bp_Accounts data fetch...");
 
-                const { data, error } = await supabase
-                    .from("Bp_Accounts")
-                    .select("bp_code, bp_name")
-                    .order("bp_name", { ascending: true })
-                    .range(offset, offset + batchSize - 1);
+    try {
+        while (hasMore) {
+            console.log(`📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`);
 
-                if (error) {
-                    console.error("❌ Error during batch fetch:", error);
-                    throw error;
-                }
+            const { data, error } = await supabase
+                .from("Bp_Accounts")
+                .select("bp_code, bp_name")
+                .order("bp_name", { ascending: true })
+                .range(offset, offset + batchSize - 1);
 
-                console.log(
-                    `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
-                );
-
-                if (data && data.length > 0) {
-                    allData = [...allData, ...data];
-                    offset += batchSize;
-                    hasMore = data.length === batchSize;
-                    console.log(`📊 Total records so far: ${allData.length}`);
-                } else {
-                    hasMore = false;
-                    console.log("🏁 Finished fetching all Bp_Accounts data");
-                }
+            if (error) {
+                console.error("❌ Error during batch fetch:", error);
+                throw error;
             }
 
-            if (allData.length === 0) {
-                console.warn("⚠️ No records found in Bp_Accounts");
-                setBpAccounts([]);
-                return;
-            }
+            console.log(`✅ Fetched ${data?.length || 0} records this batch`);
 
-            // ✅ Set all fetched data into state
-            setBpAccounts(allData);
-            console.log(`🎉 Successfully loaded ${allData.length} BP accounts`);
-        } catch (err) {
-            console.error("🔥 Error fetching Bp_Accounts:", err);
+            if (data && data.length > 0) {
+                allData = [...allData, ...data];
+                offset += batchSize;
+                hasMore = data.length === batchSize; // keep looping if batch full
+            } else {
+                hasMore = false;
+            }
         }
-    };
+
+        if (allData.length === 0) {
+            console.warn("⚠️ No records found in Bp_Accounts");
+            setBpAccounts([]);
+            return;
+        }
+
+        // ✅ Update state
+        setBpAccounts(allData);
+        console.log(`🎉 Successfully loaded ${allData.length} BP accounts`);
+    } catch (err) {
+        console.error("🔥 Error fetching Bp_Accounts:", err);
+        setBpAccounts([]);
+    }
+};
+
+// ✅ Fetch ALL records only during search
+
+
 
 
     const fetchAgents = async () => {
@@ -2862,9 +2863,33 @@ export default function AccountsListManager() {
 
 function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
     const [search, setSearch] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 10; // 👈 show 10 records per page
+
+    // 🔍 Search filter
     const filtered = data.filter(row =>
         fieldKeys.some(k => String(row[k] || '').toLowerCase().includes(search.toLowerCase()))
     );
+
+    // 📄 Pagination logic
+    const totalPages = Math.ceil(filtered.length / pageSize);
+    const startIndex = (currentPage - 1) * pageSize;
+    const paginatedData = filtered.slice(startIndex, startIndex + pageSize);
+
+    // Go to previous page
+    const handlePrev = () => {
+        if (currentPage > 1) setCurrentPage(prev => prev - 1);
+    };
+
+    // Go to next page
+    const handleNext = () => {
+        if (currentPage < totalPages) setCurrentPage(prev => prev + 1);
+    };
+
+    // Reset to page 1 when searching
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search]);
 
     return (
         <div
@@ -2910,8 +2935,7 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                         margin: 0,
                         color: 'white',
                         fontSize: 20,
-                        fontWeight: 600,
-                        letterSpacing: '-0.02em'
+                        fontWeight: 600
                     }}>
                         {title}
                     </h3>
@@ -2925,10 +2949,7 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                             height: 32,
                             borderRadius: 8,
                             cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 24,
+                            fontSize: 22,
                             transition: 'all 0.2s'
                         }}
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
@@ -3013,7 +3034,7 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.length ? filtered.map((row, i) => (
+                            {paginatedData.length ? paginatedData.map((row, i) => (
                                 <tr
                                     key={i}
                                     onClick={() => { onSelect(row); onClose(); }}
@@ -3032,13 +3053,12 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                                 >
                                     {fieldKeys.map((k, j) => (
                                         <td key={j} style={{
-                                            padding: '16px',
+                                            padding: '14px 16px',
                                             fontSize: 14,
                                             color: '#1f2937',
                                             background: 'white',
                                             border: '1px solid #e5e7eb',
                                             borderLeft: j === 0 ? '3px solid #2563eb' : '1px solid #e5e7eb',
-                                            borderRight: j === fieldKeys.length - 1 ? '1px solid #e5e7eb' : 'none',
                                             borderRadius: j === 0 ? '8px 0 0 8px' : j === fieldKeys.length - 1 ? '0 8px 8px 0' : 0
                                         }}>
                                             {row[k] || '-'}
@@ -3056,17 +3076,63 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                                             fontSize: 15
                                         }}
                                     >
-                                        No results found
+                                        loading.  Data.....
+
                                     </td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination Controls */}
+                <div style={{
+                    padding: '12px 24px',
+                    borderTop: '1px solid #e5e7eb',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: '#f9fafb'
+                }}>
+                    <span style={{ fontSize: 14, color: '#6b7280' }}>
+                        Page {currentPage} of {totalPages || 1}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                            onClick={handlePrev}
+                            disabled={currentPage === 1}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 6,
+                                border: '1px solid #d1d5db',
+                                background: currentPage === 1 ? '#f3f4f6' : '#fff',
+                                color: '#111827',
+                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            ◀ Prev
+                        </button>
+                        <button
+                            onClick={handleNext}
+                            disabled={currentPage === totalPages || totalPages === 0}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 6,
+                                border: '1px solid #d1d5db',
+                                background: (currentPage === totalPages || totalPages === 0) ? '#f3f4f6' : '#fff',
+                                color: '#111827',
+                                cursor: (currentPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            Next ▶
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );
 }
+
 
 const styles = {
     container: { padding: 20, fontFamily: 'Arial, sans-serif', background: '#f5f5f5' },
