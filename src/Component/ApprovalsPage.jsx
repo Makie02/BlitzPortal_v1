@@ -645,183 +645,181 @@ export default function ApprovalsPage() {
       Swal.fire("Error", "Something went wrong while sending back the entry.", "error");
     }
   };
+const handleApproveClick = async (entryCode) => {
+  const entry = approvals.find((item) => item.code === entryCode);
+  if (!entry || !entry.code) return;
 
-  const handleApproveClick = async (entryCode) => {
-    const entry = approvals.find((item) => item.code === entryCode);
-    if (!entry || !entry.code) return;
+  const dateTime = new Date().toISOString();
+  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+  const userId = currentUser?.UserID || "unknown";
 
-    const dateTime = new Date().toISOString();
-    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-    const userId = currentUser?.UserID || "unknown";
+  if (entry.isSubmitting) return;
 
-    if (entry.isSubmitting) return;
+  setApprovals((prev) =>
+    prev.map((item) =>
+      item.code === entryCode ? { ...item, isSubmitting: true } : item
+    )
+  );
 
-    setApprovals((prev) =>
-      prev.map((item) =>
-        item.code === entryCode ? { ...item, isSubmitting: true } : item
-      )
-    );
+  let remainingBalance = null;
+  let creditBudget = null;
+  let coverPwpCode = null;
 
-    let remainingBalance = null;
-    let creditBudget = null;
-    let coverPwpCode = null;
+  try {
+    // Insert approval history
+    const { error: historyError } = await supabase
+      .from("Approval_History")
+      .insert({
+        PwpCode: entry.code,
+        ApproverId: userId,
+        DateResponded: dateTime,
+        Response: "Approved",
+        Type: userType || "admin",
+        Notication: false,
+        CreatedForm: entry.createForm || "unknown",
+      });
 
-    try {
-      const { error: historyError } = await supabase
-        .from("Approval_History")
-        .insert({
-          PwpCode: entry.code,
-          ApproverId: userId,
-          DateResponded: dateTime,
-          Response: "Approved",
-          Type: userType || "admin",
-          Notication: false,
-          CreatedForm: entry.createForm || "unknown",
-        });
+    if (historyError) {
+      console.error("Supabase insert error:", historyError.message);
+      Swal.fire("Error", "Failed to log approval. Please try again.", "error");
+      return;
+    }
 
-      if (historyError) {
-        console.error("Supabase insert error:", historyError.message);
-        Swal.fire("Error", "Failed to log approval. Please try again.", "error");
-        return;
+    const updatePayload = {
+      Approved: true,
+      createdate: dateTime,
+    };
+
+    if (entry.code.startsWith("R")) {
+      const { data: pwpData, error: pwpError } = await supabase
+        .from("regular_pwp")
+        .select("remaining_balance, coverPwpCode, credit_budget")
+        .eq("regularpwpcode", entry.code)
+        .single();
+
+      if (pwpError) {
+        console.warn("Missing regular_pwp data:", pwpError.message);
       }
 
-      let updatePayload = {
-        Approved: true,
-        createdate: dateTime,
+      if (pwpData) {
+        remainingBalance = parseFloat(pwpData.remaining_balance) || 0;
+        creditBudget = parseFloat(pwpData.credit_budget) || 0;
+        coverPwpCode = pwpData.coverPwpCode || null;
+
+        // ✅ Continue even if cover code or budget is missing
+        if (!isNaN(remainingBalance) && coverPwpCode) {
+          const { error: updateError } = await supabase
+            .from("amount_badget")
+            .update({
+              remainingbalance: remainingBalance,
+              ...updatePayload,
+            })
+            .eq("pwp_code", coverPwpCode);
+
+          if (updateError) {
+            console.warn(
+              "Warning: Failed to update amount_badget:",
+              updateError.message
+            );
+          }
+        } else {
+          console.warn(
+            `Skipped budget update for ${entry.code}: Missing or invalid budget data`
+          );
+        }
+      }
+    } else {
+      const { error: updateError } = await supabase
+        .from("amount_badget")
+        .update(updatePayload)
+        .eq("pwp_code", entry.code);
+
+      if (updateError) {
+        console.warn("Warning: Failed to update budget approval:", updateError.message);
+      }
+    }
+
+    // Log into approved_history_budget (still logs even if values are null)
+    const { error: historyBudgetError } = await supabase
+      .from("approved_history_budget")
+      .insert({
+        pwp_code: entry.code,
+        approver_id: userId,
+        date_responded: dateTime,
+        response: "Approved",
+        type: userType || "admin",
+        created_form: entry.createForm || "unknown",
+        remaining_balance: remainingBalance,
+        credit_budget: creditBudget,
+        cover_pwp_code: coverPwpCode,
+        updated_amount_badget: true,
+      });
+
+    if (historyBudgetError) {
+      console.warn("Warning: Failed to log approval+budget:", historyBudgetError.message);
+    }
+
+    // Log user activity
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const { ip } = await ipRes.json();
+
+      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+      const geo = await geoRes.json();
+
+      const activity = {
+        userId,
+        device: navigator.userAgent || "Unknown Device",
+        location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+        ip,
+        time: dateTime,
+        action: `Approved the ${entry.code}`,
       };
 
-      if (entry.code.startsWith("R")) {
-        const { data: pwpData, error: pwpError } = await supabase
-          .from("regular_pwp")
-          .select("remaining_balance, coverPwpCode, credit_budget")
-          .eq("regularpwpcode", entry.code)
-          .single();
+      const { error: activityError } = await supabase
+        .from("RecentActivity")
+        .insert(activity);
 
-        if (pwpError || !pwpData) {
-          console.error("Failed to fetch regular_pwp:", pwpError?.message || "No data");
-          Swal.fire("Error", "Missing budget data.", "error");
-          return;
-        }
-
-        remainingBalance = parseFloat(pwpData.remaining_balance);
-        creditBudget = parseFloat(pwpData.credit_budget);
-        coverPwpCode = pwpData.coverPwpCode;
-
-        if (isNaN(remainingBalance) || isNaN(creditBudget) || !coverPwpCode) {
-          console.error("Invalid budget data");
-          Swal.fire("Error", "Invalid budget or missing cover code.", "error");
-          return;
-        }
-
-        const { data: updateData, error: updateError } = await supabase
-          .from("amount_badget")
-          .update({
-            remainingbalance: remainingBalance,
-            ...updatePayload,
-          })
-          .eq("pwp_code", coverPwpCode)
-          .select();
-
-        if (updateError) {
-          console.error("Failed to update amount_badget with coverPwpCode:", updateError.message);
-          Swal.fire("Error", "Failed to update budget approval.", "error");
-          return;
-        }
-      } else {
-        const { data: updatedRows, error: updateError } = await supabase
-          .from("amount_badget")
-          .update(updatePayload)
-          .eq("pwp_code", entry.code)
-          .select();
-
-        if (updateError) {
-          console.error("Failed to update amount_badget:", updateError.message);
-          Swal.fire("Error", "Failed to update budget approval.", "error");
-          return;
-        }
+      if (activityError) {
+        console.warn("Activity log failed:", activityError.message);
       }
+    } catch (logErr) {
+      console.warn("Activity logging failed:", logErr.message);
+    }
 
-      const { data: historyBudgetData, error: historyBudgetError } = await supabase
-        .from("approved_history_budget")
-        .insert({
-          pwp_code: entry.code,
-          approver_id: userId,
-          date_responded: dateTime,
-          response: "Approved",
-          type: userType || "admin",
-          created_form: entry.createForm || "unknown",
-          remaining_balance: remainingBalance,
-          credit_budget: creditBudget,
-          cover_pwp_code: coverPwpCode,
-          updated_amount_badget: true,
-        })
-        .select();
-
-      if (historyBudgetError) {
-        console.error("Failed to insert into approved_history_budget:", historyBudgetError.message);
-        Swal.fire("Error", "Failed to log approval + budget.", "error");
-        return;
-      }
-
-      try {
-        const ipRes = await fetch("https://api.ipify.org?format=json");
-        const { ip } = await ipRes.json();
-
-        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-        const geo = await geoRes.json();
-
-        const activity = {
-          userId,
-          device: navigator.userAgent || "Unknown Device",
-          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
-          ip,
-          time: dateTime,
-          action: `Approved the ${entry.code}`,
-        };
-
-        const { error: activityError } = await supabase
-          .from("RecentActivity")
-          .insert(activity);
-
-        if (activityError) {
-          console.error("Activity log failed:", activityError.message);
-        }
-      } catch (logErr) {
-        console.warn("Activity logging failed:", logErr.message);
-      }
-
-      setApprovals((prev) =>
-        prev.map((item) =>
-          item.code === entryCode
-            ? {
+    // Update state and show success
+    setApprovals((prev) =>
+      prev.map((item) =>
+        item.code === entryCode
+          ? {
               ...item,
               status: "Approved",
               responseDate: dateTime,
               isSubmitting: false,
             }
-            : item
-        )
-      );
+          : item
+      )
+    );
 
-      Swal.fire({
-        icon: "success",
-        title: "Approved!",
-        text: `Entry ${entry.code} was approved successfully.`,
-        confirmButtonText: "OK",
-      }).then(() => {
-        window.location.reload();
-      });
-    } catch (error) {
-      console.error(`Failed to approve ${entry.code}:`, error.message || error);
-      Swal.fire("Error", "Something went wrong during approval.", "error");
+    Swal.fire({
+      icon: "success",
+      title: "Approved!",
+      text: `Entry ${entry.code} was approved successfully (even without budget info).`,
+      confirmButtonText: "OK",
+    }).then(() => {
+      window.location.reload();
+    });
+  } catch (error) {
+    console.error(`Failed to approve ${entry.code}:`, error.message || error);
+    Swal.fire("Error", "Something went wrong during approval.", "error");
 
-      setApprovals((prev) =>
-        prev.map((item) =>
-          item.code === entryCode ? { ...item, isSubmitting: false } : item
-        )
-      );
-    }
-  };
+    setApprovals((prev) =>
+      prev.map((item) =>
+        item.code === entryCode ? { ...item, isSubmitting: false } : item
+      )
+    );
+  }
+};
 
   return (
     <div
