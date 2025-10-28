@@ -8,7 +8,7 @@ const Activity = () => {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: null, code: '', name: '', description: '' });
+  const [form, setForm] = useState({ id: null, code: '', name: '', description: '', glcode: '' });
   const [isEditing, setIsEditing] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,13 +45,15 @@ const Activity = () => {
   };
 
   const openAddModal = () => {
-    setForm({ id: null, code: generateNextCode(), name: '', description: '' });
+    setForm({ id: null, code: generateNextCode(), name: '', description: '', glcode: '' });
     setIsEditing(false);
     setModalOpen(true);
   };
 
   const openEditModal = (activity) => {
-    setForm({ id: activity.id, code: activity.code, name: activity.name, description: activity.description });
+    setForm({
+      id: activity.id, code: activity.code, name: activity.name, description: activity.description, glcode: activity.glcode || ''
+    });
     setIsEditing(true);
     setModalOpen(true);
   };
@@ -71,7 +73,9 @@ const Activity = () => {
     if (isEditing) {
       const { error } = await supabase
         .from('activity')
-        .update({ name: form.name, description: form.description || null })
+        .update({
+          name: form.name, description: form.description || null, glcode: form.glcode || null
+        })
         .eq('id', form.id);
 
       if (error) {
@@ -84,7 +88,9 @@ const Activity = () => {
     } else {
       const { error } = await supabase
         .from('activity')
-        .insert([{ code: form.code, name: form.name, description: form.description || null }]);
+        .insert([{
+          code: form.code, name: form.name, description: form.description || null, glcode: form.glcode || null
+        }]);
 
       if (error) {
         Swal.fire('Insert Error', error.message, 'error');
@@ -177,6 +183,8 @@ const Activity = () => {
                 <tr>
                   <th style={thStyle}>ID</th>
                   <th style={thStyle}>Code</th>
+                  <th style={thStyle}>GL Code</th>
+
                   <th style={thStyle}>Name</th>
                   <th style={thStyle}>Description</th>
                   <th style={thStyle}>Actions</th>
@@ -191,6 +199,8 @@ const Activity = () => {
                   <tr key={act.id} style={{ borderBottom: '1px solid #ddd' }}>
                     <td style={tdStyle}>{act.id}</td>
                     <td style={tdStyle}>{act.code}</td>
+                    <td style={tdStyle}>{act.glcode || '-'}</td>
+
                     <td style={tdStyle}>{act.name}</td>
                     <td style={tdStyle}>{act.description || '-'}</td>
                     <td style={tdStyle}>
@@ -268,6 +278,18 @@ const Activity = () => {
                   style={inputStyle}
                 />
               </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label>GL Code:</label>
+                <input
+                  type="text"
+                  name="glcode"
+                  value={form.glcode}
+                  onChange={handleChange}
+                  style={inputStyle}
+                  placeholder="Enter GL Code"
+                />
+              </div>
+
               <div style={{ marginBottom: '12px' }}>
                 <label>Name: *</label>
                 <input
@@ -440,8 +462,8 @@ const activePageButtonStyle = {
   cursor: 'default'
 };
 const paginationStyle = {
-    display: 'flex',
-    gap: '6px',
-    flexWrap: 'wrap'
+  display: 'flex',
+  gap: '6px',
+  flexWrap: 'wrap'
 };
 export default Activity;
