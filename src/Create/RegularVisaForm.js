@@ -2693,6 +2693,26 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
         sku.category_code?.toString().toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+
+
+  useEffect(() => {
+    async function fetchActivities() {
+      const { data, error } = await supabase
+        .from("activity")
+        .select("id, code, name")
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching activities:", error);
+        return;
+      }
+
+      setActivities(data);
+    }
+
+    fetchActivities();
+  }, []);
+
   const renderStepContent = () => {
     switch (step) {
       case 0:
@@ -2850,93 +2870,60 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                   )}
                 </div>
 
-
-                {/* Account Type */}
-
-                {/* // ============================
-                                // Activity + Amount Budget
-                                // ============================ */}
-
                 {/* Activity */}
-                <div className="col-md-4" style={{ position: "relative" }}>
-                  <label>
-                    Activity <span style={{ color: "red" }}>*</span>
-                  </label>
-                  <select
-                    name="activity"
-                    className="form-control"
-                    value={formData.activity}
-                    onChange={handleFormChange}
-                  >
-                    <option value="">Select Activity</option>
-                    {activities
-                      .filter(
-                        (opt) =>
-                          opt.name === "BUNDLING / TIE UP" ||
-                          opt.name === "LISTING FEE" ||
-                          opt.name === "DISPLAY ALLOWANCE" ||
-                          opt.name === "DISTRIBUTION" ||
-                          opt.name === "TRADE DEALS" ||
-                          opt.name === "LISTING FEE" ||
-                          opt.name === "ANNIVERSARY SUPPORT" ||
-                          opt.name === "CHRISTMAS SUPPORT" ||
-                          opt.name === "OPENING SUPPORT" ||
-                          opt.name === "SPONSORSHIPS" ||
-                          opt.name === "LOGISTIC" ||
-                          opt.name === "FREIGHT" ||
-                          opt.name === "MERCHANDISER IN-HOUSE SALARYT" ||
-                          opt.name === "MERCHANDISER/DISER PENALTY" ||
-                          opt.name === "STORE EXPENSE" ||
-                          opt.name === "TRADE DISCOUNT SHARING" ||
-                          opt.name === "TARGET INCENTIVE" ||
-                          opt.name === "VOLUME INCENTIVE" ||
-                          opt.name === "SALES REBATES" ||
-                          opt.name === "PAYOLA ADMIN" ||
-                          opt.name === "PAYOLA DELIVERY" ||
-                          opt.name === "PAYOLA SELLING"
-                      )
-                      .map((opt, index) => (
-                        <option key={index} value={opt.code}>
-                          {opt.name}
-                        </option>
-                      ))}
-                  </select>
+            <div className="col-md-4" style={{ position: "relative" }}>
+      <label>
+        Activity <span style={{ color: "red" }}>*</span>
+      </label>
+      <select
+        name="activity"
+        className="form-control"
+        value={formData.activity}
+        onChange={handleFormChange}
+      >
+        <option value="">Select Activity</option>
+        {activities.map((opt) => (
+          <option key={opt.id} value={opt.code}>
+            {opt.name}
+          </option>
+        ))}
+      </select>
 
-                  {/* Dropdown arrow */}
-                  <span
-                    style={{
-                      position: "absolute",
-                      right: "20px",
-                      top: "70%",
-                      transform: "translateY(-50%)",
-                      pointerEvents: "none",
-                      color: "#555",
-                      fontSize: "14px",
-                      userSelect: "none",
-                    }}
-                  >
-                    ▼
-                  </span>
+      {/* Dropdown arrow */}
+      <span
+        style={{
+          position: "absolute",
+          right: "20px",
+          top: "70%",
+          transform: "translateY(-50%)",
+          pointerEvents: "none",
+          color: "#555",
+          fontSize: "14px",
+          userSelect: "none",
+        }}
+      >
+        ▼
+      </span>
 
-                  {/* Checkmark */}
-                  {formData.activity && (
-                    <span
-                      style={{
-                        position: "absolute",
-                        right: "40px",
-                        top: "55%",
-                        transform: "translateY(-20%)",
-                        color: "green",
-                        fontWeight: "bold",
-                        fontSize: "25px",
-                        pointerEvents: "none",
-                        userSelect: "none",
-                      }}
-                    >
-                      ✓
-                    </span>
-                  )}
-                </div>
+      {/* Checkmark */}
+      {formData.activity && (
+        <span
+          style={{
+            position: "absolute",
+            right: "40px",
+            top: "55%",
+            transform: "translateY(-20%)",
+            color: "green",
+            fontWeight: "bold",
+            fontSize: "25px",
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
+        >
+          ✓
+        </span>
+      )}
+    </div>
 
                 {shouldShowCategory() && (
                   <div className="col-md-4" style={{ position: "relative" }}>
@@ -3060,115 +3047,7 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                       </span>
                     )}
 
-                    {/* Modal */}
-                    <Modal show={showModal} onHide={handleCloseModal} size="lg" centered>
-                      <Modal.Header
-                        closeButton
-                        style={{ background: "#4689a6", color: "white" }}
-                      >
-                        <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                          Select Categories
-                        </Modal.Title>
-                      </Modal.Header>
-                      <Modal.Body>
-                        <input
-                          type="text"
-                          className="form-control mb-3"
-                          placeholder="Search category by name or code..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                        />
 
-                        {loading ? (
-                          <p>Loading categories...</p>
-                        ) : (
-                          <ul
-                            className="list-group"
-                            style={{ maxHeight: "300px", overflowY: "auto" }}
-                          >
-                            {filteredList.length > 0 ? (
-                              filteredList.map((cat) => {
-                                const isChecked = formData.categoryCode?.includes(cat.code);
-
-                                return (
-                                  <li
-                                    key={cat.id}
-                                    className="list-group-item d-flex justify-content-between align-items-center"
-                                  >
-                                    <div className="form-check">
-                                      <input
-                                        className="form-check-input"
-                                        type="checkbox"
-                                        id={`cat-check-${cat.id}`}
-                                        checked={isChecked}
-                                        onChange={(e) =>
-                                          handleCategoryChange(cat, e.target.checked)
-                                        }
-                                        style={{
-                                          width: "20px",
-                                          height: "20px",
-                                          transform: "scale(1.3)",
-                                          cursor: "pointer",
-
-                                        }}
-                                      />
-                                      <label
-                                        className="form-check-label"
-                                        htmlFor={`cat-check-${cat.id}`}
-                                        style={{ marginLeft: '5px' }}
-                                      >
-                                        {cat.name} <strong style={{ color: '#fff' }}>{cat.code}</strong>
-                                      </label>
-                                    </div>
-                                  </li>
-                                );
-                              })
-                            ) : (
-                              <li className="list-group-item text-muted">
-                                No categories found
-                              </li>
-                            )}
-                          </ul>
-                        )}
-                      </Modal.Body>
-                      <Modal.Footer
-                        style={{ display: "flex", justifyContent: "space-between" }}
-                      >
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          <button
-                            className="btn btn-success"
-                            onClick={() => {
-                              const allCodes = filteredList.map((cat) => cat.code);
-                              const allNames = filteredList.map((cat) => cat.name);
-                              setFormData((prev) => ({
-                                ...prev,
-                                categoryCode: allCodes,
-                                categoryName: allNames,
-                              }));
-                            }}
-                          >
-                            Select All
-                          </button>
-
-                          <button
-                            className="btn btn-warning"
-                            onClick={() => {
-                              setFormData((prev) => ({
-                                ...prev,
-                                categoryCode: [],
-                                categoryName: [],
-                              }));
-                            }}
-                          >
-                            Clear All
-                          </button>
-                        </div>
-
-                        <button className="btn btn-secondary" onClick={handleCloseModal}>
-                          Close
-                        </button>
-                      </Modal.Footer>
-                    </Modal>
                   </div>
                 )}
 
@@ -3299,197 +3178,6 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                       🔍
                     </span>
                   </div>
-
-                  <Modal
-                    show={showModal_Account}
-                    onHide={() => setShowModal_Account(false)}
-                    centered
-                    size="lg"
-                  >
-                    <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
-                      <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                        {selectedMother ? `Sub Accounts of ${selectedMother.name}` : "Select Mother Account Type"}
-                      </Modal.Title>
-                    </Modal.Header>
-
-                    <Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
-                      {!selectedMother && (
-                        <>
-                          <input
-                            type="text"
-                            className="form-control mb-3"
-                            placeholder="Search mother accounts..."
-                            value={accountSearchTerm}
-                            onChange={(e) => setAccountSearchTerm(e.target.value)}
-                            style={{ borderColor: "#007bff" }}
-                          />
-
-                          {(() => {
-                            const availableGroupCodes = getAvailableGroupCodes();
-
-                            // Filter by search term AND available group codes
-                            const filteredAccounts = accountTypes.filter((opt) => {
-                              const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase());
-                              const hasGroupCode = availableGroupCodes.has(opt.code?.toString().trim());
-
-                              if (!hasGroupCode) {
-                                console.log(`🚫 Hiding "${opt.name}" (${opt.code}) - no data available`);
-                              }
-
-                              return matchesSearch && hasGroupCode;
-                            });
-
-                            console.log(`📋 Showing ${filteredAccounts.length} out of ${accountTypes.length} mother accounts`);
-
-                            if (filteredAccounts.length === 0) {
-                              return (
-                                <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
-                                  No mother accounts available for this distributor
-                                </div>
-                              );
-                            }
-
-                            return filteredAccounts.map((opt) => (
-                              <div
-                                key={opt.id}
-                                style={{
-                                  padding: "8px 10px",
-                                  borderBottom: "1px solid #eee",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                }}
-                                // Sa onClick ng mother account selection
-                                onClick={() => {
-                                  console.log('🔍 Selected Mother Account:', opt);
-                                  console.log('📋 Code:', opt.code);
-                                  console.log('📝 Name:', opt.name);
-                                  console.log('🆔 ID:', opt.id);
-
-                                  setSelectedMother(opt);
-                                  fetchSubAccounts(opt);
-
-                                  if (opt.name === "NON-CHAIN") {
-                                    setShowBranchInput(false);
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      accountType: [],
-                                      branchType: [] // ✅ Clear branch data
-                                    }));
-                                  } else {
-                                    setShowBranchInput(true);
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      branchType: [] // ✅ Clear branch data
-                                    }));
-                                  }
-                                }}
-                              >
-                                <span>{opt.name}</span>
-                                <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
-                                <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
-                              </div>
-                            ));
-                          })()}
-                        </>
-                      )}
-
-                      {selectedMother && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setSelectedMother(null)}
-                            style={{ marginBottom: "10px" }}
-                          >
-                            ← Back to Mother Accounts
-                          </Button>
-                          <input
-                            type="text"
-                            className="form-control mb-2"
-                            placeholder="Search sub accounts..."
-                            value={subSearchTerm}
-                            onChange={(e) => setSubSearchTerm(e.target.value)}
-                            style={{ borderColor: "#007bff" }}
-                          />
-                          {subAccounts[selectedMother.id]
-                            ?.filter((s) =>
-                              s.name.toLowerCase().includes(subSearchTerm.toLowerCase())
-                            )
-                            .sort((a, b) => {
-                              // Put NON CHAIN ACCT variations at the bottom
-                              const isANonChain = a.name === "NON CHAIN ACCT" || a.name === "NON CHAIN ACCT.";
-                              const isBNonChain = b.name === "NON CHAIN ACCT" || b.name === "NON CHAIN ACCT.";
-
-                              if (isANonChain && !isBNonChain) return 1;
-                              if (!isANonChain && isBNonChain) return -1;
-                              return 0;
-                            })
-                            .map((s) => (
-                              <div
-                                key={s.id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  padding: "4px 0"
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    selectedMother.name === "NON-CHAIN"
-                                      ? (formData.accountType || []).includes(s.id)
-                                      : formData.accountType === s.id
-                                  }
-                                  onChange={() => {
-                                    if (selectedMother.name === "NON-CHAIN") {
-                                      let updated = [...(formData.accountType || [])];
-                                      if (updated.includes(s.id)) {
-                                        updated = updated.filter((x) => x !== s.id);
-                                      } else {
-                                        updated.push(s.id);
-                                      }
-                                      setFormData((prev) => ({
-                                        ...prev,
-                                        accountType: updated,
-                                        branchType: [] // ✅ Clear branches
-                                      }));
-                                      setShowBranchInput(false);
-                                    } else {
-                                      setFormData((prev) => ({
-                                        ...prev,
-                                        accountType: s.id,
-                                        branchType: [] // ✅ Clear branches
-                                      }));
-                                      setShowBranchInput(true);
-                                      fetchBranches(s.code, s.group_code);
-                                    }
-                                  }}
-                                  id={`sub_${s.id}`}
-                                  style={{ width: "18px", height: "18px", cursor: "pointer" }}
-                                />
-                                <label
-                                  htmlFor={`sub_${s.id}`}
-                                  style={{ marginLeft: "6px", cursor: "pointer" }}
-                                >
-                                  {s.name}{" "}
-                                  <span style={{ color: "#ffffffff", fontSize: "12px" }}>
-                                    ({s.code})
-                                  </span>
-                                </label>
-                              </div>
-                            ))}
-                        </>
-                      )}
-                    </Modal.Body>
-
-                    <Modal.Footer>
-                      <Button variant="light" onClick={() => setShowModal_Account(false)}>
-                        Close
-                      </Button>
-                    </Modal.Footer>
-                  </Modal>
                 </div>
 
 
@@ -3534,162 +3222,6 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                   </div>
                 )}
 
-                {/* Branch Selector */}
-                {/* Branch Selector */}
-
-
-                <Modal
-                  show={showModal_Branch}
-                  onHide={() => {
-                    setShowModal_Branch(false);
-                    setBranchSearchTerm(""); // ✅ Clear search when modal closes
-                  }}
-                  centered
-                  size="lg"
-                >
-                  <Modal.Header
-                    closeButton
-                    style={{ background: "rgb(70, 137, 166)", color: "white" }}
-                  >
-                    <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                      Select Branch
-                    </Modal.Title>
-                  </Modal.Header>
-
-                  <Modal.Body
-                    style={{
-                      maxHeight: "400px",
-                      display: "flex",
-                      flexDirection: "column",
-                      padding: "1rem",
-                    }}
-                  >
-                    <input
-                      type="text"
-                      className="form-control mb-3"
-                      placeholder="Search branches..."
-                      value={branchSearchTerm}
-                      onChange={(e) => setBranchSearchTerm(e.target.value)}
-                      style={{ borderColor: "#007bff", flexShrink: 0 }}
-                    />
-
-                    <div style={{ overflowY: "auto", flexGrow: 1 }}>
-                      {(() => {
-                        const filteredBranches = getFilteredBranchesWithExtras();
-
-                        return (
-                          <>
-                            <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
-                              Showing {filteredBranches.length} branch
-                              {filteredBranches.length !== 1 ? "es" : ""}
-                            </p>
-
-                            {filteredBranches.map((opt) => (
-                              <div
-                                key={opt.id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  padding: "6px 10px",
-                                }}
-                              >
-                                <div style={{ display: "flex", alignItems: "center" }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={formData.branchType.includes(opt.name)}
-                                    onChange={() => toggleBranchType(opt.name)}
-                                    id={`branchType-${opt.id}`}
-                                    style={{
-                                      width: "20px",
-                                      height: "20px",
-                                      transform: "scale(1.3)",
-                                      cursor: "pointer",
-                                    }}
-                                  />
-                                  <label
-                                    htmlFor={`branchType-${opt.id}`}
-                                    style={{ marginLeft: "8px", cursor: "pointer" }}
-                                  >
-                                    {opt.name}
-                                  </label>
-                                </div>
-
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    fontWeight: 500,
-                                    color: opt.status ? "#28a745" : "#dc3545",
-                                  }}
-                                >
-                                  {opt.status ? "Active" : "Inactive ❌"}
-                                </span>
-                              </div>
-                            ))}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </Modal.Body>
-
-                  <Modal.Footer
-                    style={{ display: "flex", justifyContent: "space-between" }}
-                  >
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <Button
-                        variant="success"
-                        onClick={() => {
-                          const filteredBranches = branchTypes
-                            .filter((opt) =>
-                              opt.name
-                                .toLowerCase()
-                                .includes(branchSearchTerm.toLowerCase())
-                            )
-                            .filter((opt) => {
-                              if (!formData.distributor) return false;
-                              const distributorCodes = opt.distributor_code
-                                ? opt.distributor_code
-                                  .split(",")
-                                  .map((code) => code.trim())
-                                  .filter((code) => code.length > 0)
-                                : [];
-                              if (Array.isArray(formData.distributor)) {
-                                return formData.distributor.some((d) =>
-                                  distributorCodes.includes(d)
-                                );
-                              }
-                              return distributorCodes.includes(formData.distributor);
-                            });
-
-                          const allBranchNames = filteredBranches.map((opt) => opt.name);
-                          setFormData((prev) => ({ ...prev, branchType: allBranchNames }));
-                        }}
-                      >
-                        Select All
-                      </Button>
-
-                      <Button
-                        variant="warning"
-                        onClick={() => {
-                          setFormData((prev) => ({ ...prev, branchType: [] }));
-                        }}
-                      >
-                        Clear All
-                      </Button>
-                    </div>
-
-                    <Button
-                      variant="light"
-                      onClick={() => {
-                        setShowModal_Branch(false);
-                        setBranchSearchTerm(""); // ✅ Clear search when "Close" button clicked
-                      }}
-                    >
-                      Close
-                    </Button>
-                  </Modal.Footer>
-                </Modal>
-
 
                 {/* Marketing Type */}
                 <div className="col-md-4" style={{ position: "relative" }}>
@@ -3726,8 +3258,6 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                     </span>
                   )}
                 </div>
-
-
 
 
                 {/* Amount Budget (conditionally shown or empty placeholder) */}
@@ -3938,6 +3468,465 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                   </div>
                 </div>
               </div>
+
+
+
+              {/* Modal Categories */}
+              <Modal show={showModal} onHide={handleCloseModal} size="lg" centered>
+                <Modal.Header
+                  closeButton
+                  style={{ background: "#4689a6", color: "white" }}
+                >
+                  <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                    Select Categories
+                  </Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                  <input
+                    type="text"
+                    className="form-control mb-3"
+                    placeholder="Search category by name or code..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+
+                  {loading ? (
+                    <p>Loading categories...</p>
+                  ) : (
+                    <ul
+                      className="list-group"
+                      style={{ maxHeight: "300px", overflowY: "auto" }}
+                    >
+                      {filteredList.length > 0 ? (
+                        filteredList.map((cat) => {
+                          const isChecked = formData.categoryCode?.includes(cat.code);
+
+                          return (
+                            <li
+                              key={cat.id}
+                              className="list-group-item d-flex justify-content-between align-items-center"
+                            >
+                              <div className="form-check">
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  id={`cat-check-${cat.id}`}
+                                  checked={isChecked}
+                                  onChange={(e) =>
+                                    handleCategoryChange(cat, e.target.checked)
+                                  }
+                                  style={{
+                                    width: "20px",
+                                    height: "20px",
+                                    transform: "scale(1.3)",
+                                    cursor: "pointer",
+
+                                  }}
+                                />
+                                <label
+                                  className="form-check-label"
+                                  htmlFor={`cat-check-${cat.id}`}
+                                  style={{ marginLeft: '5px' }}
+                                >
+                                  {cat.name} <strong style={{ color: '#fff' }}>{cat.code}</strong>
+                                </label>
+                              </div>
+                            </li>
+                          );
+                        })
+                      ) : (
+                        <li className="list-group-item text-muted">
+                          No categories found
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                </Modal.Body>
+                <Modal.Footer
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      className="btn btn-success"
+                      onClick={() => {
+                        const allCodes = filteredList.map((cat) => cat.code);
+                        const allNames = filteredList.map((cat) => cat.name);
+                        setFormData((prev) => ({
+                          ...prev,
+                          categoryCode: allCodes,
+                          categoryName: allNames,
+                        }));
+                      }}
+                    >
+                      Select All
+                    </button>
+
+                    <button
+                      className="btn btn-warning"
+                      onClick={() => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          categoryCode: [],
+                          categoryName: [],
+                        }));
+                      }}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  <button className="btn btn-secondary" onClick={handleCloseModal}>
+                    Close
+                  </button>
+                </Modal.Footer>
+              </Modal>
+
+              {/* Modal Mother Account */}
+              <Modal
+                show={showModal_Account}
+                onHide={() => setShowModal_Account(false)}
+                centered
+                size="lg"
+              >
+                <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
+                  <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                    {selectedMother ? `Sub Accounts of ${selectedMother.name}` : "Select Mother Account Type"}
+                  </Modal.Title>
+                </Modal.Header>
+
+                <Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
+                  {!selectedMother && (
+                    <>
+                      <input
+                        type="text"
+                        className="form-control mb-3"
+                        placeholder="Search mother accounts..."
+                        value={accountSearchTerm}
+                        onChange={(e) => setAccountSearchTerm(e.target.value)}
+                        style={{ borderColor: "#007bff" }}
+                      />
+
+                      {(() => {
+                        const availableGroupCodes = getAvailableGroupCodes();
+
+                        // Filter by search term AND available group codes
+                        const filteredAccounts = accountTypes.filter((opt) => {
+                          const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase());
+                          const hasGroupCode = availableGroupCodes.has(opt.code?.toString().trim());
+
+                          if (!hasGroupCode) {
+                            console.log(`🚫 Hiding "${opt.name}" (${opt.code}) - no data available`);
+                          }
+
+                          return matchesSearch && hasGroupCode;
+                        });
+
+                        console.log(`📋 Showing ${filteredAccounts.length} out of ${accountTypes.length} mother accounts`);
+
+                        if (filteredAccounts.length === 0) {
+                          return (
+                            <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+                              No mother accounts available for this distributor
+                            </div>
+                          );
+                        }
+
+                        return filteredAccounts.map((opt) => (
+                          <div
+                            key={opt.id}
+                            style={{
+                              padding: "8px 10px",
+                              borderBottom: "1px solid #eee",
+                              cursor: "pointer",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                            // Sa onClick ng mother account selection
+                            onClick={() => {
+                              console.log('🔍 Selected Mother Account:', opt);
+                              console.log('📋 Code:', opt.code);
+                              console.log('📝 Name:', opt.name);
+                              console.log('🆔 ID:', opt.id);
+
+                              setSelectedMother(opt);
+                              fetchSubAccounts(opt);
+
+                              if (opt.name === "NON-CHAIN") {
+                                setShowBranchInput(false);
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  accountType: [],
+                                  branchType: [] // ✅ Clear branch data
+                                }));
+                              } else {
+                                setShowBranchInput(true);
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  branchType: [] // ✅ Clear branch data
+                                }));
+                              }
+                            }}
+                          >
+                            <span>{opt.name}</span>
+                            <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
+                            <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
+                          </div>
+                        ));
+                      })()}
+                    </>
+                  )}
+
+                  {selectedMother && (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setSelectedMother(null)}
+                        style={{ marginBottom: "10px" }}
+                      >
+                        ← Back to Mother Accounts
+                      </Button>
+                      <input
+                        type="text"
+                        className="form-control mb-2"
+                        placeholder="Search sub accounts..."
+                        value={subSearchTerm}
+                        onChange={(e) => setSubSearchTerm(e.target.value)}
+                        style={{ borderColor: "#007bff" }}
+                      />
+                      {subAccounts[selectedMother.id]
+                        ?.filter((s) =>
+                          s.name.toLowerCase().includes(subSearchTerm.toLowerCase())
+                        )
+                        .sort((a, b) => {
+                          // Put NON CHAIN ACCT variations at the bottom
+                          const isANonChain = a.name === "NON CHAIN ACCT" || a.name === "NON CHAIN ACCT.";
+                          const isBNonChain = b.name === "NON CHAIN ACCT" || b.name === "NON CHAIN ACCT.";
+
+                          if (isANonChain && !isBNonChain) return 1;
+                          if (!isANonChain && isBNonChain) return -1;
+                          return 0;
+                        })
+                        .map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              padding: "4px 0"
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={
+                                selectedMother.name === "NON-CHAIN"
+                                  ? (formData.accountType || []).includes(s.id)
+                                  : formData.accountType === s.id
+                              }
+                              onChange={() => {
+                                if (selectedMother.name === "NON-CHAIN") {
+                                  let updated = [...(formData.accountType || [])];
+                                  if (updated.includes(s.id)) {
+                                    updated = updated.filter((x) => x !== s.id);
+                                  } else {
+                                    updated.push(s.id);
+                                  }
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    accountType: updated,
+                                    branchType: [] // ✅ Clear branches
+                                  }));
+                                  setShowBranchInput(false);
+                                } else {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    accountType: s.id,
+                                    branchType: [] // ✅ Clear branches
+                                  }));
+                                  setShowBranchInput(true);
+                                  fetchBranches(s.code, s.group_code);
+                                }
+                              }}
+                              id={`sub_${s.id}`}
+                              style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                            />
+                            <label
+                              htmlFor={`sub_${s.id}`}
+                              style={{ marginLeft: "6px", cursor: "pointer" }}
+                            >
+                              {s.name}{" "}
+                              <span style={{ color: "#ffffffff", fontSize: "12px" }}>
+                                ({s.code})
+                              </span>
+                            </label>
+                          </div>
+                        ))}
+                    </>
+                  )}
+                </Modal.Body>
+
+                <Modal.Footer>
+                  <Button variant="light" onClick={() => setShowModal_Account(false)}>
+                    Close
+                  </Button>
+                </Modal.Footer>
+              </Modal>
+
+              {/* Modal Branch */}
+              <Modal
+                show={showModal_Branch}
+                onHide={() => {
+                  setShowModal_Branch(false);
+                  setBranchSearchTerm(""); // ✅ Clear search when modal closes
+                }}
+                centered
+                size="lg"
+              >
+                <Modal.Header
+                  closeButton
+                  style={{ background: "rgb(70, 137, 166)", color: "white" }}
+                >
+                  <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                    Select Branch
+                  </Modal.Title>
+                </Modal.Header>
+
+                <Modal.Body
+                  style={{
+                    maxHeight: "400px",
+                    display: "flex",
+                    flexDirection: "column",
+                    padding: "1rem",
+                  }}
+                >
+                  <input
+                    type="text"
+                    className="form-control mb-3"
+                    placeholder="Search branches..."
+                    value={branchSearchTerm}
+                    onChange={(e) => setBranchSearchTerm(e.target.value)}
+                    style={{ borderColor: "#007bff", flexShrink: 0 }}
+                  />
+
+                  <div style={{ overflowY: "auto", flexGrow: 1 }}>
+                    {(() => {
+                      const filteredBranches = getFilteredBranchesWithExtras();
+
+                      return (
+                        <>
+                          <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
+                            Showing {filteredBranches.length} branch
+                            {filteredBranches.length !== 1 ? "es" : ""}
+                          </p>
+
+                          {filteredBranches.map((opt) => (
+                            <div
+                              key={opt.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "6px 10px",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={formData.branchType.includes(opt.name)}
+                                  onChange={() => toggleBranchType(opt.name)}
+                                  id={`branchType-${opt.id}`}
+                                  style={{
+                                    width: "20px",
+                                    height: "20px",
+                                    transform: "scale(1.3)",
+                                    cursor: "pointer",
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`branchType-${opt.id}`}
+                                  style={{ marginLeft: "8px", cursor: "pointer" }}
+                                >
+                                  {opt.name}
+                                </label>
+                              </div>
+
+                              <span
+                                style={{
+                                  fontSize: "0.9rem",
+                                  fontWeight: 500,
+                                  color: opt.status ? "#28a745" : "#dc3545",
+                                }}
+                              >
+                                {opt.status ? "Active" : "Inactive ❌"}
+                              </span>
+                            </div>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </Modal.Body>
+
+                <Modal.Footer
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <Button
+                      variant="success"
+                      onClick={() => {
+                        const filteredBranches = branchTypes
+                          .filter((opt) =>
+                            opt.name
+                              .toLowerCase()
+                              .includes(branchSearchTerm.toLowerCase())
+                          )
+                          .filter((opt) => {
+                            if (!formData.distributor) return false;
+                            const distributorCodes = opt.distributor_code
+                              ? opt.distributor_code
+                                .split(",")
+                                .map((code) => code.trim())
+                                .filter((code) => code.length > 0)
+                              : [];
+                            if (Array.isArray(formData.distributor)) {
+                              return formData.distributor.some((d) =>
+                                distributorCodes.includes(d)
+                              );
+                            }
+                            return distributorCodes.includes(formData.distributor);
+                          });
+
+                        const allBranchNames = filteredBranches.map((opt) => opt.name);
+                        setFormData((prev) => ({ ...prev, branchType: allBranchNames }));
+                      }}
+                    >
+                      Select All
+                    </Button>
+
+                    <Button
+                      variant="warning"
+                      onClick={() => {
+                        setFormData((prev) => ({ ...prev, branchType: [] }));
+                      }}
+                    >
+                      Clear All
+                    </Button>
+                  </div>
+
+                  <Button
+                    variant="light"
+                    onClick={() => {
+                      setShowModal_Branch(false);
+                      setBranchSearchTerm(""); // ✅ Clear search when "Close" button clicked
+                    }}
+                  >
+                    Close
+                  </Button>
+                </Modal.Footer>
+              </Modal>
+
+
 
               <style>{`
                                 .card-3d {
