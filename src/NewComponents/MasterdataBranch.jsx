@@ -32,6 +32,7 @@ export default function AccountsListManager() {
     const [agentMap, setAgentMap] = useState({}); // 🔹 Map UserID -> name
     const [motherMap, setMotherMap] = useState({}); // 🔹 Map dscode -> name
     const [distributorMap, setDistributorMap] = useState({}); // 🔹 Map code -> name
+    const [groupMap, setGroupMap] = useState({});
 
     const [newRecord, setNewRecord] = useState({
         distributor_code: '',
@@ -360,6 +361,7 @@ export default function AccountsListManager() {
          fetchAgents(); // 🔹 Load agents on mount for mapping
         fetchMotherAccounts(); // 🔹 Load mother accounts
         fetchDistributors(); // 🔹 Load distributors
+            fetchGroupMap();
     }, []);
 
     const fetchAndCleanData = async (page = 1, search = "") => {
@@ -549,7 +551,7 @@ export default function AccountsListManager() {
     // Fetch dropdowns
 const fetchDistributors = async () => {
     const { data, error } = await supabase
-        .from("distributors")
+        .from("distributors") 
         .select("code, name, agent_code")
         .order("name", { ascending: true });
     if (error) console.error(error);
@@ -683,6 +685,22 @@ const fetchBpAccounts = async (page = 1, searchTerm = '') => {
             map[agent.UserID] = agent.name;
         });
         setAgentMap(map);
+    }
+};
+const fetchGroupMap = async () => {
+    const { data, error } = await supabase
+        .from("mother_account")
+        .select("code, name")
+        .eq("status", true);
+    
+    if (error) {
+        console.error(error);
+    } else {
+        const map = {};
+        data.forEach(group => {
+            map[group.code] = group.name;
+        });
+        setGroupMap(map);
     }
 };
 
@@ -988,86 +1006,100 @@ useEffect(() => {
     const [exportProgress, setExportProgress] = useState({ fetched: 0, total: 0, type: "" });
 
     // Updated handleExport
-    const handleExport = async (type) => {
-        try {
-            setShowExportModal(true);
-            setExportProgress({ fetched: 0, total: 0, type });
+const handleExport = async (type) => {
+    try {
+        setShowExportModal(true);
+        setExportProgress({ fetched: 0, total: 0, type });
 
-            const headers = [
-                "distributor_code",
-                "mother_code",
-                "bp_code",
-                "bp_name",
-                "agent_code",
-                "group_code",
-                "status",
-            ];
+        const headers = [
+            "distributor_name",
+            "mother_name",
+            "bp_code",
+            "bp_name",
+            "agent_name",
+            "group_name",
+            "status",
+        ];
 
-            let exportData = [];
+        let exportData = [];
 
-            if (type === "template") {
-                exportData = [Object.fromEntries(headers.map((k) => [k, ""]))];
-                setExportProgress({ fetched: 1, total: 1, type });
-            } else if (type === "all") {
-                const batchSize = 1000;
-                let allData = [];
-                let offset = 0;
-                let hasMore = true;
+        if (type === "template") {
+            exportData = [Object.fromEntries(headers.map((k) => [k, ""]))];
+            setExportProgress({ fetched: 1, total: 1, type });
+        } else if (type === "all") {
+            const batchSize = 1000;
+            let allData = [];
+            let offset = 0;
+            let hasMore = true;
 
-                while (hasMore) {
-                    const { data, error } = await supabase
-                        .from("Accounts_List")
-                        .select("*")
-                        .order("id", { ascending: true })
-                        .range(offset, offset + batchSize - 1);
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from("Accounts_List")
+                    .select("*")
+                    .order("id", { ascending: true })
+                    .range(offset, offset + batchSize - 1);
 
-                    if (error) throw error;
+                if (error) throw error;
 
-                    if (data && data.length > 0) {
-                        allData = [...allData, ...data];
-                        offset += batchSize;
-                        hasMore = data.length === batchSize;
-                        setExportProgress({ fetched: allData.length, total: allData.length + (hasMore ? batchSize : 0), type });
-                    } else {
-                        hasMore = false;
-                        setExportProgress({ fetched: allData.length, total: allData.length, type });
-                    }
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize;
+                    setExportProgress({ fetched: allData.length, total: allData.length + (hasMore ? batchSize : 0), type });
+                } else {
+                    hasMore = false;
+                    setExportProgress({ fetched: allData.length, total: allData.length, type });
                 }
-
-                if (allData.length === 0) {
-                    Swal.fire("Error", "No data to export", "error");
-                    setShowExportModal(false);
-                    return;
-                }
-
-                exportData = allData.map((row) => {
-                    const obj = {};
-                    headers.forEach((k) => (obj[k] = row[k] ?? ""));
-                    return obj;
-                });
             }
 
-            // Small delay to display progress modal nicely
-            await new Promise((res) => setTimeout(res, 500));
+            if (allData.length === 0) {
+                Swal.fire("Error", "No data to export", "error");
+                setShowExportModal(false);
+                return;
+            }
 
-            // Generate Excel
-            const worksheet = XLSX.utils.json_to_sheet(exportData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "AccountsList");
-            const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-            const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-            saveAs(blob, `accounts_list_${type}.xlsx`);
+            // 🔹 Fetch all lookup tables for name conversion
+            const { data: groupData } = await supabase
+                .from("mother_account")
+                .select("code, name");
 
-            setShowExportModal(false);
-        } catch (err) {
-            console.error("Export Error:", err);
-            Swal.fire("Error", err.message, "error");
-            setShowExportModal(false);
-        } finally {
-            setShowExportMenu(false);
+            const groupMap = {};
+            groupData?.forEach(g => {
+                groupMap[g.code] = g.name;
+            });
+
+            // Convert codes to names
+            exportData = allData.map((row) => ({
+                distributor_name: distributorMap[row.distributor_code] || row.distributor_code || "",
+                mother_name: motherMap[row.mother_code] || row.mother_code || "",
+                bp_code: row.bp_code || "",
+                bp_name: row.bp_name || "",
+                agent_name: agentMap[row.agent_code] || row.agent_code || "",
+                group_name: groupMap[row.group_code] || row.group_code || "",
+                status: row.status ? "Active" : "Inactive",
+            }));
         }
-    };
 
+        // Small delay to display progress modal nicely
+        await new Promise((res) => setTimeout(res, 500));
+
+        // Generate Excel
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "AccountsList");
+        const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+        saveAs(blob, `accounts_list_${type}.xlsx`);
+
+        setShowExportModal(false);
+    } catch (err) {
+        console.error("Export Error:", err);
+        Swal.fire("Error", err.message, "error");
+        setShowExportModal(false);
+    } finally {
+        setShowExportMenu(false);
+    }
+};
 
 
     // Close menus on outside click
@@ -1843,7 +1875,9 @@ useEffect(() => {
 <td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
 <td style={{ padding: '10px 15px' }}>
     {agentMap[row.agent_code] || row.agent_code}
+    
 </td>
+  <td style={{ padding: '10px 15px' }}>{groupMap[row.group_code] || row.group_code}</td> 
                                     <td
                                         style={{
                                             padding: '10px 15px',
