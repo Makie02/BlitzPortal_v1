@@ -3540,7 +3540,10 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
 
                 <Modal
                   show={showModal_Branch}
-                  onHide={() => setShowModal_Branch(false)}
+                  onHide={() => {
+                    setShowModal_Branch(false);
+                    setBranchSearchTerm(""); // ✅ Clear search when modal closes
+                  }}
                   centered
                   size="lg"
                 >
@@ -3587,7 +3590,7 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                 style={{
                                   display: "flex",
                                   alignItems: "center",
-                                  justifyContent: "space-between", // ✅ Push status to the right
+                                  justifyContent: "space-between",
                                   padding: "6px 10px",
                                 }}
                               >
@@ -3612,49 +3615,54 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                   </label>
                                 </div>
 
-                                {/* ✅ Status shown here */}
                                 <span
                                   style={{
                                     fontSize: "0.9rem",
                                     fontWeight: 500,
-                                    color: opt.status ? "#28a745" : "#dc3545", // ✅ Green if active, red if inactive
+                                    color: opt.status ? "#28a745" : "#dc3545",
                                   }}
                                 >
-                                  {opt.status ? "Active " : "Inactive ❌"}
+                                  {opt.status ? "Active" : "Inactive ❌"}
                                 </span>
                               </div>
                             ))}
-
                           </>
                         );
                       })()}
-
                     </div>
                   </Modal.Body>
 
-
-                  <Modal.Footer style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                  <Modal.Footer
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <div style={{ display: "flex", gap: "8px" }}>
                       <Button
                         variant="success"
                         onClick={() => {
                           const filteredBranches = branchTypes
                             .filter((opt) =>
-                              opt.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+                              opt.name
+                                .toLowerCase()
+                                .includes(branchSearchTerm.toLowerCase())
                             )
                             .filter((opt) => {
                               if (!formData.distributor) return false;
                               const distributorCodes = opt.distributor_code
-                                ? opt.distributor_code.split(",").map((code) => code.trim()).filter((code) => code.length > 0)
+                                ? opt.distributor_code
+                                  .split(",")
+                                  .map((code) => code.trim())
+                                  .filter((code) => code.length > 0)
                                 : [];
                               if (Array.isArray(formData.distributor)) {
-                                return formData.distributor.some((d) => distributorCodes.includes(d));
+                                return formData.distributor.some((d) =>
+                                  distributorCodes.includes(d)
+                                );
                               }
                               return distributorCodes.includes(formData.distributor);
                             });
 
-                          const allBranchNames = filteredBranches.map(opt => opt.name);
-                          setFormData(prev => ({ ...prev, branchType: allBranchNames }));
+                          const allBranchNames = filteredBranches.map((opt) => opt.name);
+                          setFormData((prev) => ({ ...prev, branchType: allBranchNames }));
                         }}
                       >
                         Select All
@@ -3663,19 +3671,24 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                       <Button
                         variant="warning"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, branchType: [] }));
+                          setFormData((prev) => ({ ...prev, branchType: [] }));
                         }}
                       >
                         Clear All
                       </Button>
                     </div>
 
-                    <Button variant="light" onClick={() => setShowModal_Branch(false)}>
+                    <Button
+                      variant="light"
+                      onClick={() => {
+                        setShowModal_Branch(false);
+                        setBranchSearchTerm(""); // ✅ Clear search when "Close" button clicked
+                      }}
+                    >
                       Close
                     </Button>
                   </Modal.Footer>
                 </Modal>
-
 
 
                 {/* Marketing Type */}
@@ -5252,13 +5265,44 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                         </tr>
                       </thead>
                       <tbody>
-                        {getFilteredBranchesWithExtras()
-                          .filter((branch) => formData.branchType.includes(branch.name)) // ✅ Filter selected branches
-                          .map((branch) => {
+                        {(() => {
+                          const allBranches = getFilteredBranchesWithExtras();
+                          console.log('=== BRANCH RENDERING DEBUG ===');
+                          console.log('All branches from getFilteredBranchesWithExtras():', allBranches);
+                          console.log('formData.branchType:', formData.branchType);
+                          console.log('selectedMother:', selectedMother);
+                          console.log('rowsAccounts:', rowsAccounts);
+
+                          const filteredBranches = allBranches.filter((branch) => {
+                            const isIncluded = formData.branchType.includes(branch.name);
+                            console.log('Branch check:', {
+                              branchName: branch.name,
+                              branchCode: branch.code,
+                              branchId: branch.id,
+                              isIncluded: isIncluded
+                            });
+                            return isIncluded;
+                          });
+
+                          console.log('Filtered branches count:', filteredBranches.length);
+                          console.log('Filtered branches:', filteredBranches);
+                          console.log('============================');
+
+                          return filteredBranches.map((branch) => {
+                            console.log('Rendering branch:', {
+                              name: branch.name,
+                              code: branch.code,
+                              id: branch.id,
+                              fullBranch: branch
+                            });
+
                             const existingRow =
                               rowsAccounts.find((r) => r.account_code === branch.name) || {};
                             const budgetValue =
                               existingRow.budget !== undefined ? existingRow.budget : "";
+
+                            console.log('Existing row for', branch.name, ':', existingRow);
+                            console.log('Budget value:', budgetValue);
 
                             return (
                               <tr key={branch.id}>
@@ -5271,21 +5315,31 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                     step="0.01"
                                     value={budgetValue === "" ? "" : budgetValue}
                                     onChange={(e) => {
+                                      console.log('Budget change event for', branch.name);
+                                      console.log('Input value:', e.target.value);
+
                                       let newBudget = parseFloat(e.target.value);
                                       if (isNaN(newBudget)) newBudget = 0;
 
                                       const updatedRow = {
                                         id: existingRow.id || branch.id,
-                                        account_code: branch.name, // ✅ Save using branch name
+                                        account_code: branch.name,
                                         account_name: branch.name,
                                         budget: newBudget,
                                         created_at: existingRow.created_at || new Date().toISOString(),
                                       };
 
+                                      console.log('Updated row object:', updatedRow);
+
                                       setRowsAccounts((prevRows) => {
+                                        console.log('Previous rows:', prevRows);
+
                                         const existingIndex = prevRows.findIndex(
                                           (r) => r.account_code === branch.name
                                         );
+
+                                        console.log('Existing index:', existingIndex);
+
                                         let updated;
                                         if (existingIndex !== -1) {
                                           updated = [...prevRows];
@@ -5293,9 +5347,13 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                             ...updated[existingIndex],
                                             budget: newBudget,
                                           };
+                                          console.log('Updated existing row at index', existingIndex);
                                         } else {
                                           updated = [...prevRows, updatedRow];
+                                          console.log('Added new row');
                                         }
+
+                                        console.log('New rows state:', updated);
                                         return updated;
                                       });
                                     }}
@@ -5303,18 +5361,42 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                 </td>
                               </tr>
                             );
-                          })}
-
+                          });
+                        })()}
 
                         {/* NON-CHAIN: render multiple sub-accounts if selected */}
-                        {selectedMother?.name === "NON-CHAIN" &&
-                          Array.isArray(formData.accountType) &&
-                          formData.accountType.map((subId) => {
+                        {(() => {
+                          if (selectedMother?.name !== "NON-CHAIN") {
+                            console.log('Skipping NON-CHAIN section - mother is:', selectedMother?.name);
+                            return null;
+                          }
+
+                          console.log('=== NON-CHAIN RENDERING ===');
+                          console.log('formData.accountType:', formData.accountType);
+                          console.log('subAccounts:', subAccounts);
+
+                          if (!Array.isArray(formData.accountType)) {
+                            console.log('accountType is not an array');
+                            return null;
+                          }
+
+                          return formData.accountType.map((subId) => {
+                            console.log('Looking for sub-account with id:', subId);
+
                             const sub = Object.values(subAccounts).flat().find((s) => s.id === subId);
-                            if (!sub) return null;
+
+                            if (!sub) {
+                              console.log('Sub-account not found for id:', subId);
+                              return null;
+                            }
+
+                            console.log('Found sub-account:', sub);
 
                             const existingRow = rowsAccounts.find((r) => r.account_code === sub.id) || {};
                             const budgetValue = existingRow.budget ?? "";
+
+                            console.log('Existing row for', sub.name, ':', existingRow);
+                            console.log('Budget value:', budgetValue);
 
                             return (
                               <tr key={sub.id}>
@@ -5327,6 +5409,9 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                     step="0.01"
                                     value={budgetValue === "" ? "" : budgetValue}
                                     onChange={(e) => {
+                                      console.log('Budget change event for NON-CHAIN:', sub.name);
+                                      console.log('Input value:', e.target.value);
+
                                       let newBudget = parseFloat(e.target.value);
                                       if (isNaN(newBudget)) newBudget = 0;
 
@@ -5338,15 +5423,26 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                         created_at: existingRow.created_at || new Date().toISOString(),
                                       };
 
+                                      console.log('Updated row object:', updatedRow);
+
                                       setRowsAccounts((prevRows) => {
+                                        console.log('Previous rows:', prevRows);
+
                                         const existingIndex = prevRows.findIndex((r) => r.account_code === sub.id);
+
+                                        console.log('Existing index:', existingIndex);
+
                                         let updated;
                                         if (existingIndex !== -1) {
                                           updated = [...prevRows];
                                           updated[existingIndex] = { ...updated[existingIndex], budget: newBudget };
+                                          console.log('Updated existing row at index', existingIndex);
                                         } else {
                                           updated = [...prevRows, updatedRow];
+                                          console.log('Added new row');
                                         }
+
+                                        console.log('New rows state:', updated);
                                         return updated;
                                       });
                                     }}
@@ -5354,20 +5450,42 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                                 </td>
                               </tr>
                             );
-                          })}
+                          });
+                        })()}
 
                         {/* Total Row */}
                         <tr>
                           <td style={{ fontWeight: "bold", textAlign: "right" }}>Total</td>
                           <td style={{ fontWeight: "bold" }}>
-                            {rowsAccounts
-                              .filter((row) =>
-                                selectedMother?.name === "NON-CHAIN"
+                            {(() => {
+                              console.log('=== CALCULATING TOTAL ===');
+                              console.log('selectedMother?.name:', selectedMother?.name);
+                              console.log('formData.accountType:', formData.accountType);
+                              console.log('formData.branchType:', formData.branchType);
+                              console.log('rowsAccounts:', rowsAccounts);
+
+                              const filteredRows = rowsAccounts.filter((row) => {
+                                const isIncluded = selectedMother?.name === "NON-CHAIN"
                                   ? (formData.accountType || []).includes(row.account_code)
-                                  : formData.branchType.includes(row.account_code)
-                              )
-                              .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
-                              .toFixed(2)}
+                                  : formData.branchType.includes(row.account_code);
+
+                                console.log('Total filter - row:', row.account_code, 'included:', isIncluded);
+                                return isIncluded;
+                              });
+
+                              console.log('Filtered rows for total:', filteredRows);
+
+                              const total = filteredRows.reduce((sum, row) => {
+                                const budget = parseFloat(row.budget) || 0;
+                                console.log('Adding budget:', budget, 'from row:', row.account_code);
+                                return sum + budget;
+                              }, 0);
+
+                              console.log('Total calculated:', total);
+                              console.log('========================');
+
+                              return total.toFixed(2);
+                            })()}
                           </td>
                         </tr>
                       </tbody>
