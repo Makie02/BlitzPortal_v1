@@ -46,6 +46,7 @@ import ClaimsRecords from "./NewComponents/ClaimsRecords.js";
 import BudgetDashboard from "./NewComponents/BudgetDashboard.js";
 import Total from "./Create/Totalbudget.jsx";
 import PermissionsManager from "./NewComponents/PermissionsManager.jsx";
+import Analytics from "./Component/Dasboard_analytics.js";
 function App() {
 
   // Track online/offline status
@@ -395,6 +396,7 @@ function App() {
       case "Total": return <Total setCurrentView={setCurrentView} />;
       case "PermissionsManager": return <PermissionsManager setCurrentView={setCurrentView} />;
 
+      case "Analytics": return <Analytics setCurrentView={setCurrentView} />;
 
       
 
