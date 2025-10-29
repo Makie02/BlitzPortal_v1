@@ -1861,113 +1861,245 @@ Description: ${selectedDistrib.description?.trim() || "N/A"}`);
     }, []);
 
 
-    const handleSubmitForm = async () => {
-        // Validate only distributor, activity, and branch
-        if (!formData.distributor || !formData.activity) {
-            alert("Please fill in Distributor and Activity.");
-            return;
-        }
 
-        if (!formData.branchType || formData.branchType.length === 0) {
-            alert("Please select at least one Branch.");
-            return;
-        }
 
-        const safeSelectedBalance = isNaN(selectedBalance) ? 0 : selectedBalance;
+    // const handleSubmitForm = async () => {
+    //     // Validate only distributor, activity, and branch
+    //     if (!formData.distributor || !formData.activity) {
+    //         alert("Please fill in Distributor and Activity.");
+    //         return;
+    //     }
 
-        // Normalize accountType to array
-        const selectedAccountTypes = Array.isArray(formData.accountType)
-            ? formData.accountType
-            : formData.accountType
-                ? [formData.accountType]
-                : [];
+    //     if (!formData.branchType || formData.branchType.length === 0) {
+    //         alert("Please select at least one Branch.");
+    //         return;
+    //     }
 
-        // ✅ Convert accountType IDs → Names
-        const selectedAccountNames = selectedAccountTypes
-            .map((id) => {
-                const sub = Object.values(subAccounts).flat().find((s) => s.id === id);
-                return sub ? sub.name : id; // fallback if not found
-            })
-            .filter(Boolean);
+    //     const safeSelectedBalance = isNaN(selectedBalance) ? 0 : selectedBalance;
 
-        // ✅ Use branch names directly (already names, not IDs)
-        const selectedBranchNames = Array.isArray(formData.branchType)
-            ? formData.branchType
-            : formData.branchType
-                ? [formData.branchType]
-                : [];
+    //     // Normalize accountType to array
+    //     const selectedAccountTypes = Array.isArray(formData.accountType)
+    //         ? formData.accountType
+    //         : formData.accountType
+    //             ? [formData.accountType]
+    //             : [];
 
-        // Compute budget
-        let amountBudget = 0;
-        let remainingBudget = 0;
+    //     // ✅ Convert accountType IDs → Names
+    //     const selectedAccountNames = selectedAccountTypes
+    //         .map((id) => {
+    //             const sub = Object.values(subAccounts).flat().find((s) => s.id === id);
+    //             return sub ? sub.name : id; // fallback if not found
+    //         })
+    //         .filter(Boolean);
 
-        if (formData.activityName === "BAD ORDER") {
-            const totalAmount =
-                formData.rowsCategories?.reduce((sum, row) => {
-                    return sum + (parseFloat(row.amount) || 0);
-                }, 0) || 0;
+    //     // ✅ Use branch names directly (already names, not IDs)
+    //     const selectedBranchNames = Array.isArray(formData.branchType)
+    //         ? formData.branchType
+    //         : formData.branchType
+    //             ? [formData.branchType]
+    //             : [];
 
-            amountBudget = totalAmount;
-            remainingBudget = safeSelectedBalance - totalAmount;
-        } else {
-            const totalBudget = rowsAccounts
-                .filter((row) => selectedAccountTypes.includes(row.account_code))
-                .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+    //     // Compute budget
+    //     let amountBudget = 0;
+    //     let remainingBudget = 0;
 
-            amountBudget = totalBudget;
-            remainingBudget = safeSelectedBalance - totalBudget;
-        }
+    //     if (formData.activityName === "BAD ORDER") {
+    //         const totalAmount =
+    //             formData.rowsCategories?.reduce((sum, row) => {
+    //                 return sum + (parseFloat(row.amount) || 0);
+    //             }, 0) || 0;
 
-        const createForm = UserID || "Unknown";
+    //         amountBudget = totalAmount;
+    //         remainingBudget = safeSelectedBalance - totalAmount;
+    //     } else {
+    //         const totalBudget = rowsAccounts
+    //             .filter((row) => selectedAccountTypes.includes(row.account_code))
+    //             .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
 
-        // ✅ Build payload
-        const payload = {
-            code_pwp: formData.code_pwp || generateRegularCode(allRegularPwpCodes),
-            distributor: formData.distributor,
-            activity: formData.activity,
+    //         amountBudget = totalBudget;
+    //         remainingBudget = safeSelectedBalance - totalBudget;
+    //     }
 
-            // Save account + branch names
-            account_types: selectedAccountNames,
-            branchType: selectedBranchNames,
+    //     const createForm = UserID || "Unknown";
 
-            category_codes: formData.categoryCode || [],
-            category_names: formData.categoryName || [],
-            amount_budget: amountBudget,
-            createForm,
-            pwp_type: "CLAIMS",
-            notification: formData.notification || false,
-            created_at: new Date().toISOString(),
-        };
+    //     // ✅ Build payload
+    //     const payload = {
+    //         code_pwp: formData.code_pwp || generateRegularCode(allRegularPwpCodes),
+    //         distributor: formData.distributor,
+    //         activity: formData.activity,
 
-        try {
-            const { data, error } = await supabase.from("Claims_pwp").insert([payload]);
+    //         // Save account + branch names
+    //         account_types: selectedAccountNames,
+    //         branchType: selectedBranchNames,
 
-            if (error) {
-                console.error("❌ Submission error:", error.message);
-                alert("Failed to submit claim.");
-                return false;
-            }
+    //         category_codes: formData.categoryCode || [],
+    //         category_names: formData.categoryName || [],
+    //         amount_budget: amountBudget,
+    //         createForm,
+    //         pwp_type: "CLAIMS",
+    //         notification: formData.notification || false,
+    //         created_at: new Date().toISOString(),
+    //     };
 
-            // Reset form
-            setFormData({
-                distributor: "",
-                activity: "",
-                accountType: [],
-                branchType: [],
-                categoryCode: [],
-                categoryName: [],
-                amountbadget: "",
-                code_pwp: "",
-            });
+    //     try {
+    //         const { data, error } = await supabase.from("Claims_pwp").insert([payload]);
 
-            alert("✅ Claim submitted successfully!");
-            return true;
-        } catch (err) {
-            console.error("❌ Unexpected error:", err);
-            alert("Something went wrong.");
-            return false;
-        }
+    //         if (error) {
+    //             console.error("❌ Submission error:", error.message);
+    //             alert("Failed to submit claim.");
+    //             return false;
+    //         }
+
+    //         // Reset form
+    //         setFormData({
+    //             distributor: "",
+    //             activity: "",
+    //             accountType: [],
+    //             branchType: [],
+    //             categoryCode: [],
+    //             categoryName: [],
+    //             amountbadget: "",
+    //             code_pwp: "",
+    //         });
+
+    //         alert("✅ Claim submitted successfully!");
+    //         return true;
+    //     } catch (err) {
+    //         console.error("❌ Unexpected error:", err);
+    //         alert("Something went wrong.");
+    //         return false;
+    //     }
+    // };
+
+
+const handleSubmitForm = async () => {
+  // Validate only distributor, activity, and branch
+  if (!formData.distributor || !formData.activity) {
+    alert("Please fill in Distributor and Activity.");
+    return;
+  }
+
+  if (!formData.branchType || formData.branchType.length === 0) {
+    alert("Please select at least one Branch.");
+    return;
+  }
+
+  const safeSelectedBalance = isNaN(selectedBalance) ? 0 : selectedBalance;
+
+  // Normalize accountType to array
+  const selectedAccountTypes = Array.isArray(formData.accountType)
+    ? formData.accountType
+    : formData.accountType
+    ? [formData.accountType]
+    : [];
+
+  // ✅ Convert accountType IDs → Names
+  const selectedAccountNames = selectedAccountTypes
+    .map((id) => {
+      const sub = Object.values(subAccounts).flat().find((s) => s.id === id);
+      return sub ? sub.name : id; // fallback if not found
+    })
+    .filter(Boolean);
+
+  // ✅ Use branch names directly (already names, not IDs)
+  const selectedBranchNames = Array.isArray(formData.branchType)
+    ? formData.branchType
+    : formData.branchType
+    ? [formData.branchType]
+    : [];
+
+  // Compute budget
+  let amountBudget = 0;
+  let remainingBudget = 0;
+
+  if (formData.activityName === "BAD ORDER") {
+    const totalAmount =
+      formData.rowsCategories?.reduce((sum, row) => {
+        return sum + (parseFloat(row.amount) || 0);
+      }, 0) || 0;
+
+    amountBudget = totalAmount;
+    remainingBudget = safeSelectedBalance - totalAmount;
+  } else {
+    const totalBudget = rowsAccounts
+      .filter((row) => selectedAccountTypes.includes(row.account_code))
+      .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+
+    amountBudget = totalBudget;
+    remainingBudget = safeSelectedBalance - totalBudget;
+  }
+
+  const createForm = UserID || "Unknown";
+  const generatedCode = formData.code_pwp || generateRegularCode(allRegularPwpCodes);
+
+  // ✅ Build payload for Claims_pwp
+  const payload = {
+    code_pwp: generatedCode,
+    distributor: formData.distributor,
+    activity: formData.activity,
+    account_types: selectedAccountNames,
+    branchType: selectedBranchNames,
+    category_codes: formData.categoryCode || [],
+    category_names: formData.categoryName || [],
+    amount_budget: amountBudget,
+    createForm,
+    pwp_type: "CLAIMS",
+    notification: formData.notification || false,
+    created_at: new Date().toISOString(),
+  };
+
+  try {
+    // 🔹 Insert claim record
+    const { data, error } = await supabase.from("Claims_pwp").insert([payload]).select();
+
+    if (error) {
+      console.error("❌ Submission error:", error.message);
+      alert("Failed to submit claim.");
+      return false;
+    }
+
+    // 🔹 Auto-approve: insert into Approval_History
+    const approvalPayload = {
+      PwpCode: generatedCode,
+      ApproverId: createForm,
+      DateResponded: new Date().toISOString(),
+      Response: "Approved",
+      Type: "CLAIMS",
+      Notication: true,
+      CreatedForm: createForm,
     };
+
+    const { error: approvalError } = await supabase
+      .from("Approval_History")
+      .insert([approvalPayload]);
+
+    if (approvalError) {
+      console.error("⚠️ Auto-approval insert failed:", approvalError.message);
+    } else {
+      console.log(`✅ Auto-approved claim ${generatedCode}`);
+    }
+
+    // Reset form
+    setFormData({
+      distributor: "",
+      activity: "",
+      accountType: [],
+      branchType: [],
+      categoryCode: [],
+      categoryName: [],
+      amountbadget: "",
+      code_pwp: "",
+    });
+
+    alert("✅ Claim submitted and auto-approved successfully!");
+    return true;
+  } catch (err) {
+    console.error("❌ Unexpected error:", err);
+    alert("Something went wrong.");
+    return false;
+  }
+};
+
 
 
 
