@@ -358,46 +358,46 @@ export default function Dashboard() {
   }, [totalRemaining]);
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "20px" }}>
-      <div style={{ maxWidth: "1500px", width: "100%", overflowX: "auto" }}>
+    <div style={{ display: "flex", justifyContent: "center", padding: "40px 20px", }}>
+      <div style={{ maxWidth: "1800px", width: "100%", overflowX: "auto" }}>
         <h1
           style={{
-            fontSize: "2rem",
-            fontWeight: "800",
-            marginBottom: "1.5rem",
+            fontSize: "2.5rem",
+            fontWeight: "900",
+            marginBottom: "2rem",
             color: "#111827",
             textAlign: "center",
-            letterSpacing: "1.5px",
+            letterSpacing: "2px",
+            textTransform: "uppercase",
           }}
         >
           Total Marketing per Status
         </h1>
 
-        {/* ========== Remaining Balance Section ========== */}
+        {/* ===== Remaining Balance Section ===== */}
         <div
           style={{
-            padding: "30px",
-            background: "linear-gradient(135deg, #f0fdfa 0%, #ecfdf5 100%)",
-            borderRadius: "20px",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
-            maxWidth: "1400px",
-            margin: "0 auto 40px auto",
+            padding: "40px",
+            background: "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)",
+            borderRadius: "24px",
+            boxShadow: "0 12px 36px rgba(0,0,0,0.08)",
+            maxWidth: "1500px",
+            margin: "0 auto 50px auto",
             position: "relative",
           }}
         >
-          {/* Header */}
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: "25px",
+              marginBottom: "30px",
             }}
           >
             <h2
               style={{
-                fontSize: "1.6rem",
-                fontWeight: "700",
+                fontSize: "1.8rem",
+                fontWeight: "800",
                 color: "#065f46",
                 margin: 0,
               }}
@@ -425,8 +425,8 @@ export default function Dashboard() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 viewBox="0 0 24 24"
-                width="28"
-                height="28"
+                width="32"
+                height="32"
               >
                 <path d="M4 4v5h.582a7 7 0 1 1-1.16 7.89" />
                 <polyline points="4 9 9 9 7 7" />
@@ -439,32 +439,32 @@ export default function Dashboard() {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
-              gap: "20px",
+              gap: "30px",
             }}
           >
-            {/* Left: Total Remaining Balance */}
+            {/* Total Remaining Balance */}
             <div
               style={{
-                background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-                borderRadius: "16px",
-                padding: "30px",
+                background: "linear-gradient(135deg, #16a34a 0%, #4ade80 100%)",
+                borderRadius: "20px",
+                padding: "40px",
                 color: "white",
-                boxShadow: "0 6px 18px rgba(16,185,129,0.4)",
-                width: "100%",
+                boxShadow: "0 10px 28px rgba(16,185,129,0.3)",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "center",
                 alignItems: "center",
+                transition: "transform 0.3s ease",
               }}
             >
-              <div style={{ fontSize: "1rem", opacity: 0.9, marginBottom: "10px" }}>
+              <div style={{ fontSize: "1.1rem", opacity: 0.9, marginBottom: "12px" }}>
                 Total Remaining Balance
               </div>
               <div
                 style={{
-                  fontSize: "2.8rem",
-                  fontWeight: "800",
-                  marginBottom: "8px",
+                  fontSize: "3rem",
+                  fontWeight: "900",
+                  marginBottom: "10px",
                   transition: "0.3s ease-in-out",
                 }}
               >
@@ -474,42 +474,37 @@ export default function Dashboard() {
                   maximumFractionDigits: 2,
                 })}
               </div>
-              <div style={{ fontSize: "0.95rem", opacity: 0.85 }}>
+              <div style={{ fontSize: "1rem", opacity: 0.85 }}>
                 Budget left for this period
               </div>
             </div>
 
-            {/* Right: Distributor Balances */}
+            {/* Distributor Balances */}
             <div
               style={{
                 backgroundColor: "white",
-                borderRadius: "16px",
-                padding: "20px",
-                boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
+                borderRadius: "20px",
+                padding: "25px",
+                boxShadow: "0 10px 28px rgba(0,0,0,0.08)",
                 overflowY: "auto",
-                maxHeight: "280px",
+                maxHeight: "320px",
               }}
             >
               <h3
                 style={{
-                  margin: "0 0 15px 0",
-                  fontSize: "1.2rem",
+                  margin: "0 0 20px 0",
+                  fontSize: "1.3rem",
                   color: "#065f46",
-                  borderBottom: "1px solid #e5e7eb",
-                  paddingBottom: "5px",
+                  borderBottom: "2px solid #e5e7eb",
+                  paddingBottom: "8px",
+                  fontWeight: "700",
                 }}
               >
                 Distributor Balances
               </h3>
 
               {distributorBalances.length === 0 ? (
-                <p
-                  style={{
-                    textAlign: "center",
-                    color: "#6b7280",
-                    marginTop: "20px",
-                  }}
-                >
+                <p style={{ textAlign: "center", color: "#6b7280", marginTop: "25px" }}>
                   No distributor data available.
                 </p>
               ) : (
@@ -517,7 +512,7 @@ export default function Dashboard() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
-                    gap: "12px",
+                    gap: "16px",
                   }}
                 >
                   {distributorBalances.map((dist) => (
@@ -525,25 +520,27 @@ export default function Dashboard() {
                       key={dist.code}
                       style={{
                         background:
-                          "linear-gradient(135deg, #f0fdfa 0%, #ecfdf5 100%)",
-                        borderRadius: "10px",
-                        padding: "12px",
-                        boxShadow: "0 3px 8px rgba(0,0,0,0.05)",
-                        transition: "transform 0.2s ease",
+                          "linear-gradient(135deg, #f0fdfa 0%, #dcfce7 100%)",
+                        borderRadius: "12px",
+                        padding: "15px",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
                       }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.transform = "scale(1.02)")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.transform = "scale(1)")
-                      }
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "scale(1.03)";
+                        e.currentTarget.style.boxShadow = "0 8px 22px rgba(0,0,0,0.12)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "scale(1)";
+                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.05)";
+                      }}
                     >
                       <div
                         style={{
                           fontWeight: 600,
                           color: "#065f46",
-                          marginBottom: "4px",
-                          fontSize: "0.95rem",
+                          marginBottom: "6px",
+                          fontSize: "1rem",
                         }}
                       >
                         {dist.name}
@@ -552,7 +549,7 @@ export default function Dashboard() {
                         style={{
                           color: "#10b981",
                           fontWeight: 700,
-                          fontSize: "1.1rem",
+                          fontSize: "1.2rem",
                         }}
                       >
                         ₱
@@ -569,13 +566,13 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ========== Status Cards Section ========== */}
+        {/* ===== Status Cards Section ===== */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-            gap: "20px",
-            margin: "40px 0",
+            gap: "24px",
+            margin: "50px 0",
           }}
         >
           {data.map(({ label, value, color }) => {
@@ -591,27 +588,30 @@ export default function Dashboard() {
                 key={label}
                 style={{
                   background: "#fff",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                  borderRadius: "16px",
+                  padding: "20px",
+                  boxShadow: "0 8px 28px rgba(0,0,0,0.08)",
                   textAlign: "center",
+                  transition: "transform 0.3s ease, box-shadow 0.3s ease",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-4px)";
+                  e.currentTarget.style.boxShadow = "0 12px 36px rgba(0,0,0,0.12)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.08)";
                 }}
               >
-                <div
-                  style={{
-                    fontWeight: 700,
-                    color: "#374151",
-                    marginBottom: "8px",
-                    fontSize: "1.1rem",
-                  }}
-                >
+                <div style={{ fontWeight: 700, color: "#374151", marginBottom: "10px", fontSize: "1.2rem" }}>
                   {label}
                 </div>
-                <div style={{ color, fontWeight: 800, fontSize: "1.6rem" }}>
+                <div style={{ color, fontWeight: 800, fontSize: "2rem", marginBottom: "12px" }}>
                   {value.toLocaleString()}
                 </div>
 
-                <div style={{ width: "100%", height: "80px", marginTop: "10px" }}>
+                <div style={{ width: "100%", height: "100px" }}>
                   <ResponsiveContainer width="100%" height="100%">
                     {isLineChart ? (
                       <LineChart data={lineData}>
@@ -622,16 +622,16 @@ export default function Dashboard() {
                           type="monotone"
                           dataKey={label}
                           stroke={color}
-                          strokeWidth={2}
+                          strokeWidth={2.5}
                           dot={false}
-                          activeDot={{ r: 3 }}
+                          activeDot={{ r: 4 }}
                         />
                       </LineChart>
                     ) : (
                       <BarChart data={[{ name: label, value }]}>
                         <XAxis dataKey="name" hide />
                         <YAxis hide />
-                        <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="value" fill={color} radius={[6, 6, 0, 0]} />
                       </BarChart>
                     )}
                   </ResponsiveContainer>
@@ -641,18 +641,20 @@ export default function Dashboard() {
           })}
         </div>
 
-        {/* ========== Charts Section ========== */}
+        {/* ===== Charts Section ===== */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))",
-            gap: "24px",
-            marginBottom: "50px",
+            gap: "28px",
+            marginBottom: "60px",
           }}
         >
           {/* Bar Chart */}
-          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-            <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
+          <div style={{
+            background: "#fff", borderRadius: "20px", padding: "25px", boxShadow: "0 8px 28px rgba(0,0,0,0.08)"
+          }}>
+            <h3 style={{ textAlign: "center", marginBottom: "1.5rem", color: "#374151" }}>
               Market Status Bar Chart
             </h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -670,13 +672,15 @@ export default function Dashboard() {
           </div>
 
           {/* Pie Chart */}
-          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-            <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
+          <div style={{
+            background: "#fff", borderRadius: "20px", padding: "25px", boxShadow: "0 8px 28px rgba(0,0,0,0.08)"
+          }}>
+            <h3 style={{ textAlign: "center", marginBottom: "1.5rem", color: "#374151" }}>
               Market Status Pie Chart
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={data} dataKey="value" nameKey="label" outerRadius={100} label>
+                <Pie data={data} dataKey="value" nameKey="label" outerRadius={110} label>
                   {data.map((entry) => (
                     <Cell key={entry.label} fill={entry.color} />
                   ))}
@@ -688,8 +692,10 @@ export default function Dashboard() {
           </div>
 
           {/* Approved / Disapproved Line Chart */}
-          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-            <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
+          <div style={{
+            background: "#fff", borderRadius: "20px", padding: "25px", boxShadow: "0 8px 28px rgba(0,0,0,0.08)"
+          }}>
+            <h3 style={{ textAlign: "center", marginBottom: "1.5rem", color: "#374151" }}>
               Monthly Approved
             </h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -699,31 +705,13 @@ export default function Dashboard() {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="Approved" stroke="#10b981" />
-                <Line type="monotone" dataKey="Disapproved" stroke="#ef4444" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Cancelled Line Chart */}
-          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-            <h3 style={{ textAlign: "center", marginBottom: "1rem", color: "#374151" }}>
-              Cancelled Trend
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={ppeTrend}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="Cancelled" stroke="#3b82f6" />
+                <Line type="monotone" dataKey="Approved" stroke="#10b981" strokeWidth={2.5} />
+                <Line type="monotone" dataKey="Disapproved" stroke="#ef4444" strokeWidth={2.5} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
     </div>
-
-
   );
 }
