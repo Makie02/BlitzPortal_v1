@@ -19,7 +19,6 @@ export default function AccountsListManager() {
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [showImportMenu, setShowImportMenu] = useState(false);
     const [importMode, setImportMode] = useState('add');
-    
 
     const [showDistributorModal, setShowDistributorModal] = useState(false);
     const [showMotherModal, setShowMotherModal] = useState(false);
@@ -28,14 +27,11 @@ export default function AccountsListManager() {
 
     const [distributors, setDistributors] = useState([]);
     const [motherAccounts, setMotherAccounts] = useState([]);
-    const [motherAccountsMap, setMotherAccountsMap] = useState([{}]);
     const [bpAccounts, setBpAccounts] = useState([]);
     const [agents, setAgents] = useState([]);
     const [agentMap, setAgentMap] = useState({}); // 🔹 Map UserID -> name
-const [motherMap, setMotherMap] = useState({}); // 🔹 Map dscode -> name
-const [distributorMap, setDistributorMap] = useState({}); // 🔹 Map code -> name
-
-    
+    const [motherMap, setMotherMap] = useState({}); // 🔹 Map dscode -> name
+    const [distributorMap, setDistributorMap] = useState({}); // 🔹 Map code -> name
 
     const [newRecord, setNewRecord] = useState({
         distributor_code: '',
@@ -361,7 +357,7 @@ const [distributorMap, setDistributorMap] = useState({}); // 🔹 Map code -> na
     // Fetch and clean data on mount
     useEffect(() => {
         fetchAndCleanData();
-        fetchAgents();
+         fetchAgents(); // 🔹 Load agents on mount for mapping
         fetchMotherAccounts(); // 🔹 Load mother accounts
         fetchDistributors(); // 🔹 Load distributors
     }, []);
@@ -551,7 +547,7 @@ const [distributorMap, setDistributorMap] = useState({}); // 🔹 Map code -> na
     // Pagination
 
     // Fetch dropdowns
- const fetchDistributors = async () => {
+const fetchDistributors = async () => {
     const { data, error } = await supabase
         .from("distributors")
         .select("code, name, agent_code")
@@ -567,8 +563,7 @@ const [distributorMap, setDistributorMap] = useState({}); // 🔹 Map code -> na
         setDistributorMap(map);
     }
 };
-
-const fetchMotherAccounts = async () => {
+    const fetchMotherAccounts = async () => {
     const batchSize = 1000;
     let allData = [];
     let hasMore = true;
@@ -631,94 +626,50 @@ const fetchMotherAccounts = async () => {
     }
 };
 
-    const [allBpAccounts, setAllBpAccounts] = useState([]); // For all data when searching
 
-    const [pageSize] = useState(50); // Show 50 per page
 
-    // 🧩 Fetch limited data first (1k)
-    const fetchBpAccounts = async () => {
-        try {
-            console.log("🚀 Fetching initial 1k Bp_Accounts...");
-            const { data, error } = await supabase
-                .from("Bp_Accounts")
-                .select("bp_code, bp_name")
-                .order("bp_name", { ascending: true })
-                .range(0, 999); // first 1000
+    // ✅ Fetch first 1,000 records for initial modal load
+// ✅ Fetch BP Accounts with pagination - Shows first page fast, loads more on demand
+const fetchBpAccounts = async (page = 1, searchTerm = '') => {
+    const pageSize = 10;
+    const offset = (page - 1) * pageSize;
 
-            if (error) throw error;
-            setBpAccounts(data);
-            console.log(`✅ Loaded ${data.length} initial BP records`);
-        } catch (err) {
-            console.error("❌ Error fetching initial BP accounts:", err);
+    console.log(`🚀 Fetching BP Accounts - Page ${page}, Search: "${searchTerm}"`);
+
+    try {
+        let query = supabase
+            .from("Bp_Accounts")
+            .select("bp_code, bp_name", { count: "exact" })
+            .order("bp_name", { ascending: true })
+            .range(offset, offset + pageSize - 1);
+
+        // Apply search filter if exists
+        if (searchTerm.trim()) {
+            query = query.or(`bp_code.ilike.%${searchTerm}%,bp_name.ilike.%${searchTerm}%`);
         }
-    };
 
-    // 🧩 Fetch ALL data for search
-    const fetchAllBpAccounts = async () => {
-        const batchSize = 1000;
-        let allData = [];
-        let offset = 0;
-        let hasMore = true;
+        const { data, error, count } = await query;
 
-        console.log("📦 Fetching all Bp_Accounts for search...");
-        try {
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from("Bp_Accounts")
-                    .select("bp_code, bp_name")
-                    .order("bp_name", { ascending: true })
-                    .range(offset, offset + batchSize - 1);
-
-                if (error) throw error;
-
-                if (data?.length > 0) {
-                    allData = [...allData, ...data];
-                    offset += batchSize;
-                    hasMore = data.length === batchSize;
-                } else {
-                    hasMore = false;
-                }
-            }
-
-            setAllBpAccounts(allData);
-            console.log(`🎉 All data fetched: ${allData.length} records`);
-        } catch (err) {
-            console.error("🔥 Error fetching full BP list:", err);
+        if (error) {
+            console.error("❌ Error fetching BP Accounts:", error);
+            throw error;
         }
-    };
 
-    // 🧩 Handle search with real-time filtering
-    useEffect(() => {
-        const delayDebounce = setTimeout(() => {
-            if (searchTerm.trim() === "") {
-                setCurrentPage(1);
-                setBpAccounts(allBpAccounts.length ? allBpAccounts.slice(0, 1000) : bpAccounts);
-                return;
-            }
+        console.log(`✅ Fetched ${data?.length || 0} records (Total: ${count})`);
 
-            // Fetch all data once for searching
-            if (!allBpAccounts.length) {
-                fetchAllBpAccounts();
-            }
+        return { data: data || [], count: count || 0 };
+    } catch (err) {
+        console.error("🔥 Error fetching Bp_Accounts:", err);
+        return { data: [], count: 0 };
+    }
+};
 
-            const filtered = allBpAccounts.filter(
-                (bp) =>
-                    bp.bp_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    bp.bp_name.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-
-            setCurrentPage(1);
-            setBpAccounts(filtered);
-        }, 400);
-
-        return () => clearTimeout(delayDebounce);
-    }, [searchTerm]);
-
-    // 🧩 Pagination computed data
-    const currentData = bpAccounts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    // ✅ Fetch ALL records only during search
 
 
-const fetchAgents = async () => {
+
+
+   const fetchAgents = async () => {
     const { data, error } = await supabase
         .from("Account_Users")
         .select("UserID, name")
@@ -734,12 +685,16 @@ const fetchAgents = async () => {
         setAgentMap(map);
     }
 };
-    useEffect(() => {
-        if (showDistributorModal) fetchDistributors();
-        if (showMotherModal) fetchMotherAccounts();
-        if (showBpModal) fetchBpAccounts();
-        if (showAgentModal) fetchAgents();
-    }, [showDistributorModal, showMotherModal, showBpModal, showAgentModal]);
+
+useEffect(() => {
+    if (showDistributorModal) fetchDistributors();
+    if (showMotherModal) fetchMotherAccounts();
+    if (showBpModal) {
+        // ✅ BP modal will load first page instantly in the modal itself
+        setBpAccounts([]); // Clear old data, modal handles fetching
+    }
+    if (showAgentModal) fetchAgents();
+}, [showDistributorModal, showMotherModal, showBpModal, showAgentModal]);
 
     // Handle selections
     const handleSelectDistributor = (selected) => {
@@ -755,7 +710,7 @@ const fetchAgents = async () => {
         setNewRecord(prev => ({
             ...prev,
             mother_code: selected.dscode,
-            group_code: selected.group_code
+            group_code: selected.group_code,
 
         }));
         setShowMotherModal(false);
@@ -1878,7 +1833,7 @@ const fetchAgents = async () => {
                                         (e.currentTarget.style.background = 'transparent')
                                     }
                                 >
-                                    <td style={{ padding: '10px 15px' }}>
+                               <td style={{ padding: '10px 15px' }}>
     {distributorMap[row.distributor_code] || row.distributor_code}
 </td>
 <td style={{ padding: '10px 15px' }}>
@@ -1888,7 +1843,7 @@ const fetchAgents = async () => {
 <td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
 <td style={{ padding: '10px 15px' }}>
     {agentMap[row.agent_code] || row.agent_code}
-</td>                         <td style={{ padding: '10px 15px' }}>{row.group_code}</td>
+</td>
                                     <td
                                         style={{
                                             padding: '10px 15px',
@@ -2925,56 +2880,8 @@ const fetchAgents = async () => {
 
             {showDistributorModal && <LookupModal title="Select Distributor" columns={['Code', 'Name',]} data={distributors} onSelect={handleSelectDistributor} onClose={() => setShowDistributorModal(false)} fieldKeys={['code', 'name',]} />}
             {showMotherModal && <LookupModal title="Select Mother Account" columns={['Code', 'Name',]} data={motherAccounts} onSelect={handleSelectMother} onClose={() => setShowMotherModal(false)} fieldKeys={['dscode', 'name',]} />}
-            {showBpModal && (
-                <>
-                    <LookupModal
-                        title="Select BP Account"
-                        columns={["Code", "Name"]}
-                        data={currentData} // ← Paginated data
-                        onSelect={handleSelectBp}
-                        onClose={() => setShowBpModal(false)}
-                        fieldKeys={["bp_code", "bp_name"]}
-                    />
-
-                    {/* Pagination Controls */}
-                    <div
-                        style={{
-                            display: "flex",
-                            justifyContent: "center",
-                            marginTop: "10px",
-                            gap: "10px",
-                        }}
-                    >
-                        <button
-                            className="btn btn-outline-secondary btn-sm"
-                            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                            disabled={currentPage === 1}
-                        >
-                            Previous
-                        </button>
-
-                        <span>
-                            Page {currentPage} of {Math.ceil(bpAccounts.length / pageSize)}
-                        </span>
-
-                        <button
-                            className="btn btn-outline-secondary btn-sm"
-                            onClick={() =>
-                                setCurrentPage((p) =>
-                                    Math.min(p + 1, Math.ceil(bpAccounts.length / pageSize))
-                                )
-                            }
-                            disabled={currentPage === Math.ceil(bpAccounts.length / pageSize)}
-                        >
-                            Next
-                        </button>
-                    </div>
-                </>
-            )}
-
+            {showBpModal && <LookupModal title="Select BP Account" columns={['Code', 'Name']} data={bpAccounts} onSelect={handleSelectBp} onClose={() => setShowBpModal(false)} fieldKeys={['bp_code', 'bp_name']} />}
             {showAgentModal && <LookupModal title="Select Agent" columns={['ID', 'Name']} data={agents} onSelect={handleSelectAgent} onClose={() => setShowAgentModal(false)} fieldKeys={['UserID', 'name']} />}
-
-
         </div >
     );
 }
@@ -2983,9 +2890,82 @@ const fetchAgents = async () => {
 
 function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
     const [search, setSearch] = useState('');
-    const filtered = data.filter(row =>
-        fieldKeys.some(k => String(row[k] || '').toLowerCase().includes(search.toLowerCase()))
-    );
+    const [currentPage, setCurrentPage] = useState(1);
+    const [localData, setLocalData] = useState(data);
+    const [totalCount, setTotalCount] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const pageSize = 10;
+
+    // Check if this is BP modal (needs lazy loading)
+    const isBpModal = title === 'Select BP Account';
+
+    // Fetch data for BP modal (lazy loading)
+    const fetchBpPage = async (page, searchTerm) => {
+        if (!isBpModal) return;
+        
+        setLoading(true);
+        try {
+            const offset = (page - 1) * pageSize;
+            let query = supabase
+                .from("Bp_Accounts")
+                .select("bp_code, bp_name", { count: "exact" })
+                .order("bp_name", { ascending: true })
+                .range(offset, offset + pageSize - 1);
+
+            if (searchTerm.trim()) {
+                query = query.or(`bp_code.ilike.%${searchTerm}%,bp_name.ilike.%${searchTerm}%`);
+            }
+
+            const { data: fetchedData, error, count } = await query;
+            if (error) throw error;
+
+            setLocalData(fetchedData || []);
+            setTotalCount(count || 0);
+        } catch (err) {
+            console.error('Error fetching BP data:', err);
+            setLocalData([]);
+            setTotalCount(0);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Initialize data
+    useEffect(() => {
+        if (isBpModal) {
+            fetchBpPage(1, '');
+        } else {
+            setLocalData(data);
+            setTotalCount(data.length);
+        }
+    }, []);
+
+    // Handle search
+    useEffect(() => {
+        if (isBpModal) {
+            setCurrentPage(1);
+            fetchBpPage(1, search);
+        } else {
+            // For non-BP modals, filter locally
+            const filtered = data.filter(row =>
+                fieldKeys.some(k => String(row[k] || '').toLowerCase().includes(search.toLowerCase()))
+            );
+            setLocalData(filtered);
+            setTotalCount(filtered.length);
+        }
+    }, [search]);
+
+    // Handle page change
+    const handlePageChange = (newPage) => {
+        setCurrentPage(newPage);
+        if (isBpModal) {
+            fetchBpPage(newPage, search);
+        }
+    };
+
+    // Calculate pagination
+    const totalPages = Math.ceil(totalCount / pageSize);
+    const displayData = isBpModal ? localData : localData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
     return (
         <div
@@ -3031,10 +3011,9 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                         margin: 0,
                         color: 'white',
                         fontSize: 20,
-                        fontWeight: 600,
-                        letterSpacing: '-0.02em'
+                        fontWeight: 600
                     }}>
-                        {title}
+                        {title} {isBpModal && `(${totalCount.toLocaleString()} total)`}
                     </h3>
                     <button
                         onClick={onClose}
@@ -3046,14 +3025,9 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                             height: 32,
                             borderRadius: 8,
                             cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 24,
+                            fontSize: 22,
                             transition: 'all 0.2s'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
                     >
                         ×
                     </button>
@@ -3088,14 +3062,6 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                                 fontFamily: 'inherit',
                                 boxSizing: 'border-box'
                             }}
-                            onFocus={e => {
-                                e.target.style.borderColor = '#2563eb';
-                                e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.1)';
-                            }}
-                            onBlur={e => {
-                                e.target.style.borderColor = '#e5e7eb';
-                                e.target.style.boxShadow = 'none';
-                            }}
                         />
                     </div>
                 </div>
@@ -3106,83 +3072,132 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
                     overflowY: 'auto',
                     padding: '0 24px 24px'
                 }}>
-                    <table style={{
-                        width: '100%',
-                        borderCollapse: 'separate',
-                        borderSpacing: '0 4px',
-                        marginTop: 4
-                    }}>
-                        <thead>
-                            <tr>
-                                {columns.map((c, i) => (
-                                    <th key={i} style={{
-                                        textAlign: 'left',
-                                        padding: '12px 16px',
-                                        fontSize: 13,
-                                        fontWeight: 600,
-                                        color: '#6b7280',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        position: 'sticky',
-                                        top: 0,
-                                        background: 'white',
-                                        zIndex: 10
-                                    }}>
-                                        {c}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.length ? filtered.map((row, i) => (
-                                <tr
-                                    key={i}
-                                    onClick={() => { onSelect(row); onClose(); }}
-                                    style={{
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.transform = 'scale(1.01)';
-                                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.15)';
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.transform = 'scale(1)';
-                                        e.currentTarget.style.boxShadow = 'none';
-                                    }}
-                                >
-                                    {fieldKeys.map((k, j) => (
-                                        <td key={j} style={{
-                                            padding: '16px',
-                                            fontSize: 14,
-                                            color: '#1f2937',
+                    {loading ? (
+                        <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+                            Loading...
+                        </div>
+                    ) : (
+                        <table style={{
+                            width: '100%',
+                            borderCollapse: 'separate',
+                            borderSpacing: '0 4px',
+                            marginTop: 4
+                        }}>
+                            <thead>
+                                <tr>
+                                    {columns.map((c, i) => (
+                                        <th key={i} style={{
+                                            textAlign: 'left',
+                                            padding: '12px 16px',
+                                            fontSize: 13,
+                                            fontWeight: 600,
+                                            color: '#6b7280',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.05em',
+                                            position: 'sticky',
+                                            top: 0,
                                             background: 'white',
-                                            border: '1px solid #e5e7eb',
-                                            borderLeft: j === 0 ? '3px solid #2563eb' : '1px solid #e5e7eb',
-                                            borderRight: j === fieldKeys.length - 1 ? '1px solid #e5e7eb' : 'none',
-                                            borderRadius: j === 0 ? '8px 0 0 8px' : j === fieldKeys.length - 1 ? '0 8px 8px 0' : 0
+                                            zIndex: 10
                                         }}>
-                                            {row[k] || '-'}
-                                        </td>
+                                            {c}
+                                        </th>
                                     ))}
                                 </tr>
-                            )) : (
-                                <tr>
-                                    <td
-                                        colSpan={columns.length}
+                            </thead>
+                            <tbody>
+                                {displayData.length ? displayData.map((row, i) => (
+                                    <tr
+                                        key={i}
+                                        onClick={() => { onSelect(row); onClose(); }}
                                         style={{
-                                            textAlign: 'center',
-                                            padding: 40,
-                                            color: '#9ca3af',
-                                            fontSize: 15
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={e => {
+                                            e.currentTarget.style.transform = 'scale(1.01)';
+                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.15)';
+                                        }}
+                                        onMouseLeave={e => {
+                                            e.currentTarget.style.transform = 'scale(1)';
+                                            e.currentTarget.style.boxShadow = 'none';
                                         }}
                                     >
-                                        No results found
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                        {fieldKeys.map((k, j) => (
+                                            <td key={j} style={{
+                                                padding: '14px 16px',
+                                                fontSize: 14,
+                                                color: '#1f2937',
+                                                background: 'white',
+                                                border: '1px solid #e5e7eb',
+                                                borderLeft: j === 0 ? '3px solid #2563eb' : '1px solid #e5e7eb',
+                                                borderRadius: j === 0 ? '8px 0 0 8px' : j === fieldKeys.length - 1 ? '0 8px 8px 0' : 0
+                                            }}>
+                                                {row[k] || '-'}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td
+                                            colSpan={columns.length}
+                                            style={{
+                                                textAlign: 'center',
+                                                padding: 40,
+                                                color: '#9ca3af',
+                                                fontSize: 15
+                                            }}
+                                        >
+                                            No records found
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+
+                {/* Pagination Controls */}
+                <div style={{
+                    padding: '12px 24px',
+                    borderTop: '1px solid #e5e7eb',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: '#f9fafb'
+                }}>
+                    <span style={{ fontSize: 14, color: '#6b7280' }}>
+                        Page {currentPage} of {totalPages || 1}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1 || loading}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 6,
+                                border: '1px solid #d1d5db',
+                                background: (currentPage === 1 || loading) ? '#f3f4f6' : '#fff',
+                                color: '#111827',
+                                cursor: (currentPage === 1 || loading) ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            ◀ Prev
+                        </button>
+                        <button
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages || totalPages === 0 || loading}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 6,
+                                border: '1px solid #d1d5db',
+                                background: (currentPage === totalPages || totalPages === 0 || loading) ? '#f3f4f6' : '#fff',
+                                color: '#111827',
+                                cursor: (currentPage === totalPages || totalPages === 0 || loading) ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            Next ▶
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
