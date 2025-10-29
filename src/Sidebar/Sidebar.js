@@ -331,6 +331,10 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                 { title: "Dashboard", view: "Dashboard" },
                 { title: "Progress", view: "Progress" },
                 { title: "Budget Status", view: "BudgetDashboard" },
+                { title: "Analytics", view: "Analytics" },
+
+
+                
             ],
         },
         {
