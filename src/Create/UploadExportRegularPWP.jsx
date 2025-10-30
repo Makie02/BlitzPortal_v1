@@ -17,6 +17,11 @@ const UploadExportRegularPWP = () => {
     const [approvalMap, setApprovalMap] = useState({});
     const [activityMap, setActivityMap] = useState({});
     const [userMap, setUserMap] = useState({});
+    const [allRecords, setAllRecords] = useState([]);
+    
+    // New date filter states
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
 
     const handlePageSizeChange = (e) => {
         setPageSize(Number(e.target.value));
@@ -52,8 +57,32 @@ const UploadExportRegularPWP = () => {
         else {
             let filteredData = data;
 
+            // Filter by approval
             if (filterApproved) {
-                filteredData = data.filter(r => approvalMap[r.regularpwpcode]);
+                filteredData = filteredData.filter(r => approvalMap[r.regularpwpcode]);
+            }
+
+            // Filter by date range (Activity Duration)
+            if (dateFrom || dateTo) {
+                filteredData = filteredData.filter(r => {
+                    const activityFrom = r.activityDurationFrom ? new Date(r.activityDurationFrom) : null;
+                    const activityTo = r.activityDurationTo ? new Date(r.activityDurationTo) : null;
+                    
+                    let matchFrom = true;
+                    let matchTo = true;
+
+                    if (dateFrom) {
+                        const filterFromDate = new Date(dateFrom);
+                        matchFrom = activityFrom && activityFrom >= filterFromDate;
+                    }
+
+                    if (dateTo) {
+                        const filterToDate = new Date(dateTo);
+                        matchTo = activityTo && activityTo <= filterToDate;
+                    }
+
+                    return matchFrom && matchTo;
+                });
             }
 
             // Store all records (for export)
@@ -119,7 +148,6 @@ const UploadExportRegularPWP = () => {
         }
     };
 
-
     const fetchUsers = async () => {
         const { data, error } = await supabase
             .from("Account_Users")
@@ -144,7 +172,7 @@ const UploadExportRegularPWP = () => {
 
     useEffect(() => {
         fetchRecords();
-    }, [page, search, filterToday, filterApproved, approvalMap, pageSize]);
+    }, [page, search, filterToday, filterApproved, approvalMap, pageSize, dateFrom, dateTo]);
 
     const handleSearch = (e) => {
         setSearch(e.target.value);
@@ -158,7 +186,12 @@ const UploadExportRegularPWP = () => {
     const handleNext = () => {
         if (page < totalPages) setPage(page + 1);
     };
-    const [allRecords, setAllRecords] = useState([]);
+
+    const clearDateFilters = () => {
+        setDateFrom("");
+        setDateTo("");
+        setPage(1);
+    };
 
     return (
         <div style={{
@@ -273,7 +306,7 @@ const UploadExportRegularPWP = () => {
                     </button>
 
                     <CSVLink
-                        data={(filterApproved ? allRecords : allRecords).map((r) => {
+                        data={allRecords.map((r) => {
                             const cleanText = (text) =>
                                 text
                                     ? `"${String(text)
@@ -331,12 +364,95 @@ const UploadExportRegularPWP = () => {
                     >
                         📥 Export CSV
                     </CSVLink>
+                </div>
 
+                {/* Date Range Filter */}
+                <div style={{
+                    display: "flex",
+                    gap: "15px",
+                    marginBottom: "15px",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    padding: "15px",
+                    backgroundColor: "#f7fafc",
+                    borderRadius: "8px",
+                    border: "2px solid #e2e8f0"
+                }}>
+                    <span style={{
+                        fontWeight: "600",
+                        color: "#2d3748",
+                        fontSize: "14px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px"
+                    }}>
+                        📆 Activity Duration Filter:
+                    </span>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <label style={{ fontSize: "13px", color: "#4a5568", fontWeight: "500" }}>From:</label>
+                        <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(e) => {
+                                setDateFrom(e.target.value);
+                                setPage(1);
+                            }}
+                            style={{
+                                padding: "8px 12px",
+                                borderRadius: "6px",
+                                border: "2px solid #e2e8f0",
+                                fontSize: "13px",
+                                outline: "none",
+                                cursor: "pointer"
+                            }}
+                        />
+                    </div>
 
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <label style={{ fontSize: "13px", color: "#4a5568", fontWeight: "500" }}>To:</label>
+                        <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(e) => {
+                                setDateTo(e.target.value);
+                                setPage(1);
+                            }}
+                            style={{
+                                padding: "8px 12px",
+                                borderRadius: "6px",
+                                border: "2px solid #e2e8f0",
+                                fontSize: "13px",
+                                outline: "none",
+                                cursor: "pointer"
+                            }}
+                        />
+                    </div>
+
+                    {(dateFrom || dateTo) && (
+                        <button
+                            onClick={clearDateFilters}
+                            style={{
+                                padding: "8px 16px",
+                                borderRadius: "6px",
+                                border: "none",
+                                backgroundColor: "#e53e3e",
+                                color: "white",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                cursor: "pointer",
+                                transition: "all 0.3s"
+                            }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = "#c53030"}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = "#e53e3e"}
+                        >
+                            ✕ Clear Dates
+                        </button>
+                    )}
                 </div>
 
                 {/* Active Filters Display */}
-                {(filterToday || filterApproved) && (
+                {(filterToday || filterApproved || dateFrom || dateTo) && (
                     <div style={{
                         display: "flex",
                         gap: "10px",
@@ -366,6 +482,17 @@ const UploadExportRegularPWP = () => {
                                 fontWeight: "500"
                             }}>
                                 Approved
+                            </span>
+                        )}
+                        {(dateFrom || dateTo) && (
+                            <span style={{
+                                padding: "4px 12px",
+                                backgroundColor: "#fef5e7",
+                                color: "#744210",
+                                borderRadius: "6px",
+                                fontWeight: "500"
+                            }}>
+                                Date Range: {dateFrom || "Start"} → {dateTo || "End"}
                             </span>
                         )}
                     </div>
@@ -557,7 +684,6 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {activityMap[r.activity]?.glcode || r.activity}
                                     </td>
-
                                     <td
                                         style={{
                                             padding: "14px 12px",
@@ -576,7 +702,6 @@ const UploadExportRegularPWP = () => {
                                             })
                                             : "0.00"}
                                     </td>
-
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -708,8 +833,7 @@ const UploadExportRegularPWP = () => {
                             borderRadius: "8px",
                             border: "none",
                             fontWeight: "600",
-                            cursor: page === 1 ? "not-allowed" : "pointer",
-                            backgroundColor: page === 1 ? "#cbd5e0" : "#3182ce",
+                            cursor: page === 1 ? "not-allowed" : "pointer",backgroundColor: page === 1 ? "#cbd5e0" : "#3182ce",
                             color: "#fff",
                             fontSize: "14px",
                             transition: "all 0.3s"
