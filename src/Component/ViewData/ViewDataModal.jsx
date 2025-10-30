@@ -903,7 +903,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
                                             <td style={{ padding: '8px' }}>{row.billing_amount || '-'}</td>
 
                                             <td style={{ padding: '8px' }}>
-                                                {row.discount != null ? `${row.discount}%` : '-'}
+                                                {row.discount != null ? `${row.discount}` : '-'}
                                             </td>
                                             <td style={{ padding: '8px' }}>
                                                 {row.total_amount != null
