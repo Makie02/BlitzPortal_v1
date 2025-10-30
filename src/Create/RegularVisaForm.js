@@ -52,6 +52,7 @@ const RegularVisaForm = () => {
 
 
 
+const [settings, setSettings] = useState({});
 
 
   const [accountSkuRows, setAccountSkuRows] = useState({}); // Object to store SKU rows per account
@@ -277,7 +278,29 @@ const RegularVisaForm = () => {
       console.warn("[DEBUG] No loggedInUser found in localStorage.");
     }
   }, []);
+const fetchActivitySettings = async () => {
+    const { data: settingsData, error: settingsError } = await supabase
+        .from('activity_settings')
+        .select('*');
 
+    if (settingsError) {
+        console.error('Error loading activity settings:', settingsError.message);
+        return;
+    }
+
+    const settingsMap = {};
+    settingsData.forEach(s => {
+        settingsMap[s.activity_code] = s;
+    });
+
+    setSettings(settingsMap);
+};
+
+// Call it in useEffect
+useEffect(() => {
+    fetchActivities();
+    fetchActivitySettings(); // ✅ Add this
+}, []);
 
   React.useEffect(() => {
     async function fetchCoverPwpWithStatus() {
@@ -2693,26 +2716,6 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
         sku.category_code?.toString().toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-
-
-  useEffect(() => {
-    async function fetchActivities() {
-      const { data, error } = await supabase
-        .from("activity")
-        .select("id, code, name")
-        .order("name", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching activities:", error);
-        return;
-      }
-
-      setActivities(data);
-    }
-
-    fetchActivities();
-  }, []);
-
   const renderStepContent = () => {
     switch (step) {
       case 0:
@@ -2871,60 +2874,64 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                 </div>
 
                 {/* Activity */}
-            <div className="col-md-4" style={{ position: "relative" }}>
-      <label>
-        Activity <span style={{ color: "red" }}>*</span>
-      </label>
-      <select
-        name="activity"
-        className="form-control"
-        value={formData.activity}
-        onChange={handleFormChange}
-      >
-        <option value="">Select Activity</option>
-        {activities.map((opt) => (
-          <option key={opt.id} value={opt.code}>
-            {opt.name}
-          </option>
-        ))}
-      </select>
+             <div className="col-md-4" style={{ position: "relative" }}>
+  <label>
+    Activity <span style={{ color: "red" }}>*</span>
+  </label>
+  <select
+    name="activity"
+    className="form-control"
+    value={formData.activity}
+    onChange={handleFormChange}
+  >
+    <option value="">Select Activity</option>
+    {activities
+      .filter(opt => {
+        const setting = settings[opt.code] || {};
+        return setting.regular === true; // ✅ Filter by 'regular' checkbox
+      })
+      .map((opt) => (
+        <option key={opt.id} value={opt.code}>
+          {opt.name}
+        </option>
+      ))}
+  </select>
 
-      {/* Dropdown arrow */}
-      <span
-        style={{
-          position: "absolute",
-          right: "20px",
-          top: "70%",
-          transform: "translateY(-50%)",
-          pointerEvents: "none",
-          color: "#555",
-          fontSize: "14px",
-          userSelect: "none",
-        }}
-      >
-        ▼
-      </span>
+  {/* Dropdown arrow */}
+  <span
+    style={{
+      position: "absolute",
+      right: "20px",
+      top: "70%",
+      transform: "translateY(-50%)",
+      pointerEvents: "none",
+      color: "#555",
+      fontSize: "14px",
+      userSelect: "none",
+    }}
+  >
+    ▼
+  </span>
 
-      {/* Checkmark */}
-      {formData.activity && (
-        <span
-          style={{
-            position: "absolute",
-            right: "40px",
-            top: "55%",
-            transform: "translateY(-20%)",
-            color: "green",
-            fontWeight: "bold",
-            fontSize: "25px",
-            pointerEvents: "none",
-            userSelect: "none",
-          }}
-        >
-          ✓
-        </span>
-      )}
-    </div>
-
+  {/* Checkmark */}
+  {formData.activity && (
+    <span
+      style={{
+        position: "absolute",
+        right: "40px",
+        top: "55%",
+        transform: "translateY(-20%)",
+        color: "green",
+        fontWeight: "bold",
+        fontSize: "25px",
+        pointerEvents: "none",
+        userSelect: "none",
+      }}
+    >
+      ✓
+    </span>
+  )}
+</div>
                 {shouldShowCategory() && (
                   <div className="col-md-4" style={{ position: "relative" }}>
                     <label>
