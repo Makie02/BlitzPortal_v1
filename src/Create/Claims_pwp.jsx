@@ -17,7 +17,26 @@ const Claims_pwp = () => {
     const [userApprovers, setUserApprovers] = useState([]);
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
+const [settings, setSettings] = useState({});
+const fetchActivitySettings = async () => {
+    const { data: settingsData, error: settingsError } = await supabase
+        .from('activity_settings')
+        .select('*');
 
+    if (settingsError) {
+        console.error('Error loading activity settings:', settingsError.message);
+        return;
+    }
+
+    // Map settings by activity_code
+    const settingsMap = {};
+    settingsData.forEach(s => {
+        settingsMap[s.activity_code] = s;
+    });
+
+    setSettings(settingsMap);
+    console.log('✅ Activity settings loaded:', settingsMap);
+};
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
@@ -584,6 +603,7 @@ const Claims_pwp = () => {
     useEffect(() => {
         fetchActivities();
         fetchSettings();
+        fetchActivitySettings();
     }, []);
 
     const [distributors, setDistributors] = useState([]);
@@ -2659,65 +2679,65 @@ const handleSubmitForm = async () => {
                                 // ============================ */}
 
                                 {/* Activity */}
-                                <div className="col-md-4" style={{ position: 'relative' }}>
-                                    <label>
-                                        Activity <span style={{ color: 'red' }}>*</span>{' '}
-                                        <small className="text-muted">(Support type)</small>
-                                    </label>
-                                    <select
-                                        name="activity"
-                                        className="form-control"
-                                        value={formData.activity}
-                                        onChange={handleFormChange}
-                                    >
-                                        <option value="">Select Activity</option>
-                                        {activities
-                                            .filter(opt => opt.name === 'BAD ORDER' || opt.name === 'CREDITABLE WITHHOLDING TAX')
-                                            .map((opt, index) => (
-                                                <option key={index} value={opt.code}>
-                                                    {opt.name}
-                                                </option>
-                                            ))}
-                                    </select>
+                              <div className="col-md-4" style={{ position: 'relative' }}>
+    <label>
+        Activity <span style={{ color: 'red' }}>*</span>{' '}
+        <small className="text-muted">(Support type)</small>
+    </label>
+    <select
+        name="activity"
+        className="form-control"
+        value={formData.activity}
+        onChange={handleFormChange}
+    >
+        <option value="">Select Activity</option>
+        {activities
+            .filter(opt => {
+                const setting = settings[opt.code] || {};
+                return setting.claims === true;
+            })
+            .map((opt, index) => (
+                <option key={index} value={opt.code}>
+                    {opt.name}
+                </option>
+            ))}
+    </select>
 
+    {/* Dropdown arrow */}
+    <span
+        style={{
+            position: 'absolute',
+            right: '20px',
+            top: '70%',
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+            color: '#555',
+            fontSize: '14px',
+            userSelect: 'none',
+        }}
+    >
+        ▼
+    </span>
 
-
-                                    {/* Dropdown arrow */}
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            right: '20px',
-                                            top: '70%',
-                                            transform: 'translateY(-50%)',
-                                            pointerEvents: 'none',
-                                            color: '#555',
-                                            fontSize: '14px',
-                                            userSelect: 'none',
-                                        }}
-                                    >
-                                        ▼
-                                    </span>
-
-                                    {/* Checkmark */}
-                                    {formData.activity && (
-                                        <span
-                                            style={{
-                                                position: 'absolute',
-                                                right: '40px',
-                                                top: '55%',
-                                                transform: 'translateY(-20%)',
-                                                color: 'green',
-                                                fontWeight: 'bold',
-                                                fontSize: '25px',
-                                                pointerEvents: 'none',
-                                                userSelect: 'none',
-                                            }}
-                                        >
-                                            ✓
-                                        </span>
-                                    )}
-                                </div>
-
+    {/* Checkmark */}
+    {formData.activity && (
+        <span
+            style={{
+                position: 'absolute',
+                right: '40px',
+                top: '55%',
+                transform: 'translateY(-20%)',
+                color: 'green',
+                fontWeight: 'bold',
+                fontSize: '25px',
+                pointerEvents: 'none',
+                userSelect: 'none',
+            }}
+        >
+            ✓
+        </span>
+    )}
+</div>
 
                                 {formData.activityName !== "BAD ORDER" && (
 
