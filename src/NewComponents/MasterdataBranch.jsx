@@ -59,174 +59,424 @@ export default function AccountsListManager() {
         newData.splice(index, 1);
         setImportData(newData);
     };
-
+    const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
     // 🔹 Check duplicates
     const checkExistingRecords = async () => {
         if (!importData.length) return;
         setChecking(true);
+        setLoadingProgress({ current: 0, total: 0 });
 
-        const { data: existing, error } = await supabase
-            .from("Accounts_List")
-            .select("bp_code");
+        try {
+            // First, get the total count
+            const { count: totalCount, error: countError } = await supabase
+                .from("Accounts_List")
+                .select("bp_code", { count: 'exact', head: true });
 
-        if (error) {
-            Swal.fire("Error", "Failed to check duplicates", "error");
+            if (countError) {
+                Swal.fire("Error", "Failed to check duplicates", "error");
+                setChecking(false);
+                return;
+            }
+
+            setLoadingProgress({ current: 0, total: totalCount || 0 });
+
+            let allExistingRecords = [];
+            let from = 0;
+            const batchSize = 1000;
+            let hasMore = true;
+
+            // Fetch all records in batches
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from("Accounts_List")
+                    .select("bp_code")
+                    .range(from, from + batchSize - 1);
+
+                if (error) {
+                    Swal.fire("Error", "Failed to check duplicates", "error");
+                    setChecking(false);
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    allExistingRecords = [...allExistingRecords, ...data];
+                    from += batchSize;
+
+                    // Update progress
+                    setLoadingProgress({
+                        current: allExistingRecords.length,
+                        total: totalCount || 0
+                    });
+                }
+
+                hasMore = data && data.length === batchSize;
+            }
+
+            console.log(`✅ Total records loaded: ${allExistingRecords.length}`);
+
+            // Create a Set of existing BP codes
+            const existingBpCodes = new Set(
+                allExistingRecords.map(row => row.bp_code.trim().toUpperCase())
+            );
+
+            setExistingRows(existingBpCodes);
+            setDuplicatesChecked(true);
+
+            // Count duplicates
+            const duplicateCount = importData.filter(row =>
+                existingBpCodes.has(row.bp_code.trim().toUpperCase())
+            ).length;
+
+            // Reset loading progress
+            setLoadingProgress({ current: 0, total: 0 });
+
+            // Show alert
+            if (duplicateCount > 0) {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Duplicates Found!",
+                    text: `Found ${duplicateCount} duplicate record(s) out of ${importData.length}. Checked against ${allExistingRecords.length} existing records.`,
+                });
+            } else {
+                Swal.fire({
+                    icon: "success",
+                    title: "No Duplicates",
+                    text: `All ${importData.length} records are new! Checked against ${allExistingRecords.length} existing records.`,
+                });
+            }
+
+        } catch (err) {
+            console.error("Error checking duplicates:", err);
+            Swal.fire("Error", "Something went wrong while checking", "error");
+            setLoadingProgress({ current: 0, total: 0 });
+        } finally {
             setChecking(false);
-            return;
         }
-
-        setExistingRows(existing);
-        setChecking(false);
-        setDuplicatesChecked(true); // ✅ mark as checked
     };
-
     // 🔹 Import data into DB
     const importDataToDB = async () => {
         if (!importData.length) return;
+
+        setUploading(true);  // ✅ Start uploading indicator
         setImporting(true);
 
-        const newRows = importData.filter(
-            (row) =>
-                !existingRows.some(
-                    (ex) =>
-                        ex.bp_code.trim().toUpperCase() === row.bp_code.trim().toUpperCase()
-                )
-        );
+        let successCount = 0;
+        let failedRows = [];
+        let skippedRows = [];
 
-        const { error } = await supabase.from("Accounts_List").insert(newRows);
-        setImporting(false);
+        try {
+            // ✅ Fetch reference tables
+            const [
+                { data: motherAccounts },
+                { data: agentAccounts },
+                { data: bpAccounts },
+                { data: distributorAccounts },
+                { data: groupData }
+            ] = await Promise.all([
+                supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
+                supabase.from('Account_Users').select('UserID, name'),
+                supabase.from('Bp_Accounts').select('bp_code, bp_name'),
+                supabase.from('distributors').select('code, name'),
+                supabase.from('mother_account').select('code, name')
+            ]);
 
-        if (error) {
-            Swal.fire("Error", "Import failed.", "error");
-        } else {
-            Swal.fire("Success", "Data imported successfully!", "success");
-            setShowExcelModal(false);
-            setImportData([]);
-            setDuplicatesChecked(true); // ✅ mark as checked
+            const groupNameToCodeMap = {};
+            motherAccounts?.forEach(m => {
+                if (m.group_name && m.group_code) {
+                    const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
+                    groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
+                }
+            });
 
+            const motherLookup = {};
+            motherAccounts?.forEach(m => {
+                const groupCode = m.group_code?.toString().trim();
+                const exactName = m.name?.toString().trim().toLowerCase();
+                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+                if (!groupCode || !m.name) return;
+                if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
+                motherLookup[groupCode][exactName] = m.dscode;
+                motherLookup[groupCode][normalizedName] = m.dscode;
+            });
+
+            const findMotherCode = (rawMotherName, resolvedGroupCode) => {
+                const groupCode = resolvedGroupCode?.toString().trim();
+                if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
+
+                const exactName = rawMotherName.toString().trim().toLowerCase();
+                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+                const availableNames = motherLookup[groupCode];
+
+                if (availableNames[exactName]) return availableNames[exactName];
+                if (availableNames[normalizedName]) return availableNames[normalizedName];
+                const fuzzyMatch = Object.keys(availableNames).find(dbName =>
+                    dbName.includes(normalizedName) || normalizedName.includes(dbName)
+                );
+                if (fuzzyMatch) return availableNames[fuzzyMatch];
+                return Object.values(availableNames)[0];
+            };
+
+            const createMap = (arr, key1, key2) => {
+                const map = {};
+                arr?.forEach(item => {
+                    if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
+                    if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
+                });
+                return map;
+            };
+
+            const agentMap = createMap(agentAccounts, 'name', 'UserID');
+            const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
+            const distributorMap = createMap(distributorAccounts, 'name', 'code');
+            const bpNameMap = {};
+            bpAccounts?.forEach(b => {
+                if (b.bp_code && b.bp_name)
+                    bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
+            });
+
+            const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
+
+            const BATCH_SIZE = 500;
+            const chunks = [];
+            for (let i = 0; i < importData.length; i += BATCH_SIZE) {
+                chunks.push(importData.slice(i, i + BATCH_SIZE));
+            }
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+
+                const records = chunk.map((row, idx) => {
+                    const actualRowNumber = i * BATCH_SIZE + idx + 2;
+
+                    // ✅ Support both NAME and CODE columns
+                    const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
+                    const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
+                    const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
+                    const rawBp = row.bp_code?.toString().trim() || '';
+                    const rawDist = row.distributor_code?.toString().trim() || row.distributor_name?.toString().trim() || '';
+
+                    let groupCode = rawGroup;
+                    if (!isCode(rawGroup)) {
+                        groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
+                    }
+
+                    let motherCode = rawMother;
+                    if (!isCode(rawMother)) {
+                        motherCode = findMotherCode(rawMother, groupCode);
+                    }
+
+                    const agentCode = isCode(rawAgent)
+                        ? rawAgent
+                        : (agentMap[rawAgent.toLowerCase()] || rawAgent);
+
+                    const bpCode = isCode(rawBp)
+                        ? rawBp
+                        : (bpMap[rawBp.toLowerCase()] || rawBp);
+
+                    const bpName =
+                        bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
+                        row.bp_name ||
+                        null;
+
+                    const distributorCode = isCode(rawDist)
+                        ? rawDist
+                        : (distributorMap[rawDist.toLowerCase()] || rawDist);
+
+                    return {
+                        distributor_code: distributorCode || null,
+                        mother_code: motherCode || null,
+                        bp_code: bpCode || null,
+                        bp_name: bpName || null,
+                        agent_code: agentCode ? parseInt(agentCode) : null,  // ✅ Convert to int
+                        group_code: groupCode || null,
+                        status: true,  // ✅ Add status
+                        _rowNumber: actualRowNumber
+                    };
+                });
+
+                // ✅ Check existing in Accounts_List before insert
+                const bpCodes = records.map(r => r.bp_code).filter(Boolean);
+                const { data: existingRows, error: checkError } = await supabase
+                    .from('Accounts_List')
+                    .select('bp_code')
+                    .in('bp_code', bpCodes);
+
+                if (checkError) {
+                    console.error('❌ Error checking existing:', checkError);
+                }
+
+                const existingCodes = new Set(existingRows?.map(r => r.bp_code.toLowerCase()) || []);
+
+                const newRecords = records.filter(r => !existingCodes.has(r.bp_code?.toLowerCase()));
+                const skipped = records.filter(r => existingCodes.has(r.bp_code?.toLowerCase()));
+                skippedRows.push(...skipped.map(r => r._rowNumber));
+
+                const recordsToInsert = newRecords.map(r => {
+                    const { _rowNumber, ...record } = r;
+                    return record;
+                });
+
+                if (recordsToInsert.length > 0) {
+                    const { data: insertedData, error } = await supabase
+                        .from('Accounts_List')
+                        .insert(recordsToInsert)
+                        .select();
+
+                    if (error) {
+                        console.error('❌ Insert error:', error);
+                        newRecords.forEach((r) => {
+                            failedRows.push({
+                                row: r._rowNumber,
+                                error: error.message,
+                                ...r,
+                            });
+                        });
+                    } else {
+                        successCount += insertedData?.length || recordsToInsert.length;
+                    }
+                }
+
+                const processed = Math.min((i + 1) * BATCH_SIZE, importData.length);
+                setProcessedRows(processed);
+                setProgressPercent(Math.round((processed / importData.length) * 100));
+                await new Promise(res => setTimeout(res, 50));
+            }
+
+            // ✅ Summary
+            const failedCount = failedRows.length;
+            const skippedCount = skippedRows.length;
+            const totalProcessed = importData.length;
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Import Finished!',
+                html: `
+                <div style="text-align:left;">
+                  <p><strong>✅ Imported:</strong> ${successCount}</p>
+                  <p><strong>⏭️ Skipped (Duplicates):</strong> ${skippedCount}</p>
+                  <p><strong>❌ Failed:</strong> ${failedCount}</p>
+                  <p><strong>📊 Total:</strong> ${totalProcessed}</p>
+                </div>
+            `,
+                confirmButtonText: 'OK',
+                willClose: () => {
+                    fetchAndCleanData();
+                    setShowExcelModal(false);
+                    setImportData([]);
+                    setExistingRows([]);
+                }
+            });
+
+        } catch (error) {
+            console.error('❌ Import Error:', error);
+            Swal.fire('Error', error.message || 'Import failed', 'error');
+        } finally {
+            setUploading(false);
+            setImporting(false);
         }
     };
-
     const handleImportMother = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        const data = await readExcelFile(file);
-        if (!data.length) return;
+        const rawData = await readExcelFile(file);
+        if (!rawData.length) return;
 
-        if (data.length > 40000) {
+        if (rawData.length > 40000) {
             Swal.fire({
                 icon: 'error',
                 title: 'Too Many Rows!',
-                text: `Excel contains ${data.length.toLocaleString()} rows. Maximum allowed is 40,000 rows.`,
+                text: `Excel contains ${rawData.length.toLocaleString()} rows. Maximum allowed is 40,000 rows.`,
                 confirmButtonText: 'OK'
             });
             return;
         }
 
-        // ✅ Display file and data immediately
-        setFileName(file.name);
-        setImportData(data);
-        setCurrentPageExcel(1);
-        setTotalRows(data.length);
-        setProcessedRows(0);
-        setProgressPercent(0);
-        setDuplicatesChecked(true); // ✅ mark as checked
-
-        // ✅ Automatically check for duplicates
-        await checkExistingRecords();
-
-
-        let successCount = 0;
-        let failedRows = [];
-        let skippedRows = []; // ✅ for already-existing rows
-
-        // ✅ Fetch reference tables
-        const [
-            { data: motherAccounts },
-            { data: agentAccounts },
-            { data: bpAccounts },
-            { data: distributorAccounts }
-        ] = await Promise.all([
-            supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
-            supabase.from('Account_Users').select('UserID, name'),
-            supabase.from('Bp_Accounts').select('bp_code, bp_name'),
-            supabase.from('distributors').select('code, name')
-        ]);
-
-        const groupNameToCodeMap = {};
-        motherAccounts?.forEach(m => {
-            if (m.group_name && m.group_code) {
-                const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
-                groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
-            }
+        // ✅ Show loading indicator
+        Swal.fire({
+            title: 'Processing Excel...',
+            text: 'Converting names to codes...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
         });
 
-        const motherLookup = {};
-        motherAccounts?.forEach(m => {
-            const groupCode = m.group_code?.toString().trim();
-            const exactName = m.name?.toString().trim().toLowerCase();
-            const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-            if (!groupCode || !m.name) return;
-            if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
-            motherLookup[groupCode][exactName] = m.dscode;
-            motherLookup[groupCode][normalizedName] = m.dscode;
-        });
+        try {
+            // ✅ Fetch reference tables FIRST
+            const [
+                { data: motherAccounts },
+                { data: agentAccounts },
+                { data: bpAccounts },
+                { data: distributorAccounts }
+            ] = await Promise.all([
+                supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
+                supabase.from('Account_Users').select('UserID, name'),
+                supabase.from('Bp_Accounts').select('bp_code, bp_name'),
+                supabase.from('distributors').select('code, name')
+            ]);
 
-        const findMotherCode = (rawMotherName, resolvedGroupCode) => {
-            const groupCode = resolvedGroupCode?.toString().trim();
-            if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
-
-            const exactName = rawMotherName.toString().trim().toLowerCase();
-            const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-            const availableNames = motherLookup[groupCode];
-
-            if (availableNames[exactName]) return availableNames[exactName];
-            if (availableNames[normalizedName]) return availableNames[normalizedName];
-            const fuzzyMatch = Object.keys(availableNames).find(dbName =>
-                dbName.includes(normalizedName) || normalizedName.includes(dbName)
-            );
-            if (fuzzyMatch) return availableNames[fuzzyMatch];
-            return Object.values(availableNames)[0];
-        };
-
-        const createMap = (arr, key1, key2) => {
-            const map = {};
-            arr?.forEach(item => {
-                if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
-                if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
+            const groupNameToCodeMap = {};
+            motherAccounts?.forEach(m => {
+                if (m.group_name && m.group_code) {
+                    const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
+                    groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
+                }
             });
-            return map;
-        };
 
-        const agentMap = createMap(agentAccounts, 'name', 'UserID');
-        const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
-        const distributorMap = createMap(distributorAccounts, 'name', 'code');
-        const bpNameMap = {};
-        bpAccounts?.forEach(b => {
-            if (b.bp_code && b.bp_name)
-                bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
-        });
+            const motherLookup = {};
+            motherAccounts?.forEach(m => {
+                const groupCode = m.group_code?.toString().trim();
+                const exactName = m.name?.toString().trim().toLowerCase();
+                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+                if (!groupCode || !m.name) return;
+                if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
+                motherLookup[groupCode][exactName] = m.dscode;
+                motherLookup[groupCode][normalizedName] = m.dscode;
+            });
 
-        const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
+            const findMotherCode = (rawMotherName, resolvedGroupCode) => {
+                const groupCode = resolvedGroupCode?.toString().trim();
+                if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
 
-        const BATCH_SIZE = 500;
-        const chunks = [];
-        for (let i = 0; i < data.length; i += BATCH_SIZE) {
-            chunks.push(data.slice(i, i + BATCH_SIZE));
-        }
+                const exactName = rawMotherName.toString().trim().toLowerCase();
+                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+                const availableNames = motherLookup[groupCode];
 
-        for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i];
+                if (availableNames[exactName]) return availableNames[exactName];
+                if (availableNames[normalizedName]) return availableNames[normalizedName];
+                const fuzzyMatch = Object.keys(availableNames).find(dbName =>
+                    dbName.includes(normalizedName) || normalizedName.includes(dbName)
+                );
+                if (fuzzyMatch) return availableNames[fuzzyMatch];
+                return Object.values(availableNames)[0] || rawMotherName;
+            };
 
-            const records = chunk.map((row, idx) => {
-                const actualRowNumber = i * BATCH_SIZE + idx + 2;
+            const createMap = (arr, key1, key2) => {
+                const map = {};
+                arr?.forEach(item => {
+                    if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
+                    if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
+                });
+                return map;
+            };
 
-                const rawGroup = row.group_code?.toString().trim() || '';
-                const rawMother = row.mother_code?.toString().trim() || '';
-                const rawAgent = row.agent_code?.toString().trim() || '';
+            const agentMap = createMap(agentAccounts, 'name', 'UserID');
+            const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
+            const distributorMap = createMap(distributorAccounts, 'name', 'code');
+            const bpNameMap = {};
+            bpAccounts?.forEach(b => {
+                if (b.bp_code && b.bp_name)
+                    bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
+            });
+
+            const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
+
+            // ✅ Convert all rows from NAMES to CODES
+            const processedData = rawData.map((row) => {
+                const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
+                const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
+                const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
                 const rawBp = row.bp_code?.toString().trim() || '';
-                const rawDist = row.distributor_code?.toString().trim() || '';
+                const rawDist = row.distributor_code?.toString().trim() || row.distributor_name?.toString().trim() || '';
 
                 let groupCode = rawGroup;
                 if (!isCode(rawGroup)) {
@@ -256,84 +506,31 @@ export default function AccountsListManager() {
                     : (distributorMap[rawDist.toLowerCase()] || rawDist);
 
                 return {
-                    distributor_code: distributorCode,
-                    mother_code: motherCode,
-                    bp_code: bpCode,
-                    bp_name: bpName,
-                    agent_code: agentCode,
-                    group_code: groupCode,
-                    _rowNumber: actualRowNumber
+                    distributor_code: distributorCode || '',
+                    mother_code: motherCode || '',
+                    bp_code: bpCode || '',
+                    bp_name: bpName || '',
+                    agent_code: agentCode || '',
+                    group_code: groupCode || '',
+                    status: 'status'
                 };
             });
 
-            // ✅ Check existing in Accounts_List before insert
-            const bpCodes = records.map(r => r.bp_code).filter(Boolean);
-            const { data: existingRows, error: checkError } = await supabase
-                .from('Accounts_List')
-                .select('bp_code')
-                .in('bp_code', bpCodes);
+            // ✅ Close loading and display processed data
+            Swal.close();
 
-            if (checkError) {
-                console.error('❌ Error checking existing:', checkError);
-            }
+            setFileName(file.name);
+            setImportData(processedData);  // ✅ Use processed data with codes
+            setCurrentPageExcel(1);
+            setTotalRows(processedData.length);
+            setProcessedRows(0);
+            setProgressPercent(0);
+            setDuplicatesChecked(false);
 
-            const existingCodes = new Set(existingRows?.map(r => r.bp_code.toLowerCase()) || []);
-
-            const newRecords = records.filter(r => !existingCodes.has(r.bp_code.toLowerCase()));
-            const skipped = records.filter(r => existingCodes.has(r.bp_code.toLowerCase()));
-            skippedRows.push(...skipped.map(r => r._rowNumber));
-
-            const recordsToInsert = newRecords.map(r => {
-                const { _rowNumber, ...record } = r;
-                return record;
-            });
-
-            if (recordsToInsert.length > 0) {
-                const { data: insertedData, error } = await supabase
-                    .from('Accounts_List')
-                    .insert(recordsToInsert)
-                    .select();
-
-                if (error) {
-                    console.error('Insert error:', error);
-                    records.forEach((r) => {
-                        failedRows.push({
-                            row: r._rowNumber,
-                            error: error.message,
-                            ...r,
-                        });
-                    });
-                } else {
-                    successCount += insertedData?.length || recordsToInsert.length;
-                }
-            }
-
-            const processed = Math.min((i + 1) * BATCH_SIZE, data.length);
-            setProcessedRows(processed);
-            setProgressPercent(Math.round((processed / data.length) * 100));
-            await new Promise(res => setTimeout(res, 50));
+        } catch (error) {
+            console.error('❌ Error processing Excel:', error);
+            Swal.fire('Error', 'Failed to process Excel file', 'error');
         }
-
-        setUploading(false);
-
-        // ✅ Summary
-        const failedCount = failedRows.length;
-        const skippedCount = skippedRows.length;
-        const totalProcessed = data.length;
-
-        Swal.fire({
-            icon: 'success',
-            title: 'Import Finished!',
-            html: `
-        <div style="text-align:left;">
-          <p><strong>✅ Imported:</strong> ${successCount}</p>
-          <p><strong>❌ Failed:</strong> ${failedCount}</p>
-          <p><strong>📊 Total:</strong> ${totalProcessed}</p>
-        </div>
-      `,
-            confirmButtonText: 'OK',
-            willClose: () => fetchAccountsList()
-        });
     };
 
     // 🔹 Modal visibility
@@ -358,10 +555,10 @@ export default function AccountsListManager() {
     // Fetch and clean data on mount
     useEffect(() => {
         fetchAndCleanData();
-         fetchAgents(); // 🔹 Load agents on mount for mapping
+        fetchAgents(); // 🔹 Load agents on mount for mapping
         fetchMotherAccounts(); // 🔹 Load mother accounts
         fetchDistributors(); // 🔹 Load distributors
-            fetchGroupMap();
+        fetchGroupMap();
     }, []);
 
     const fetchAndCleanData = async (page = 1, search = "") => {
@@ -549,170 +746,170 @@ export default function AccountsListManager() {
     // Pagination
 
     // Fetch dropdowns
-const fetchDistributors = async () => {
-    const { data, error } = await supabase
-        .from("distributors") 
-        .select("code, name, agent_code")
-        .order("name", { ascending: true });
-    if (error) console.error(error);
-    else {
-        setDistributors(data);
-        // 🔹 Create a map for quick lookup: code -> name
-        const map = {};
-        data.forEach(dist => {
-            map[dist.code] = dist.name;
-        });
-        setDistributorMap(map);
-    }
-};
+    const fetchDistributors = async () => {
+        const { data, error } = await supabase
+            .from("distributors")
+            .select("code, name, agent_code")
+            .order("name", { ascending: true });
+        if (error) console.error(error);
+        else {
+            setDistributors(data);
+            // 🔹 Create a map for quick lookup: code -> name
+            const map = {};
+            data.forEach(dist => {
+                map[dist.code] = dist.name;
+            });
+            setDistributorMap(map);
+        }
+    };
     const fetchMotherAccounts = async () => {
-    const batchSize = 1000;
-    let allData = [];
-    let hasMore = true;
-    let offset = 0;
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
 
-    console.log("🚀 Starting full sub_mother_account data fetch...");
+        console.log("🚀 Starting full sub_mother_account data fetch...");
 
-    try {
-        while (hasMore) {
-            console.log(
-                `📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
-            );
+        try {
+            while (hasMore) {
+                console.log(
+                    `📥 Fetching batch ${Math.floor(offset / batchSize) + 1} (offset: ${offset})`
+                );
 
-            const { data, error } = await supabase
-                .from("sub_mother_account")
-                .select("dscode, name, group_code, group_name")
-                .eq("status", true)
-                .order("name", { ascending: true })
-                .range(offset, offset + batchSize - 1);
+                const { data, error } = await supabase
+                    .from("sub_mother_account")
+                    .select("dscode, name, group_code, group_name")
+                    .eq("status", true)
+                    .order("name", { ascending: true })
+                    .range(offset, offset + batchSize - 1);
 
-            if (error) {
-                console.error("❌ Error during batch fetch:", error);
-                throw error;
+                if (error) {
+                    console.error("❌ Error during batch fetch:", error);
+                    throw error;
+                }
+
+                console.log(
+                    `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
+                );
+
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize;
+                    console.log(`📊 Total records so far: ${allData.length}`);
+                } else {
+                    hasMore = false;
+                    console.log("🏁 Finished fetching all sub_mother_account data");
+                }
             }
 
-            console.log(
-                `✅ Fetched batch ${Math.floor(offset / batchSize) + 1}: ${data?.length || 0} records`
-            );
-
-            if (data && data.length > 0) {
-                allData = [...allData, ...data];
-                offset += batchSize;
-                hasMore = data.length === batchSize;
-                console.log(`📊 Total records so far: ${allData.length}`);
-            } else {
-                hasMore = false;
-                console.log("🏁 Finished fetching all sub_mother_account data");
+            if (allData.length === 0) {
+                console.warn("⚠️ No active mother accounts found");
+                setMotherAccounts([]);
+                return;
             }
-        }
 
-        if (allData.length === 0) {
-            console.warn("⚠️ No active mother accounts found");
-            setMotherAccounts([]);
-            return;
-        }
+            // ✅ Set all fetched data into state
+            setMotherAccounts(allData);
 
-        // ✅ Set all fetched data into state
-        setMotherAccounts(allData);
-        
-        // 🔹 Create a map for quick lookup: dscode -> name
-        const map = {};
-        allData.forEach(mother => {
-            map[mother.dscode] = mother.name;
-        });
-        setMotherMap(map);
-        
-        console.log(`🎉 Successfully loaded ${allData.length} mother accounts`);
-    } catch (err) {
-        console.error("🔥 Error fetching sub_mother_account:", err);
-    }
-};
+            // 🔹 Create a map for quick lookup: dscode -> name
+            const map = {};
+            allData.forEach(mother => {
+                map[mother.dscode] = mother.name;
+            });
+            setMotherMap(map);
+
+            console.log(`🎉 Successfully loaded ${allData.length} mother accounts`);
+        } catch (err) {
+            console.error("🔥 Error fetching sub_mother_account:", err);
+        }
+    };
 
 
 
     // ✅ Fetch first 1,000 records for initial modal load
-// ✅ Fetch BP Accounts with pagination - Shows first page fast, loads more on demand
-const fetchBpAccounts = async (page = 1, searchTerm = '') => {
-    const pageSize = 10;
-    const offset = (page - 1) * pageSize;
+    // ✅ Fetch BP Accounts with pagination - Shows first page fast, loads more on demand
+    const fetchBpAccounts = async (page = 1, searchTerm = '') => {
+        const pageSize = 10;
+        const offset = (page - 1) * pageSize;
 
-    console.log(`🚀 Fetching BP Accounts - Page ${page}, Search: "${searchTerm}"`);
+        console.log(`🚀 Fetching BP Accounts - Page ${page}, Search: "${searchTerm}"`);
 
-    try {
-        let query = supabase
-            .from("Bp_Accounts")
-            .select("bp_code, bp_name", { count: "exact" })
-            .order("bp_name", { ascending: true })
-            .range(offset, offset + pageSize - 1);
+        try {
+            let query = supabase
+                .from("Bp_Accounts")
+                .select("bp_code, bp_name", { count: "exact" })
+                .order("bp_name", { ascending: true })
+                .range(offset, offset + pageSize - 1);
 
-        // Apply search filter if exists
-        if (searchTerm.trim()) {
-            query = query.or(`bp_code.ilike.%${searchTerm}%,bp_name.ilike.%${searchTerm}%`);
+            // Apply search filter if exists
+            if (searchTerm.trim()) {
+                query = query.or(`bp_code.ilike.%${searchTerm}%,bp_name.ilike.%${searchTerm}%`);
+            }
+
+            const { data, error, count } = await query;
+
+            if (error) {
+                console.error("❌ Error fetching BP Accounts:", error);
+                throw error;
+            }
+
+            console.log(`✅ Fetched ${data?.length || 0} records (Total: ${count})`);
+
+            return { data: data || [], count: count || 0 };
+        } catch (err) {
+            console.error("🔥 Error fetching Bp_Accounts:", err);
+            return { data: [], count: 0 };
         }
-
-        const { data, error, count } = await query;
-
-        if (error) {
-            console.error("❌ Error fetching BP Accounts:", error);
-            throw error;
-        }
-
-        console.log(`✅ Fetched ${data?.length || 0} records (Total: ${count})`);
-
-        return { data: data || [], count: count || 0 };
-    } catch (err) {
-        console.error("🔥 Error fetching Bp_Accounts:", err);
-        return { data: [], count: 0 };
-    }
-};
+    };
 
     // ✅ Fetch ALL records only during search
 
 
 
 
-   const fetchAgents = async () => {
-    const { data, error } = await supabase
-        .from("Account_Users")
-        .select("UserID, name")
-        .order("name", { ascending: true });
-    if (error) console.error(error);
-    else {
-        setAgents(data);
-        // 🔹 Create a map for quick lookup: UserID -> name
-        const map = {};
-        data.forEach(agent => {
-            map[agent.UserID] = agent.name;
-        });
-        setAgentMap(map);
-    }
-};
-const fetchGroupMap = async () => {
-    const { data, error } = await supabase
-        .from("mother_account")
-        .select("code, name")
-        .eq("status", true);
-    
-    if (error) {
-        console.error(error);
-    } else {
-        const map = {};
-        data.forEach(group => {
-            map[group.code] = group.name;
-        });
-        setGroupMap(map);
-    }
-};
+    const fetchAgents = async () => {
+        const { data, error } = await supabase
+            .from("Account_Users")
+            .select("UserID, name")
+            .order("name", { ascending: true });
+        if (error) console.error(error);
+        else {
+            setAgents(data);
+            // 🔹 Create a map for quick lookup: UserID -> name
+            const map = {};
+            data.forEach(agent => {
+                map[agent.UserID] = agent.name;
+            });
+            setAgentMap(map);
+        }
+    };
+    const fetchGroupMap = async () => {
+        const { data, error } = await supabase
+            .from("mother_account")
+            .select("code, name")
+            .eq("status", true);
 
-useEffect(() => {
-    if (showDistributorModal) fetchDistributors();
-    if (showMotherModal) fetchMotherAccounts();
-    if (showBpModal) {
-        // ✅ BP modal will load first page instantly in the modal itself
-        setBpAccounts([]); // Clear old data, modal handles fetching
-    }
-    if (showAgentModal) fetchAgents();
-}, [showDistributorModal, showMotherModal, showBpModal, showAgentModal]);
+        if (error) {
+            console.error(error);
+        } else {
+            const map = {};
+            data.forEach(group => {
+                map[group.code] = group.name;
+            });
+            setGroupMap(map);
+        }
+    };
+
+    useEffect(() => {
+        if (showDistributorModal) fetchDistributors();
+        if (showMotherModal) fetchMotherAccounts();
+        if (showBpModal) {
+            // ✅ BP modal will load first page instantly in the modal itself
+            setBpAccounts([]); // Clear old data, modal handles fetching
+        }
+        if (showAgentModal) fetchAgents();
+    }, [showDistributorModal, showMotherModal, showBpModal, showAgentModal]);
 
     // Handle selections
     const handleSelectDistributor = (selected) => {
@@ -1006,100 +1203,100 @@ useEffect(() => {
     const [exportProgress, setExportProgress] = useState({ fetched: 0, total: 0, type: "" });
 
     // Updated handleExport
-const handleExport = async (type) => {
-    try {
-        setShowExportModal(true);
-        setExportProgress({ fetched: 0, total: 0, type });
+    const handleExport = async (type) => {
+        try {
+            setShowExportModal(true);
+            setExportProgress({ fetched: 0, total: 0, type });
 
-        const headers = [
-            "distributor_name",
-            "mother_name",
-            "bp_code",
-            "bp_name",
-            "agent_name",
-            "group_name",
-            "status",
-        ];
+            const headers = [
+                "distributor_name",
+                "mother_name",
+                "bp_code",
+                "bp_name",
+                "agent_name",
+                "group_name",
+                "status",
+            ];
 
-        let exportData = [];
+            let exportData = [];
 
-        if (type === "template") {
-            exportData = [Object.fromEntries(headers.map((k) => [k, ""]))];
-            setExportProgress({ fetched: 1, total: 1, type });
-        } else if (type === "all") {
-            const batchSize = 1000;
-            let allData = [];
-            let offset = 0;
-            let hasMore = true;
+            if (type === "template") {
+                exportData = [Object.fromEntries(headers.map((k) => [k, ""]))];
+                setExportProgress({ fetched: 1, total: 1, type });
+            } else if (type === "all") {
+                const batchSize = 1000;
+                let allData = [];
+                let offset = 0;
+                let hasMore = true;
 
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from("Accounts_List")
-                    .select("*")
-                    .order("id", { ascending: true })
-                    .range(offset, offset + batchSize - 1);
+                while (hasMore) {
+                    const { data, error } = await supabase
+                        .from("Accounts_List")
+                        .select("*")
+                        .order("id", { ascending: true })
+                        .range(offset, offset + batchSize - 1);
 
-                if (error) throw error;
+                    if (error) throw error;
 
-                if (data && data.length > 0) {
-                    allData = [...allData, ...data];
-                    offset += batchSize;
-                    hasMore = data.length === batchSize;
-                    setExportProgress({ fetched: allData.length, total: allData.length + (hasMore ? batchSize : 0), type });
-                } else {
-                    hasMore = false;
-                    setExportProgress({ fetched: allData.length, total: allData.length, type });
+                    if (data && data.length > 0) {
+                        allData = [...allData, ...data];
+                        offset += batchSize;
+                        hasMore = data.length === batchSize;
+                        setExportProgress({ fetched: allData.length, total: allData.length + (hasMore ? batchSize : 0), type });
+                    } else {
+                        hasMore = false;
+                        setExportProgress({ fetched: allData.length, total: allData.length, type });
+                    }
                 }
+
+                if (allData.length === 0) {
+                    Swal.fire("Error", "No data to export", "error");
+                    setShowExportModal(false);
+                    return;
+                }
+
+                // 🔹 Fetch all lookup tables for name conversion
+                const { data: groupData } = await supabase
+                    .from("mother_account")
+                    .select("code, name");
+
+                const groupMap = {};
+                groupData?.forEach(g => {
+                    groupMap[g.code] = g.name;
+                });
+
+                // Convert codes to names
+                exportData = allData.map((row) => ({
+                    distributor_name: distributorMap[row.distributor_code] || row.distributor_code || "",
+                    mother_name: motherMap[row.mother_code] || row.mother_code || "",
+                    bp_code: row.bp_code || "",
+                    bp_name: row.bp_name || "",
+                    agent_name: agentMap[row.agent_code] || row.agent_code || "",
+                    group_name: groupMap[row.group_code] || row.group_code || "",
+                    status: row.status ? "Active" : "Inactive",
+                }));
             }
 
-            if (allData.length === 0) {
-                Swal.fire("Error", "No data to export", "error");
-                setShowExportModal(false);
-                return;
-            }
+            // Small delay to display progress modal nicely
+            await new Promise((res) => setTimeout(res, 500));
 
-            // 🔹 Fetch all lookup tables for name conversion
-            const { data: groupData } = await supabase
-                .from("mother_account")
-                .select("code, name");
+            // Generate Excel
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "AccountsList");
+            const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+            const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+            saveAs(blob, `accounts_list_${type}.xlsx`);
 
-            const groupMap = {};
-            groupData?.forEach(g => {
-                groupMap[g.code] = g.name;
-            });
-
-            // Convert codes to names
-            exportData = allData.map((row) => ({
-                distributor_name: distributorMap[row.distributor_code] || row.distributor_code || "",
-                mother_name: motherMap[row.mother_code] || row.mother_code || "",
-                bp_code: row.bp_code || "",
-                bp_name: row.bp_name || "",
-                agent_name: agentMap[row.agent_code] || row.agent_code || "",
-                group_name: groupMap[row.group_code] || row.group_code || "",
-                status: row.status ? "Active" : "Inactive",
-            }));
+            setShowExportModal(false);
+        } catch (err) {
+            console.error("Export Error:", err);
+            Swal.fire("Error", err.message, "error");
+            setShowExportModal(false);
+        } finally {
+            setShowExportMenu(false);
         }
-
-        // Small delay to display progress modal nicely
-        await new Promise((res) => setTimeout(res, 500));
-
-        // Generate Excel
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "AccountsList");
-        const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-        const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-        saveAs(blob, `accounts_list_${type}.xlsx`);
-
-        setShowExportModal(false);
-    } catch (err) {
-        console.error("Export Error:", err);
-        Swal.fire("Error", err.message, "error");
-        setShowExportModal(false);
-    } finally {
-        setShowExportMenu(false);
-    }
-};
+    };
 
 
     // Close menus on outside click
@@ -1554,6 +1751,51 @@ const handleExport = async (type) => {
                                         )}
                                     </Button>
                                 )}
+                                {checking && loadingProgress.total > 0 && (
+                                    <div style={{
+                                        marginBottom: "15px",
+                                        padding: "10px",
+                                        backgroundColor: "#f8f9fa",
+                                        borderRadius: "6px",
+                                        border: "1px solid #dee2e6"
+                                    }}>
+                                        <div style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                            marginBottom: "8px"
+                                        }}>
+                                            <span style={{ fontWeight: 600, color: "#495057" }}>
+                                                Loading existing records...
+                                            </span>
+                                            <span style={{ fontWeight: 600, color: "#0d6efd" }}>
+                                                {loadingProgress.current.toLocaleString()} / {loadingProgress.total.toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <div style={{
+                                            width: '100%',
+                                            height: '10px',
+                                            backgroundColor: '#e9ecef',
+                                            borderRadius: '5px',
+                                            overflow: 'hidden'
+                                        }}>
+                                            <div style={{
+                                                width: `${(loadingProgress.current / loadingProgress.total) * 100}%`,
+                                                height: '100%',
+                                                backgroundColor: '#0d6efd',
+                                                transition: 'width 0.3s ease'
+                                            }} />
+                                        </div>
+                                        <div style={{
+                                            marginTop: "6px",
+                                            fontSize: "12px",
+                                            color: "#6c757d",
+                                            textAlign: "center"
+                                        }}>
+                                            {Math.round((loadingProgress.current / loadingProgress.total) * 100)}% complete
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Table */}
                                 {importData.length > 0 && (
@@ -1573,9 +1815,11 @@ const handleExport = async (type) => {
                                             </thead>
                                             <tbody>
                                                 {currentRowsExcel.map((row, idx) => {
-                                                    const isDuplicate = existingRows.some(
-                                                        (r) => r.bp_code.trim().toUpperCase() === row.bp_code.trim().toUpperCase()
-                                                    );
+                                                    // Check if BP code exists in the Set
+                                                    const isDuplicate = existingRows instanceof Set
+                                                        ? existingRows.has(row.bp_code.trim().toUpperCase())
+                                                        : false;
+
                                                     return (
                                                         <tr
                                                             key={idx}
@@ -1601,13 +1845,15 @@ const handleExport = async (type) => {
                                                                         const updatedData = importData.filter((_, i) => i !== actualIndex);
                                                                         setImportData(updatedData);
 
-                                                                        const remainingDuplicates = updatedData.filter((r) =>
-                                                                            existingRows.some(
-                                                                                (ex) => ex.bp_code.trim().toUpperCase() === r.bp_code.trim().toUpperCase()
-                                                                            )
+                                                                        // Don't need to update existingRows - it stays as Set
+                                                                        // Just check if there are still duplicates
+                                                                        const stillHasDuplicates = updatedData.some(r =>
+                                                                            existingRows instanceof Set && existingRows.has(r.bp_code.trim().toUpperCase())
                                                                         );
-                                                                        setExistingRows(remainingDuplicates);
-                                                                        if (remainingDuplicates.length === 0) setDuplicatesChecked(false);
+
+                                                                        if (!stillHasDuplicates) {
+                                                                            setDuplicatesChecked(false);
+                                                                        }
                                                                     }}
                                                                     style={{ padding: "6px 12px", fontSize: "14px" }}
                                                                 >
@@ -1865,19 +2111,19 @@ const handleExport = async (type) => {
                                         (e.currentTarget.style.background = 'transparent')
                                     }
                                 >
-                               <td style={{ padding: '10px 15px' }}>
-    {distributorMap[row.distributor_code] || row.distributor_code}
-</td>
-<td style={{ padding: '10px 15px' }}>
-    {motherMap[row.mother_code] || row.mother_code}
-</td>
-<td style={{ padding: '10px 15px' }}>{row.bp_code}</td>
-<td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
-<td style={{ padding: '10px 15px' }}>
-    {agentMap[row.agent_code] || row.agent_code}
-    
-</td>
-  <td style={{ padding: '10px 15px' }}>{groupMap[row.group_code] || row.group_code}</td> 
+                                    <td style={{ padding: '10px 15px' }}>
+                                        {distributorMap[row.distributor_code] || row.distributor_code}
+                                    </td>
+                                    <td style={{ padding: '10px 15px' }}>
+                                        {motherMap[row.mother_code] || row.mother_code}
+                                    </td>
+                                    <td style={{ padding: '10px 15px' }}>{row.bp_code}</td>
+                                    <td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
+                                    <td style={{ padding: '10px 15px' }}>
+                                        {agentMap[row.agent_code] || row.agent_code}
+
+                                    </td>
+                                    <td style={{ padding: '10px 15px' }}>{groupMap[row.group_code] || row.group_code}</td>
                                     <td
                                         style={{
                                             padding: '10px 15px',
@@ -2936,7 +3182,7 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
     // Fetch data for BP modal (lazy loading)
     const fetchBpPage = async (page, searchTerm) => {
         if (!isBpModal) return;
-        
+
         setLoading(true);
         try {
             const offset = (page - 1) * pageSize;
