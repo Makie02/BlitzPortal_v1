@@ -95,200 +95,201 @@ function RecordsPage() {
     fetchCategoryMap();
   }, []);
 
-const fetchData = useCallback(async () => {
-  if (!Object.keys(categoryMap).length) return;
+  const fetchData = useCallback(async () => {
+    if (!Object.keys(categoryMap).length) return;
 
-  try {
-    setLoading(true);
-    setError(null);
+    try {
+      setLoading(true);
+      setError(null);
 
-    let coverData = [];
-    let regularData = [];
+      let coverData = [];
+      let regularData = [];
 
-    // --- FETCH COVER PWP ---
-    if (filter === "all" || filter === "cover") {
-      const { data: cData, error: cError } = await supabase
-        .from("cover_pwp")
-        .select(`
+      // --- FETCH COVER PWP ---
+      if (filter === "all" || filter === "cover") {
+        const { data: cData, error: cError } = await supabase
+          .from("cover_pwp")
+          .select(`
           id,
           cover_code,
           activity,
           credit_budget,
           amountbadget,
           distributor,
-          created_at
+          created_at,
+           createForm
         `)
-        .order("id", { ascending: false })
-        .limit(50);
+          .order("id", { ascending: false })
+          .limit(50);
 
-      if (cError) throw cError;
+        if (cError) throw cError;
 
-      coverData = (cData || []).map(item => ({
-        ...item,
-        source: "cover_pwp",
-        pwp_code: item.cover_code,
-      }));
-    }
+        coverData = (cData || []).map(item => ({
+          ...item,
+          source: "cover_pwp",
+          pwp_code: item.cover_code,
+        }));
+      }
 
-    // --- FETCH REGULAR PWP ---
-    if (filter === "all" || filter === "regular") {
-      const { data: rData, error: rError } = await supabase
-        .from("regular_pwp")
-        .select(`
+      // --- FETCH REGULAR PWP ---
+      if (filter === "all" || filter === "regular") {
+        const { data: rData, error: rError } = await supabase
+          .from("regular_pwp")
+          .select(`
           id,
           regularpwpcode,
           activity,
           credit_budget,
           amountbadget,
           distributor,
-          created_at
+          created_at,
+           createForm
         `)
-        .order("id", { ascending: false })
-        .limit(50);
+          .order("id", { ascending: false })
+          .limit(50);
 
-      if (rError) throw rError;
+        if (rError) throw rError;
 
-      regularData = (rData || []).map(item => ({
-        ...item,
-        source: "regular_pwp",
-        pwp_code: item.regularpwpcode,
-      }));
-    }
-
-    const mergedData = [...coverData, ...regularData];
-
-    // --- FETCH ACTIVITY NAMES ---
-    const activityCodes = [...new Set(mergedData.map(item => item.activity).filter(Boolean))];
-    let activityMap = {};
-
-    if (activityCodes.length > 0) {
-      const { data: actData, error: actError } = await supabase
-        .from("activity")
-        .select("code, name")
-        .in("code", activityCodes);
-
-      if (actError) throw actError;
-
-      activityMap = (actData || []).reduce((acc, cur) => {
-        acc[cur.code] = cur.name;
-        return acc;
-      }, {});
-    }
-
-    // --- FETCH APPROVAL STATUS AND APPROVED DATE ---
-    const allPwpCodes = mergedData.map(item => item.pwp_code).filter(Boolean);
-    const approvalStatusMap = await getApprovalStatus(allPwpCodes);
-
-    const { data: approvalHistoryData, error: approvalHistoryError } = await supabase
-      .from("Approval_History")
-      .select("PwpCode, DateResponded")
-      .in("PwpCode", allPwpCodes);
-
-    if (approvalHistoryError) throw approvalHistoryError;
-
-    const approvalDateMap = {};
-    (approvalHistoryData || []).forEach(item => {
-      if (!approvalDateMap[item.PwpCode]) {
-        approvalDateMap[item.PwpCode] = item.DateResponded;
+        regularData = (rData || []).map(item => ({
+          ...item,
+          source: "regular_pwp",
+          pwp_code: item.regularpwpcode,
+        }));
       }
-    });
 
-    // --- MERGE APPROVAL + ACTIVITY NAME ---
-    const dataWithApprovalStatus = mergedData.map(item => ({
-      ...item,
-      activity_name: activityMap[item.activity] || item.activity || "-", // <-- replace with name
-      approval_status: approvalStatusMap[item.pwp_code]?.status || "Pending",
-      date_responded: approvalStatusMap[item.pwp_code]?.date_responded || approvalDateMap[item.pwp_code] || null,
-      approval_created: approvalStatusMap[item.pwp_code]?.approval_created,
-    }));
+      const mergedData = [...coverData, ...regularData];
 
-    // --- SEARCH FILTER ---
-    let filteredData = dataWithApprovalStatus;
-    if (searchQuery) {
-      filteredData = filteredData.filter(item => {
-        const searchFields = [
-          item.code,
-          item.cover_code,
-          item.regularpwpcode,
-          item.id,
-          item.activity_name, // now searchable by name too
-          item.distributor,
-        ];
-        return searchFields.some(
-          field =>
-            field &&
-            field.toString().toLowerCase().includes(searchQuery.toLowerCase())
-        );
+      // --- FETCH ACTIVITY NAMES ---
+      const activityCodes = [...new Set(mergedData.map(item => item.activity).filter(Boolean))];
+      let activityMap = {};
+
+      if (activityCodes.length > 0) {
+        const { data: actData, error: actError } = await supabase
+          .from("activity")
+          .select("code, name")
+          .in("code", activityCodes);
+
+        if (actError) throw actError;
+
+        activityMap = (actData || []).reduce((acc, cur) => {
+          acc[cur.code] = cur.name;
+          return acc;
+        }, {});
+      }
+
+      // --- FETCH APPROVAL STATUS AND APPROVED DATE ---
+      const allPwpCodes = mergedData.map(item => item.pwp_code).filter(Boolean);
+      const approvalStatusMap = await getApprovalStatus(allPwpCodes);
+
+      const { data: approvalHistoryData, error: approvalHistoryError } = await supabase
+        .from("Approval_History")
+        .select("PwpCode, DateResponded")
+        .in("PwpCode", allPwpCodes);
+
+      if (approvalHistoryError) throw approvalHistoryError;
+
+      const approvalDateMap = {};
+      (approvalHistoryData || []).forEach(item => {
+        if (!approvalDateMap[item.PwpCode]) {
+          approvalDateMap[item.PwpCode] = item.DateResponded;
+        }
       });
-    }
 
-    // --- STATUS FILTER ---
-    if (statusFilter !== "all") {
-      filteredData = filteredData.filter(item => {
-        const itemStatus = item.approval_status?.toLowerCase() || "pending";
-        if (statusFilter === "sent_back")
-          return (
-            itemStatus === "sent back for revision" || itemStatus === "sent back"
-          );
-        if (statusFilter === "cancelled") return itemStatus === "cancelled";
-        if (statusFilter === "pending")
-          return itemStatus === "pending" || !item.approval_status;
-        if (statusFilter === "approved") return itemStatus === "approved";
-        if (statusFilter === "declined") return itemStatus === "declined";
-        return itemStatus === statusFilter;
-      });
-    }
-
-    // --- DATE FILTERS ---
-    if (dateFrom) {
-      filteredData = filteredData.filter(
-        item =>
-          item.created_at &&
-          new Date(item.created_at) >= new Date(dateFrom)
-      );
-    }
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      filteredData = filteredData.filter(
-        item =>
-          item.created_at &&
-          new Date(item.created_at) <= toDate
-      );
-    }
-
-    // --- NORMALIZE FINAL DATA ---
-    if (filteredData.length > 0) {
-      const normalizedData = filteredData.map(item => ({
+      // --- MERGE APPROVAL + ACTIVITY NAME ---
+      const dataWithApprovalStatus = mergedData.map(item => ({
         ...item,
-        code: item.regularpwpcode || item.cover_code || "-",
-        distributor: item.distributor || "-",
-        activity: item.activity_name || "-", // show readable name
-        credit_budget: item.credit_budget ?? 0,
-        amountbadget: item.amountbadget ?? 0,
-        approved_date: item.date_responded || null,
+        activity_name: activityMap[item.activity] || item.activity || "-", // <-- replace with name
+        approval_status: approvalStatusMap[item.pwp_code]?.status || "Pending",
+        date_responded: approvalStatusMap[item.pwp_code]?.date_responded || approvalDateMap[item.pwp_code] || null,
+        approval_created: approvalStatusMap[item.pwp_code]?.approval_created,
       }));
 
-      setColumns([
-        "pwp_code",
-        "distributor",
-        "activity",
-        "credit_budget",
-        "created_at",
-        "approved_date",
-        "approval_status",
-      ]);
-      setData(normalizedData);
-    } else {
-      setColumns([]);
-      setData([]);
+      // --- SEARCH FILTER ---
+      let filteredData = dataWithApprovalStatus;
+      if (searchQuery) {
+        filteredData = filteredData.filter(item => {
+          const searchFields = [
+            item.code,
+            item.cover_code,
+            item.regularpwpcode,
+            item.id,
+            item.activity_name, // now searchable by name too
+            item.distributor,
+          ];
+          return searchFields.some(
+            field =>
+              field &&
+              field.toString().toLowerCase().includes(searchQuery.toLowerCase())
+          );
+        });
+      }
+
+      // --- STATUS FILTER ---
+      if (statusFilter !== "all") {
+        filteredData = filteredData.filter(item => {
+          const itemStatus = item.approval_status?.toLowerCase() || "pending";
+          if (statusFilter === "sent_back")
+            return (
+              itemStatus === "sent back for revision" || itemStatus === "sent back"
+            );
+          if (statusFilter === "cancelled") return itemStatus === "cancelled";
+          if (statusFilter === "pending")
+            return itemStatus === "pending" || !item.approval_status;
+          if (statusFilter === "approved") return itemStatus === "approved";
+          if (statusFilter === "declined") return itemStatus === "declined";
+          return itemStatus === statusFilter;
+        });
+      }
+
+      // --- DATE FILTERS ---
+      if (dateFrom) {
+        filteredData = filteredData.filter(
+          item =>
+            item.created_at &&
+            new Date(item.created_at) >= new Date(dateFrom)
+        );
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        filteredData = filteredData.filter(
+          item =>
+            item.created_at &&
+            new Date(item.created_at) <= toDate
+        );
+      }
+
+      // --- NORMALIZE FINAL DATA ---
+      if (filteredData.length > 0) {
+        const normalizedData = filteredData.map(item => ({
+          ...item,
+          code: item.regularpwpcode || item.cover_code || "-",
+          distributor: item.distributor || "-",
+          activity: item.activity_name || "-", // show readable name
+          credit_budget: item.credit_budget ?? 0,
+          amountbadget: item.amountbadget ?? 0,
+          approved_date: item.date_responded || null,
+        }));
+
+        setColumns([
+          "pwp_code",
+          "distributor",
+          "activity",
+          "credit_budget",
+          "created_at",
+          "approved_date",
+        ]);
+        setData(normalizedData);
+      } else {
+        setColumns([]);
+        setData([]);
+      }
+    } catch (err) {
+      setError(`Unexpected error: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    setError(`Unexpected error: ${err.message}`);
-  } finally {
-    setLoading(false);
-  }
-}, [filter, statusFilter, searchQuery, dateFrom, dateTo, categoryMap]);
+  }, [filter, statusFilter, searchQuery, dateFrom, dateTo, categoryMap]);
 
 
 
@@ -302,83 +303,83 @@ const fetchData = useCallback(async () => {
     setShowPDFModal(true);
   };
 
-const exportToExcel = async () => {
-  if (!data.length) return;
+  const exportToExcel = async () => {
+    if (!data.length) return;
 
-  try {
-    // --- FETCH DISTRIBUTOR NAMES USING CODE ---
-    const distributorCodes = [...new Set(data.map(d => d.distributor).filter(Boolean))];
-    let distributorMap = {};
+    try {
+      // --- FETCH DISTRIBUTOR NAMES USING CODE ---
+      const distributorCodes = [...new Set(data.map(d => d.distributor).filter(Boolean))];
+      let distributorMap = {};
 
-    if (distributorCodes.length > 0) {
-      const { data: distData, error: distError } = await supabase
-        .from("distributors")
-        .select("code, name")
-        .in("code", distributorCodes);
+      if (distributorCodes.length > 0) {
+        const { data: distData, error: distError } = await supabase
+          .from("distributors")
+          .select("code, name")
+          .in("code", distributorCodes);
 
-      if (distError) throw distError;
+        if (distError) throw distError;
 
-      distributorMap = (distData || []).reduce((acc, cur) => {
-        acc[cur.code] = cur.name;
-        return acc;
-      }, {});
-    }
+        distributorMap = (distData || []).reduce((acc, cur) => {
+          acc[cur.code] = cur.name;
+          return acc;
+        }, {});
+      }
 
-    // --- DEFINE EXPORT HEADERS ---
-    const exportColumns = [
-      { header: "REG PWP CODE", key: "pwp_code" },
-      { header: "DISTRIBUTOR", key: "distributor" },
-      { header: "ACTIVITY", key: "activity" },
-      { header: "AMOUNT", key: "credit_budget" },
-      { header: "CREATED DATE", key: "created_at" },
-      { header: "APPROVED DATE", key: "date_responded" },
-      { header: "STATUS", key: "approval_status" },
-    ];
+      // --- DEFINE EXPORT HEADERS ---
+      const exportColumns = [
+        { header: "REG PWP CODE", key: "pwp_code" },
+        { header: "DISTRIBUTOR", key: "distributor" },
+        { header: "ACTIVITY", key: "activity" },
+        { header: "AMOUNT", key: "credit_budget" },
+        { header: "CREATED DATE", key: "created_at" },
+        { header: "APPROVED DATE", key: "date_responded" },
+        { header: "STATUS", key: "approval_status" },
+      ];
 
-    // --- PREPARE DATA FOR EXPORT ---
-    const exportData = data.map(row => {
-      const obj = {};
-      exportColumns.forEach(col => {
-        if (col.key === "created_at" || col.key === "date_responded") {
-          obj[col.header] = row[col.key]
-            ? new Date(row[col.key]).toLocaleDateString()
-            : "";
-        } else if (col.key === "approval_status") {
-          obj[col.header] = row[col.key] || "Pending";
-        } else if (col.key === "distributor") {
-          // Replace distributor code with name
-          obj[col.header] = distributorMap[row[col.key]] || row[col.key] || "-";
-        } else {
-          obj[col.header] = row[col.key] ?? "";
-        }
+      // --- PREPARE DATA FOR EXPORT ---
+      const exportData = data.map(row => {
+        const obj = {};
+        exportColumns.forEach(col => {
+          if (col.key === "created_at" || col.key === "date_responded") {
+            obj[col.header] = row[col.key]
+              ? new Date(row[col.key]).toLocaleDateString()
+              : "";
+          } else if (col.key === "approval_status") {
+            obj[col.header] = row[col.key] || "Pending";
+          } else if (col.key === "distributor") {
+            // Replace distributor code with name
+            obj[col.header] = distributorMap[row[col.key]] || row[col.key] || "-";
+          } else {
+            obj[col.header] = row[col.key] ?? "";
+          }
+        });
+        return obj;
       });
-      return obj;
-    });
 
-    // --- CREATE WORKSHEET & AUTO WIDTH ---
-    const worksheet = XLSX.utils.json_to_sheet(exportData, {
-      header: exportColumns.map(c => c.header),
-    });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "PWP Records");
+      // --- CREATE WORKSHEET & AUTO WIDTH ---
+      const worksheet = XLSX.utils.json_to_sheet(exportData, {
+        header: exportColumns.map(c => c.header),
+      });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "PWP Records");
 
-    // Auto column width
-    const colWidths = exportColumns.map(col => ({
-      wch: Math.max(
-        col.header.length,
-        ...exportData.map(r => (r[col.header] ? r[col.header].toString().length : 0))
-      ) + 2,
-    }));
-    worksheet["!cols"] = colWidths;
+      // Auto column width
+      const colWidths = exportColumns.map(col => ({
+        wch: Math.max(
+          col.header.length,
+          ...exportData.map(r => (r[col.header] ? r[col.header].toString().length : 0))
+        ) + 2,
+      }));
+      worksheet["!cols"] = colWidths;
 
-    // --- SAVE FILE ---
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-    saveAs(blob, `PWP_Records_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  } catch (err) {
-    console.error("Error exporting Excel:", err.message);
-  }
-};
+      // --- SAVE FILE ---
+      const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+      saveAs(blob, `PWP_Records_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (err) {
+      console.error("Error exporting Excel:", err.message);
+    }
+  };
 
 
 
@@ -656,7 +657,7 @@ const exportToExcel = async () => {
                 lineHeight: '1.4',
                 fontStyle: 'italic'
               }}>
-              
+
               </p>
             </div>
 
