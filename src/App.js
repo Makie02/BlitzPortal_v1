@@ -47,6 +47,7 @@ import BudgetDashboard from "./NewComponents/BudgetDashboard.js";
 import Total from "./Create/Totalbudget.jsx";
 import PermissionsManager from "./NewComponents/PermissionsManager.jsx";
 import Analytics from "./Component/Dasboard_analytics.js";
+import UploadExportRegularPWP from "./Create/UploadExportRegularPWP.jsx";
 function App() {
 
   // Track online/offline status
@@ -398,7 +399,10 @@ function App() {
 
       case "Analytics": return <Analytics setCurrentView={setCurrentView} />;
 
-      
+      case "UploadingSap": return <UploadExportRegularPWP setCurrentView={setCurrentView} />;
+
+
+
 
 
       default: return <Dashboard setCurrentView={setCurrentView} />;
