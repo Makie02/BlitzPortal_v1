@@ -15,7 +15,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
     const coverFieldNameMap = {
         cover_code: 'Cover Code',
         distributor_code: 'Distributor',
-        amount_badget: 'Amount Badget',
+        amount_badget: 'Amount Budget',
         pwp_type: 'PWP Type',
         objective: 'Objective',
         promo_scheme: 'Promo Scheme',
@@ -45,7 +45,7 @@ const ViewDataModal = ({ visaCode, onClose }) => {
         activityDurationTo: 'Activity To',
         isPartOfCoverPwp: 'Is Part of Cover PWP',
         coverPwpCode: 'Cover PWP Code',
-        amountbadget: 'Amount Badget',
+        amountbadget: 'Amount Budget',
 
         objective: 'Objective',
         details: 'Details',
