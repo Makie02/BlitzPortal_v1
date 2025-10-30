@@ -100,17 +100,21 @@ const UploadExportRegularPWP = () => {
     const fetchActivities = async () => {
         const { data, error } = await supabase
             .from("activity")
-            .select("code, name");
+            .select("code, name, glcode");
 
         if (error) console.error(error);
         else {
             const map = {};
             data.forEach(a => {
-                map[a.code] = a.name;
+                map[a.code] = {
+                    name: a.name,
+                    glcode: a.glcode
+                };
             });
             setActivityMap(map);
         }
     };
+
 
     const fetchUsers = async () => {
         const { data, error } = await supabase
@@ -273,13 +277,16 @@ const UploadExportRegularPWP = () => {
                                 ? new Date(approvalMap[r.regularpwpcode]).toLocaleDateString()
                                 : "N/A",
                             "PO Date": r.created_at ? new Date(r.created_at).toLocaleDateString() : "",
-                            "(01)Description": activityMap[r.activity] || r.activity,
-                            "(02)Account Code": r.activity,
+                            "(01)Description": activityMap[r.activity]?.name || r.activity, // ✅ FIXED: show Activity Name
+                            "(02)Account Code": activityMap[r.activity]?.glcode || "", // ✅ FIXED: show GL Code
                             "(06)Price VAT-EXt": r.credit_budget,
                             "Customer List": r.branchType,
-                            "Start Date": r.activityDurationFrom ? new Date(r.activityDurationFrom).toLocaleDateString() : "",
-                            "End Date": r.activityDurationTo ? new Date(r.activityDurationTo).toLocaleDateString() : "",
-                            // ✅ Combine both fields into one line
+                            "Start Date": r.activityDurationFrom
+                                ? new Date(r.activityDurationFrom).toLocaleDateString()
+                                : "",
+                            "End Date": r.activityDurationTo
+                                ? new Date(r.activityDurationTo).toLocaleDateString()
+                                : "",
                             "Remarks (UDF)": `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`,
                             "Buyer": userMap[r.createForm] || r.createForm,
                             "Prepared By": userMap[r.createForm] || r.createForm,
@@ -517,7 +524,7 @@ const UploadExportRegularPWP = () => {
                                         color: "#2d3748",
                                         borderBottom: "1px solid #e2e8f0"
                                     }}>
-                                        {activityMap[r.activity] || r.activity}
+                                        {activityMap[r.activity]?.name || r.activity}
                                     </td>
                                     <td style={{
                                         padding: "14px 12px",
@@ -526,8 +533,9 @@ const UploadExportRegularPWP = () => {
                                         color: "#2d3748",
                                         borderBottom: "1px solid #e2e8f0"
                                     }}>
-                                        {r.activity}
+                                        {activityMap[r.activity]?.glcode || r.activity}
                                     </td>
+
                                     <td
                                         style={{
                                             padding: "14px 12px",
