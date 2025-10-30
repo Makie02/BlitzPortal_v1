@@ -517,51 +517,54 @@ const RecordViewModal = ({ record, onClose }) => {
                 gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
               }}
             >
-              {Object.entries(fullRecord).map(([key, value]) => {
-                const displayValue =
-                  (key === "accountType" || key === "account_type") &&
-                    Object.keys(categoryMap).length > 0
-                    ? convertCodesToNames(value)
-                    : formatCellValue(value, key);
+              {Object.entries(fullRecord)
+                .filter(([key]) => key !== "amountbadget") // 🚫 hide amountbadget
+                .map(([key, value]) => {
+                  const displayValue =
+                    (key === "accountType" || key === "account_type") &&
+                      Object.keys(categoryMap).length > 0
+                      ? convertCodesToNames(value)
+                      : formatCellValue(value, key);
 
-                return (
-                  <div
-                    key={key}
-                    style={{
-                      padding: "16px",
-                      backgroundColor: "#f8f9fa",
-                      borderRadius: "8px",
-                      border: "1px solid #e0e0e0",
-                      marginBottom: "8px",
-                    }}
-                  >
+                  return (
                     <div
+                      key={key}
                       style={{
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        color: "#666",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
+                        padding: "16px",
+                        backgroundColor: "#f8f9fa",
+                        borderRadius: "8px",
+                        border: "1px solid #e0e0e0",
                         marginBottom: "8px",
                       }}
                     >
-                      {formatColumnName(key)}
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          color: "#666",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        {formatColumnName(key)}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          color: "#333",
+                          lineHeight: "1.4",
+                          wordBreak: "break-word",
+                          whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
+                          fontFamily: typeof value === "object" ? "monospace" : "inherit",
+                        }}
+                      >
+                        {displayValue}
+                      </div>
                     </div>
-                    <div
-                      style={{
-                        fontSize: "14px",
-                        color: "#333",
-                        lineHeight: "1.4",
-                        wordBreak: "break-word",
-                        whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
-                        fontFamily: typeof value === "object" ? "monospace" : "inherit",
-                      }}
-                    >
-                      {displayValue}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+
             </div>
           ) : activeTab === "budget" ? (
             <div>
