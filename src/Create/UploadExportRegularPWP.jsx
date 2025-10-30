@@ -56,6 +56,10 @@ const UploadExportRegularPWP = () => {
                 filteredData = data.filter(r => approvalMap[r.regularpwpcode]);
             }
 
+            // Store all records (for export)
+            setAllRecords(filteredData);
+
+            // Paginated view
             const start = (page - 1) * pageSize;
             const end = start + pageSize;
             setRecords(filteredData.slice(start, end));
@@ -154,6 +158,7 @@ const UploadExportRegularPWP = () => {
     const handleNext = () => {
         if (page < totalPages) setPage(page + 1);
     };
+    const [allRecords, setAllRecords] = useState([]);
 
     return (
         <div style={{
@@ -268,29 +273,45 @@ const UploadExportRegularPWP = () => {
                     </button>
 
                     <CSVLink
-                        data={records.map(r => ({
-                            "Purchase Order": r.regularpwpcode,
-                            "Vendor": r.distributor,
-                            "Vendor Name": distributorMap[r.distributor] || r.distributor,
-                            "Suppliers Ref. No.": r.regularpwpcode,
-                            "Posting Date": approvalMap[r.regularpwpcode]
-                                ? new Date(approvalMap[r.regularpwpcode]).toLocaleDateString()
-                                : "N/A",
-                            "PO Date": r.created_at ? new Date(r.created_at).toLocaleDateString() : "",
-                            "(01)Description": activityMap[r.activity]?.name || r.activity, // ✅ FIXED: show Activity Name
-                            "(02)Account Code": activityMap[r.activity]?.glcode || "", // ✅ FIXED: show GL Code
-                            "(06)Price VAT-EXt": r.credit_budget,
-                            "Customer List": r.branchType,
-                            "Start Date": r.activityDurationFrom
-                                ? new Date(r.activityDurationFrom).toLocaleDateString()
-                                : "",
-                            "End Date": r.activityDurationTo
-                                ? new Date(r.activityDurationTo).toLocaleDateString()
-                                : "",
-                            "Remarks (UDF)": `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`,
-                            "Buyer": userMap[r.createForm] || r.createForm,
-                            "Prepared By": userMap[r.createForm] || r.createForm,
-                        }))}
+                        data={(filterApproved ? allRecords : allRecords).map((r) => {
+                            const cleanText = (text) =>
+                                text
+                                    ? `"${String(text)
+                                        .replace(/"/g, '""')
+                                        .replace(/,/g, " ")
+                                        .replace(/[\r\n]+/g, " ")
+                                        .replace(/\s+/g, " ")
+                                        .trim()}"`
+                                    : "";
+
+                            return {
+                                "Purchase Order": r.regularpwpcode,
+                                "Vendor": r.distributor,
+                                "Vendor Name": cleanText(distributorMap[r.distributor] || r.distributor),
+                                "Suppliers Ref. No.": r.regularpwpcode,
+                                "Posting Date": approvalMap[r.regularpwpcode]
+                                    ? new Date(approvalMap[r.regularpwpcode]).toISOString().split("T")[0]
+                                    : "",
+                                "PO Date": r.created_at
+                                    ? new Date(r.created_at).toISOString().split("T")[0]
+                                    : "",
+                                "(01)Description": cleanText(activityMap[r.activity]?.name || r.activity),
+                                "(02)Account Code": cleanText(activityMap[r.activity]?.glcode || ""),
+                                "(06)Price VAT-EXt": r.credit_budget,
+                                "Customer List": cleanText(r.branchType || ""),
+                                "Start Date": r.activityDurationFrom
+                                    ? new Date(r.activityDurationFrom).toISOString().split("T")[0]
+                                    : "",
+                                "End Date": r.activityDurationTo
+                                    ? new Date(r.activityDurationTo).toISOString().split("T")[0]
+                                    : "",
+                                "Remarks (UDF)": cleanText(
+                                    `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`
+                                ),
+                                "Buyer": cleanText(userMap[r.createForm] || r.createForm),
+                                "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
+                            };
+                        })}
                         filename={"regular_pwp_sap_template.csv"}
                         style={{
                             padding: "12px 24px",
@@ -305,11 +326,12 @@ const UploadExportRegularPWP = () => {
                             gap: "8px",
                             textDecoration: "none",
                             transition: "all 0.3s",
-                            fontSize: "14px"
+                            fontSize: "14px",
                         }}
                     >
                         📥 Export CSV
                     </CSVLink>
+
 
                 </div>
 
