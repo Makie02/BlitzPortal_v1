@@ -1339,7 +1339,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
     { name: "account_type", label: "Account Type", },
     { name: "branchType", label: "branchType" },
 
-    { name: "amount_badget", label: "Amount Badget" },
+    { name: "amount_badget", label: "Amount Budget" },
     { name: "pwp_type", label: "PWP TYPE", disabled: true },
     { name: "objective", label: "Objective Promo Scheme" },
     { name: "details", label: "Details" },
@@ -1364,7 +1364,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all", }) {
     { name: "activityDurationTo", label: "Activity Duration To", type: "date" },
     { name: "isPartOfCoverPwp", label: "Is Part Of Cover PWP", type: "checkbox" },
     { name: "coverPwpCode", label: "Cover PWP Code" },
-    { name: "amountbadget", label: "Amount Badget", disabled: true },
+    { name: "amountbadget", label: "Amount Budget", disabled: true },
     { name: "remaining_balance", label: "Remaining Balance", disabled: true },
     { name: "credit_budget", label: "Credit Budget" },
     { name: "sku", label: "SKU", disabled: true },
