@@ -16,7 +16,8 @@ export default function ListingActivity() {
     'distributor',
     'claims',
     'various',
-    'walk_in'
+    'walk_in',
+    'regular'
   ];
 
   // Fetch activities and settings
