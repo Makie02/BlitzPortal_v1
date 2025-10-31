@@ -9,15 +9,18 @@ export default function ListingActivity() {
 
   // Define all setting fields
   const settingFields = [
-    'category',
-    'sku',
     'accounts',
     'amount_display',
-    'distributor',
+    'branch',
+    'category',
     'claims',
+    'distributor',
+    'mother1',
+    'VariousAccount',
+    'regular',
+    'sku',
     'various',
     'walk_in',
-    'regular'
   ];
 
   // Fetch activities and settings
@@ -119,9 +122,7 @@ export default function ListingActivity() {
               >
                 <thead className="table-primary">
                   <tr>
-                    <th>Code</th>
                     <th>Name</th>
-                    <th>Description</th>
                     {settingFields.map((field) => (
                       <th key={field} className="text-capitalize">
                         {field.replace('_', ' ')}
@@ -134,9 +135,7 @@ export default function ListingActivity() {
                     const setting = settings[activity.code] || {};
                     return (
                       <tr key={activity.code}>
-                        <td className="text-start">{activity.code}</td>
                         <td className="text-start">{activity.name}</td>
-                        <td className="text-start">{activity.description}</td>
                         {settingFields.map((field) => (
                           <td key={field} style={{ verticalAlign: 'middle' }}>
                             <Form.Check
