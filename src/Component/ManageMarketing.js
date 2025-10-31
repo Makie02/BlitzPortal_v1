@@ -126,7 +126,7 @@ function EnhancedDatabaseInterface() {
           pwp_code: item.cover_code // Use this to match with Approval_History
         }));
       }
-      
+
 
       if (filter === "all" || filter === "claims") {
         // Step 1: Fetch distributors and claims data
@@ -332,36 +332,36 @@ function EnhancedDatabaseInterface() {
 
 
         //convert id to text. Make it always capital
-const userIdToNameMap = new Map(
-  users.map(u => [u.UserID, u.name.toUpperCase().trim()])
-);
+        const userIdToNameMap = new Map(
+          users.map(u => [u.UserID, u.name.toUpperCase().trim()])
+        );
 
-    const normalizedData = filteredData.map(item => {
-  // Convert createForm if it's a number or numeric string
-  let createFormValue = item.createForm;
-  if (createFormValue) {
-    const numVal = Number(createFormValue);
-    if (!isNaN(numVal) && userIdToNameMap.has(numVal)) {
-      createFormValue = userIdToNameMap.get(numVal);
-    }
-  }
+        const normalizedData = filteredData.map(item => {
+          // Convert createForm if it's a number or numeric string
+          let createFormValue = item.createForm;
+          if (createFormValue) {
+            const numVal = Number(createFormValue);
+            if (!isNaN(numVal) && userIdToNameMap.has(numVal)) {
+              createFormValue = userIdToNameMap.get(numVal);
+            }
+          }
 
-  if (filter === "all") {
-    return {
-      ...item,
-      createForm: createFormValue,
-      code: item.regularpwpcode || item.cover_code || item.code_pwp || '-',
-      accountType: item.accountType || item.account_type || '-',
-      pwptype: item.pwptype || item.pwp_type || '-',
-      pwp_type: item.pwp_type || item.pwptype || '-',
-    };
-  }
+          if (filter === "all") {
+            return {
+              ...item,
+              createForm: createFormValue,
+              code: item.regularpwpcode || item.cover_code || item.code_pwp || '-',
+              accountType: item.accountType || item.account_type || '-',
+              pwptype: item.pwptype || item.pwp_type || '-',
+              pwp_type: item.pwp_type || item.pwptype || '-',
+            };
+          }
 
-  return {
-    ...item,
-    createForm: createFormValue
-  };
-});
+          return {
+            ...item,
+            createForm: createFormValue
+          };
+        });
 
         setColumns(allColumns);
         setData(normalizedData);
@@ -374,7 +374,7 @@ const userIdToNameMap = new Map(
     } finally {
       setLoading(false);
     }
-}, [filter, REGULAR_COLUMNS, COVER_COLUMNS, CLAIMS_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, users]);
+  }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, CLAIMS_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, users]);
 
 
   const handleEdit = async (row) => {
@@ -475,250 +475,250 @@ const userIdToNameMap = new Map(
   };
 
 
-const handleDelete = async (rowId) => {
-  setUpdating(true);
-  try {
-    const row = data.find((r) => r.id === rowId);
-    if (!row) {
-      setError("Row not found.");
+  const handleDelete = async (rowId) => {
+    setUpdating(true);
+    try {
+      const row = data.find((r) => r.id === rowId);
+      if (!row) {
+        setError("Row not found.");
+        setUpdating(false);
+        return;
+      }
+
+      console.log("Attempting to delete row:", row);
+      console.log("Row source:", row.source);
+
+      // ✅ CLAIMS PWP DELETE FLOW
+      if (row.source === "Claims_pwp") {
+        const claimsCode = row.code_pwp || row.pwp_code;
+
+        if (!claimsCode) {
+          setError("Claims code missing for deletion.");
+          setUpdating(false);
+          return;
+        }
+
+        console.log("Deleting Claims PWP with code:", claimsCode);
+
+        // 1. Delete from Claims_AccountBudgetTable
+        const { error: accountBudgetError } = await supabase
+          .from("Claims_AccountBudgetTable")
+          .delete()
+          .eq("code_pwp", claimsCode);
+        if (accountBudgetError)
+          console.warn(`Claims_AccountBudgetTable delete warning:`, accountBudgetError.message);
+
+        // 2. Delete from Claims_Badorder
+        const { error: badorderError } = await supabase
+          .from("Claims_Badorder")
+          .delete()
+          .eq("code_pwp", claimsCode);
+        if (badorderError)
+          console.warn(`Claims_Badorder delete warning:`, badorderError.message);
+
+        // 3. Delete attachments (if applicable)
+        const { error: attachmentError } = await supabase
+          .from("cover_attachments")
+          .delete()
+          .eq("cover_code", claimsCode);
+        if (attachmentError)
+          console.warn(`Attachments delete warning:`, attachmentError.message);
+
+        // 4. Delete approved history (budget)
+        const { error: approvedHistoryError } = await supabase
+          .from("approved_history_budget")
+          .delete()
+          .eq("pwp_code", claimsCode);
+        if (approvedHistoryError)
+          console.warn(`Approved history delete warning:`, approvedHistoryError.message);
+
+        // 5. Delete approval history
+        const { error: approvalError } = await supabase
+          .from("Approval_History")
+          .delete()
+          .eq("PwpCode", claimsCode);
+        if (approvalError)
+          console.warn(`Approval history delete warning:`, approvalError.message);
+
+        // 6. Delete from amount_badget
+        const { error: amountError } = await supabase
+          .from("amount_badget")
+          .delete()
+          .eq("pwp_code", claimsCode);
+        if (amountError)
+          console.warn(`Amount budget delete warning:`, amountError.message);
+
+        // 7. Delete from Claims_pwp (main)
+        const { error: claimsError } = await supabase
+          .from("Claims_pwp")
+          .delete()
+          .eq("id", rowId);
+        if (claimsError)
+          throw new Error(`Failed to delete claims PWP: ${claimsError.message}`);
+
+        console.log("Claims PWP deleted successfully");
+      }
+
+      // ✅ COVER PWP DELETE FLOW (Total Budget)
+      else if (row.source === "cover_pwp") {
+        const coverCode = row.cover_code || row.pwp_code;
+
+        if (!coverCode) {
+          setError("Cover code missing for deletion.");
+          setUpdating(false);
+          return;
+        }
+
+        console.log("Deleting Cover PWP with code:", coverCode);
+
+        // 1. Delete attachments
+        const { error: attachmentError } = await supabase
+          .from("cover_attachments")
+          .delete()
+          .eq("cover_code", coverCode);
+        if (attachmentError)
+          console.warn(`Attachments delete warning:`, attachmentError.message);
+
+        // 2. Delete approval history
+        const { error: approvalError } = await supabase
+          .from("Approval_History")
+          .delete()
+          .eq("PwpCode", coverCode);
+        if (approvalError)
+          console.warn(`Approval history delete warning:`, approvalError.message);
+
+        // 3. Delete from amount_badget
+        const { error: amountError } = await supabase
+          .from("amount_badget")
+          .delete()
+          .eq("pwp_code", coverCode);
+        if (amountError)
+          console.warn(`Amount budget delete warning:`, amountError.message);
+
+        // 4. Delete from approved_history_budget
+        const { error: approvedHistoryError } = await supabase
+          .from("approved_history_budget")
+          .delete()
+          .eq("pwp_code", coverCode);
+        if (approvedHistoryError)
+          console.warn(`Approved history delete warning:`, approvedHistoryError.message);
+
+        // 5. Delete from cover_pwp (main)
+        const { error: coverError } = await supabase
+          .from("cover_pwp")
+          .delete()
+          .eq("id", rowId);
+        if (coverError)
+          throw new Error(`Failed to delete cover PWP: ${coverError.message}`);
+
+        console.log("Cover PWP deleted successfully");
+      }
+
+      // ✅ REGULAR PWP DELETE FLOW
+      else if (row.source === "regular_pwp") {
+        const regularCode = row.regularpwpcode || row.pwp_code;
+
+        if (!regularCode) {
+          setError("Regular code missing for deletion.");
+          setUpdating(false);
+          return;
+        }
+
+        console.log("Deleting Regular PWP with code:", regularCode);
+
+        // 1. Delete budget rows
+        const { error: budgetError } = await supabase
+          .from("regular_accountlis_badget")
+          .delete()
+          .eq("regularcode", regularCode);
+        if (budgetError)
+          console.warn(`Budget delete warning:`, budgetError.message);
+
+        // 2. Delete attachments
+        const { error: attachmentError } = await supabase
+          .from("regular_attachments")
+          .delete()
+          .eq("regularpwpcode", regularCode);
+        if (attachmentError)
+          console.warn(`Attachments delete warning:`, attachmentError.message);
+
+        // 3. Delete approval history
+        const { error: approvalError } = await supabase
+          .from("Approval_History")
+          .delete()
+          .eq("PwpCode", regularCode);
+        if (approvalError)
+          console.warn(`Approval history delete warning:`, approvalError.message);
+
+        // 4. Delete SKUs
+        const { error: skuError } = await supabase
+          .from("regular_sku")
+          .delete()
+          .eq("regular_code", regularCode);
+        if (skuError)
+          console.warn(`SKU delete warning:`, skuError.message);
+
+        // 5. Delete from amount_badget
+        const { error: amountError } = await supabase
+          .from("amount_badget")
+          .delete()
+          .eq("pwp_code", regularCode);
+        if (amountError)
+          console.warn(`Amount budget delete warning:`, amountError.message);
+
+        // 6. Delete from approved_history_budget
+        const { error: approvedHistoryError } = await supabase
+          .from("approved_history_budget")
+          .delete()
+          .eq("pwp_code", regularCode);
+        if (approvedHistoryError)
+          console.warn(`Approved history delete warning:`, approvedHistoryError.message);
+
+        // 7. Delete from regular_badorder
+        const { error: badorderError } = await supabase
+          .from("regular_badorder")
+          .delete()
+          .eq("code_pwp", regularCode);
+        if (badorderError)
+          console.warn(`Badorder delete warning:`, badorderError.message);
+
+        // 8. Delete from regular_pwp (main)
+        const { error: mainDeleteError } = await supabase
+          .from("regular_pwp")
+          .delete()
+          .eq("id", rowId);
+        if (mainDeleteError)
+          throw new Error(`Failed to delete regular PWP: ${mainDeleteError.message}`);
+
+        console.log("Regular PWP deleted successfully");
+      } else {
+        setError(`Unknown source type: ${row.source}`);
+        setUpdating(false);
+        return;
+      }
+
+      // ✅ Refresh UI
+      setDeleteConfirm(null);
+      await fetchData();
+    } catch (err) {
+      console.error("Delete error:", err);
+      setError(`Delete failed: ${err.message}`);
+    } finally {
       setUpdating(false);
-      return;
     }
+  };
 
-    console.log("Attempting to delete row:", row);
-    console.log("Row source:", row.source);
+  const [modalTitle, setModalTitle] = useState("");
+  const storedUser = localStorage.getItem('loggedInUser');
+  const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+  const loggedInUsername = parsedUser?.name || 'Unknown';
+  const loggedInUserID = parsedUser?.UserID ?? null;  // null if UserID doesn't exist
 
-    // ✅ CLAIMS PWP DELETE FLOW
-    if (row.source === "Claims_pwp") {
-      const claimsCode = row.code_pwp || row.pwp_code;
-      
-      if (!claimsCode) {
-        setError("Claims code missing for deletion.");
-        setUpdating(false);
-        return;
-      }
-
-      console.log("Deleting Claims PWP with code:", claimsCode);
-
-      // 1. Delete from Claims_AccountBudgetTable
-      const { error: accountBudgetError } = await supabase
-        .from("Claims_AccountBudgetTable")
-        .delete()
-        .eq("code_pwp", claimsCode);
-      if (accountBudgetError)
-        console.warn(`Claims_AccountBudgetTable delete warning:`, accountBudgetError.message);
-
-      // 2. Delete from Claims_Badorder
-      const { error: badorderError } = await supabase
-        .from("Claims_Badorder")
-        .delete()
-        .eq("code_pwp", claimsCode);
-      if (badorderError)
-        console.warn(`Claims_Badorder delete warning:`, badorderError.message);
-
-      // 3. Delete attachments (if applicable)
-      const { error: attachmentError } = await supabase
-        .from("cover_attachments")
-        .delete()
-        .eq("cover_code", claimsCode);
-      if (attachmentError)
-        console.warn(`Attachments delete warning:`, attachmentError.message);
-
-      // 4. Delete approved history (budget)
-      const { error: approvedHistoryError } = await supabase
-        .from("approved_history_budget")
-        .delete()
-        .eq("pwp_code", claimsCode);
-      if (approvedHistoryError)
-        console.warn(`Approved history delete warning:`, approvedHistoryError.message);
-
-      // 5. Delete approval history
-      const { error: approvalError } = await supabase
-        .from("Approval_History")
-        .delete()
-        .eq("PwpCode", claimsCode);
-      if (approvalError)
-        console.warn(`Approval history delete warning:`, approvalError.message);
-
-      // 6. Delete from amount_badget
-      const { error: amountError } = await supabase
-        .from("amount_badget")
-        .delete()
-        .eq("pwp_code", claimsCode);
-      if (amountError)
-        console.warn(`Amount budget delete warning:`, amountError.message);
-
-      // 7. Delete from Claims_pwp (main)
-      const { error: claimsError } = await supabase
-        .from("Claims_pwp")
-        .delete()
-        .eq("id", rowId);
-      if (claimsError)
-        throw new Error(`Failed to delete claims PWP: ${claimsError.message}`);
-
-      console.log("Claims PWP deleted successfully");
-    }
-
-    // ✅ COVER PWP DELETE FLOW (Total Budget)
-    else if (row.source === "cover_pwp") {
-      const coverCode = row.cover_code || row.pwp_code;
-      
-      if (!coverCode) {
-        setError("Cover code missing for deletion.");
-        setUpdating(false);
-        return;
-      }
-
-      console.log("Deleting Cover PWP with code:", coverCode);
-
-      // 1. Delete attachments
-      const { error: attachmentError } = await supabase
-        .from("cover_attachments")
-        .delete()
-        .eq("cover_code", coverCode);
-      if (attachmentError)
-        console.warn(`Attachments delete warning:`, attachmentError.message);
-
-      // 2. Delete approval history
-      const { error: approvalError } = await supabase
-        .from("Approval_History")
-        .delete()
-        .eq("PwpCode", coverCode);
-      if (approvalError)
-        console.warn(`Approval history delete warning:`, approvalError.message);
-
-      // 3. Delete from amount_badget
-      const { error: amountError } = await supabase
-        .from("amount_badget")
-        .delete()
-        .eq("pwp_code", coverCode);
-      if (amountError)
-        console.warn(`Amount budget delete warning:`, amountError.message);
-
-      // 4. Delete from approved_history_budget
-      const { error: approvedHistoryError } = await supabase
-        .from("approved_history_budget")
-        .delete()
-        .eq("pwp_code", coverCode);
-      if (approvedHistoryError)
-        console.warn(`Approved history delete warning:`, approvedHistoryError.message);
-
-      // 5. Delete from cover_pwp (main)
-      const { error: coverError } = await supabase
-        .from("cover_pwp")
-        .delete()
-        .eq("id", rowId);
-      if (coverError)
-        throw new Error(`Failed to delete cover PWP: ${coverError.message}`);
-
-      console.log("Cover PWP deleted successfully");
-    }
-
-    // ✅ REGULAR PWP DELETE FLOW
-    else if (row.source === "regular_pwp") {
-      const regularCode = row.regularpwpcode || row.pwp_code;
-      
-      if (!regularCode) {
-        setError("Regular code missing for deletion.");
-        setUpdating(false);
-        return;
-      }
-
-      console.log("Deleting Regular PWP with code:", regularCode);
-
-      // 1. Delete budget rows
-      const { error: budgetError } = await supabase
-        .from("regular_accountlis_badget")
-        .delete()
-        .eq("regularcode", regularCode);
-      if (budgetError)
-        console.warn(`Budget delete warning:`, budgetError.message);
-
-      // 2. Delete attachments
-      const { error: attachmentError } = await supabase
-        .from("regular_attachments")
-        .delete()
-        .eq("regularpwpcode", regularCode);
-      if (attachmentError)
-        console.warn(`Attachments delete warning:`, attachmentError.message);
-
-      // 3. Delete approval history
-      const { error: approvalError } = await supabase
-        .from("Approval_History")
-        .delete()
-        .eq("PwpCode", regularCode);
-      if (approvalError)
-        console.warn(`Approval history delete warning:`, approvalError.message);
-
-      // 4. Delete SKUs
-      const { error: skuError } = await supabase
-        .from("regular_sku")
-        .delete()
-        .eq("regular_code", regularCode);
-      if (skuError)
-        console.warn(`SKU delete warning:`, skuError.message);
-
-      // 5. Delete from amount_badget
-      const { error: amountError } = await supabase
-        .from("amount_badget")
-        .delete()
-        .eq("pwp_code", regularCode);
-      if (amountError)
-        console.warn(`Amount budget delete warning:`, amountError.message);
-
-      // 6. Delete from approved_history_budget
-      const { error: approvedHistoryError } = await supabase
-        .from("approved_history_budget")
-        .delete()
-        .eq("pwp_code", regularCode);
-      if (approvedHistoryError)
-        console.warn(`Approved history delete warning:`, approvedHistoryError.message);
-
-      // 7. Delete from regular_badorder
-      const { error: badorderError } = await supabase
-        .from("regular_badorder")
-        .delete()
-        .eq("code_pwp", regularCode);
-      if (badorderError)
-        console.warn(`Badorder delete warning:`, badorderError.message);
-
-      // 8. Delete from regular_pwp (main)
-      const { error: mainDeleteError } = await supabase
-        .from("regular_pwp")
-        .delete()
-        .eq("id", rowId);
-      if (mainDeleteError)
-        throw new Error(`Failed to delete regular PWP: ${mainDeleteError.message}`);
-
-      console.log("Regular PWP deleted successfully");
-    } else {
-      setError(`Unknown source type: ${row.source}`);
-      setUpdating(false);
-      return;
-    }
-
-    // ✅ Refresh UI
-    setDeleteConfirm(null);
-    await fetchData();
-  } catch (err) {
-    console.error("Delete error:", err);
-    setError(`Delete failed: ${err.message}`);
-  } finally {
-    setUpdating(false);
-  }
-};
-
-const [modalTitle, setModalTitle] = useState("");
-const storedUser = localStorage.getItem('loggedInUser');
-const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-const loggedInUsername = parsedUser?.name || 'Unknown';
-const loggedInUserID = parsedUser?.UserID ?? null;  // null if UserID doesn't exist
-
-// If you want to use both together:
-const createdBy = {
-  name: loggedInUsername,
-  userID: loggedInUserID
-};
+  // If you want to use both together:
+  const createdBy = {
+    name: loggedInUsername,
+    userID: loggedInUserID
+  };
 
 
   const [userDistributors, setUserDistributors] = useState([]);
@@ -965,7 +965,7 @@ const createdBy = {
                 lineHeight: '1.4',
                 fontStyle: 'italic'
               }}>
-               
+
               </p>
             </div>
 
@@ -1273,54 +1273,48 @@ const createdBy = {
                           {/* Edit Button */}
                           <button
                             onClick={() => handleEdit(row)}
-                            disabled={updating || ["Approved", "Declined"].includes(row.approval_status)}
+                            disabled={updating || row.approval_status !== "Pending"}
                             aria-label={`Edit ${row.name}`}
-                            title={
-                              ["Approved", "Declined"].includes(row.approval_status)
-                                ? `Edit disabled (${row.approval_status})`
-                                : "Edit"
-                            }
+                            title={row.approval_status === "Pending" ? "Edit" : `Edit disabled (${row.approval_status})`}
                             style={{
                               border: "none",
                               background: "none",
-                              cursor: (updating || ["Approved", "Declined"].includes(row.approval_status))
-                                ? "not-allowed"
-                                : "pointer",
+                              cursor: updating || row.approval_status !== "Pending" ? "not-allowed" : "pointer",
                               padding: "8px",
-                              color: "#d32f2f",
+                              color: row.approval_status === "Pending" ? "orange" : "#6c757d",
                               transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                              boxShadow: ["Approved", "Declined"].includes(row.approval_status)
-                                ? "0 4px 6px rgba(108, 117, 125, 0.5)"
-                                : "0 4px 6px rgba(0,0,0,0.2)",
+                              boxShadow: row.approval_status === "Pending"
+                                ? "0 4px 6px rgba(0,0,0,0.2)"
+                                : "0 4px 6px rgba(108, 117, 125, 0.5)",
                               borderRadius: "8px",
                               display: "inline-flex",
                               alignItems: "center",
                               justifyContent: "center",
                               marginLeft: "8px",
                               outline: "none",
-                              opacity: (updating || ["Approved", "Declined"].includes(row.approval_status)) ? 0.5 : 1,
-                              pointerEvents: (updating || ["Approved", "Declined"].includes(row.approval_status)) ? 'none' : 'auto'
+                              opacity: updating || row.approval_status !== "Pending" ? 0.5 : 1,
+                              pointerEvents: updating || row.approval_status !== "Pending" ? "none" : "auto"
                             }}
                             onMouseEnter={(e) => {
-                              if (!["Approved", "Declined"].includes(row.approval_status)) {
+                              if (row.approval_status === "Pending") {
                                 e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
                                 e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 252, 34, 0.5)";
                               }
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                              e.currentTarget.style.boxShadow = ["Approved", "Declined"].includes(row.approval_status)
-                                ? "0 4px 6px rgba(108, 117, 125, 0.5)"
-                                : "0 4px 6px rgba(0,0,0,0.2)";
+                              e.currentTarget.style.boxShadow = row.approval_status === "Pending"
+                                ? "0 4px 6px rgba(0,0,0,0.2)"
+                                : "0 4px 6px rgba(108, 117, 125, 0.5)";
                             }}
                             onMouseDown={(e) => {
-                              if (!["Approved", "Declined"].includes(row.approval_status)) {
+                              if (row.approval_status === "Pending") {
                                 e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
                                 e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
                               }
                             }}
                             onMouseUp={(e) => {
-                              if (!["Approved", "Declined"].includes(row.approval_status)) {
+                              if (row.approval_status === "Pending") {
                                 e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
                                 e.currentTarget.style.boxShadow = "0 8px 15px rgba(0, 255, 128, 0.5)";
                               }
@@ -1328,7 +1322,7 @@ const createdBy = {
                           >
                             <FaEdit
                               style={{
-                                color: ["Approved", "Declined"].includes(row.approval_status) ? "#6c757d" : "orange",
+                                color: row.approval_status === "Pending" ? "orange" : "#6c757d",
                                 fontSize: "20px"
                               }}
                             />
@@ -1526,7 +1520,7 @@ const createdBy = {
           </div>
         )
       }
-    </div > 
+    </div >
   );
 }
 
