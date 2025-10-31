@@ -11,18 +11,20 @@ const ApprovalList = () => {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 10;
+  const rowsPerPage = 8;
+  const PAGINATION_THRESHOLD = 15; // Smart pagination threshold
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const [accountUsers, setAccountUsers] = useState([]);
 
+  // Fetch Account Users
   useEffect(() => {
     const fetchAccountUsers = async () => {
       const { data, error } = await supabase
         .from("Account_Users")
-        .select("UserID, name"); // fetch only necessary columns
+        .select("UserID, name");
 
       if (error) {
         console.error("Error fetching users:", error);
@@ -33,10 +35,10 @@ const ApprovalList = () => {
 
     fetchAccountUsers();
   }, []);
+
   const getUserNameById = (userId) => {
-    // Ensure both values are numbers for comparison
     const user = accountUsers.find(u => Number(u.UserID) === Number(userId));
-    return user ? user.name : "Loading..."; // show loading if not yet fetched
+    return user ? user.name : "Loading...";
   };
 
   // Fetch Approval_History data
@@ -87,218 +89,227 @@ const ApprovalList = () => {
     });
 
     setFilteredData(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
+    setCurrentPage(1);
   }, [approvalData, searchTerm, dateFrom, dateTo]);
 
-  const totalPages = Math.ceil(filteredData.length / rowsPerPage);
-  const paginatedData = filteredData.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
-  );
+  // Get current user info
+  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+  const currentUserId = currentUser?.UserID ? Number(currentUser.UserID) : null;
+  const role = currentUser?.role || "";
+
+  // Filter data by user (admin sees all)
+  const filteredDataByUser = React.useMemo(() => {
+    if (role === "admin") return filteredData;
+
+    return filteredData.filter(row => {
+      const createdForm = row.CreatedForm;
+      if (!createdForm) return false;
+
+      if (typeof createdForm === 'string') {
+        const createdFormStr = createdForm.toLowerCase().trim();
+        if (createdFormStr === currentUserName) return true;
+        const createdFormNum = Number(createdFormStr);
+        if (!isNaN(createdFormNum) && createdFormNum === currentUserId) return true;
+        return false;
+      }
+
+      if (typeof createdForm === 'number') {
+        return createdForm === currentUserId;
+      }
+
+      return false;
+    });
+  }, [filteredData, currentUserName, currentUserId, role]);
+
+  // Smart pagination logic
+  const shouldPaginate = filteredDataByUser.length > PAGINATION_THRESHOLD;
+  const totalPages = Math.ceil(filteredDataByUser.length / rowsPerPage);
+  
+  const displayData = shouldPaginate 
+    ? filteredDataByUser.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
+    : filteredDataByUser;
 
   // Export to Excel
- const handleExportToExcel = async () => {
-  setExportLoading(true);
-  try {
-    const exportData = filteredData.map(item => ({
-      ID: item.id,
-      Approver: getUserNameById(item.ApproverId),   // Convert ApproverId -> name
-      'PWP Code': item.PwpCode,
-      Response: item.Response,
-      'Date Responded': item.DateResponded ? new Date(item.DateResponded).toLocaleString() : '',
-      'Assigned By': getUserNameById(item.CreatedForm), // Convert CreatedForm -> name
-      'Created At': item.created_at ? new Date(item.created_at).toLocaleString() : ''
-    }));
+  const handleExportToExcel = async () => {
+    setExportLoading(true);
+    try {
+      const exportData = filteredDataByUser.map(item => ({
+        ID: item.id,
+        Approver: getUserNameById(item.ApproverId),
+        'PWP Code': item.PwpCode,
+        Response: item.Response,
+        'Date Responded': item.DateResponded ? new Date(item.DateResponded).toLocaleString() : '',
+        'Assigned By': getUserNameById(item.CreatedForm),
+        'Created At': item.created_at ? new Date(item.created_at).toLocaleString() : ''
+      }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "ApprovalHistory");
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "ApprovalHistory");
 
-    // Auto-fit columns
-    const cols = [];
-    const maxLengths = {};
-    exportData.forEach(row => {
-      Object.keys(row).forEach(key => {
-        const length = String(row[key] || '').length;
-        maxLengths[key] = Math.max(maxLengths[key] || 0, length, key.length);
+      const cols = [];
+      const maxLengths = {};
+      exportData.forEach(row => {
+        Object.keys(row).forEach(key => {
+          const length = String(row[key] || '').length;
+          maxLengths[key] = Math.max(maxLengths[key] || 0, length, key.length);
+        });
       });
-    });
-    Object.keys(maxLengths).forEach(key => {
-      cols.push({ wch: Math.min(maxLengths[key] + 2, 50) });
-    });
-    worksheet['!cols'] = cols;
+      Object.keys(maxLengths).forEach(key => {
+        cols.push({ wch: Math.min(maxLengths[key] + 2, 50) });
+      });
+      worksheet['!cols'] = cols;
 
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
-    const data = new Blob([excelBuffer], { type: "application/octet-stream" });
-    const fileName = `ApprovalHistory_${new Date().toISOString().split('T')[0]}.xlsx`;
-    saveAs(data, fileName);
-  } catch (err) {
-    setError('Failed to export Excel file');
-    console.error(err);
-  } finally {
-    setExportLoading(false);
-  }
-};
-
-  const renderCreatedForm = (createdForm) => {
-    if (!createdForm || createdForm.trim() === '') {
-      return '-';
-    }
-
-    // If createdForm might be a string representing a form type, you can customize this
-    // For example, you could add icons or styling based on form type
-
-    // Example: if createdForm is one of predefined types, style accordingly
-    switch (createdForm.toLowerCase()) {
-      case 'purchase order':
-        return <span style={{ color: '#1e88e5', fontWeight: '600' }}>{createdForm}</span>;
-      case 'expense report':
-        return <span style={{ color: '#f4511e', fontWeight: '600' }}>{createdForm}</span>;
-      case 'leave request':
-        return <span style={{ color: '#43a047', fontWeight: '600' }}>{createdForm}</span>;
-      default:
-        // Default fallback, just display as text
-        return <span>{createdForm}</span>;
+      const excelBuffer = XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+      });
+      const data = new Blob([excelBuffer], { type: "application/octet-stream" });
+      const fileName = `ApprovalHistory_${new Date().toISOString().split('T')[0]}.xlsx`;
+      saveAs(data, fileName);
+    } catch (err) {
+      setError('Failed to export Excel file');
+      console.error(err);
+    } finally {
+      setExportLoading(false);
     }
   };
 
   // Export to PDF
-const handleExportToPDF = async () => {
-  setExportLoading(true);
-  try {
-    const printWindow = window.open('', '_blank');
+  const handleExportToPDF = async () => {
+    setExportLoading(true);
+    try {
+      const printWindow = window.open('', '_blank');
 
-    let htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Approval History Report</title>
-        <style>
-          body { 
-            font-family: Arial, sans-serif; 
-            margin: 20px; 
-            color: #333;
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #1976d2;
-          }
-          .header h1 { 
-            color: #1976d2; 
-            margin: 0 0 10px;
-            font-size: 24px;
-          }
-          .export-info {
-            color: #666;
-            font-size: 14px;
-            margin-bottom: 20px;
-          }
-          table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin: 20px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          }
-          th, td { 
-            border: 1px solid #ddd; 
-            padding: 12px 8px; 
-            text-align: left;
-            font-size: 12px;
-          }
-          th { 
-            background-color: #1976d2; 
-            color: white;
-            font-weight: bold;
-          }
-          tr:nth-child(even) { 
-            background-color: #f9f9f9; 
-          }
-          .approved {
-            background-color: #e8f5e8;
-            color: #2e7d32;
-            font-weight: bold;
-          }
-          .footer {
-            text-align: center;
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-            font-size: 12px;
-            color: #666;
-          }
-          @media print {
-            body { margin: 0; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>Approval History Report</h1>
-          <div class="export-info">
-            Generated on: ${new Date().toLocaleDateString()} | 
-            Total Records: ${filteredData.length}
-            ${dateFrom || dateTo ? ` | Date Range: ${dateFrom || 'Start'} to ${dateTo || 'End'}` : ''}
+      let htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Approval History Report</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 20px; 
+              color: #333;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              padding-bottom: 20px;
+              border-bottom: 2px solid #1976d2;
+            }
+            .header h1 { 
+              color: #1976d2; 
+              margin: 0 0 10px;
+              font-size: 24px;
+            }
+            .export-info {
+              color: #666;
+              font-size: 14px;
+              margin-bottom: 20px;
+            }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin: 20px 0;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            th, td { 
+              border: 1px solid #ddd; 
+              padding: 12px 8px; 
+              text-align: left;
+              font-size: 12px;
+            }
+            th { 
+              background-color: #1976d2; 
+              color: white;
+              font-weight: bold;
+            }
+            tr:nth-child(even) { 
+              background-color: #f9f9f9; 
+            }
+            .approved {
+              background-color: #e8f5e8;
+              color: #2e7d32;
+              font-weight: bold;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 30px;
+              padding-top: 20px;
+              border-top: 1px solid #ddd;
+              font-size: 12px;
+              color: #666;
+            }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Approval History Report</h1>
+            <div class="export-info">
+              Generated on: ${new Date().toLocaleDateString()} | 
+              Total Records: ${filteredDataByUser.length}
+              ${dateFrom || dateTo ? ` | Date Range: ${dateFrom || 'Start'} to ${dateTo || 'End'}` : ''}
+            </div>
           </div>
-        </div>
-        
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>PWP Code</th>
-              <th>Response</th>
-              <th>Date Responded</th>
-              <th>Assigne By</th>
-              <th>Created At</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-
-    filteredData.forEach(item => {
-      const isApproved = item.Response === 'Approved';
-      htmlContent += `
-        <tr ${isApproved ? 'class="approved"' : ''}>
-          <td>${item.id}</td>
-          <td>${item.PwpCode || ''}</td>
-          <td>${item.Response || ''}</td>
-          <td>${item.DateResponded ? new Date(item.DateResponded).toLocaleString() : ''}</td>
-          <td>${getUserNameById(item.CreatedForm)}</td> <!-- Convert CreatedForm to name -->
-          <td>${item.created_at ? new Date(item.created_at).toLocaleString() : ''}</td>
-        </tr>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>PWP Code</th>
+                <th>Response</th>
+                <th>Date Responded</th>
+                <th>Assigned By</th>
+                <th>Created At</th>
+              </tr>
+            </thead>
+            <tbody>
       `;
-    });
 
-    htmlContent += `
-          </tbody>
-        </table>
-        <div class="footer">
-          <p>This report was automatically generated from the Approval History system.</p>
-        </div>
-      </body>
-      </html>
-    `;
+      filteredDataByUser.forEach(item => {
+        const isApproved = item.Response === 'Approved';
+        htmlContent += `
+          <tr ${isApproved ? 'class="approved"' : ''}>
+            <td>${item.id}</td>
+            <td>${item.PwpCode || ''}</td>
+            <td>${item.Response || ''}</td>
+            <td>${item.DateResponded ? new Date(item.DateResponded).toLocaleString() : ''}</td>
+            <td>${getUserNameById(item.CreatedForm)}</td>
+            <td>${item.created_at ? new Date(item.created_at).toLocaleString() : ''}</td>
+          </tr>
+        `;
+      });
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.focus();
+      htmlContent += `
+            </tbody>
+          </table>
+          <div class="footer">
+            <p>This report was automatically generated from the Approval History system.</p>
+          </div>
+        </body>
+        </html>
+      `;
 
-    setTimeout(() => {
-      printWindow.print();
-    }, 500);
-  } catch (err) {
-    setError('Failed to generate PDF');
-    console.error(err);
-  } finally {
-    setExportLoading(false);
-  }
-};
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.focus();
+
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    } catch (err) {
+      setError('Failed to generate PDF');
+      console.error(err);
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   // Clear all filters
   const clearFilters = () => {
@@ -306,48 +317,6 @@ const handleExportToPDF = async () => {
     setDateFrom("");
     setDateTo("");
   };
-  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-
-  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-  const currentUserId = currentUser?.UserID ? Number(currentUser.UserID) : null;
-  const role = currentUser?.role || "";
-
-  // 🔹 Apply filtering with ID or Name matching
-  const filteredRows = React.useMemo(() => {
-    // Admins can see everything
-    if (role === "admin") return paginatedData;
-
-    return paginatedData.filter(row => {
-      const createdForm = row.CreatedForm;
-
-      if (!createdForm) return false;
-
-      // Handle string-based CreatedForm
-      if (typeof createdForm === 'string') {
-        const createdFormStr = createdForm.toLowerCase().trim();
-
-        // Match username
-        if (createdFormStr === currentUserName) return true;
-
-        // If CreatedForm string looks numeric, match to UserID
-        const createdFormNum = Number(createdFormStr);
-        if (!isNaN(createdFormNum) && createdFormNum === currentUserId) return true;
-
-        return false;
-      }
-
-      // Handle numeric CreatedForm
-      if (typeof createdForm === 'number') {
-        return createdForm === currentUserId;
-      }
-
-      return false;
-    });
-  }, [paginatedData, currentUserName, currentUserId, role]);
-
-
-  // Apply the filter before rendering:
-
 
   return (
     <div style={{
@@ -364,8 +333,8 @@ const handleExportToPDF = async () => {
         {/* Header */}
         <div style={{
           padding: '24px 30px',
-          backgroundColor: '#f8f8f8ff',
-          color: 'white'
+          backgroundColor: '#fafafaff',
+          color: 'black'
         }}>
           <h1 style={{
             margin: '0 0 8px',
@@ -379,7 +348,10 @@ const handleExportToPDF = async () => {
             opacity: 0.9,
             fontSize: '14px'
           }}>
-            {filteredData.length} records found
+            {role === 'admin' ? '👑 Admin View' : `👤 ${currentUser?.name || 'User'}`} • 
+            {shouldPaginate 
+              ? ` Showing ${displayData.length} of ${filteredDataByUser.length} records` 
+              : ` ${filteredDataByUser.length} record${filteredDataByUser.length !== 1 ? 's' : ''}`}
             {(dateFrom || dateTo) && ` (filtered by date)`}
           </p>
         </div>
@@ -578,7 +550,6 @@ const handleExportToPDF = async () => {
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>ID</th>
-          
                   <th style={{
                     padding: '16px 20px',
                     textAlign: 'left',
@@ -614,7 +585,6 @@ const handleExportToPDF = async () => {
                     fontSize: '14px',
                     borderBottom: '2px solid #1565c0'
                   }}>Assigned By</th>
-
                   <th style={{
                     padding: '16px 20px',
                     textAlign: 'center',
@@ -625,10 +595,10 @@ const handleExportToPDF = async () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.length === 0 ? (
+                {displayData.length === 0 ? (
                   <tr>
                     <td
-                      colSpan="8"
+                      colSpan="7"
                       style={{
                         padding: '40px 20px',
                         textAlign: 'center',
@@ -637,13 +607,13 @@ const handleExportToPDF = async () => {
                         backgroundColor: '#fafafa'
                       }}
                     >
-                      {filteredRows.length === 0 && !loading
+                      {displayData.length === 0 && !loading
                         ? 'No approval records found.'
                         : 'Loading...'}
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((item, index) => (
+                  displayData.map((item, index) => (
                     <tr
                       key={item.id}
                       style={{
@@ -657,8 +627,6 @@ const handleExportToPDF = async () => {
                         fontSize: '14px',
                         color: '#000000ff'
                       }}>{item.id}</td>
-                  
-
                       <td style={{
                         padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
@@ -702,7 +670,6 @@ const handleExportToPDF = async () => {
                           ? new Date(item.created_at).toLocaleString()
                           : '-'}
                       </td>
-
                       <td style={{
                         padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
@@ -711,8 +678,6 @@ const handleExportToPDF = async () => {
                       }}>
                         {getUserNameById(item.CreatedForm)}
                       </td>
-
-
                       <td style={{
                         padding: '16px 20px',
                         borderBottom: '1px solid #e0e0e0',
@@ -730,101 +695,102 @@ const handleExportToPDF = async () => {
                   ))
                 )}
               </tbody>
-
             </table>
           </div>
         )}
 
-        {/* Pagination Footer */}
-        <div style={{
-          padding: '20px 30px',
-          backgroundColor: '#fafafa',
-          borderTop: '1px solid #e0e0e0',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '15px'
-        }}>
-          {/* Records Info */}
-          <div style={{ fontSize: '14px', color: '#666' }}>
-            Showing {paginatedData.length > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0} to{' '}
-            {Math.min(currentPage * rowsPerPage, filteredData.length)} of {filteredData.length} records
-          </div>
-
-          {/* Pagination Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <button
-              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-              disabled={currentPage === 1}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: currentPage === 1 ? '#f5f5f5' : '#2196f3',
-                color: currentPage === 1 ? '#999' : 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '500'
-              }}
-            >
-              Previous
-            </button>
-
-            {/* Page Numbers */}
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
-
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: currentPage === pageNum ? '#1976d2' : 'white',
-                      color: currentPage === pageNum ? 'white' : '#333',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      minWidth: '40px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
+        {/* Pagination Footer - Only show if pagination is needed */}
+        {shouldPaginate && (
+          <div style={{
+            padding: '20px 30px',
+            backgroundColor: '#fafafa',
+            borderTop: '1px solid #e0e0e0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '15px'
+          }}>
+            {/* Records Info */}
+            <div style={{ fontSize: '14px', color: '#666' }}>
+              Showing {displayData.length > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0} to{' '}
+              {Math.min(currentPage * rowsPerPage, filteredDataByUser.length)} of {filteredDataByUser.length} records
             </div>
 
-            <button
-              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-              disabled={currentPage === totalPages}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#2196f3',
-                color: currentPage === totalPages ? '#999' : 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '500'
-              }}
-            >
-              Next
-            </button>
+            {/* Pagination Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: currentPage === 1 ? '#f5f5f5' : '#2196f3',
+                  color: currentPage === 1 ? '#999' : 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                Previous
+              </button>
+
+              {/* Page Numbers */}
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: currentPage === pageNum ? '#1976d2' : 'white',
+                        color: currentPage === pageNum ? 'white' : '#333',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        minWidth: '40px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#2196f3',
+                  color: currentPage === totalPages ? '#999' : 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                Next
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <style dangerouslySetInnerHTML={{
