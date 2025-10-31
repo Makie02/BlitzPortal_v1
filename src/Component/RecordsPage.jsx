@@ -1,1024 +1,1243 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import "./ApprovalsPage.css";
+import Swal from "sweetalert2";
 import { supabase } from "../supabaseClient";
-import RecordViewModal from "./RecordViewModal";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
-import PDFViewModal from "./PDFViewModal";
-function RecordsPage() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [columns, setColumns] = useState([]);
-  const [updating] = useState(false);
-  const [filter, setFilter] = useState("regular"); // all | cover | regular
-  const [statusFilter, setStatusFilter] = useState("all"); // all | approved | declined | sent_back | cancelled
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [showModal, setShowModal] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState(null);
-  const [setRowsPerPage] = useState(10);
+import ViewDataModal from "./ViewData/ViewDataModal";
 
-  // Define the specific columns to show for each table (moved outside component or use useMemo)
+export default function ApprovalsPage() {
+  const storedUser = localStorage.getItem("loggedInUser");
+  const currentUser = storedUser ? JSON.parse(storedUser) : null;
+  const [modalVisaCode, setModalVisaCode] = React.useState(null);
+  const [openDropdownIndex, setOpenDropdownIndex] = useState(null);
+  const dropdownRefs = useRef([]);
+  const [userNames, setUserNames] = useState({});
 
-  const handleViewRecord = (record) => {
-    console.log("Selected record:", record);
-
-    if (record.source === "cover_pwp") {
-      console.log("Cover code:", record.cover_code);
-    } else {
-      console.log("Regular PWP code:", record.regularpwpcode);
-    }
-
-    setSelectedRecord(record);
-    setShowModal(true);
-  };
-
-
-  // Function to filter object keys based on allowed columns
-
-
-  // Function to get approval status for PWP codes
-  const getApprovalStatus = async (pwpCodes) => {
-    try {
-      const { data: approvalData, error } = await supabase
-        .from("Approval_History")
-        .select("PwpCode, Response, DateResponded, created_at")
-        .in("PwpCode", pwpCodes);
-
-      if (error) {
-        console.error("Error fetching approval status:", error);
-        return {};
-      }
-
-      // Create a map of PWPCode to approval status
-      const approvalMap = {};
-      approvalData?.forEach(approval => {
-        approvalMap[approval.PwpCode] = {
-          status: approval.Response || 'Pending',
-          date_responded: approval.DateResponded,
-          approval_created: approval.created_at
-        };
-      });
-
-      return approvalMap;
-    } catch (err) {
-      console.error("Unexpected error fetching approval status:", err);
-      return {};
-    }
-  };
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage] = useState(10);
-  const [categoryMap, setCategoryMap] = useState({});
+  const [distributors, setDistributors] = useState([]);
 
   useEffect(() => {
-    const fetchCategoryMap = async () => {
+    const fetchDistributors = async () => {
       const { data, error } = await supabase
-        .from("categorydetails")
+        .from("distributors")
         .select("code, name");
 
       if (error) {
-        console.error("Error fetching categories:", error);
+        console.error("Error fetching distributors:", error);
+      } else {
+        setDistributors(data);
+      }
+    };
+
+    fetchDistributors();
+  }, []);
+
+  const getDistributorName = (code) => {
+    const distributor = distributors.find(
+      (d) => Number(d.code) === Number(code)
+    );
+    return distributor ? distributor.name : `Code: ${code}`;
+  };
+
+
+
+  // Add this useEffect to fetch all user names and create a lookup map
+  useEffect(() => {
+    const fetchUserNames = async () => {
+      const { data, error } = await supabase
+        .from("Account_Users")
+        .select("UserID, name");
+
+      if (error) {
+        console.error("Error fetching user names:", error);
         return;
       }
 
-      const map = {};
-      data.forEach(cat => {
-        map[cat.code] = cat.name;
+      // Create a lookup object: { UserID: name }
+      const nameMap = {};
+      data.forEach(user => {
+        nameMap[user.UserID] = user.name;
       });
 
-      setCategoryMap(map);
+      setUserNames(nameMap);
     };
 
-    fetchCategoryMap();
+    fetchUserNames();
   }, []);
 
-  const fetchData = useCallback(async () => {
-    if (!Object.keys(categoryMap).length) return;
+  // Add this helper function
+  const getUserNameById = (userId) => {
+    return userNames[userId] || ` ${userId}`;
+  };
 
-    try {
-      setLoading(true);
-      setError(null);
-
-      let coverData = [];
-      let regularData = [];
-
-      // --- FETCH COVER PWP ---
-      if (filter === "all" || filter === "cover") {
-        const { data: cData, error: cError } = await supabase
-          .from("cover_pwp")
-          .select(`
-          id,
-          cover_code,
-          activity,
-          credit_budget,
-          amountbadget,
-          distributor,
-          created_at,
-           createForm
-        `)
-          .order("id", { ascending: false })
-          .limit(50);
-
-        if (cError) throw cError;
-
-        coverData = (cData || []).map(item => ({
-          ...item,
-          source: "cover_pwp",
-          pwp_code: item.cover_code,
-        }));
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        dropdownRefs.current &&
+        !dropdownRefs.current.some((ref) => ref?.contains(event.target))
+      ) {
+        setOpenDropdownIndex(null);
       }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-      // --- FETCH REGULAR PWP ---
-      if (filter === "all" || filter === "regular") {
-        const { data: rData, error: rError } = await supabase
-          .from("regular_pwp")
-          .select(`
-          id,
-          regularpwpcode,
-          activity,
-          credit_budget,
-          amountbadget,
-          distributor,
-          created_at,
-           createForm
-        `)
-          .order("id", { ascending: false })
-          .limit(50);
+  const handleRowClick = (entry) => {
+    console.log("Clicked row:", entry.code);
+    setModalVisaCode(entry.code);
+  };
 
-        if (rError) throw rError;
+  const disableModal = () => {
+    setModalVisaCode(false);
+  };
 
-        regularData = (rData || []).map(item => ({
-          ...item,
-          source: "regular_pwp",
-          pwp_code: item.regularpwpcode,
-        }));
-      }
+  const [approvals, setApprovals] = useState([]);
+  const [approvalHistory, setApprovalHistory] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
 
-      const mergedData = [...coverData, ...regularData];
-
-      // --- FETCH ACTIVITY NAMES ---
-      const activityCodes = [...new Set(mergedData.map(item => item.activity).filter(Boolean))];
-      let activityMap = {};
-
-      if (activityCodes.length > 0) {
-        const { data: actData, error: actError } = await supabase
-          .from("activity")
-          .select("code, name")
-          .in("code", activityCodes);
-
-        if (actError) throw actError;
-
-        activityMap = (actData || []).reduce((acc, cur) => {
-          acc[cur.code] = cur.name;
-          return acc;
-        }, {});
-      }
-
-      // --- FETCH APPROVAL STATUS AND APPROVED DATE ---
-      const allPwpCodes = mergedData.map(item => item.pwp_code).filter(Boolean);
-      const approvalStatusMap = await getApprovalStatus(allPwpCodes);
-
-      const { data: approvalHistoryData, error: approvalHistoryError } = await supabase
+  // Fetch approval history FIRST
+  useEffect(() => {
+    const fetchApprovalHistory = async () => {
+      const { data, error } = await supabase
         .from("Approval_History")
-        .select("PwpCode, DateResponded")
-        .in("PwpCode", allPwpCodes);
+        .select("*");
 
-      if (approvalHistoryError) throw approvalHistoryError;
-
-      const approvalDateMap = {};
-      (approvalHistoryData || []).forEach(item => {
-        if (!approvalDateMap[item.PwpCode]) {
-          approvalDateMap[item.PwpCode] = item.DateResponded;
-        }
-      });
-
-      // --- MERGE APPROVAL + ACTIVITY NAME ---
-      const dataWithApprovalStatus = mergedData.map(item => ({
-        ...item,
-        activity_name: activityMap[item.activity] || item.activity || "-", // <-- replace with name
-        approval_status: approvalStatusMap[item.pwp_code]?.status || "Pending",
-        date_responded: approvalStatusMap[item.pwp_code]?.date_responded || approvalDateMap[item.pwp_code] || null,
-        approval_created: approvalStatusMap[item.pwp_code]?.approval_created,
-      }));
-
-      // --- SEARCH FILTER ---
-      let filteredData = dataWithApprovalStatus;
-      if (searchQuery) {
-        filteredData = filteredData.filter(item => {
-          const searchFields = [
-            item.code,
-            item.cover_code,
-            item.regularpwpcode,
-            item.id,
-            item.activity_name, // now searchable by name too
-            item.distributor,
-          ];
-          return searchFields.some(
-            field =>
-              field &&
-              field.toString().toLowerCase().includes(searchQuery.toLowerCase())
-          );
-        });
-      }
-
-      // --- STATUS FILTER ---
-      if (statusFilter !== "all") {
-        filteredData = filteredData.filter(item => {
-          const itemStatus = item.approval_status?.toLowerCase() || "pending";
-          if (statusFilter === "sent_back")
-            return (
-              itemStatus === "sent back for revision" || itemStatus === "sent back"
-            );
-          if (statusFilter === "cancelled") return itemStatus === "cancelled";
-          if (statusFilter === "pending")
-            return itemStatus === "pending" || !item.approval_status;
-          if (statusFilter === "approved") return itemStatus === "approved";
-          if (statusFilter === "declined") return itemStatus === "declined";
-          return itemStatus === statusFilter;
-        });
-      }
-
-      // --- DATE FILTERS ---
-      if (dateFrom) {
-        filteredData = filteredData.filter(
-          item =>
-            item.created_at &&
-            new Date(item.created_at) >= new Date(dateFrom)
-        );
-      }
-      if (dateTo) {
-        const toDate = new Date(dateTo);
-        toDate.setHours(23, 59, 59, 999);
-        filteredData = filteredData.filter(
-          item =>
-            item.created_at &&
-            new Date(item.created_at) <= toDate
-        );
-      }
-
-      // --- NORMALIZE FINAL DATA ---
-      if (filteredData.length > 0) {
-        const normalizedData = filteredData.map(item => ({
-          ...item,
-          code: item.regularpwpcode || item.cover_code || "-",
-          distributor: item.distributor || "-",
-          activity: item.activity_name || "-", // show readable name
-          credit_budget: item.credit_budget ?? 0,
-          amountbadget: item.amountbadget ?? 0,
-          approved_date: item.date_responded || null,
-        }));
-
-        setColumns([
-          "pwp_code",
-          "distributor",
-          "activity",
-          "credit_budget",
-          "created_at",
-          "approved_date",
-        ]);
-        setData(normalizedData);
+      if (error) {
+        console.error("Error fetching approval history:", error);
+        setApprovalHistory([]);
       } else {
-        setColumns([]);
-        setData([]);
+        setApprovalHistory(data || []);
       }
-    } catch (err) {
-      setError(`Unexpected error: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, statusFilter, searchQuery, dateFrom, dateTo, categoryMap]);
+    };
+
+    fetchApprovalHistory();
+  }, []);
 
 
+  function getLatestResponseStatus(visaCode, approvalHistory) {
+    const filtered = approvalHistory.filter((a) => a.PwpCode === visaCode);
+    if (filtered.length === 0) return "Pending";
 
+    filtered.sort(
+      (a, b) => new Date(b.DateResponded) - new Date(a.DateResponded)
+    );
+    return filtered[0].Response || "Pending";
+  }
 
-  const [showPDFModal, setShowPDFModal] = useState(false);
-  const [selectedPDFRecord, setSelectedPDFRecord] = useState(null);
+  function getLatestResponseDate(visaCode, approvalHistory) {
+    const filtered = approvalHistory.filter((a) => a.PwpCode === visaCode);
+    if (filtered.length === 0) return "-";
 
-  // 3. Add handler function
-  const handleViewPDF = (record) => {
-    setSelectedPDFRecord(record);
-    setShowPDFModal(true);
-  };
+    filtered.sort(
+      (a, b) => new Date(b.DateResponded) - new Date(a.DateResponded)
+    );
+    const latestDate = filtered[0].DateResponded;
+    const dateObj = new Date(latestDate);
+    return dateObj.toLocaleString();
+  }
 
-  const exportToExcel = async () => {
-    if (!data.length) return;
+  const [hasFetched, setHasFetched] = useState(false);
 
-    try {
-      // --- FETCH DISTRIBUTOR NAMES USING CODE ---
-      const distributorCodes = [...new Set(data.map(d => d.distributor).filter(Boolean))];
-      let distributorMap = {};
+  useEffect(() => {
+    let isMounted = true;
 
-      if (distributorCodes.length > 0) {
-        const { data: distData, error: distError } = await supabase
-          .from("distributors")
-          .select("code, name")
-          .in("code", distributorCodes);
+    if (!currentUser?.UserID || hasFetched) return;
 
-        if (distError) throw distError;
+    const fetchData = async () => {
+      try {
+        const myName = currentUser.name?.toLowerCase().trim();
+        const userId = currentUser.UserID;
+        const isAdmin = currentUser.role?.toLowerCase() === "admin";
 
-        distributorMap = (distData || []).reduce((acc, cur) => {
-          acc[cur.code] = cur.name;
-          return acc;
-        }, {});
-      }
+        const visaTables = ["cover_pwp", "regular_pwp", "Claims_pwp"];
+        let combinedData = [];
+        let allowedNames = [];
 
-      // --- DEFINE EXPORT HEADERS ---
-      const exportColumns = [
-        { header: "REG PWP CODE", key: "pwp_code" },
-        { header: "DISTRIBUTOR", key: "distributor" },
-        { header: "ACTIVITY", key: "activity" },
-        { header: "AMOUNT", key: "credit_budget" },
-        { header: "CREATED DATE", key: "created_at" },
-        { header: "APPROVED DATE", key: "date_responded" },
-        { header: "STATUS", key: "approval_status" },
-      ];
+        for (const table of visaTables) {
+          const { data, error } = await supabase.from(table).select("*");
 
-      // --- PREPARE DATA FOR EXPORT ---
-      const exportData = data.map(row => {
-        const obj = {};
-        exportColumns.forEach(col => {
-          if (col.key === "created_at" || col.key === "date_responded") {
-            obj[col.header] = row[col.key]
-              ? new Date(row[col.key]).toLocaleDateString()
-              : "";
-          } else if (col.key === "approval_status") {
-            obj[col.header] = row[col.key] || "Pending";
-          } else if (col.key === "distributor") {
-            // Replace distributor code with name
-            obj[col.header] = distributorMap[row[col.key]] || row[col.key] || "-";
-          } else {
-            obj[col.header] = row[col.key] ?? "";
+          if (error) {
+            console.error(`Error fetching from ${table}:`, error.message);
+            continue;
           }
-        });
-        return obj;
-      });
 
-      // --- CREATE WORKSHEET & AUTO WIDTH ---
-      const worksheet = XLSX.utils.json_to_sheet(exportData, {
-        header: exportColumns.map(c => c.header),
-      });
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "PWP Records");
+          const normalizedAllowedNames = allowedNames.map((n) =>
+            n.toLowerCase().trim()
+          );
 
-      // Auto column width
-      const colWidths = exportColumns.map(col => ({
-        wch: Math.max(
-          col.header.length,
-          ...exportData.map(r => (r[col.header] ? r[col.header].toString().length : 0))
-        ) + 2,
-      }));
-      worksheet["!cols"] = colWidths;
+          const filteredData = isAdmin
+            ? data
+            : normalizedAllowedNames.length === 0
+              ? data
+              : data.filter((item) => {
+                const createdBy = (item.CreatedForm || item.createForm || "")
+                  .toLowerCase()
+                  .trim();
+                if (createdBy === myName) return true;
+                return normalizedAllowedNames.includes(createdBy);
+              });
 
-      // --- SAVE FILE ---
-      const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-      const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-      saveAs(blob, `PWP_Records_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    } catch (err) {
-      console.error("Error exporting Excel:", err.message);
+          const formatted = filteredData
+            .map((item) => {
+              if (table === "cover_pwp") {
+                return {
+                  code: item.cover_code || "",
+                  title: item.pwp_type || "N/A",
+                  type: item.account_type || "N/A",
+                  distributor: item.distributor_code || "N/A",
+                  principal: item.objective || "N/A",
+                  brand: item.promo_scheme || "N/A",
+                  approver: item.approver || "N/A",
+                  createForm: item.CreatedForm || item.createForm || "N/A",
+                  status: item.notification === true ? "Approved" : "Pending",
+                  responseDate: "",
+                  sourceTable: table,
+                  created_at: item.created_at || "N/A",
+                };
+              } else if (table === "regular_pwp") {
+                return {
+                  code: item.regularpwpcode || "",
+                  title: item.pwptype || "N/A",
+                  type: item.accountType ? item.accountType.join(", ") : "N/A",
+                  distributor: item.distributor || "N/A",
+                  principal: item.objective || "N/A",
+                  brand: item.promoScheme || "N/A",
+                  approver: item.approver || "N/A",
+                  createForm: item.CreatedForm || item.createForm || "N/A",
+                  status: item.notification === true ? "Approved" : "Pending",
+                  responseDate: "",
+                  sourceTable: table,
+                  created_at: item.created_at || "N/A",
+                };
+              } else if (table === "Claims_pwp") {
+                return {
+                  code: item.code_pwp || "",
+                  title: item.activity || "N/A",
+                  type:
+                    Array.isArray(item.account_types) &&
+                      item.account_types.length > 0
+                      ? item.account_types.join(", ")
+                      : "N/A",
+                  distributor: item.distributor || "N/A",
+                  principal: "",
+                  brand:
+                    Array.isArray(item.category_names) &&
+                      item.category_names.length > 0
+                      ? item.category_names.join(", ")
+                      : "N/A",
+                  approver: "",
+                  createForm: item.createForm || "N/A",
+                  status: item.notification === true ? "Approved" : "Pending",
+                  responseDate: "",
+                  sourceTable: table,
+                  created_at: item.created_at || "N/A",
+                };
+              }
+
+              return null;
+            })
+            .filter((x) => x !== null);
+
+          combinedData = [...combinedData, ...formatted];
+        }
+
+        if (isMounted) {
+          setAllowedApproverNames(allowedNames);
+          setApprovals(combinedData);
+          setHasFetched(true);
+        }
+      } catch (error) {
+        console.error("Unexpected fetch error:", error);
+        if (isMounted) setHasFetched(true);
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.UserID, hasFetched]);
+
+  const [allowedApproverNames, setAllowedApproverNames] = useState([]);
+  const myName = currentUser?.name?.toLowerCase().trim();
+  const [visaTypeFilter, setVisaTypeFilter] = useState("REGULAR");
+const [statusFilter, setStatusFilter] = useState("Pending");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [todayOnly, setTodayOnly] = useState(false);
+  const [totalPages, setTotalPages] = useState(1);
+  const pageSize = 10;
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
     }
   };
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [visaTypeFilter, statusFilter, fromDate, toDate, searchTerm, todayOnly]);
+
+  // FIXED FILTERING LOGIC
+
+  // ✅ Now filteredData can safely use all of these
+  const filteredData = approvals.filter((entry) => {
+    const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+    const role = currentUser?.role?.toLowerCase() || "";
+    const entryDate = entry.created_at ? new Date(entry.created_at) : null;
+
+    if (visaTypeFilter) {
+      const code = entry.code?.toUpperCase() || "";
+      let type = "";
+
+      if (code.startsWith("R")) type = "REGULAR";
+      else if (code.startsWith("CL")) type = "CLAIMS";
+      else if (code.startsWith("C")) type = "COVER";
+
+      if (type !== visaTypeFilter) return false;
+    }
 
 
-  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+    if (searchTerm) {
+      const searchValue = searchTerm.toLowerCase().trim();
+      const distributorName = getDistributorName(entry.distributor)?.toLowerCase() || "";
+      const userName = getUserNameById(entry.createForm)?.toLowerCase() || "";
+      const codeMatch = entry.code?.toLowerCase().includes(searchValue);
+      const createdFormMatch = (entry.createForm || "").toLowerCase().includes(searchValue);
 
-  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-  const currentUserId = currentUser?.UserID ? Number(currentUser.UserID) : null;
-  const role = currentUser?.role || "";
+      const matchesSearch =
+        codeMatch ||
+        distributorName.includes(searchValue) ||
+        userName.includes(searchValue) ||
+        createdFormMatch;
 
-  const filteredData = useMemo(() => {
-    if (role === 'admin') return data;
+      if (!matchesSearch) return false;
+    }
 
-    return data.filter(row => {
-      const createForm = row.createForm;
+    if (statusFilter) {
+      const entryStatus = getLatestResponseStatus(entry.code, approvalHistory);
+      const normalizedEntryStatus = entryStatus.toLowerCase();
+      const normalizedStatusFilter = statusFilter.toLowerCase();
 
-      if (!createForm) return false;
-
-      // Normalize string for comparison
-      if (typeof createForm === 'string') {
-        const createFormStr = createForm.toLowerCase().trim();
-
-        // Check if createForm string matches username
-        if (createFormStr === currentUserName) return true;
-
-        // Also, if createForm looks like a number string, compare with UserID
-        const createFormNum = Number(createFormStr);
-        if (!isNaN(createFormNum) && createFormNum === currentUserId) return true;
-
+      if (
+        normalizedStatusFilter === "revision" ||
+        normalizedStatusFilter === "sent back for revision"
+      ) {
+        if (
+          normalizedEntryStatus !== "sent back for revision" &&
+          normalizedEntryStatus !== "revision"
+        ) {
+          return false;
+        }
+      } else if (normalizedEntryStatus !== normalizedStatusFilter) {
         return false;
       }
-
-      // If createForm is a number, compare directly to UserID
-      if (typeof createForm === 'number') {
-        return createForm === currentUserId;
-      }
-
-      return false;
-    });
-  }, [data, currentUserName, currentUserId, role]);
-  const [users, setUsers] = useState([]);
-
-  useEffect(() => {
-    async function fetchUsers() {
-      const { data, error } = await supabase
-        .from('Account_Users')
-        .select('UserID, name');
-
-      if (error) {
-        console.error('Error fetching users:', error);
-      } else {
-        setUsers(data || []);
-      }
     }
 
-    fetchUsers();
-  }, []);
+    // 4. DATE RANGE FILTER
+    if (fromDate && toDate && entryDate) {
+      const from = new Date(fromDate);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
 
-  // Pagination using filteredData
-  const totalPages = Math.ceil(filteredData.length / rowsPerPage);
-  const paginatedData = filteredData.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
-  );
-
-  // Updated getStatusBadge function - replace your existing one
-  const getStatusBadge = (status) => {
-    const statusLower = status ? status.toLowerCase() : 'pending';
-    let bgColor, textColor, borderColor;
-
-    switch (statusLower) {
-      case 'approved':
-        bgColor = '#e8f5e8';
-        textColor = '#2e7d32';
-        borderColor = '#c8e6c9';
-        break;
-      case 'declined':
-        bgColor = '#ffebee';
-        textColor = '#c62828';
-        borderColor = '#ffcdd2';
-        break;
-      case 'sent back for revision':
-      case 'sent back':
-        bgColor = '#fff3e0';
-        textColor = '#e65100';
-        borderColor = '#ffcc02';
-        break;
-      case 'cancelled':
-        bgColor = '#f3e5f5';
-        textColor = '#7b1fa2';
-        borderColor = '#e1bee7';
-        break;
-      case 'pending':
-      default:
-        bgColor = '#fff3cd';
-        textColor = '#8a6d3b';
-        borderColor = '#ffeaa7';
+      if (entryDate < from || entryDate > to) return false;
     }
 
-    return (
-      <span
-        style={{
-          padding: '4px 12px',
-          borderRadius: '16px',
-          fontSize: '12px',
-          fontWeight: '600',
-          backgroundColor: bgColor,
-          color: textColor,
-          border: `1px solid ${borderColor}`,
-          textTransform: 'capitalize',
-          letterSpacing: '0.5px',
-        }}
-      >
-        {status || 'Pending'}
-      </span>
-    );
-  };
+    // 5. TODAY ONLY FILTER
+    if (todayOnly && entryDate) {
+      const now = new Date();
+      const isToday =
+        entryDate.getFullYear() === now.getFullYear() &&
+        entryDate.getMonth() === now.getMonth() &&
+        entryDate.getDate() === now.getDate();
 
-
-  useEffect(() => {
-    async function fetchUsers() {
-      const { data, error } = await supabase
-        .from('Account_Users')
-        .select('UserID, name');
-      if (error) {
-        console.error('Failed to fetch users:', error);
-      } else {
-        setUsers(data || []);
-      }
+      if (!isToday) return false;
     }
 
-    fetchUsers();
-  }, []);
+    // 6. USER PERMISSION FILTER
+    const createdFormName = (entry.createForm || "").toLowerCase().trim();
+    if (role !== "admin") {
+      if (createdFormName !== currentUserName) return false;
+    }
 
-  const userIdToNameMap = useMemo(() => {
-    const map = new Map();
-    users.forEach(user => {
-      if (user.UserID && user.name) {
-        map.set(user.UserID, user.name.toLowerCase().trim());
-      }
-    });
-    return map;
-  }, [users]);
-  const formatColumnName = (colName) => {
-    return colName
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, l => l.toUpperCase())
-      .replace('Pwp', 'PWP')
-      .replace('Id', 'ID');
-  };
-  // Fetch distributors (code → name)
-  const [distributorMap, setDistributorMap] = useState({});
+    return true;
+  });
 
   useEffect(() => {
-    const fetchDistributorMap = async () => {
+    setTotalPages(Math.ceil(filteredData.length / pageSize));
+  }, [filteredData]);
+
+const paginatedData = [...filteredData]
+  .sort((a, b) => {
+    // Sort by latest date/time first (newest first)
+    return new Date(b.created_at) - new Date(a.created_at);
+  })
+  .slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const [userType, setUserType] = useState(null);
+  const [approvalSetting, setApprovalSetting] = useState(null);
+
+  useEffect(() => {
+    async function fetchSettings() {
       const { data, error } = await supabase
-        .from("distributors") // ⚠️ change table name if different
-        .select("code, name");
+        .from("approval_settings")
+        .select("single_approval, multiple_approval")
+        .limit(1)
+        .single();
 
       if (error) {
-        console.error("❌ Error fetching distributors:", error);
+        console.error("Error fetching approval settings:", error);
         return;
       }
 
-      const map = {};
-      data.forEach((item) => {
-        map[String(item.code)] = item.name;
-      });
-      setDistributorMap(map);
-    };
+      setApprovalSetting(data);
+    }
 
-    fetchDistributorMap();
+    fetchSettings();
   }, []);
 
-  const getUserNameById = (userId) => {
-    if (!userId) return '-';
+  useEffect(() => {
+    if (!approvalSetting || !currentUser?.UserID) return;
 
-    // If it's already a string (name), return it in uppercase
-    if (typeof userId === 'string' && isNaN(Number(userId))) {
-      return userId.toUpperCase();
-    }
-
-    // Convert to number and lookup in map
-    const numericId = Number(userId);
-    const userName = userIdToNameMap.get(numericId);
-
-    return userName ? userName.toUpperCase() : String(userId); // return uppercase or fallback
-  };
-  const formatCellValue = (value, colName) => {
-    if (!value && value !== 0) return '-';
-
-    if (colName === "distributor" || colName === "distributor_code") {
-      const strCode = String(value).trim();
-      const name = distributorMap[strCode];
-      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
-      return name || strCode;
-    }
-
-    // Convert UserID to name for createForm column
-    if (colName === "createForm") {
-      return getUserNameById(value);
-    }
-
-    if (colName === 'created_at' && value) {
+    async function fetchUserDetails() {
       try {
-        return new Date(value).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric"
-        });
-      } catch {
-        return value;
+        const { data: accountData, error: accountError } = await supabase
+          .from("Account_Users")
+          .select("name")
+          .eq("UserID", currentUser.UserID)
+          .single();
+
+        if (accountError) {
+          console.error("Error fetching name from Account_Users:", accountError);
+          setUserType(null);
+          return;
+        }
+        if (!accountData) {
+          setUserType(null);
+          return;
+        }
+
+        const userName = accountData.name;
+
+        if (approvalSetting.single_approval) {
+          const username = userName?.toLowerCase().trim();
+
+          const { data: singleApprovalData, error: singleApprovalError } =
+            await supabase
+              .from("Single_Approval")
+              .select("username, allowed_to_approve")
+              .ilike("username", username)
+              .maybeSingle();
+
+          if (singleApprovalError) {
+            console.error("Error fetching from Single_Approval:", singleApprovalError);
+            setUserType(null);
+            return;
+          }
+
+          if (!singleApprovalData) {
+            setUserType(null);
+            return;
+          }
+
+          setUserType(
+            singleApprovalData.allowed_to_approve ? "Allowed" : "Not Allowed"
+          );
+          return;
+        }
+
+        if (approvalSetting.multiple_approval) {
+          const { data: approverData, error: approverError } = await supabase
+            .from("User_Approvers")
+            .select("Type, UserID, Approver_Name")
+            .eq("UserID", currentUser.UserID)
+            .single();
+
+          if (approverError) {
+            console.error("Error fetching from User_Approvers:", approverError);
+            setUserType(null);
+            return;
+          }
+          if (!approverData) {
+            setUserType(null);
+            return;
+          }
+
+          setUserType(approverData.Type ?? "Not Allowed");
+        }
+      } catch (err) {
+        console.error("Unexpected error in fetchUserDetails:", err);
+        setUserType(null);
       }
     }
 
-    return String(value);
-  };
-  // Define styles object
-  const styles = {
-    td: {
-      padding: '16px 20px',
-      borderBottom: '1px solid #e0e0e0',
-      fontSize: '14px',
-      color: '#000000ff'
-    }
-  };
-  useEffect(() => {
-    if (Object.keys(categoryMap).length > 0) {
-      fetchData();
-    }
-  }, [categoryMap, filter, searchQuery, statusFilter, dateFrom, dateTo]);
-  useEffect(() => {
-    fetchData();
-  }, [fetchData, rowsPerPage]);
+    fetchUserDetails();
+  }, [approvalSetting, currentUser?.UserID]);
 
 
+
+
+  const handleDeclineClick = async (entryCode) => {
+    const entry = approvals.find((item) => item.code === entryCode);
+    if (!entry?.code) return;
+
+    const dateTime = new Date().toISOString();
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
+    const createdForm = entry.createForm || "unknown";
+
+    try {
+      const { error: supabaseError } = await supabase
+        .from("Approval_History")
+        .insert({
+          PwpCode: entry.code,
+          ApproverId: userId,
+          DateResponded: dateTime,
+          Response: "Declined",
+          Type: userType || null,
+          Notication: false,
+          CreatedForm: createdForm,
+        });
+
+      if (supabaseError) {
+        console.error("Supabase insert error:", supabaseError.message);
+        Swal.fire("Error", "Failed to log the decline action.", "error");
+        return;
+      }
+
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activity = {
+          userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip,
+          time: dateTime,
+          action: `Declined the ${entry.code}`,
+          createdForm,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activity);
+
+        if (activityError) {
+          console.error("RecentActivity log error:", activityError.message);
+        }
+      } catch (logErr) {
+        console.warn("Activity logging failed:", logErr.message);
+      }
+
+      setApprovals((prevApprovals) =>
+        prevApprovals.map((item) =>
+          item.code === entryCode
+            ? { ...item, status: "Declined", responseDate: dateTime }
+            : item
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: "Declined",
+        text: `${entry.code} has been declined successfully.`,
+        confirmButtonText: "OK",
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error(`Failed to decline ${entry.code}:`, error.message || error);
+      Swal.fire("Error", "Something went wrong while declining the entry.", "error");
+    }
+  };
+
+  const handleSendBackClick = async (entryCode) => {
+    const entry = approvals.find((item) => item.code === entryCode);
+    if (!entry?.code) return;
+
+    const dateTime = new Date().toISOString();
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
+    const createdForm = entry.createForm || "unknown";
+
+    try {
+      const { error: supError } = await supabase
+        .from("Approval_History")
+        .insert({
+          PwpCode: entry.code,
+          ApproverId: userId,
+          DateResponded: dateTime,
+          Response: "Sent back for revision",
+          Type: userType || null,
+          Notication: false,
+          CreatedForm: createdForm,
+        });
+
+      if (supError) {
+        console.error("Supabase insert error:", supError.message);
+        Swal.fire("Error", "Failed to log the send-back action.", "error");
+        return;
+      }
+
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activityEntry = {
+          userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip: ip,
+          time: dateTime,
+          action: `Sent back ${entry.code} for revision`,
+          createdForm,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activityEntry);
+
+        if (activityError) {
+          console.error("RecentActivity log error:", activityError.message);
+        }
+      } catch (logErr) {
+        console.warn("Activity logging failed:", logErr.message);
+      }
+
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode
+            ? { ...item, status: "Revision", responseDate: dateTime }
+            : item
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: "Success",
+        text: `${entry.code} has been sent back for revision.`,
+        confirmButtonText: "OK",
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error(`Failed to send back ${entry.code}:`, error.message || error);
+      Swal.fire("Error", "Something went wrong while sending back the entry.", "error");
+    }
+  };
+  const handleApproveClick = async (entryCode) => {
+    const entry = approvals.find((item) => item.code === entryCode);
+    if (!entry || !entry.code) return;
+
+    const dateTime = new Date().toISOString();
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
+
+    if (entry.isSubmitting) return;
+
+    setApprovals((prev) =>
+      prev.map((item) =>
+        item.code === entryCode ? { ...item, isSubmitting: true } : item
+      )
+    );
+
+    let remainingBalance = null;
+    let creditBudget = null;
+    let coverPwpCode = null;
+
+    try {
+      // Insert approval history
+      const { error: historyError } = await supabase
+        .from("Approval_History")
+        .insert({
+          PwpCode: entry.code,
+          ApproverId: userId,
+          DateResponded: dateTime,
+          Response: "Approved",
+          Type: userType || "admin",
+          Notication: false,
+          CreatedForm: entry.createForm || "unknown",
+        });
+
+      if (historyError) {
+        console.error("Supabase insert error:", historyError.message);
+        Swal.fire("Error", "Failed to log approval. Please try again.", "error");
+        return;
+      }
+
+      const updatePayload = {
+        Approved: true,
+        createdate: dateTime,
+      };
+
+      if (entry.code.startsWith("R")) {
+        const { data: pwpData, error: pwpError } = await supabase
+          .from("regular_pwp")
+          .select("remaining_balance, coverPwpCode, credit_budget")
+          .eq("regularpwpcode", entry.code)
+          .single();
+
+        if (pwpError) {
+          console.warn("Missing regular_pwp data:", pwpError.message);
+        }
+
+        if (pwpData) {
+          remainingBalance = parseFloat(pwpData.remaining_balance) || 0;
+          creditBudget = parseFloat(pwpData.credit_budget) || 0;
+          coverPwpCode = pwpData.coverPwpCode || null;
+
+          // ✅ Continue even if cover code or budget is missing
+          if (!isNaN(remainingBalance) && coverPwpCode) {
+            const { error: updateError } = await supabase
+              .from("amount_badget")
+              .update({
+                remainingbalance: remainingBalance,
+                ...updatePayload,
+              })
+              .eq("pwp_code", coverPwpCode);
+
+            if (updateError) {
+              console.warn(
+                "Warning: Failed to update amount_badget:",
+                updateError.message
+              );
+            }
+          } else {
+            console.warn(
+              `Skipped budget update for ${entry.code}: Missing or invalid budget data`
+            );
+          }
+        }
+      } else {
+        const { error: updateError } = await supabase
+          .from("amount_badget")
+          .update(updatePayload)
+          .eq("pwp_code", entry.code);
+
+        if (updateError) {
+          console.warn("Warning: Failed to update budget approval:", updateError.message);
+        }
+      }
+
+      // Log into approved_history_budget (still logs even if values are null)
+      const { error: historyBudgetError } = await supabase
+        .from("approved_history_budget")
+        .insert({
+          pwp_code: entry.code,
+          approver_id: userId,
+          date_responded: dateTime,
+          response: "Approved",
+          type: userType || "admin",
+          created_form: entry.createForm || "unknown",
+          remaining_balance: remainingBalance,
+          credit_budget: creditBudget,
+          cover_pwp_code: coverPwpCode,
+          updated_amount_badget: true,
+        });
+
+      if (historyBudgetError) {
+        console.warn("Warning: Failed to log approval+budget:", historyBudgetError.message);
+      }
+
+      // Log user activity
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activity = {
+          userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip,
+          time: dateTime,
+          action: `Approved the ${entry.code}`,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activity);
+
+        if (activityError) {
+          console.warn("Activity log failed:", activityError.message);
+        }
+      } catch (logErr) {
+        console.warn("Activity logging failed:", logErr.message);
+      }
+
+      // Update state and show success
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode
+            ? {
+              ...item,
+              status: "Approved",
+              responseDate: dateTime,
+              isSubmitting: false,
+            }
+            : item
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: "Approved!",
+        text: `Entry ${entry.code} was approved successfully (even without budget info).`,
+        confirmButtonText: "OK",
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error(`Failed to approve ${entry.code}:`, error.message || error);
+      Swal.fire("Error", "Something went wrong during approval.", "error");
+
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode ? { ...item, isSubmitting: false } : item
+        )
+      );
+    }
+  };
 
   return (
-    <div style={{
-      padding: '20px',
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '12px',
-        overflow: 'hidden'
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: '24px 30px',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-              padding: '10px 0',
-              maxWidth: '100%',
-            }}>
-              <h1 style={{
-                margin: 0,
-                fontSize: '28px',
-                fontWeight: '700',
-                color: '#000000ff',
-                letterSpacing: '0.5px',
-                lineHeight: '1.2'
-              }}>
-                📊 RECORDS
-              </h1>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "90vh",
+        padding: "24px",
+        boxSizing: "border-box",
+        backgroundColor: "#f9fafb",
+      }}
+    >
+      <h2
+        style={{
+          color: "#0f172a",
+          fontSize: "26px",
+          fontWeight: "700",
+          padding: "12px 16px",
+          background: "linear-gradient(to right, #3b82f6, #06b6d4)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          marginBottom: "20px",
+          borderBottom: "3px solid #e2e8f0",
+          display: "inline-block",
+          letterSpacing: "0.5px",
+        }}
+      >
+        Approvals Management
 
-              <p style={{
-                margin: 0,
-                fontSize: '15px',
-                color: '#555',
-                opacity: 0.85,
-                lineHeight: '1.4',
-                fontStyle: 'italic'
-              }}>
-
-              </p>
-            </div>
-
-            {/* Controls */}
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '12px',
-                alignItems: 'center',
-              }}
-            >
-              {/* Search */}
-              <div className="filter-item">
-                <input
-                  type="text"
-                  placeholder="🔍 Search Customer...."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #e1e8ed',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    transition: 'border-color 0.3s ease',
-                    outline: 'none'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#2575fc'}
-                  onBlur={(e) => e.target.style.borderColor = '#e1e8ed'}
-                />
-              </div>
-
-              <div className="filter-item">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    width: '100%',
-                    minWidth: '0',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <option value="all">All Status</option>
-                  <option value="approved">Approved</option>
-                  <option value="declined">Declined</option>
-                  <option value="sent_back">Sent Back</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </div>
-
-              {/* Date Range */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                backgroundColor: 'white',
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid #e1e8ed'
-              }}>
-                <span style={{ fontSize: '14px', color: '#666', fontWeight: '500' }}>📅 Date:</span>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  style={{
-                    padding: '6px 8px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    fontSize: '13px'
-                  }}
-                />
-                <span style={{ color: '#666' }}>to</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  style={{
-                    padding: '6px 8px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    fontSize: '13px'
-                  }}
-                />
-              </div>
-
-              <div className="filter-item">
-                <select
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    width: '100%',
-                    minWidth: '0',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <option value="all">All Records</option>
-                  <option value="cover">Cover PWP Only</option>
-                  <option value="regular">Regular PWP Only</option>
-                </select>
-              </div>
-
-              <div className="filter-item">
-                <button
-                  onClick={fetchData}
-                  disabled={updating}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    cursor: updating ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    backgroundColor: '#2575fc',
-                    color: '#fff',
-                    fontWeight: '500',
-                    width: '100%',
-                    opacity: updating ? 0.7 : 1,
-                  }}
-                >
-                  {updating ? 'Updating...' : 'Refresh'}
-                </button>
-              </div>
-              <div className="filter-item">
-                <button
-                  onClick={exportToExcel}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    backgroundColor: '#4caf50',
-                    color: '#fff',
-                    fontWeight: '500',
-                    width: '100%'
-                  }}
-                >
-                  📥 Export to Excel
-                </button>
-              </div>
-
-            </div>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            padding: '5px'
-          }}>
-            <thead>
-              <tr style={{ backgroundColor: '#2575fc', color: '#ffff' }}>
-                {columns.map(col => (
-                  <th key={col} style={{
-                    padding: '16px 20px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: '#eeeeeeff',
-                    fontSize: '14px',
-                    borderBottom: '2px solid #e0e0e0',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {formatColumnName(col)}
-                  </th>
-                ))}
-                <th style={{
-                  padding: '16px 20px',
-                  textAlign: 'center',
-                  fontWeight: '600',
-                  color: '#fcfcfcff',
-                  fontSize: '14px',
-                  borderBottom: '2px solid #e0e0e0',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  width: '220px'
-                }}>
-                  Status
-                </th>
-                <th style={{
-                  padding: '16px 20px',
-                  textAlign: 'center',
-                  fontWeight: '600',
-                  color: '#fcfcfcff',
-                  fontSize: '14px',
-                  borderBottom: '2px solid #e0e0e0',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  width: '120px'
-                }}>
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedData.map((row, index) => (
-                <tr key={row.id || index} style={{
-                  backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
-                  transition: 'background-color 0.2s ease'
-                }}>
-                  {columns.map(col => (
-                    <td key={col} style={styles.td}>
-                      <span style={{
-                        maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
-                        display: 'inline-block',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {formatCellValue(row[col], col)}
-                      </span>
-                    </td>
-                  ))}
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    {getStatusBadge(row.approval_status)}
-                  </td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                      {/* View Button */}
-                      <button
-                        onClick={() => handleViewRecord(row)}
-                        style={{
-                          padding: '8px 16px',
-                          backgroundColor: '#1976d2',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          fontWeight: '500',
-                          transition: 'all 0.2s ease',
-                        }}
-                        onMouseEnter={(e) => (e.target.style.backgroundColor = '#115293')}
-                        onMouseLeave={(e) => (e.target.style.backgroundColor = '#1976d2')}
-                      >
-                        🔍 View
-                      </button>
-
-                      {/* PDF Button */}
-                      <button
-                        onClick={() => handleViewPDF(row)}
-                        style={{
-                          padding: '8px 16px',
-                          backgroundColor: '#d32f2f',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          fontWeight: '500',
-                          transition: 'all 0.2s ease',
-                        }}
-                        onMouseEnter={(e) => (e.target.style.backgroundColor = '#9a0007')}
-                        onMouseLeave={(e) => (e.target.style.backgroundColor = '#d32f2f')}
-                      >
-                        📄 PDF
-                      </button>
-                    </div>
+      </h2>
 
 
-                  </td>
-
-
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-
-
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', alignItems: 'center', gap: '12px' }}>
-        {/* Rows per page selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '14px' }}>Rows per page:</span>
-          <select
-            value={rowsPerPage}
-            onChange={(e) => {
-              const newRowsPerPage = Number(e.target.value);
-              setRowsPerPage(newRowsPerPage);
-              setCurrentPage(1); // reset to page 1 when rows per page changes
-            }}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "12px",
+          alignItems: "center",
+          marginBottom: "20px",
+          padding: "16px",
+          backgroundColor: "#ffffff",
+          borderRadius: "8px",
+          border: "1px solid #e5e7eb",
+        }}
+      >
+        <div className="filter-item" style={{ flexGrow: 1, minWidth: "250px" }}>
+          <input
+            type="text"
+            placeholder="Search Code, Created By..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             style={{
-              padding: '4px 8px',
-              fontSize: '14px',
-              borderRadius: '4px',
-              border: '1px solid #ccc'
+              width: "100%",
+              padding: "10px 14px",
+              border: "1px solid #d1d5db",
+              borderRadius: "6px",
+              fontSize: "14px",
+              outline: "none",
+              transition: "border-color 0.2s",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "#3b82f6";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#d1d5db";
+            }}
+          />
+
+        </div>
+
+        <div className="filter-item" style={{ minWidth: "150px" }}>
+          <select
+            value={visaTypeFilter}
+            onChange={(e) => setVisaTypeFilter(e.target.value)}
+            style={{
+              padding: "10px 14px",
+              borderRadius: "6px",
+              fontSize: "14px",
+              cursor: "pointer",
+              width: "100%",
+              border: "1px solid #d1d5db",
+              backgroundColor: "#fff",
             }}
           >
-            {[5, 10, 20, 50].map((size) => (
-              <option key={size} value={size}>{size}</option>
-            ))}
+            <option value="REGULAR">REGULAR</option>
+
           </select>
         </div>
 
-        {/* Pagination Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
+        <div className="filter-item" style={{ minWidth: "150px" }}>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
             style={{
-              padding: '6px 12px',
-              backgroundColor: currentPage === 1 ? '#e0e0e0' : '#1976d2',
-              color: currentPage === 1 ? '#555' : 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              padding: "10px 14px",
+              borderRadius: "6px",
+              fontSize: "14px",
+              cursor: "pointer",
+              width: "100%",
+              border: "1px solid #d1d5db",
+              backgroundColor: "#fff",
             }}
           >
-            Prev
-          </button>
-          <span style={{ fontSize: '14px' }}>
-            Page {currentPage} of {totalPages || 1}
-          </span>
-          <button
-            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: currentPage === totalPages ? '#e0e0e0' : '#1976d2',
-              color: currentPage === totalPages ? '#555' : 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Next
-          </button>
-        </div>
-      </div>
-      {/* Record View Modal */}
-      {showModal && (
-        <RecordViewModal
-          record={selectedRecord}
-          onClose={() => {
-            setShowModal(false);
-            setSelectedRecord(null);
-          }}
-        />
-      )}
+            <option value="">All Status</option>
+            <option value="Approved">Approved</option>
+            <option value="Sent back for revision">Disapproved</option>
+            <option value = "Pending">Pending</option>
 
-      {showPDFModal && (
-        <PDFViewModal
-          record={selectedPDFRecord}
-          onClose={() => {
-            setShowPDFModal(false);
-            setSelectedPDFRecord(null);
+          </select>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            backgroundColor: "#fff",
+            padding: "8px 12px",
+            borderRadius: "6px",
+            border: "1px solid #d1d5db",
           }}
-        />
-      )}
+        >
+          <span style={{ fontSize: "13px", color: "#6b7280", fontWeight: "500" }}>
+            Range:
+          </span>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={{
+              padding: "6px 8px",
+              border: "1px solid #d1d5db",
+              borderRadius: "4px",
+              fontSize: "13px",
+              color: "#374151",
+            }}
+          />
+          <span style={{ color: "#6b7280" }}>to</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            style={{
+              padding: "6px 8px",
+              border: "1px solid #d1d5db",
+              borderRadius: "4px",
+              fontSize: "13px",
+              color: "#374151",
+            }}
+          />
+        </div>
+
+        <button
+          onClick={() => setTodayOnly((prev) => !prev)}
+          style={{
+            padding: "10px 16px",
+            backgroundColor: todayOnly ? "#3b82f6" : "#f3f4f6",
+            color: todayOnly ? "#fff" : "#374151",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+            fontWeight: "500",
+            fontSize: "14px",
+            transition: "all 0.2s",
+          }}
+        >
+          {todayOnly ? "✓" : ""} TODAY
+        </button>
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          border: "1px solid #e5e7eb",
+          borderRadius: "8px",
+          backgroundColor: "#fff",
+        }}
+      >
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            minWidth: "800px",
+            fontFamily: "'Inter', 'Segoe UI', sans-serif",
+          }}
+        >
+          <thead
+            style={{
+              backgroundColor: "#0063c5ff",
+              position: "sticky",
+              top: 0,
+              zIndex: 1,
+              fontSize: "13px",
+              color: "#6b7280",
+              fontWeight: "600",
+              borderBottom: "1px solid #e5e7eb",
+            }}
+          >
+            <tr>
+              <th style={{ padding: "12px 16px", textAlign: "left", backgroundColor: "#0d78e4ff", color: '#ffff' }}>Code</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", backgroundColor: "#0d78e4ff", color: '#ffff' }}>Distributor</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", backgroundColor: "#0d78e4ff", color: '#ffff' }}>Created At</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", backgroundColor: "#0d78e4ff", color: '#ffff' }}>Created By</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", backgroundColor: "#0d78e4ff", color: '#ffff' }}>Status</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", backgroundColor: "#0d78e4ff", color: '#ffff' }}>Response Date</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", backgroundColor: "#0d78e4ff", color: '#ffff' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody style={{ fontSize: "13px", color: "#374151" }}>
+          {paginatedData.length > 0 ? (
+  [...paginatedData]
+    .filter((entry) => {
+      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+      const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
+      const role = currentUser?.role?.toLowerCase() || "";
+
+      if (role === "admin") return true;
+      return (entry.createForm || "").toLowerCase().trim() === currentUserId;
+    })
+    .map((entry, index) => {
+                  const status = getLatestResponseStatus(entry.code, approvalHistory);
+                  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+                  const currentUserId = currentUser?.name?.toLowerCase().trim();
+                  const isOwner = entry.createForm?.toLowerCase().trim() === currentUserId;
+
+                  const statusDisplayText = (s) => {
+                    switch (s) {
+                      case "Approved": return "Approved";
+                      case "Sent back for revision": return "Revision";
+                      default: return "Pending";
+                    }
+                  };
+
+                  const statusColorMap = {
+                    Approved: "#10b981",
+                    "Sent back for revision": "#f59e0b",
+                    Declined: "#ef4444",
+                    Cancelled: "#6b7280",
+                    default: "#3b82f6",
+                  };
+                  const statusColor = statusColorMap[status] || statusColorMap["default"];
+
+                  return (
+                  <tr
+  key={index}
+  style={{
+    borderBottom: "1px solid #f3f4f6",
+    transition: "background-color 0.15s",
+  }}
+  onMouseOver={(e) => {
+    e.currentTarget.style.backgroundColor = "#f9fafb";
+  }}
+  onMouseOut={(e) => {
+    e.currentTarget.style.backgroundColor = "transparent";
+  }}
+>
+                      <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                        <button
+                          style={{
+                            backgroundColor:
+                              entry.code.startsWith("CL")
+                                ? "#47a347ff"
+                                : entry.code.startsWith("R")
+                                  ? "royalblue"
+                                  : entry.code.startsWith("C")
+                                    ? "skyblue"
+                                    : "#007bff",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "15px",
+                            padding: "8px 16px",
+                            fontWeight: "600",
+                            cursor: "pointer",
+                            boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)",
+                            transition: "all 0.2s ease-in-out",
+                            transform: "translateY(0)",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = "0 6px 12px rgba(0, 0, 0, 0.3)";
+                            e.currentTarget.style.opacity = "0.9";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
+                            e.currentTarget.style.opacity = "1";
+                          }}
+                          onClick={() => console.log(`Clicked: ${entry.code}`)}
+                        >
+                          {entry.code}
+                        </button>
+                      </td>
+
+
+                      <td style={{ padding: "12px 16px" }}>
+                        {getDistributorName(entry.distributor)}
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        {new Date(entry.created_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        {getUserNameById(entry.createForm)}
+                      </td>
+                      <td style={{ padding: "12px 16px", color: statusColor, fontWeight: "600" }}>
+                        {statusDisplayText(status)}
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        {getLatestResponseDate(entry.code, approvalHistory)}
+                      </td>
+                     <td style={{ padding: "12px 16px", display: "flex", gap: "8px" }}>
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      handleRowClick(entry);
+    }}
+    style={{
+      padding: "10px 18px",
+      backgroundColor: "#3b82f6",
+      color: "#fff",
+      border: "none",
+      borderRadius: "8px",
+      cursor: "pointer",
+      fontSize: "14px",
+      fontWeight: "600",
+      transition: "all 0.3s ease",
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      boxShadow: "0 2px 8px rgba(59, 130, 246, 0.3)",
+    }}
+    onMouseOver={(e) => {
+      e.currentTarget.style.backgroundColor = "#2563eb";
+      e.currentTarget.style.transform = "translateY(-2px)";
+      e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.4)";
+    }}
+    onMouseOut={(e) => {
+      e.currentTarget.style.backgroundColor = "#3b82f6";
+      e.currentTarget.style.transform = "translateY(0)";
+      e.currentTarget.style.boxShadow = "0 2px 8px rgba(59, 130, 246, 0.3)";
+    }}
+  >
+    <svg 
+      width="16" 
+      height="16" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2.5" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+    View Details
+  </button>
+</td>
+                    </tr>
+                  );
+                })
+            ) : (
+              <tr>
+                <td colSpan="7" style={{ textAlign: "center", padding: "32px", color: "#9ca3af" }}>
+                  No approval requests found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+
+          {modalVisaCode && (
+            <ViewDataModal visaCode={modalVisaCode} onClose={() => setModalVisaCode(null)} />
+          )}
+        </table>
+      </div>
+
+      <div
+        style={{
+          padding: "16px",
+          display: "flex",
+          gap: "10px",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          marginTop: "10px",
+          borderTop: "1px solid #e5e7eb",
+        }}
+      >
+        <button
+          onClick={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: currentPage === 1 ? "#e5e7eb" : "#3b82f6",
+            color: currentPage === 1 ? "#9ca3af" : "#fff",
+            border: "none",
+            borderRadius: "6px",
+            cursor: currentPage === 1 ? "not-allowed" : "pointer",
+            fontWeight: "500",
+            fontSize: "14px",
+          }}
+        >
+          Prev
+        </button>
+        <span style={{ color: "#6b7280", fontSize: "14px" }}>
+          Page {currentPage} of {totalPages}
+        </span>
+        <button
+          onClick={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: currentPage === totalPages ? "#e5e7eb" : "#3b82f6",
+            color: currentPage === totalPages ? "#9ca3af" : "#fff",
+            border: "none",
+            borderRadius: "6px",
+            cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+            fontWeight: "500",
+            fontSize: "14px",
+          }}
+        >
+          Next
+        </button>
+      </div>
     </div>
   );
 }
-
-export default RecordsPage;
