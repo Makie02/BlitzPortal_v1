@@ -29,7 +29,8 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
-
+import KasBudgetCard from "./KAS";
+import DistributorBudgetCard from "../NewComponents/DistributorBudgetCard";
 const Analytics = ({ progress }) => {
   const [budgetData, setBudgetData] = useState([]);
   const [regularData, setRegularData] = useState([]);
@@ -98,6 +99,7 @@ const Analytics = ({ progress }) => {
     fetchData();
   }, []);
 
+  
   const formatCurrency = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const [filterDistributorBudget, setFilterDistributorBudget] = useState("");
   const [filterDistributorRegular, setFilterDistributorRegular] = useState("");
@@ -195,7 +197,7 @@ const Analytics = ({ progress }) => {
 
   return (
     <div className="container-fluid py-4" style={{ maxWidth: "1800px", }}>
-      {/* Hero Header */}
+      {/* Hero Header */} 
       <div className="mb-4 p-4">
         <h2 className="fw-bold mb-2" style={{ fontSize: "2rem", color: "#007bff" }}>
           📊 Budget & Analytics Dashboard
@@ -209,154 +211,99 @@ const Analytics = ({ progress }) => {
       {/* Top Cards Row */}
       <Row className="mb-4 g-4">
         <Col lg={6}>
-          <Card className="border-0" style={{ borderRadius: "20px", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", height: "100%", overflow: "hidden" }}>
-            <Card.Header style={{ background: "linear-gradient(135deg, #274efcff 0%, #609cf5ff 100%)", color: "white", fontWeight: 600, padding: "1.5rem", fontSize: "1.15rem", borderBottom: "none" }}>
-              <i className="bi bi-people-fill me-2"></i>Latest Team Collaboration
-            </Card.Header>
-            <Card.Body style={{ padding: "0" }}>
-              <div style={{ overflowX: "auto" }}>
-                <Table hover className="mb-0" style={{ minWidth: "600px" }}>
-                  <thead style={{ background: "#f8f9fa", borderBottom: "2px solid #e9ecef" }}>
-                    <tr>
-                      <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Profile</th>
-                      <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Code</th>
-                      <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Budget</th>
-                      <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {budgetData.length ? budgetData.sort((a, b) => new Date(b.createdate) - new Date(a.createdate)).slice(0, 5).map((r) => (
-                      <tr key={r.id} style={{ transition: "all 0.2s", cursor: "pointer" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#f8f9fa")} onMouseLeave={(e) => (e.currentTarget.style.background = "white")}>
-                        <td style={{ padding: "1rem", verticalAlign: "middle" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                            <img src={r.profilePicture || "/default-profile.png"} alt={r.createduser_name} style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover", border: "3px solid #e9ecef", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }} />
-                            <span style={{ fontWeight: 500, color: "#2c3e50" }}>{r.createduser_name || "Unknown"}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: "1rem", verticalAlign: "middle" }}>
-                          <Badge bg="primary" style={{ background: "linear-gradient(135deg, #667eea, #764ba2)", padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>{r.pwp_code}</Badge>
-                        </td>
-                        <td style={{ padding: "1rem", verticalAlign: "middle", color: "#28a745", fontWeight: 700, fontSize: "1.05rem" }}>₱ {formatCurrency(r.amountbadget)}</td>
-                        <td style={{ padding: "1rem", verticalAlign: "middle", color: "#6c757d", fontSize: "0.9rem" }}>
-                          {new Date(r.createdate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr><td colSpan="4" style={{ textAlign: "center", padding: "3rem", color: "#adb5bd" }}>
-                        <i className="bi bi-inbox" style={{ fontSize: "3rem", display: "block", marginBottom: "1rem" }}></i>No results found
-                      </td></tr>
-                    )}
-                  </tbody>
-                </Table>
-              </div>
-            </Card.Body>
-          </Card>
+     <KasBudgetCard />
         </Col>
 
         <Col lg={6}>
-          <Card className="border-0" style={{ borderRadius: "20px", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", height: "100%", overflow: "hidden" }}>
-            <Card.Header
-              style={{
-                background: "linear-gradient(135deg, #274efcff 0%, #609cf5ff 100%)",
-                color: "white",
-                fontWeight: 600,
-                padding: "1.5rem",
-                fontSize: "1.15rem",
-                borderBottom: "none",
-              }}
-            >
-              <div className="d-flex justify-content-between align-items-center">
-                {/* Left: Title */}
-                <span>
-                  <i className="bi bi-wallet2 me-2"></i>Budget for {year}
-                </span>
-
-                {/* Right: Dropdown */}
-                <Dropdown as={ButtonGroup}>
-                  <Dropdown.Toggle
-                    variant="light"
-                    size="sm"
-                    style={{
-                      borderRadius: "10px",
-                      fontWeight: 600,
-                      padding: "0.5rem 1rem",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                    }}
-                  />
-                  <Dropdown.Menu
-                    style={{
-                      borderRadius: "12px",
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-                      border: "none",
-                    }}
-                  >
-                    <Dropdown.Item onClick={exportExcel}>
-                      <i className="bi bi-file-excel me-2" style={{ color: "#28a745" }}></i>
-                      Export Excel
-                    </Dropdown.Item>
-                    <Dropdown.Item onClick={exportPDF}>
-                      <i className="bi bi-file-pdf me-2" style={{ color: "#dc3545" }}></i>
-                      Export PDF
-                    </Dropdown.Item>
-                    <Dropdown.Divider />
-                    <Dropdown.Header style={{ fontWeight: 600 }}>Select Year</Dropdown.Header>
-                    {[...new Set(budgetData.map((b) => new Date(b.createdate).getFullYear()))]
-                      .sort((a, b) => b - a)
-                      .map((y) => (
-                        <Dropdown.Item
-                          key={y}
-                          onClick={() => setYear(y)}
-                          active={y === year}
-                          style={{ fontWeight: y === year ? 600 : 400 }}
-                        >
-                          {y}
-                        </Dropdown.Item>
-                      ))}
-                  </Dropdown.Menu>
-                </Dropdown>
-              </div>
-            </Card.Header>
-
-            <Card.Body style={{ padding: "2.5rem" }}>
-              <div className="d-flex justify-content-center mb-4">
-                <div style={{ width: 200, height: 200 }}>
-                  <CircularProgressbar value={progressPercent} text={`${progressPercent}%`} styles={buildStyles({ pathColor: progressPercent > 75 ? "#28a745" : progressPercent > 50 ? "#ffc107" : "#dc3545", trailColor: "#e9ecef", textColor: "#495057", textSize: "20px", pathTransitionDuration: 0.8 })} />
-                </div>
-              </div>
-              <Row className="g-3">
-                <Col xs={6}>
-                  <div style={{ background: "linear-gradient(135deg, #d4fc79 0%, #96e6a1 100%)", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 4px 16px rgba(150, 230, 161, 0.3)", textAlign: "center" }}>
-                    <div style={{ fontSize: "0.8rem", color: "#2d5016", fontWeight: 600, marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Budget</div>
-                    <div style={{ color: "#1e3a0f", fontSize: "1.5rem", fontWeight: 700 }}>₱ {totalBudget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                  </div>
-                </Col>
-                <Col xs={6}>
-                  <div style={{ background: "linear-gradient(135deg, #fa709a 0%, #fee140 100%)", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 4px 16px rgba(250, 112, 154, 0.3)", textAlign: "center" }}>
-                    <div style={{ fontSize: "0.8rem", color: "#7d1935", fontWeight: 600, marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>Remaining</div>
-                    <div style={{ color: "#5a0f25", fontSize: "1.5rem", fontWeight: 700 }}>₱ {totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                  </div>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
+    <DistributorBudgetCard />
         </Col>
       </Row>
 
-      <Card className="border-0 mb-4" style={{ borderRadius: "20px", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", overflow: "hidden" }}>
-        <Card.Header
-          style={{
-            background: "linear-gradient(135deg, #274efcff 0%, #609cf5ff 100%)",
-            color: "white",
-            fontWeight: 600,
-            padding: "1.5rem",
-            fontSize: "1.15rem",
-            borderBottom: "none",
-          }}
-        >
-          <h5 className="mb-0 fw-bold text-white">
-            <i className="bi bi-graph-up me-2"></i>Budget Overview
-          </h5>
+
+      <Card className="border-0" style={{ borderRadius: "20px", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", height: "100%", overflow: "hidden" }}>
+        <Card.Header style={{ background: "linear-gradient(135deg, #274efcff 0%, #609cf5ff 100%)", color: "white", fontWeight: 600, padding: "1.5rem", fontSize: "1.15rem", borderBottom: "none" }}>
+          <i className="bi bi-people-fill me-2"></i>Latest Team Collaboration
         </Card.Header>
+        <Card.Body style={{ padding: "0" }}>
+          <div style={{ overflowX: "auto" }}>
+            <Table hover className="mb-0" style={{ minWidth: "600px" }}>
+              <thead style={{ background: "#f8f9fa", borderBottom: "2px solid #e9ecef" }}>
+                <tr>
+                  <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Profile</th>
+                  <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Code</th>
+                  <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Budget</th>
+                  <th style={{ padding: "1rem", fontWeight: 600, color: "#495057", fontSize: "0.9rem" }}>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budgetData.length ? budgetData.sort((a, b) => new Date(b.createdate) - new Date(a.createdate)).slice(0, 5).map((r) => (
+                  <tr key={r.id} style={{ transition: "all 0.2s", cursor: "pointer" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#f8f9fa")} onMouseLeave={(e) => (e.currentTarget.style.background = "white")}>
+                    <td style={{ padding: "1rem", verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <img src={r.profilePicture || "/default-profile.png"} alt={r.createduser_name} style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover", border: "3px solid #e9ecef", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }} />
+                        <span style={{ fontWeight: 500, color: "#2c3e50" }}>{r.createduser_name || "Unknown"}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "1rem", verticalAlign: "middle" }}>
+                      <Badge bg="primary" style={{ background: "linear-gradient(135deg, #667eea, #764ba2)", padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>{r.pwp_code}</Badge>
+                    </td>
+                    <td style={{ padding: "1rem", verticalAlign: "middle", color: "#28a745", fontWeight: 700, fontSize: "1.05rem" }}>₱ {formatCurrency(r.amountbadget)}</td>
+                    <td style={{ padding: "1rem", verticalAlign: "middle", color: "#6c757d", fontSize: "0.9rem" }}>
+                      {new Date(r.createdate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan="4" style={{ textAlign: "center", padding: "3rem", color: "#adb5bd" }}>
+                    <i className="bi bi-inbox" style={{ fontSize: "3rem", display: "block", marginBottom: "1rem" }}></i>No results found
+                  </td></tr>
+                )}
+              </tbody>
+            </Table>
+          </div>
+        </Card.Body>
+      </Card>
+
+
+      <Card className="border-0 mb-4" style={{ borderRadius: "20px", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+     <Card.Header
+  style={{
+    background: "linear-gradient(135deg, #274efcff 0%, #609cf5ff 100%)",
+    color: "white",
+    fontWeight: 600,
+    padding: "1.5rem",
+    fontSize: "1.15rem",
+    borderBottom: "none",
+  }}
+>
+  <div className="d-flex justify-content-between align-items-center">
+    <div>
+      <h5 className="mb-0 fw-bold text-white">
+        <i className="bi bi-graph-up me-2"></i>Budget Overview
+      </h5>
+      {/* Total Remaining Amount */}
+      <div style={{ fontSize: "1rem", marginTop: "0.3rem", fontWeight: 500 }}>
+        Total Remaining:{" "}
+        <span style={{ fontWeight: 700 }}>
+          ₱ {filteredBudget.reduce((sum, b) => sum + Number(b.remainingbalance || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      </div>
+    </div>
+
+    {/* Export / Filters */}
+    <Dropdown as={ButtonGroup}>
+      <Dropdown.Toggle
+        variant="light"
+        size="sm"
+        style={{ borderRadius: "10px", fontWeight: 600, padding: "0.5rem 1rem" }}
+      />
+      <Dropdown.Menu style={{ borderRadius: "12px", border: "none" }}>
+        <Dropdown.Item onClick={() => exportToExcel(filteredBudget, "Budget", "budget.xlsx")}>📗 Excel</Dropdown.Item>
+        <Dropdown.Item onClick={() => exportToPDF(filteredBudget, "Budget")}>📘 PDF</Dropdown.Item>
+      </Dropdown.Menu>
+    </Dropdown>
+  </div>
+</Card.Header>
+
 
         <Card.Body style={{ padding: "2rem", background: "#fafbfc" }}>
           {/* Chart */}
@@ -760,7 +707,7 @@ const Analytics = ({ progress }) => {
 
             <Col md={3} className="text-end">
 
-      
+
 
               <Dropdown>
                 <Dropdown.Toggle
