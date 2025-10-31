@@ -12,15 +12,14 @@ function EnhancedDatabaseInterface() {
   const [editingData, setEditingData] = useState({});
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [updating, setUpdating] = useState(false);
-  const [filter, setFilter] = useState("regular"); // all | cover | regular
-  const [statusFilter, setStatusFilter] = useState("all"); // all | approved | declined | sent_back | cancelled
+  const [filter, setFilter] = useState("regular");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selectedRow, setSelectedRow] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Define the specific columns to show for each table (moved outside component or use useMemo)
   const COVER_COLUMNS = useMemo(() => ['id', 'cover_code', 'pwp_type', 'created_at', 'createForm'], []);
   const REGULAR_COLUMNS = useMemo(() => ['id', 'regularpwpcode', 'pwptype', 'created_at', 'createForm'], []);
   const CLAIMS_COLUMNS = useMemo(() => [
@@ -32,9 +31,15 @@ function EnhancedDatabaseInterface() {
     'createForm'
   ], []);
 
+  // Get logged-in user info from localStorage
+  const storedUser = localStorage.getItem('loggedInUser');
+  const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+  const loggedInUsername = parsedUser?.name?.toUpperCase().trim() || 'UNKNOWN';
+  const loggedInUserID = parsedUser?.UserID ?? null;
+  const userRole = parsedUser?.role?.toLowerCase() || '';
 
+  console.log('🔐 Logged in user:', { username: loggedInUsername, userID: loggedInUserID, role: userRole });
 
-  // Function to filter object keys based on allowed columns
   const filterColumns = (obj, allowedColumns) => {
     const filtered = {};
     allowedColumns.forEach(col => {
@@ -44,7 +49,7 @@ function EnhancedDatabaseInterface() {
     });
     return filtered;
   };
-  // Function to get approval status for PWP codes
+
   const getApprovalStatus = async (pwpCodes) => {
     try {
       const { data: approvalData, error } = await supabase
@@ -57,7 +62,6 @@ function EnhancedDatabaseInterface() {
         return {};
       }
 
-      // Create a map of PWPCode to approval status
       const approvalMap = {};
       approvalData?.forEach(approval => {
         approvalMap[approval.PwpCode] = {
@@ -73,21 +77,38 @@ function EnhancedDatabaseInterface() {
       return {};
     }
   };
+
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(9);
 
-  const totalPages = Math.ceil(data.length / rowsPerPage);
+  // Filter data based on user role and permissions
+  const filteredDataByUser = useMemo(() => {
+    return data.filter(row => {
+      // Admin can see all records
+      if (userRole === 'admin') {
+        return true;
+      }
+      
+      // For non-admin users, only show their own records
+      const rowCreator = row.createForm?.toUpperCase().trim() || '';
+      return rowCreator === loggedInUsername;
+    });
+  }, [data, userRole, loggedInUsername]);
 
-  const paginatedData = data.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
-  );
+  // Smart pagination - only paginate if there are many records
+  const shouldPaginate = filteredDataByUser.length > 15;
+  
+  const totalPages = shouldPaginate ? Math.ceil(filteredDataByUser.length / rowsPerPage) : 1;
 
+  const displayData = shouldPaginate 
+    ? filteredDataByUser.slice(
+        (currentPage - 1) * rowsPerPage,
+        currentPage * rowsPerPage
+      )
+    : filteredDataByUser;
 
   const [users, setUsers] = useState([]);
 
-
-  // Fetch users once on mount
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -102,7 +123,7 @@ function EnhancedDatabaseInterface() {
     };
     fetchUsers();
   }, []);
-  // Modified fetchData function - replace your existing fetchData with this
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(false);
@@ -117,28 +138,25 @@ function EnhancedDatabaseInterface() {
           .from("cover_pwp")
           .select(COVER_COLUMNS.join(','))
           .order("id", { ascending: false })
-          .limit(50);
+          .limit(100);
 
         if (cError) throw cError;
         coverData = (cData || []).map((item) => ({
           ...filterColumns(item, COVER_COLUMNS),
           source: "cover_pwp",
-          pwp_code: item.cover_code // Use this to match with Approval_History
+          pwp_code: item.cover_code
         }));
       }
 
-
       if (filter === "all" || filter === "claims") {
-        // Step 1: Fetch distributors and claims data
         const [distributorsResult, claimsResult] = await Promise.all([
           supabase.from("distributors").select("code, name"),
-          supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }).limit(50)
+          supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }).limit(100)
         ]);
 
         if (distributorsResult.error) throw distributorsResult.error;
         if (claimsResult.error) throw claimsResult.error;
 
-        // Step 2: Collect needed account_types codes
         const neededAccountTypeCodes = new Set();
         (claimsResult.data || []).forEach(item => {
           if (item.account_types) {
@@ -156,7 +174,6 @@ function EnhancedDatabaseInterface() {
           }
         });
 
-        // Step 3: Fetch account types
         const { data: accountTypesData, error: accountTypesError } = await supabase
           .from("categorydetails")
           .select("code, name")
@@ -164,7 +181,6 @@ function EnhancedDatabaseInterface() {
 
         if (accountTypesError) throw accountTypesError;
 
-        // Step 4: Build maps
         const distributorsMap = new Map();
         const accountTypesMap = new Map();
 
@@ -176,12 +192,9 @@ function EnhancedDatabaseInterface() {
           accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
         });
 
-        // Step 5: Process claims with text conversion
         const claimsFormatted = (claimsResult.data || []).map((item) => {
-          // Convert distributor code to name
           const distributorText = distributorsMap.get(item.distributor?.toString()) || item.distributor || '-';
 
-          // Convert account_types codes to names
           let accountTypesText = '-';
           if (item.account_types) {
             let codes = [];
@@ -204,39 +217,37 @@ function EnhancedDatabaseInterface() {
             ...filterColumns(item, CLAIMS_COLUMNS),
             source: "Claims_pwp",
             pwp_code: item.code_pwp,
-            distributor: distributorText,  // Override with readable text
-            account_types: accountTypesText  // Override with readable text
+            distributor: distributorText,
+            account_types: accountTypesText
           };
         });
 
         coverData = [...coverData, ...claimsFormatted];
       }
+
       if (filter === "all" || filter === "regular") {
         const { data: rData, error: rError } = await supabase
           .from("regular_pwp")
           .select(REGULAR_COLUMNS.join(','))
           .order("id", { ascending: false })
-          .limit(50);
+          .limit(100);
 
         if (rError) throw rError;
         regularData = (rData || []).map((item) => ({
           ...filterColumns(item, REGULAR_COLUMNS),
           source: "regular_pwp",
-          pwp_code: item.regularpwpcode // Use this to match with Approval_History
+          pwp_code: item.regularpwpcode
         }));
       }
 
       const mergedData = [...coverData, ...regularData];
 
-      // Get all PWP codes to fetch approval status
       const allPwpCodes = mergedData
         .map(item => item.pwp_code)
-        .filter(code => code); // Remove null/undefined codes
+        .filter(code => code);
 
-      // Fetch approval status for all PWP codes
       const approvalStatusMap = await getApprovalStatus(allPwpCodes);
 
-      // Add approval status to each item
       const dataWithApprovalStatus = mergedData.map(item => ({
         ...item,
         approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
@@ -244,17 +255,14 @@ function EnhancedDatabaseInterface() {
         approval_created: approvalStatusMap[item.pwp_code]?.approval_created
       }));
 
-      // Apply filters
       let filteredData = dataWithApprovalStatus;
 
-
-      // Apply search filter
       if (searchQuery) {
         filteredData = filteredData.filter(item => {
           const searchFields = [
-            item.code,                   // for "all" filter
-            item.cover_code,             // for cover records
-            item.regularpwpcode,        // for regular records
+            item.code,
+            item.cover_code,
+            item.regularpwpcode,
             item.id,
             item.account_type,
             item.accountType,
@@ -269,8 +277,6 @@ function EnhancedDatabaseInterface() {
         });
       }
 
-
-      // Apply status filter based on approval status
       if (statusFilter !== "all") {
         filteredData = filteredData.filter(item => {
           const itemStatus = item.approval_status ? item.approval_status.toLowerCase() : 'pending';
@@ -293,7 +299,6 @@ function EnhancedDatabaseInterface() {
         });
       }
 
-      // Apply date filters
       if (dateFrom) {
         filteredData = filteredData.filter(item => {
           if (!item.created_at) return false;
@@ -318,26 +323,20 @@ function EnhancedDatabaseInterface() {
         const coverCols = COVER_COLUMNS.filter(col => col !== 'cover_code');
 
         if (filter === "all") {
-
-          allColumns = ['id', 'code', 'pwptype', 'created_at', 'createForm',];
+          allColumns = ['id', 'code', 'pwptype', 'created_at', 'createForm'];
         } else if (filter === "cover") {
           allColumns = ['id', 'cover_code', ...coverCols.slice(1)];
         } else if (filter === "regular") {
           allColumns = ['id', 'regularpwpcode', ...regularCols.slice(1)];
         } else if (filter === "claims") {
-          allColumns = CLAIMS_COLUMNS;  // Use full claims columns
+          allColumns = CLAIMS_COLUMNS;
         }
-        // Normalize the data to have a unified 'code' column when showing all
-        // This should be outside fetchData, e.g. from a useEffect, but for illustration:
 
-
-        //convert id to text. Make it always capital
         const userIdToNameMap = new Map(
           users.map(u => [u.UserID, u.name.toUpperCase().trim()])
         );
 
         const normalizedData = filteredData.map(item => {
-          // Convert createForm if it's a number or numeric string
           let createFormValue = item.createForm;
           if (createFormValue) {
             const numVal = Number(createFormValue);
@@ -376,7 +375,6 @@ function EnhancedDatabaseInterface() {
     }
   }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, CLAIMS_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, users]);
 
-
   const handleEdit = async (row) => {
     let tableName = "regular_pwp";
 
@@ -387,7 +385,6 @@ function EnhancedDatabaseInterface() {
     }
 
     try {
-      // Fetch the full record
       const { data: record, error: recordError } = await supabase
         .from(tableName)
         .select("*")
@@ -399,9 +396,6 @@ function EnhancedDatabaseInterface() {
         return;
       }
 
-      console.log("Full Record:", record);
-
-      // Convert activity code to name
       let activityName = null;
       if (record.activity) {
         const { data: activityData, error: activityError } = await supabase
@@ -413,16 +407,13 @@ function EnhancedDatabaseInterface() {
         if (activityError) {
           console.error("Error fetching activity name:", activityError);
         } else {
-          activityName = activityData?.name || record.activity; // fallback to code if name not found
+          activityName = activityData?.name || record.activity;
         }
       }
 
-      console.log("Activity Name:", activityName);
-
-      // Pass full record and activity name to modal
       setSelectedRow({
         ...record,
-        activityName, // add human-readable activity name
+        activityName,
         source: row.source,
       });
 
@@ -432,7 +423,6 @@ function EnhancedDatabaseInterface() {
     }
   };
 
-
   const handleSave = async (updatedData) => {
     setUpdating(true);
     try {
@@ -440,7 +430,6 @@ function EnhancedDatabaseInterface() {
       const updateData = { ...updatedData };
       delete updateData.source;
 
-      // Handle code mapping
       if (filter === "all" && updateData.code) {
         if (table === "regular_pwp") {
           updateData.regularpwpcode = updateData.code;
@@ -458,7 +447,6 @@ function EnhancedDatabaseInterface() {
       if (updateError) {
         setError(`Update Error: ${updateError.message}`);
       } else {
-
         await fetchData();
       }
     } catch (err) {
@@ -468,12 +456,10 @@ function EnhancedDatabaseInterface() {
     }
   };
 
-
   const handleCancel = () => {
     setEditingId(null);
     setEditingData({});
   };
-
 
   const handleDelete = async (rowId) => {
     setUpdating(true);
@@ -485,219 +471,67 @@ function EnhancedDatabaseInterface() {
         return;
       }
 
-      console.log("Attempting to delete row:", row);
-      console.log("Row source:", row.source);
-
-      // ✅ CLAIMS PWP DELETE FLOW
       if (row.source === "Claims_pwp") {
         const claimsCode = row.code_pwp || row.pwp_code;
-
         if (!claimsCode) {
           setError("Claims code missing for deletion.");
           setUpdating(false);
           return;
         }
 
-        console.log("Deleting Claims PWP with code:", claimsCode);
+        await supabase.from("Claims_AccountBudgetTable").delete().eq("code_pwp", claimsCode);
+        await supabase.from("Claims_Badorder").delete().eq("code_pwp", claimsCode);
+        await supabase.from("cover_attachments").delete().eq("cover_code", claimsCode);
+        await supabase.from("approved_history_budget").delete().eq("pwp_code", claimsCode);
+        await supabase.from("Approval_History").delete().eq("PwpCode", claimsCode);
+        await supabase.from("amount_badget").delete().eq("pwp_code", claimsCode);
 
-        // 1. Delete from Claims_AccountBudgetTable
-        const { error: accountBudgetError } = await supabase
-          .from("Claims_AccountBudgetTable")
-          .delete()
-          .eq("code_pwp", claimsCode);
-        if (accountBudgetError)
-          console.warn(`Claims_AccountBudgetTable delete warning:`, accountBudgetError.message);
-
-        // 2. Delete from Claims_Badorder
-        const { error: badorderError } = await supabase
-          .from("Claims_Badorder")
-          .delete()
-          .eq("code_pwp", claimsCode);
-        if (badorderError)
-          console.warn(`Claims_Badorder delete warning:`, badorderError.message);
-
-        // 3. Delete attachments (if applicable)
-        const { error: attachmentError } = await supabase
-          .from("cover_attachments")
-          .delete()
-          .eq("cover_code", claimsCode);
-        if (attachmentError)
-          console.warn(`Attachments delete warning:`, attachmentError.message);
-
-        // 4. Delete approved history (budget)
-        const { error: approvedHistoryError } = await supabase
-          .from("approved_history_budget")
-          .delete()
-          .eq("pwp_code", claimsCode);
-        if (approvedHistoryError)
-          console.warn(`Approved history delete warning:`, approvedHistoryError.message);
-
-        // 5. Delete approval history
-        const { error: approvalError } = await supabase
-          .from("Approval_History")
-          .delete()
-          .eq("PwpCode", claimsCode);
-        if (approvalError)
-          console.warn(`Approval history delete warning:`, approvalError.message);
-
-        // 6. Delete from amount_badget
-        const { error: amountError } = await supabase
-          .from("amount_badget")
-          .delete()
-          .eq("pwp_code", claimsCode);
-        if (amountError)
-          console.warn(`Amount budget delete warning:`, amountError.message);
-
-        // 7. Delete from Claims_pwp (main)
         const { error: claimsError } = await supabase
           .from("Claims_pwp")
           .delete()
           .eq("id", rowId);
-        if (claimsError)
-          throw new Error(`Failed to delete claims PWP: ${claimsError.message}`);
-
-        console.log("Claims PWP deleted successfully");
-      }
-
-      // ✅ COVER PWP DELETE FLOW (Total Budget)
-      else if (row.source === "cover_pwp") {
+        if (claimsError) throw new Error(`Failed to delete claims PWP: ${claimsError.message}`);
+      } else if (row.source === "cover_pwp") {
         const coverCode = row.cover_code || row.pwp_code;
-
         if (!coverCode) {
           setError("Cover code missing for deletion.");
           setUpdating(false);
           return;
         }
 
-        console.log("Deleting Cover PWP with code:", coverCode);
+        await supabase.from("cover_attachments").delete().eq("cover_code", coverCode);
+        await supabase.from("Approval_History").delete().eq("PwpCode", coverCode);
+        await supabase.from("amount_badget").delete().eq("pwp_code", coverCode);
+        await supabase.from("approved_history_budget").delete().eq("pwp_code", coverCode);
 
-        // 1. Delete attachments
-        const { error: attachmentError } = await supabase
-          .from("cover_attachments")
-          .delete()
-          .eq("cover_code", coverCode);
-        if (attachmentError)
-          console.warn(`Attachments delete warning:`, attachmentError.message);
-
-        // 2. Delete approval history
-        const { error: approvalError } = await supabase
-          .from("Approval_History")
-          .delete()
-          .eq("PwpCode", coverCode);
-        if (approvalError)
-          console.warn(`Approval history delete warning:`, approvalError.message);
-
-        // 3. Delete from amount_badget
-        const { error: amountError } = await supabase
-          .from("amount_badget")
-          .delete()
-          .eq("pwp_code", coverCode);
-        if (amountError)
-          console.warn(`Amount budget delete warning:`, amountError.message);
-
-        // 4. Delete from approved_history_budget
-        const { error: approvedHistoryError } = await supabase
-          .from("approved_history_budget")
-          .delete()
-          .eq("pwp_code", coverCode);
-        if (approvedHistoryError)
-          console.warn(`Approved history delete warning:`, approvedHistoryError.message);
-
-        // 5. Delete from cover_pwp (main)
         const { error: coverError } = await supabase
           .from("cover_pwp")
           .delete()
           .eq("id", rowId);
-        if (coverError)
-          throw new Error(`Failed to delete cover PWP: ${coverError.message}`);
-
-        console.log("Cover PWP deleted successfully");
-      }
-
-      // ✅ REGULAR PWP DELETE FLOW
-      else if (row.source === "regular_pwp") {
+        if (coverError) throw new Error(`Failed to delete cover PWP: ${coverError.message}`);
+      } else if (row.source === "regular_pwp") {
         const regularCode = row.regularpwpcode || row.pwp_code;
-
         if (!regularCode) {
           setError("Regular code missing for deletion.");
           setUpdating(false);
           return;
         }
 
-        console.log("Deleting Regular PWP with code:", regularCode);
+        await supabase.from("regular_accountlis_badget").delete().eq("regularcode", regularCode);
+        await supabase.from("regular_attachments").delete().eq("regularpwpcode", regularCode);
+        await supabase.from("Approval_History").delete().eq("PwpCode", regularCode);
+        await supabase.from("regular_sku").delete().eq("regular_code", regularCode);
+        await supabase.from("amount_badget").delete().eq("pwp_code", regularCode);
+        await supabase.from("approved_history_budget").delete().eq("pwp_code", regularCode);
+        await supabase.from("regular_badorder").delete().eq("code_pwp", regularCode);
 
-        // 1. Delete budget rows
-        const { error: budgetError } = await supabase
-          .from("regular_accountlis_badget")
-          .delete()
-          .eq("regularcode", regularCode);
-        if (budgetError)
-          console.warn(`Budget delete warning:`, budgetError.message);
-
-        // 2. Delete attachments
-        const { error: attachmentError } = await supabase
-          .from("regular_attachments")
-          .delete()
-          .eq("regularpwpcode", regularCode);
-        if (attachmentError)
-          console.warn(`Attachments delete warning:`, attachmentError.message);
-
-        // 3. Delete approval history
-        const { error: approvalError } = await supabase
-          .from("Approval_History")
-          .delete()
-          .eq("PwpCode", regularCode);
-        if (approvalError)
-          console.warn(`Approval history delete warning:`, approvalError.message);
-
-        // 4. Delete SKUs
-        const { error: skuError } = await supabase
-          .from("regular_sku")
-          .delete()
-          .eq("regular_code", regularCode);
-        if (skuError)
-          console.warn(`SKU delete warning:`, skuError.message);
-
-        // 5. Delete from amount_badget
-        const { error: amountError } = await supabase
-          .from("amount_badget")
-          .delete()
-          .eq("pwp_code", regularCode);
-        if (amountError)
-          console.warn(`Amount budget delete warning:`, amountError.message);
-
-        // 6. Delete from approved_history_budget
-        const { error: approvedHistoryError } = await supabase
-          .from("approved_history_budget")
-          .delete()
-          .eq("pwp_code", regularCode);
-        if (approvedHistoryError)
-          console.warn(`Approved history delete warning:`, approvedHistoryError.message);
-
-        // 7. Delete from regular_badorder
-        const { error: badorderError } = await supabase
-          .from("regular_badorder")
-          .delete()
-          .eq("code_pwp", regularCode);
-        if (badorderError)
-          console.warn(`Badorder delete warning:`, badorderError.message);
-
-        // 8. Delete from regular_pwp (main)
         const { error: mainDeleteError } = await supabase
           .from("regular_pwp")
           .delete()
           .eq("id", rowId);
-        if (mainDeleteError)
-          throw new Error(`Failed to delete regular PWP: ${mainDeleteError.message}`);
-
-        console.log("Regular PWP deleted successfully");
-      } else {
-        setError(`Unknown source type: ${row.source}`);
-        setUpdating(false);
-        return;
+        if (mainDeleteError) throw new Error(`Failed to delete regular PWP: ${mainDeleteError.message}`);
       }
 
-      // ✅ Refresh UI
       setDeleteConfirm(null);
       await fetchData();
     } catch (err) {
@@ -709,18 +543,6 @@ function EnhancedDatabaseInterface() {
   };
 
   const [modalTitle, setModalTitle] = useState("");
-  const storedUser = localStorage.getItem('loggedInUser');
-  const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-  const loggedInUsername = parsedUser?.name || 'Unknown';
-  const loggedInUserID = parsedUser?.UserID ?? null;  // null if UserID doesn't exist
-
-  // If you want to use both together:
-  const createdBy = {
-    name: loggedInUsername,
-    userID: loggedInUserID
-  };
-
-
   const [userDistributors, setUserDistributors] = useState([]);
   const [filteredDistributors, setFilteredDistributors] = useState([]);
   const [distributors, setDistributors] = useState([]);
@@ -736,7 +558,6 @@ function EnhancedDatabaseInterface() {
         console.error('[ERROR] Fetching user_distributors:', error);
       } else {
         const names = data.map((d) => d.distributor_name);
-        console.log('[DEBUG] Distributors assigned to user:', names);
         setUserDistributors(names);
       }
     };
@@ -754,13 +575,8 @@ function EnhancedDatabaseInterface() {
       if (error) {
         console.error('[ERROR] Fetching distributors:', error);
       } else {
-        console.log('[DEBUG] All distributors from DB:', data);
         setDistributors(data);
-
-        const allowed = data.filter((dist) =>
-          userDistributors.includes(dist.name)
-        );
-        console.log('[DEBUG] Filtered distributors for dropdown:', allowed);
+        const allowed = data.filter((dist) => userDistributors.includes(dist.name));
         setFilteredDistributors(allowed);
       }
     };
@@ -770,7 +586,6 @@ function EnhancedDatabaseInterface() {
     }
   }, [userDistributors]);
 
-  // Updated getStatusBadge function - replace your existing one
   const getStatusBadge = (status) => {
     const statusLower = status ? status.toLowerCase() : 'pending';
     let bgColor, textColor, borderColor;
@@ -830,6 +645,7 @@ function EnhancedDatabaseInterface() {
       .replace('Pwp', 'PWP')
       .replace('Id', 'ID');
   };
+
   const formatCellValue = (value, colName) => {
     if (!value && value !== 0) return '-';
 
@@ -839,7 +655,7 @@ function EnhancedDatabaseInterface() {
           year: "numeric",
           month: "short",
           day: "numeric"
-        }); // e.g., Sep 17, 2025
+        });
       } catch {
         return value;
       }
@@ -847,7 +663,6 @@ function EnhancedDatabaseInterface() {
 
     return String(value);
   };
-
 
   useEffect(() => {
     fetchData();
@@ -915,29 +730,19 @@ function EnhancedDatabaseInterface() {
           }}>
             <p style={{ margin: 0, color: '#d32f2f' }}>{error}</p>
           </div>
-
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      padding: '20px',
-
-
-    }}>
+    <div style={{ padding: '20px' }}>
       <div style={{
         backgroundColor: 'white',
         borderRadius: '12px',
         overflow: 'hidden'
       }}>
-        {/* Header */}
-        <div style={{
-          padding: '24px 30px',
-
-          color: 'white'
-        }}>
+        <div style={{ padding: '24px 30px', color: 'white' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{
               display: 'flex',
@@ -956,31 +761,26 @@ function EnhancedDatabaseInterface() {
               }}>
                 📊 PWP Database Management
               </h1>
-
               <p style={{
                 margin: 0,
-                fontSize: '15px',
-                color: '#555',
-                opacity: 0.85,
-                lineHeight: '1.4',
-                fontStyle: 'italic'
+                fontSize: '14px',
+                color: '#666',
+                fontWeight: '500'
               }}>
-
+                {userRole === 'admin' ? '👑 Admin View' : `👤 ${loggedInUsername}`} • 
+                {shouldPaginate 
+                  ? ` Showing ${displayData.length} of ${filteredDataByUser.length} records` 
+                  : ` ${filteredDataByUser.length} record${filteredDataByUser.length !== 1 ? 's' : ''}`
+                }
               </p>
             </div>
 
-
-            {/* Controls */}
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '12px',
-                alignItems: 'center',
-              }}
-            >
-              {/* Each input wrapper gets a responsive width */}
-              {/* Search */}
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '12px',
+              alignItems: 'center',
+            }}>
               <div className="filter-item">
                 <input
                   type="text"
@@ -1023,8 +823,6 @@ function EnhancedDatabaseInterface() {
                 </select>
               </div>
 
-
-              {/* Date Range */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1059,7 +857,6 @@ function EnhancedDatabaseInterface() {
                   }}
                 />
               </div>
-
 
               <div className="filter-item">
                 <select
@@ -1104,7 +901,6 @@ function EnhancedDatabaseInterface() {
           </div>
         </div>
 
-        {/* Table */}
         <div style={{ overflowX: 'auto' }}>
           <table style={{
             width: '100%',
@@ -1156,17 +952,8 @@ function EnhancedDatabaseInterface() {
               </tr>
             </thead>
             <tbody>
-              {paginatedData
-                .slice()
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)) // Sort by newest first
-                .filter(row => {
-                  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-                  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-                  const role = currentUser?.role || "";
-
-                  if (role === 'admin') return true;
-                  return row.createForm?.toLowerCase().trim() === currentUserName;
-                })
+              {displayData
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
                 .map((row, index) => (
                   <tr
                     key={row.id || index}
@@ -1270,7 +1057,6 @@ function EnhancedDatabaseInterface() {
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                          {/* Edit Button */}
                           <button
                             onClick={() => handleEdit(row)}
                             disabled={updating || row.approval_status !== "Pending"}
@@ -1328,9 +1114,6 @@ function EnhancedDatabaseInterface() {
                             />
                           </button>
 
-
-
-                          {/* Delete Button */}
                           <button
                             onClick={() => setDeleteConfirm(row.id)}
                             disabled={updating}
@@ -1378,71 +1161,70 @@ function EnhancedDatabaseInterface() {
                   </tr>
                 ))}
             </tbody>
-
           </table>
-
-        </div>
-
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', alignItems: 'center', gap: '12px' }}>
-        {/* Rows per page selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '14px' }}>Rows per page:</span>
-          <select
-            value={rowsPerPage}
-            onChange={(e) => {
-              setRowsPerPage(Number(e.target.value));
-              setCurrentPage(1); // reset to page 1 when rows per page changes
-            }}
-            style={{
-              padding: '4px 8px',
-              fontSize: '14px',
-              borderRadius: '4px',
-              border: '1px solid #ccc'
-            }}
-          >
-            {[5, 10, 20, 50].map((size) => (
-              <option key={size} value={size}>{size}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Pagination Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: currentPage === 1 ? '#e0e0e0' : '#1976d2',
-              color: currentPage === 1 ? '#555' : 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Prev
-          </button>
-          <span style={{ fontSize: '14px' }}>
-            Page {currentPage} of {totalPages}
-          </span>
-          <button
-            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: currentPage === totalPages ? '#e0e0e0' : '#1976d2',
-              color: currentPage === totalPages ? '#555' : 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Next
-          </button>
         </div>
       </div>
-      {/*Edit Modal */}
+
+      {/* Smart Pagination - Only show if there are many records */}
+      {shouldPaginate && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>Rows per page:</span>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => {
+                setRowsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              style={{
+                padding: '4px 8px',
+                fontSize: '14px',
+                borderRadius: '4px',
+                border: '1px solid #ccc'
+              }}
+            >
+              {[10, 20, 50, 100].map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              style={{
+                padding: '6px 12px',
+                backgroundColor: currentPage === 1 ? '#e0e0e0' : '#1976d2',
+                color: currentPage === 1 ? '#555' : 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Prev
+            </button>
+            <span style={{ fontSize: '14px' }}>
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              style={{
+                padding: '6px 12px',
+                backgroundColor: currentPage === totalPages ? '#e0e0e0' : '#1976d2',
+                color: currentPage === totalPages ? '#555' : 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       <EditModal
         isOpen={isModalOpen}
         title={modalTitle}
@@ -1454,73 +1236,70 @@ function EnhancedDatabaseInterface() {
         filteredDistributors={filteredDistributors}
       />
 
-      {/* Delete Confirmation Modal */}
-      {
-        deleteConfirm && (
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
           <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+            maxWidth: '400px',
+            width: '90%'
           }}>
-            <div style={{
-              backgroundColor: 'white',
-              padding: '30px',
-              borderRadius: '12px',
-              boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-              maxWidth: '400px',
-              width: '90%'
-            }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333' }}>Confirm Delete</h3>
-              <p style={{ margin: '0 0 20px', color: '#666' }}>
-                Are you sure you want to delete this record? This action cannot be undone.
-              </p>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => setDeleteConfirm(null)}
-                  disabled={updating}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#757575',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: updating ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleDelete(deleteConfirm)}
-                  disabled={updating}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#f44336',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: updating ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    opacity: updating ? 0.7 : 1
-                  }}
-                >
-                  {updating ? 'Deleting...' : 'Delete'}
-                </button>
-              </div>
+            <h3 style={{ margin: '0 0 15px', color: '#333' }}>Confirm Delete</h3>
+            <p style={{ margin: '0 0 20px', color: '#666' }}>
+              Are you sure you want to delete this record? This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={updating}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#757575',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: updating ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(deleteConfirm)}
+                disabled={updating}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: updating ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  opacity: updating ? 0.7 : 1
+                }}
+              >
+                {updating ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
           </div>
-        )
-      }
-    </div >
+        </div>
+      )}
+    </div>
   );
 }
 
