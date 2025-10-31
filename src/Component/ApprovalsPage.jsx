@@ -262,8 +262,8 @@ export default function ApprovalsPage() {
 
   const [allowedApproverNames, setAllowedApproverNames] = useState([]);
   const myName = currentUser?.name?.toLowerCase().trim();
-  const [visaTypeFilter, setVisaTypeFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [visaTypeFilter, setVisaTypeFilter] = useState("REGULAR");
+const [statusFilter, setStatusFilter] = useState("Pending");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -371,21 +371,12 @@ export default function ApprovalsPage() {
     setTotalPages(Math.ceil(filteredData.length / pageSize));
   }, [filteredData]);
 
-  const paginatedData = [...filteredData]
-    .sort((a, b) => {
-      const getPriority = (code) => {
-        if (code.startsWith("R")) return 1;
-        if (code.startsWith("CL")) return 2;
-        return 3;
-      };
-
-      const priorityA = getPriority(a.code);
-      const priorityB = getPriority(b.code);
-
-      if (priorityA !== priorityB) return priorityA - priorityB;
-      return new Date(b.created_at) - new Date(a.created_at);
-    })
-    .slice((currentPage - 1) * pageSize, currentPage * pageSize);
+const paginatedData = [...filteredData]
+  .sort((a, b) => {
+    // Sort by latest date/time first (newest first)
+    return new Date(b.created_at) - new Date(a.created_at);
+  })
+  .slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const [userType, setUserType] = useState(null);
   const [approvalSetting, setApprovalSetting] = useState(null);
@@ -645,181 +636,181 @@ export default function ApprovalsPage() {
       Swal.fire("Error", "Something went wrong while sending back the entry.", "error");
     }
   };
-const handleApproveClick = async (entryCode) => {
-  const entry = approvals.find((item) => item.code === entryCode);
-  if (!entry || !entry.code) return;
+  const handleApproveClick = async (entryCode) => {
+    const entry = approvals.find((item) => item.code === entryCode);
+    if (!entry || !entry.code) return;
 
-  const dateTime = new Date().toISOString();
-  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-  const userId = currentUser?.UserID || "unknown";
+    const dateTime = new Date().toISOString();
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
 
-  if (entry.isSubmitting) return;
+    if (entry.isSubmitting) return;
 
-  setApprovals((prev) =>
-    prev.map((item) =>
-      item.code === entryCode ? { ...item, isSubmitting: true } : item
-    )
-  );
-
-  let remainingBalance = null;
-  let creditBudget = null;
-  let coverPwpCode = null;
-
-  try {
-    // Insert approval history
-    const { error: historyError } = await supabase
-      .from("Approval_History")
-      .insert({
-        PwpCode: entry.code,
-        ApproverId: userId,
-        DateResponded: dateTime,
-        Response: "Approved",
-        Type: userType || "admin",
-        Notication: false,
-        CreatedForm: entry.createForm || "unknown",
-      });
-
-    if (historyError) {
-      console.error("Supabase insert error:", historyError.message);
-      Swal.fire("Error", "Failed to log approval. Please try again.", "error");
-      return;
-    }
-
-    const updatePayload = {
-      Approved: true,
-      createdate: dateTime,
-    };
-
-    if (entry.code.startsWith("R")) {
-      const { data: pwpData, error: pwpError } = await supabase
-        .from("regular_pwp")
-        .select("remaining_balance, coverPwpCode, credit_budget")
-        .eq("regularpwpcode", entry.code)
-        .single();
-
-      if (pwpError) {
-        console.warn("Missing regular_pwp data:", pwpError.message);
-      }
-
-      if (pwpData) {
-        remainingBalance = parseFloat(pwpData.remaining_balance) || 0;
-        creditBudget = parseFloat(pwpData.credit_budget) || 0;
-        coverPwpCode = pwpData.coverPwpCode || null;
-
-        // ✅ Continue even if cover code or budget is missing
-        if (!isNaN(remainingBalance) && coverPwpCode) {
-          const { error: updateError } = await supabase
-            .from("amount_badget")
-            .update({
-              remainingbalance: remainingBalance,
-              ...updatePayload,
-            })
-            .eq("pwp_code", coverPwpCode);
-
-          if (updateError) {
-            console.warn(
-              "Warning: Failed to update amount_badget:",
-              updateError.message
-            );
-          }
-        } else {
-          console.warn(
-            `Skipped budget update for ${entry.code}: Missing or invalid budget data`
-          );
-        }
-      }
-    } else {
-      const { error: updateError } = await supabase
-        .from("amount_badget")
-        .update(updatePayload)
-        .eq("pwp_code", entry.code);
-
-      if (updateError) {
-        console.warn("Warning: Failed to update budget approval:", updateError.message);
-      }
-    }
-
-    // Log into approved_history_budget (still logs even if values are null)
-    const { error: historyBudgetError } = await supabase
-      .from("approved_history_budget")
-      .insert({
-        pwp_code: entry.code,
-        approver_id: userId,
-        date_responded: dateTime,
-        response: "Approved",
-        type: userType || "admin",
-        created_form: entry.createForm || "unknown",
-        remaining_balance: remainingBalance,
-        credit_budget: creditBudget,
-        cover_pwp_code: coverPwpCode,
-        updated_amount_badget: true,
-      });
-
-    if (historyBudgetError) {
-      console.warn("Warning: Failed to log approval+budget:", historyBudgetError.message);
-    }
-
-    // Log user activity
-    try {
-      const ipRes = await fetch("https://api.ipify.org?format=json");
-      const { ip } = await ipRes.json();
-
-      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-      const geo = await geoRes.json();
-
-      const activity = {
-        userId,
-        device: navigator.userAgent || "Unknown Device",
-        location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
-        ip,
-        time: dateTime,
-        action: `Approved the ${entry.code}`,
-      };
-
-      const { error: activityError } = await supabase
-        .from("RecentActivity")
-        .insert(activity);
-
-      if (activityError) {
-        console.warn("Activity log failed:", activityError.message);
-      }
-    } catch (logErr) {
-      console.warn("Activity logging failed:", logErr.message);
-    }
-
-    // Update state and show success
     setApprovals((prev) =>
       prev.map((item) =>
-        item.code === entryCode
-          ? {
+        item.code === entryCode ? { ...item, isSubmitting: true } : item
+      )
+    );
+
+    let remainingBalance = null;
+    let creditBudget = null;
+    let coverPwpCode = null;
+
+    try {
+      // Insert approval history
+      const { error: historyError } = await supabase
+        .from("Approval_History")
+        .insert({
+          PwpCode: entry.code,
+          ApproverId: userId,
+          DateResponded: dateTime,
+          Response: "Approved",
+          Type: userType || "admin",
+          Notication: false,
+          CreatedForm: entry.createForm || "unknown",
+        });
+
+      if (historyError) {
+        console.error("Supabase insert error:", historyError.message);
+        Swal.fire("Error", "Failed to log approval. Please try again.", "error");
+        return;
+      }
+
+      const updatePayload = {
+        Approved: true,
+        createdate: dateTime,
+      };
+
+      if (entry.code.startsWith("R")) {
+        const { data: pwpData, error: pwpError } = await supabase
+          .from("regular_pwp")
+          .select("remaining_balance, coverPwpCode, credit_budget")
+          .eq("regularpwpcode", entry.code)
+          .single();
+
+        if (pwpError) {
+          console.warn("Missing regular_pwp data:", pwpError.message);
+        }
+
+        if (pwpData) {
+          remainingBalance = parseFloat(pwpData.remaining_balance) || 0;
+          creditBudget = parseFloat(pwpData.credit_budget) || 0;
+          coverPwpCode = pwpData.coverPwpCode || null;
+
+          // ✅ Continue even if cover code or budget is missing
+          if (!isNaN(remainingBalance) && coverPwpCode) {
+            const { error: updateError } = await supabase
+              .from("amount_badget")
+              .update({
+                remainingbalance: remainingBalance,
+                ...updatePayload,
+              })
+              .eq("pwp_code", coverPwpCode);
+
+            if (updateError) {
+              console.warn(
+                "Warning: Failed to update amount_badget:",
+                updateError.message
+              );
+            }
+          } else {
+            console.warn(
+              `Skipped budget update for ${entry.code}: Missing or invalid budget data`
+            );
+          }
+        }
+      } else {
+        const { error: updateError } = await supabase
+          .from("amount_badget")
+          .update(updatePayload)
+          .eq("pwp_code", entry.code);
+
+        if (updateError) {
+          console.warn("Warning: Failed to update budget approval:", updateError.message);
+        }
+      }
+
+      // Log into approved_history_budget (still logs even if values are null)
+      const { error: historyBudgetError } = await supabase
+        .from("approved_history_budget")
+        .insert({
+          pwp_code: entry.code,
+          approver_id: userId,
+          date_responded: dateTime,
+          response: "Approved",
+          type: userType || "admin",
+          created_form: entry.createForm || "unknown",
+          remaining_balance: remainingBalance,
+          credit_budget: creditBudget,
+          cover_pwp_code: coverPwpCode,
+          updated_amount_badget: true,
+        });
+
+      if (historyBudgetError) {
+        console.warn("Warning: Failed to log approval+budget:", historyBudgetError.message);
+      }
+
+      // Log user activity
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activity = {
+          userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip,
+          time: dateTime,
+          action: `Approved the ${entry.code}`,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activity);
+
+        if (activityError) {
+          console.warn("Activity log failed:", activityError.message);
+        }
+      } catch (logErr) {
+        console.warn("Activity logging failed:", logErr.message);
+      }
+
+      // Update state and show success
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode
+            ? {
               ...item,
               status: "Approved",
               responseDate: dateTime,
               isSubmitting: false,
             }
-          : item
-      )
-    );
+            : item
+        )
+      );
 
-    Swal.fire({
-      icon: "success",
-      title: "Approved!",
-      text: `Entry ${entry.code} was approved successfully (even without budget info).`,
-      confirmButtonText: "OK",
-    }).then(() => {
-      window.location.reload();
-    });
-  } catch (error) {
-    console.error(`Failed to approve ${entry.code}:`, error.message || error);
-    Swal.fire("Error", "Something went wrong during approval.", "error");
+      Swal.fire({
+        icon: "success",
+        title: "Approved!",
+        text: `Entry ${entry.code} was approved successfully (even without budget info).`,
+        confirmButtonText: "OK",
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error(`Failed to approve ${entry.code}:`, error.message || error);
+      Swal.fire("Error", "Something went wrong during approval.", "error");
 
-    setApprovals((prev) =>
-      prev.map((item) =>
-        item.code === entryCode ? { ...item, isSubmitting: false } : item
-      )
-    );
-  }
-};
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode ? { ...item, isSubmitting: false } : item
+        )
+      );
+    }
+  };
 
   return (
     <div
@@ -904,10 +895,7 @@ const handleApproveClick = async (entryCode) => {
               backgroundColor: "#fff",
             }}
           >
-            <option value="">All Marketing Types</option>
             <option value="REGULAR">REGULAR</option>
-            <option value="COVER">COVER</option>
-            <option value="CLAIMS">CLAIMS</option>
 
           </select>
         </div>
@@ -928,9 +916,9 @@ const handleApproveClick = async (entryCode) => {
           >
             <option value="">All Status</option>
             <option value="Approved">Approved</option>
-            <option value="Declined">Declined</option>
-            <option value="Sent back for revision">Revision</option>
-            <option value="Cancelled">Cancelled</option>
+            <option value="Sent back for revision">Disapproved</option>
+            <option value = "Pending">Pending</option>
+
           </select>
         </div>
 
@@ -1033,32 +1021,17 @@ const handleApproveClick = async (entryCode) => {
             </tr>
           </thead>
           <tbody style={{ fontSize: "13px", color: "#374151" }}>
-            {paginatedData.length > 0 ? (
-              [...paginatedData]
-                .filter((entry) => {
-                  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-                  const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
-                  const role = currentUser?.role?.toLowerCase() || "";
+          {paginatedData.length > 0 ? (
+  [...paginatedData]
+    .filter((entry) => {
+      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+      const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
+      const role = currentUser?.role?.toLowerCase() || "";
 
-                  if (role === "admin") return true;
-                  return (entry.createForm || "").toLowerCase().trim() === currentUserId;
-                })
-                .sort((a, b) => {
-                  const getPriority = (code) => {
-                    if (code.startsWith("R")) return 1;   // Regular first
-                    if (code.startsWith("CL")) return 2;  // CL second
-                    return 3;                             // Others
-                  };
-
-                  const priorityA = getPriority(a.code);
-                  const priorityB = getPriority(b.code);
-
-                  if (priorityA !== priorityB) return priorityA - priorityB;
-
-                  // If same category, sort newest first
-                  return new Date(b.created_at) - new Date(a.created_at);
-                })
-                .map((entry, index) => {
+      if (role === "admin") return true;
+      return (entry.createForm || "").toLowerCase().trim() === currentUserId;
+    })
+    .map((entry, index) => {
                   const status = getLatestResponseStatus(entry.code, approvalHistory);
                   const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
                   const currentUserId = currentUser?.name?.toLowerCase().trim();
@@ -1068,8 +1041,6 @@ const handleApproveClick = async (entryCode) => {
                     switch (s) {
                       case "Approved": return "Approved";
                       case "Sent back for revision": return "Revision";
-                      case "Declined": return "Declined";
-                      case "Cancelled": return "Cancelled";
                       default: return "Pending";
                     }
                   };
@@ -1084,21 +1055,19 @@ const handleApproveClick = async (entryCode) => {
                   const statusColor = statusColorMap[status] || statusColorMap["default"];
 
                   return (
-                    <tr
-                      key={index}
-                      style={{
-                        borderBottom: "1px solid #f3f4f6",
-                        cursor: "pointer",
-                        transition: "background-color 0.15s",
-                      }}
-                      onClick={() => handleRowClick(entry)}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.backgroundColor = "#f9fafb";
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.backgroundColor = "transparent";
-                      }}
-                    >
+                  <tr
+  key={index}
+  style={{
+    borderBottom: "1px solid #f3f4f6",
+    transition: "background-color 0.15s",
+  }}
+  onMouseOver={(e) => {
+    e.currentTarget.style.backgroundColor = "#f9fafb";
+  }}
+  onMouseOut={(e) => {
+    e.currentTarget.style.backgroundColor = "transparent";
+  }}
+>
                       <td style={{ padding: "12px 16px", textAlign: "center" }}>
                         <button
                           style={{
@@ -1156,160 +1125,54 @@ const handleApproveClick = async (entryCode) => {
                       <td style={{ padding: "12px 16px" }}>
                         {getLatestResponseDate(entry.code, approvalHistory)}
                       </td>
-                      <td style={{ padding: "12px 16px", display: "flex", gap: "8px" }}>
-                        {userType === "Allowed" ? (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleApproveClick(entry.code);
-                              }}
-                              disabled={status === "Approved"}
-                              style={{
-                                padding: "8px 16px",
-                                backgroundColor: status === "Approved" ? "#d1d5db" : "#3b82f6",
-                                color: "#fff",
-                                border: "none",
-                                borderRadius: "6px",
-                                cursor: status === "Approved" ? "not-allowed" : "pointer",
-                                fontSize: "13px",
-                                fontWeight: "500",
-                                transition: "background-color 0.2s",
-                              }}
-                              onMouseOver={(e) => {
-                                if (status !== "Approved") {
-                                  e.currentTarget.style.backgroundColor = "#2563eb";
-                                }
-                              }}
-                              onMouseOut={(e) => {
-                                if (status !== "Approved") {
-                                  e.currentTarget.style.backgroundColor = "#3b82f6";
-                                }
-                              }}
-                            >
-                              {status === "Approved" ? "Approved" : "Approve"}
-                            </button>
-
-                            <div ref={(el) => (dropdownRefs.current[index] = el)} style={{ position: "relative" }}>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenDropdownIndex(openDropdownIndex === index ? null : index);
-                                }}
-                                style={{
-                                  padding: "8px 16px",
-                                  backgroundColor: "#6b7280",
-                                  color: "#fff",
-                                  border: "none",
-                                  borderRadius: "6px",
-                                  cursor: "pointer",
-                                  fontWeight: "500",
-                                  fontSize: "13px",
-                                  transition: "background-color 0.2s",
-                                }}
-                                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#4b5563")}
-                                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#6b7280")}
-                              >
-                                Options ▾
-                              </button>
-
-                              {openDropdownIndex === index && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    top: "calc(100% + 8px)",
-                                    right: 0,
-                                    backgroundColor: "#fff",
-                                    border: "1px solid #e5e7eb",
-                                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                                    borderRadius: "8px",
-                                    zIndex: 1000,
-                                    minWidth: "200px",
-                                    overflow: "hidden",
-                                  }}
-                                >
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      disableModal();
-                                      handleDeclineClick(entry.code);
-                                      setOpenDropdownIndex(null);
-                                    }}
-                                    style={{
-                                      width: "100%",
-                                      padding: "12px 16px",
-                                      border: "none",
-                                      borderBottom: "1px solid #f3f4f6",
-                                      background: "none",
-                                      textAlign: "left",
-                                      cursor: "pointer",
-                                      color: "#ef4444",
-                                      fontWeight: "500",
-                                      fontSize: "13px",
-                                      transition: "background-color 0.15s",
-                                    }}
-                                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#fef2f2")}
-                                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "white")}
-                                  >
-                                    Decline
-                                  </button>
-
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      disableModal();
-                                      handleSendBackClick(entry.code);
-                                      setOpenDropdownIndex(null);
-                                    }}
-                                    style={{
-                                      width: "100%",
-                                      padding: "12px 16px",
-                                      border: "none",
-                                      background: "none",
-                                      textAlign: "left",
-                                      cursor: "pointer",
-                                      color: "#6b7280",
-                                      fontWeight: "500",
-                                      fontSize: "13px",
-                                      transition: "background-color 0.15s",
-                                    }}
-                                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#fac665ff")}
-                                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "white")}
-                                  >
-                                    Send Back for Revision
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        ) : isOwner ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRowClick(entry);
-                            }}
-                            style={{
-                              padding: "8px 16px",
-                              backgroundColor: "#10b981",
-                              color: "#fff",
-                              border: "none",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              fontSize: "13px",
-                              fontWeight: "500",
-                              transition: "background-color 0.2s",
-                            }}
-                            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#059669")}
-                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#10b981")}
-                          >
-                            View
-                          </button>
-                        ) : (
-                          <span style={{ color: "#9ca3af", fontSize: "13px", fontStyle: "italic" }}>
-                            View Only
-                          </span>
-                        )}
-                      </td>
+                     <td style={{ padding: "12px 16px", display: "flex", gap: "8px" }}>
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      handleRowClick(entry);
+    }}
+    style={{
+      padding: "10px 18px",
+      backgroundColor: "#3b82f6",
+      color: "#fff",
+      border: "none",
+      borderRadius: "8px",
+      cursor: "pointer",
+      fontSize: "14px",
+      fontWeight: "600",
+      transition: "all 0.3s ease",
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      boxShadow: "0 2px 8px rgba(59, 130, 246, 0.3)",
+    }}
+    onMouseOver={(e) => {
+      e.currentTarget.style.backgroundColor = "#2563eb";
+      e.currentTarget.style.transform = "translateY(-2px)";
+      e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.4)";
+    }}
+    onMouseOut={(e) => {
+      e.currentTarget.style.backgroundColor = "#3b82f6";
+      e.currentTarget.style.transform = "translateY(0)";
+      e.currentTarget.style.boxShadow = "0 2px 8px rgba(59, 130, 246, 0.3)";
+    }}
+  >
+    <svg 
+      width="16" 
+      height="16" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2.5" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+    View Details
+  </button>
+</td>
                     </tr>
                   );
                 })
