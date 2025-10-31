@@ -9,7 +9,7 @@ const roleCategories = [
   "BrandSelector", "BrandApprovalForm", "Activities", "RecordsPage",
   "ApprovalList", "ManageMarketing", "Calendar", "LoginPage", "AnnouncementForm",
   "RentalsForm", "AddendumCancellation", "ClaimsStatusUpload", "Claims_pwp", "ClaimsRecords",
-  "BudgetDashboard" ,"Analytics","UploadingSap"
+  "BudgetDashboard" ,"Analytics","UploadingSap","DashboardForSuperAdmin"
 ];
 
 export default function RolePermissionForm({ onSubmit }) {
