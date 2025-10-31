@@ -427,7 +427,7 @@ const RecordViewModal = ({ record, onClose }) => {
         {/* Tabs */}
         {/* Tabs */}
         <div style={{ display: "flex", borderBottom: "1px solid #e0e0e0", backgroundColor: "#f5f5f5" }}>
-          {["single", "budget"].map((tab) => (
+          {["single", ].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -517,54 +517,82 @@ const RecordViewModal = ({ record, onClose }) => {
                 gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
               }}
             >
-              {Object.entries(fullRecord)
-                .filter(([key]) => key !== "amountbadget") // 🚫 hide amountbadget
-                .map(([key, value]) => {
-                  const displayValue =
-                    (key === "accountType" || key === "account_type") &&
-                      Object.keys(categoryMap).length > 0
-                      ? convertCodesToNames(value)
-                      : formatCellValue(value, key);
+{Object.entries(fullRecord)
+  .filter(([key, value]) => {
+    if (value === null || value === undefined || value === false) return false;
 
-                  return (
+    // Handle strings
+    if (typeof value === "string") {
+      const val = value.trim().toUpperCase();
+
+      // Empty, dash, false, empty array string, or empty object string
+      if (
+        val === "" ||
+        val === "-" ||
+        val === "EMPTY" ||
+        val === "FALSE" ||
+        val === "[]" ||
+        val === "{}"
+      ) {
+        return false;
+      }
+    }
+
+    // Handle actual arrays
+    if (Array.isArray(value) && value.length === 0) return false;
+
+    // Handle empty objects
+    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
+      return false;
+    }
+
+    return true;
+  })
+  .map(([key, value]) => {
+    const displayValue =
+      (key === "accountType" || key === "account_type") &&
+      Object.keys(categoryMap).length > 0
+        ? convertCodesToNames(value)
+        : formatCellValue(value, key);
+
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      padding: "16px",
+                      backgroundColor: "#f8f9fa",
+                      borderRadius: "8px",
+                      border: "1px solid #e0e0e0",
+                      marginBottom: "8px",
+                    }}
+                  >
                     <div
-                      key={key}
                       style={{
-                        padding: "16px",
-                        backgroundColor: "#f8f9fa",
-                        borderRadius: "8px",
-                        border: "1px solid #e0e0e0",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#666",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
                         marginBottom: "8px",
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          color: "#666",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        {formatColumnName(key)}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          color: "#333",
-                          lineHeight: "1.4",
-                          wordBreak: "break-word",
-                          whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
-                          fontFamily: typeof value === "object" ? "monospace" : "inherit",
-                        }}
-                      >
-                        {displayValue}
-                      </div>
+                      {formatColumnName(key)}
                     </div>
-                  );
-                })}
-
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        color: "#333",
+                        lineHeight: "1.4",
+                        wordBreak: "break-word",
+                        whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
+                        fontFamily: typeof value === "object" ? "monospace" : "inherit",
+                      }}
+                    >
+                      {displayValue}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : activeTab === "budget" ? (
             <div>
