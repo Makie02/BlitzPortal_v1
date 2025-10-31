@@ -84,6 +84,7 @@ const [settings, setSettings] = useState({});
     sku: null, // New Field
     accounts: null, // New Field
     amount_display: null, // New Field
+    accountType2: "",
   });
 
   const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
@@ -651,7 +652,7 @@ useEffect(() => {
   const fetchSettings = async () => {
     const { data, error } = await supabase
       .from("activity_settings")
-      .select("category,activity_code, sku, accounts,amount_display,various,walk_in");
+      .select("category,activity_code, sku, accounts,amount_display,various,walk_in,mother1,VariousAccount,branch");
     if (error) {
       console.error("❌ Error loading settings:", error);
       return;
@@ -662,12 +663,12 @@ useEffect(() => {
         sku: setting.sku === true,
         accounts: setting.accounts === true,
         amount_display: setting.amount_display === true,
+        branch:setting.branch===true,
         category: setting.category === true,
-
+        mother1:setting.mother1 === true,
+        VariousAccount:setting.VariousAccount === true,
         various: setting.various === true,
         walk_in: setting.walk_in === true,
-
-
 
       };
     });
@@ -711,6 +712,10 @@ useEffect(() => {
 
   const [accountSearchTerm, setAccountSearchTerm] = useState("");
   const [showModal_Account, setShowModal_Account] = useState(false);
+  const [showModal_Account2, setShowModal_Account2] = useState(false);
+const [accountSearchTerm2, setAccountSearchTerm2] = useState("");
+const [isVariousAccountMode, setIsVariousAccountMode] = useState(false);
+const [selectedVariousAccount, setSelectedVariousAccount] = useState(null);
 
   // Get selected account names for display
   // const getAccountNames = () => {
@@ -2354,6 +2359,7 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
       const submissionData = {
         regularpwpcode: formData.regularpwpcode,
         accountType: convertedAccountType,
+        VariousAccount: formData.accountType2,
         branchType: formData.branchType || [],
         activity: formData.activity,
         pwptype: formData.pwptype || "Regular",
@@ -3059,175 +3065,253 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                 )}
 
 
-                <div className="col-md-4" style={{ position: "relative" }}>
-                  <label>
-                    Mother Account <span style={{ color: "red" }}>*</span>
-                  </label>
+{/* Mother Account1 - Conditionally displayed */}
+{formData.activity && settingsMap[formData.activity]?.mother1 ? (
+  <div className="col-md-4" style={{ position: "relative" }}>
+    <label>
+      Mother Account <span style={{ color: "red" }}>*</span>
+    </label>
 
-                  <div
-                    className="form-control"
-                    onClick={() => setShowModal_Account(true)}
-                    style={{
-                      cursor: "pointer",
-                      position: "relative",
-                      display: "flex",
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                      gap: "5px",
-                      minHeight: "40px",
-                    }}
-                  >
-                    {selectedMother?.name === "NON-CHAIN"
-                      ? (formData.accountType || []).map((id) => {
-                        const sub = Object.values(subAccounts)
-                          .flat()
-                          .find((s) => s.id === id);
-                        if (!sub) return null;
-                        return (
-                          <span
-                            key={id}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              backgroundColor: "#0050a5ff",
-                              color: "#fff",
-                              padding: "3px 8px",
-                              borderRadius: "5px",
-                              fontSize: "14px",
-                              fontWeight: "500",
-                              marginRight: "5px",
-                            }}
-                          >
-                            {sub.name}
-                            <span
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  accountType: prev.accountType.filter((x) => x !== id),
-                                }));
-                              }}
-                              style={{
-                                marginLeft: "5px",
-                                cursor: "pointer",
-                                fontWeight: "bold",
-                                color: "#fff",
-                                backgroundColor: "#ff4d4f",
-                                borderRadius: "5%",
-                                width: "16px",
-                                height: "16px",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "12px",
-                              }}
-                            >
-                              ✖
-                            </span>
-                          </span>
-                        );
-                      })
-                      : (() => {
-                        const sub = Object.values(subAccounts)
-                          .flat()
-                          .find((s) => s.id === formData.accountType);
-                        return sub ? (
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              backgroundColor: "#0050a5ff",
-                              color: "#fff",
-                              padding: "3px 8px",
-                              borderRadius: "5px",
-                              fontSize: "14px",
-                              fontWeight: "500",
-                            }}
-                          >
-                            {sub.name}
-                            <span
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setFormData({ ...formData, accountType: null });
-                                setShowBranchInput(false);
-                              }}
-                              style={{
-                                marginLeft: "5px",
-                                cursor: "pointer",
-                                fontWeight: "bold",
-                                color: "#fff",
-                                backgroundColor: "#ff4d4f",
-                                borderRadius: "5%",
-                                width: "16px",
-                                height: "16px",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "12px",
-                              }}
-                            >
-                              ✖
-                            </span>
-                          </span>
-                        ) : (
-                          <span style={{ color: "#888" }}>Select Account Type</span>
-                        );
-                      })()}
+    <div
+      className="form-control"
+      onClick={() => setShowModal_Account(true)}
+      style={{
+        cursor: "pointer",
+        position: "relative",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "5px",
+        minHeight: "40px",
+      }}
+    >
+      {selectedMother?.name === "NON-CHAIN"
+        ? (formData.accountType || []).map((id) => {
+          const sub = Object.values(subAccounts)
+            .flat()
+            .find((s) => s.id === id);
+          if (!sub) return null;
+          return (
+            <span
+              key={id}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                backgroundColor: "#0050a5ff",
+                color: "#fff",
+                padding: "3px 8px",
+                borderRadius: "5px",
+                fontSize: "14px",
+                fontWeight: "500",
+                marginRight: "5px",
+              }}
+            >
+              {sub.name}
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountType: prev.accountType.filter((x) => x !== id),
+                  }));
+                }}
+                style={{
+                  marginLeft: "5px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  color: "#fff",
+                  backgroundColor: "#ff4d4f",
+                  borderRadius: "5%",
+                  width: "16px",
+                  height: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                }}
+              >
+                ✖
+              </span>
+            </span>
+          );
+        })
+        : (() => {
+          const sub = Object.values(subAccounts)
+            .flat()
+            .find((s) => s.id === formData.accountType);
+          return sub ? (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                backgroundColor: "#0050a5ff",
+                color: "#fff",
+                padding: "3px 8px",
+                borderRadius: "5px",
+                fontSize: "14px",
+                fontWeight: "500",
+              }}
+            >
+              {sub.name}
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFormData({ ...formData, accountType: null });
+                  setShowBranchInput(false);
+                }}
+                style={{
+                  marginLeft: "5px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  color: "#fff",
+                  backgroundColor: "#ff4d4f",
+                  borderRadius: "5%",
+                  width: "16px",
+                  height: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                }}
+              >
+                ✖
+              </span>
+            </span>
+          ) : (
+            <span style={{ color: "#888" }}>Select Account Type</span>
+          );
+        })()}
 
-                    <span
-                      style={{
-                        pointerEvents: "none",
-                        fontSize: "18px",
-                        color: "#555",
-                        marginLeft: "auto",
-                      }}
-                    >
-                      🔍
-                    </span>
-                  </div>
-                </div>
+      <span
+        style={{
+          pointerEvents: "none",
+          fontSize: "18px",
+          color: "#555",
+          marginLeft: "auto",
+        }}
+      >
+        🔍
+      </span>
+    </div>
+  </div>
+) : null}
 
+{/* Various Account  - Conditionally displayed */}
+{formData.activity && settingsMap[formData.activity]?.VariousAccount ? (
+  <div className="col-md-4" style={{ position: "relative" }}>
+    <label>
+      Various Account  <span style={{ color: "red" }}>*</span>
+    </label>
 
-                {/* Branch Selector */}
-                {showBranchInput && (
-                  <div className="col-md-4" style={{ position: "relative" }}>
-                    <label>
-                      Branch <span style={{ color: "red" }}>*</span>
-                    </label>
-                    <div
-                      className="form-control"
-                      onClick={() => {
-                        if (!formData.accountType) return alert("Select a Sub Account first");
+    <div
+      className="form-control"
+      onClick={() => {
+        setShowModal_Account(true);
+        setIsVariousAccountMode(true);
+      }}
+      style={{
+        cursor: "pointer",
+        position: "relative",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "5px",
+        minHeight: "40px",
+      }}
+    >
+      {formData.accountType2 ? (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            backgroundColor: "#0050a5ff",
+            color: "#fff",
+            padding: "3px 8px",
+            borderRadius: "5px",
+            fontSize: "14px",
+            fontWeight: "500",
+          }}
+        >
+          VARIOUS
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedVariousAccount(null);
+              setFormData({ ...formData, accountType2: null });
+            }}
+            style={{
+              marginLeft: "5px",
+              cursor: "pointer",
+              fontWeight: "bold",
+              color: "#fff",
+              backgroundColor: "#ff4d4f",
+              borderRadius: "5%",
+              width: "16px",
+              height: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "12px",
+            }}
+          >
+            ✖
+          </span>
+        </span>
+      ) : (
+        <span style={{ color: "#888" }}>Select Various Account</span>
+      )}
 
-                        // Find the selected sub account object
-                        const selectedSub = subAccounts[selectedMother.id]?.find(
-                          (s) => s.id === formData.accountType
-                        );
+      <span
+        style={{
+          pointerEvents: "none",
+          fontSize: "18px",
+          color: "#555",
+          marginLeft: "auto",
+        }}
+      >
+        🔍
+      </span>
+    </div>
+  </div>
+) : null}
 
-                        if (!selectedSub) return alert("Sub account not found!");
+{/* Branch Selector - Conditionally displayed */}
+{formData.activity && settingsMap[formData.activity]?.branch && showBranchInput ? (
+  <div className="col-md-4" style={{ position: "relative" }}>
+    <label>
+      Branch <span style={{ color: "red" }}>*</span>
+    </label>
+    <div
+      className="form-control"
+      onClick={() => {
+        if (!formData.accountType) return alert("Select a Sub Account first");
 
-                        // ✅ Log to verify data
-                        console.log("🔍 Selected Sub Account:", selectedSub);
-                        console.log("📦 Mother Code:", selectedSub.code);
-                        console.log("🎯 Group Code:", selectedSub.group_code);
-                        console.log("🏢 Selected Mother:", selectedMother);
+        const selectedSub = subAccounts[selectedMother.id]?.find(
+          (s) => s.id === formData.accountType
+        );
 
-                        // ✅ Open modal and fetch branches using BOTH mother_code AND group_code
-                        setShowModal_Branch(true);
-                        fetchBranches(selectedSub.code, selectedSub.group_code);  // ✅ PASS group_code
-                      }}
-                      style={{
-                        cursor: "pointer",
-                        minHeight: "40px",
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "5px",
-                      }}
-                    >
-                      {getBranchNames()}
-                    </div>
-                  </div>
-                )}
+        if (!selectedSub) return alert("Sub account not found!");
+
+        console.log("🔍 Selected Sub Account:", selectedSub);
+        console.log("📦 Mother Code:", selectedSub.code);
+        console.log("🎯 Group Code:", selectedSub.group_code);
+        console.log("🏢 Selected Mother:", selectedMother);
+
+        setShowModal_Branch(true);
+        fetchBranches(selectedSub.code, selectedSub.group_code);
+      }}
+      style={{
+        cursor: "pointer",
+        minHeight: "40px",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "5px",
+      }}
+    >
+      {getBranchNames()}
+    </div>
+  </div>
+) : null}
 
 
                 {/* Marketing Type */}
@@ -3588,7 +3672,7 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                 </Modal.Footer>
               </Modal>
 
-              {/* Modal Mother Account */}
+              {/* Modal Mother Account1 */}
               <Modal
                 show={showModal_Account}
                 onHide={() => setShowModal_Account(false)}
@@ -3650,30 +3734,39 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                               alignItems: "center",
                             }}
                             // Sa onClick ng mother account selection
-                            onClick={() => {
-                              console.log('🔍 Selected Mother Account:', opt);
-                              console.log('📋 Code:', opt.code);
-                              console.log('📝 Name:', opt.name);
-                              console.log('🆔 ID:', opt.id);
+                           onClick={() => {
+  console.log('🔍 Selected Mother Account:', opt);
+  
+  if (isVariousAccountMode) {
+    // Mother Account 2 - Auto set to mother account ID and show "VARIOUS"
+    setSelectedVariousAccount(opt);
+    setFormData((prev) => ({
+      ...prev,
+     accountType2: "VARIOUS"
+    }));
+    setShowModal_Account(false);
+    setIsVariousAccountMode(false);
+  } else {
+    // Mother Account 1 - Normal flow (goes to sub-accounts then branch)
+    setSelectedMother(opt);
+    fetchSubAccounts(opt);
 
-                              setSelectedMother(opt);
-                              fetchSubAccounts(opt);
-
-                              if (opt.name === "NON-CHAIN") {
-                                setShowBranchInput(false);
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  accountType: [],
-                                  branchType: [] // ✅ Clear branch data
-                                }));
-                              } else {
-                                setShowBranchInput(true);
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  branchType: [] // ✅ Clear branch data
-                                }));
-                              }
-                            }}
+    if (opt.name === "NON-CHAIN") {
+      setShowBranchInput(false);
+      setFormData((prev) => ({
+        ...prev,
+        accountType: [],
+        branchType: []
+      }));
+    } else {
+      setShowBranchInput(true);
+      setFormData((prev) => ({
+        ...prev,
+        branchType: []
+      }));
+    }
+  }
+}}
                           >
                             <span>{opt.name}</span>
                             <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
@@ -3779,7 +3872,94 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                   </Button>
                 </Modal.Footer>
               </Modal>
+  {/* Modal Mother Account2 */}
+<Modal
+  show={showModal_Account2}
+  onHide={() => setShowModal_Account2(false)}
+  centered
+  size="lg"
+>
+  <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
+    <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+      Select Mother Account Type 2
+    </Modal.Title>
+  </Modal.Header>
 
+  <Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
+    <input
+      type="text"
+      className="form-control mb-3"
+      placeholder="Search mother accounts..."
+      value={accountSearchTerm2}
+      onChange={(e) => setAccountSearchTerm2(e.target.value)}
+      style={{ borderColor: "#007bff" }}
+    />
+
+    {(() => {
+      const availableGroupCodes = getAvailableGroupCodes();
+
+      // Filter by search term AND available group codes
+      const filteredAccounts = accountTypes.filter((opt) => {
+        const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm2.toLowerCase());
+        const hasGroupCode = availableGroupCodes.has(opt.code?.toString().trim());
+
+        if (!hasGroupCode) {
+          console.log(`🚫 Hiding "${opt.name}" (${opt.code}) - no data available`);
+        }
+
+        return matchesSearch && hasGroupCode;
+      });
+
+      console.log(`📋 Showing ${filteredAccounts.length} out of ${accountTypes.length} mother accounts (Mother 2)`);
+
+      if (filteredAccounts.length === 0) {
+        return (
+          <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+            No mother accounts available for this distributor
+          </div>
+        );
+      }
+
+      return filteredAccounts.map((opt) => (
+        <div
+          key={opt.id}
+          style={{
+            padding: "8px 10px",
+            borderBottom: "1px solid #eee",
+            cursor: "pointer",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+          onClick={() => {
+            console.log('🔍 Selected Mother Account 2:', opt);
+            console.log('📋 Code:', opt.code);
+            console.log('📝 Name:', opt.name);
+            console.log('🆔 ID:', opt.id);
+
+            // Auto-set to "VARIOUS" and close modal
+            setSelectedVariousAccount(opt);
+            setFormData((prev) => ({
+              ...prev,
+              accountType2: "VARIOUS"
+            }));
+            setShowModal_Account2(false);
+          }}
+        >
+          <span>{opt.name}</span>
+          <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
+          <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
+        </div>
+      ));
+    })()}
+  </Modal.Body>
+
+  <Modal.Footer>
+    <Button variant="light" onClick={() => setShowModal_Account2(false)}>
+      Close
+    </Button>
+  </Modal.Footer>
+</Modal>
               {/* Modal Branch */}
               <Modal
                 show={showModal_Branch}
