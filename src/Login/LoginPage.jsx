@@ -124,6 +124,7 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
             }
 
             // Step 4: Check expiration
+            // Step 4: Check expiration
             let daysLeft = null;
             let showExpiryWarning = false;
 
@@ -142,8 +143,35 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                 ...matchedUser,
             };
 
-            localStorage.setItem('loggedInUser', JSON.stringify(enrichedUser));
-            localStorage.setItem('loggedIn', 'true');
+            // ✅ Fetch position name based on code
+            let positionName = enrichedUser.position;
+            if (enrichedUser.position) {
+                try {
+                    const { data: positionData, error: positionError } = await supabase
+                        .from('position')
+                        .select('name')
+                        .eq('code', enrichedUser.position)
+                        .maybeSingle();
+
+                    if (positionError) {
+                        console.error('❌ Position fetch error:', positionError.message);
+                    } else if (positionData) {
+                        positionName = positionData.name;
+                    }
+                } catch (err) {
+                    console.error('❌ Unexpected error fetching position name:', err);
+                }
+            }
+
+            // ✅ console logs for debugging
+            console.log('✅ LOGIN SUCCESSFUL');
+            console.log('👤 User:', enrichedUser.username || enrichedUser.name);
+            console.log('🆔 UserID:', enrichedUser.UserID);
+            console.log('🎭 Role:', enrichedUser.role);
+            console.log('📌 Position:', positionName || 'No position found');
+            console.log('📅 License Valid Until:', userLicense.valid_until);
+            console.log('⚠️ Days Left Before Expiration:', daysLeft ?? 'N/A');
+            console.log('---------------------------------------');
 
             // Log actions
             const nowISO = new Date().toISOString();
@@ -158,12 +186,12 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
             await Swal.fire({
                 title: 'Login Successful',
                 html: `
-          Welcome, <strong>${enrichedUser.name || enrichedUser.username}</strong>!
-          ${showExpiryWarning
+      Welcome, <strong>${enrichedUser.name || enrichedUser.username}</strong>!
+      ${showExpiryWarning
                         ? `<br /><br /><span style="color:#e74c3c; font-weight:bold;">⚠️ Your license will expire in ${daysLeft} day(s)</span>`
                         : ''
                     }
-        `,
+    `,
                 icon: 'success',
                 timer: 3000,
                 showConfirmButton: false,
@@ -171,7 +199,14 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
             });
 
             setLoggedInUser(enrichedUser);
-            setCurrentView('Dashboard');
+
+            // ✅ Decide which dashboard to show based on position
+            if (positionName === 'ADMINISTRATOR') {
+                setCurrentView('DashboardForSuperAdmin');
+            } else {
+                setCurrentView('Dashboard');
+            }
+
         } catch (err) {
             console.error('🚨 Login error:', err);
             setError(err.message || 'Unexpected error during login.');
