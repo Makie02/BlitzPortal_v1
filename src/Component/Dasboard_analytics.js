@@ -30,7 +30,7 @@ import autoTable from "jspdf-autotable";
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
 import KasBudgetCard from "./KAS";
-import DistributorBudgetCard from "../NewComponents/DistributorBudgetCard";
+import DistributorBudgetCard from "./DistributorBudgetCard";
 const Analytics = ({ progress }) => {
   const [budgetData, setBudgetData] = useState([]);
   const [regularData, setRegularData] = useState([]);
