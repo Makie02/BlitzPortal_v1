@@ -325,7 +325,7 @@ function LoginPage({ setLoggedInUser, setCurrentView }) {
                     </form>
 
                     <footer className="login-footer">
-                        <div>Version 1.0.0</div>
+                        <div>Version 1.0.2</div>
                         <div
                             style={{
                                 marginTop: '6px',
