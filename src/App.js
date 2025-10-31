@@ -48,6 +48,9 @@ import Total from "./Create/Totalbudget.jsx";
 import PermissionsManager from "./NewComponents/PermissionsManager.jsx";
 import Analytics from "./Component/Dasboard_analytics.js";
 import UploadExportRegularPWP from "./Create/UploadExportRegularPWP.jsx";
+import KasBudgetCard from "./Component/KAS.js";
+import DistributorBudgetCard from "./Component/DistributorBudgetCard.js";
+import DashboardForSuperAdmin from "./Component/DashboardForSuperAdmin.js";
 function App() {
 
   // Track online/offline status
@@ -401,7 +404,10 @@ function App() {
 
       case "UploadingSap": return <UploadExportRegularPWP setCurrentView={setCurrentView} />;
 
+      case "KasBudgetCard": return <KasBudgetCard setCurrentView={setCurrentView} />;
 
+      case "DistributorBudgetCard": return <DistributorBudgetCard setCurrentView={setCurrentView} />;
+      case "DashboardForSuperAdmin": return <DashboardForSuperAdmin setCurrentView={setCurrentView} />;
 
 
 
