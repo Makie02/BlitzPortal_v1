@@ -65,19 +65,23 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
   const [categoryMap, setCategoryMap] = useState({});
   // ✅ distributors map
   const [distributorMap, setDistributorMap] = useState({});
-
+const [activityMap, setActivityMap] = useState({});
+const [createFormMap, setCreateFormMap] = useState({});
   const [badorderData, setBadorderData] = useState([]);
   const [accountBudgetData, setAccountBudgetData] = useState([]);
 
-  useEffect(() => {
-    if (record) {
-      fetchFullRecord();
-      fetchCategoryMap();
-      fetchDistributorMap();
-      fetchBadorderData();
-      fetchAccountBudgetData();
-    }
-  }, [record]);
+useEffect(() => {
+  if (record) {
+    fetchFullRecord();
+    fetchCategoryMap();
+    fetchDistributorMap();
+    fetchActivityMap();
+    fetchCreateFormMap();
+    fetchBadorderData();
+    fetchAccountBudgetData();
+  }
+}, [record]);
+
   const fetchBadorderData = async () => {
     try {
       const { data, error } = await supabase
@@ -140,7 +144,43 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
       console.error("❌ Failed to fetch category details:", err.message);
     }
   };
+const fetchActivityMap = async () => {
+  try {
+    const { data, error } = await supabase
+      .from("activity") // ✅ your actual table name
+      .select("code, name");
 
+    if (error) throw error;
+
+    const map = {};
+    data.forEach((item) => {
+      map[String(item.code).trim()] = item.name;
+    });
+
+    setActivityMap(map);
+  } catch (err) {
+    console.error("❌ Failed to fetch activity details:", err.message);
+  }
+};
+
+const fetchCreateFormMap = async () => {
+  try {
+    const { data, error } = await supabase
+      .from("Account_Users") // ✅ your actual table name
+      .select("UserID, name");
+
+    if (error) throw error;
+
+    const map = {};
+    data.forEach((item) => {
+      map[String(item.UserID).trim()] = item.name;
+    });
+
+    setCreateFormMap(map);
+  } catch (err) {
+    console.error("❌ Failed to fetch createForm details:", err.message);
+  }
+};
   // ✅ Fetch distributors (with pagination)
   const fetchDistributorMap = async () => {
     try {
@@ -194,6 +234,7 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
           codes = value.split(",").map((c) => c.trim());
         }
       }
+  
 
       const converted = codes.map((code) => {
         const strCode = String(code).trim();
@@ -202,6 +243,16 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
 
       return converted.length > 0 ? converted.join(", ") : "-";
     }
+       if (colName === "activity") {
+  const strCode = String(value).trim();
+  return activityMap[strCode] || strCode;
+}
+
+// Convert createform code → createform name
+if (colName === "createForm") {
+  const strCode = String(value).trim();
+  return createFormMap[strCode] || strCode;
+}
 
     // Convert distributor/distributor_code
     if (colName === "distributor" || colName === "distributor_code") {
@@ -397,16 +448,25 @@ const RecordViewModal = ({ record, onClose, onRecordDeleted }) => {
           ) : (
             fullRecord && (
               <div style={gridBox}>
-                {Object.entries(fullRecord)
-                  .filter(([key]) =>
-                    !["id", "category_codes", "notification"].includes(key.toLowerCase())
-                  )
-                  .map(([key, value]) => (
-                    <div key={key} style={gridItem}>
-                      <div style={colLabel}>{formatColumnName(key)}</div>
-                      <div style={colValue}>{formatCellValue(value, key)}</div>
-                    </div>
-                  ))}
+             {Object.entries(fullRecord)
+  // filter out unwanted keys
+  .filter(([key]) => 
+    !["id", "category_codes", "notification"].includes(key.toLowerCase())
+  )
+  // filter out empty values
+  .filter(([_, value]) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string" && (value.trim() === "" || value.trim() === "[]")) return false;
+    if (Array.isArray(value) && value.length === 0) return false;
+    return true;
+  })
+  .map(([key, value]) => (
+    <div key={key} style={gridItem}>
+      <div style={colLabel}>{formatColumnName(key)}</div>
+      <div style={colValue}>{formatCellValue(value, key)}</div>
+    </div>
+  ))}
+
 
               </div>
             )
