@@ -263,7 +263,7 @@ export default function ApprovalsPage() {
   const [allowedApproverNames, setAllowedApproverNames] = useState([]);
   const myName = currentUser?.name?.toLowerCase().trim();
   const [visaTypeFilter, setVisaTypeFilter] = useState("REGULAR");
-const [statusFilter, setStatusFilter] = useState("Pending");
+  const [statusFilter, setStatusFilter] = useState("Pending");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -371,12 +371,12 @@ const [statusFilter, setStatusFilter] = useState("Pending");
     setTotalPages(Math.ceil(filteredData.length / pageSize));
   }, [filteredData]);
 
-const paginatedData = [...filteredData]
-  .sort((a, b) => {
-    // Sort by latest date/time first (newest first)
-    return new Date(b.created_at) - new Date(a.created_at);
-  })
-  .slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedData = [...filteredData]
+    .sort((a, b) => {
+      // Sort by latest date/time first (newest first)
+      return new Date(b.created_at) - new Date(a.created_at);
+    })
+    .slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const [userType, setUserType] = useState(null);
   const [approvalSetting, setApprovalSetting] = useState(null);
@@ -917,7 +917,7 @@ const paginatedData = [...filteredData]
             <option value="">All Status</option>
             <option value="Approved">Approved</option>
             <option value="Sent back for revision">Disapproved</option>
-            <option value = "Pending">Pending</option>
+            <option value="Pending">Pending</option>
 
           </select>
         </div>
@@ -1021,17 +1021,17 @@ const paginatedData = [...filteredData]
             </tr>
           </thead>
           <tbody style={{ fontSize: "13px", color: "#374151" }}>
-          {paginatedData.length > 0 ? (
-  [...paginatedData]
-    .filter((entry) => {
-      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-      const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
-      const role = currentUser?.role?.toLowerCase() || "";
+            {paginatedData.length > 0 ? (
+              [...paginatedData]
+                .filter((entry) => {
+                  const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+                  const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
+                  const role = currentUser?.role?.toLowerCase() || "";
 
-      if (role === "admin") return true;
-      return (entry.createForm || "").toLowerCase().trim() === currentUserId;
-    })
-    .map((entry, index) => {
+                  if (role === "admin") return true;
+                  return (entry.createForm || "").toLowerCase().trim() === currentUserId;
+                })
+                .map((entry, index) => {
                   const status = getLatestResponseStatus(entry.code, approvalHistory);
                   const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
                   const currentUserId = currentUser?.name?.toLowerCase().trim();
@@ -1055,19 +1055,19 @@ const paginatedData = [...filteredData]
                   const statusColor = statusColorMap[status] || statusColorMap["default"];
 
                   return (
-                  <tr
-  key={index}
-  style={{
-    borderBottom: "1px solid #f3f4f6",
-    transition: "background-color 0.15s",
-  }}
-  onMouseOver={(e) => {
-    e.currentTarget.style.backgroundColor = "#f9fafb";
-  }}
-  onMouseOut={(e) => {
-    e.currentTarget.style.backgroundColor = "transparent";
-  }}
->
+                    <tr
+                      key={index}
+                      style={{
+                        borderBottom: "1px solid #f3f4f6",
+                        transition: "background-color 0.15s",
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.backgroundColor = "#f9fafb";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                    >
                       <td style={{ padding: "12px 16px", textAlign: "center" }}>
                         <button
                           style={{
@@ -1125,54 +1125,54 @@ const paginatedData = [...filteredData]
                       <td style={{ padding: "12px 16px" }}>
                         {getLatestResponseDate(entry.code, approvalHistory)}
                       </td>
-                     <td style={{ padding: "12px 16px", display: "flex", gap: "8px" }}>
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      handleRowClick(entry);
-    }}
-    style={{
-      padding: "10px 18px",
-      backgroundColor: "#3b82f6",
-      color: "#fff",
-      border: "none",
-      borderRadius: "8px",
-      cursor: "pointer",
-      fontSize: "14px",
-      fontWeight: "600",
-      transition: "all 0.3s ease",
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      boxShadow: "0 2px 8px rgba(59, 130, 246, 0.3)",
-    }}
-    onMouseOver={(e) => {
-      e.currentTarget.style.backgroundColor = "#2563eb";
-      e.currentTarget.style.transform = "translateY(-2px)";
-      e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.4)";
-    }}
-    onMouseOut={(e) => {
-      e.currentTarget.style.backgroundColor = "#3b82f6";
-      e.currentTarget.style.transform = "translateY(0)";
-      e.currentTarget.style.boxShadow = "0 2px 8px rgba(59, 130, 246, 0.3)";
-    }}
-  >
-    <svg 
-      width="16" 
-      height="16" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2.5" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    >
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-      <circle cx="12" cy="12" r="3"></circle>
-    </svg>
-    View Details
-  </button>
-</td>
+                      <td style={{ padding: "12px 16px", display: "flex", gap: "8px" }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRowClick(entry);
+                          }}
+                          style={{
+                            padding: "10px 18px",
+                            backgroundColor: "#3b82f6",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            fontWeight: "600",
+                            transition: "all 0.3s ease",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            boxShadow: "0 2px 8px rgba(59, 130, 246, 0.3)",
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.backgroundColor = "#2563eb";
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.4)";
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.backgroundColor = "#3b82f6";
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 2px 8px rgba(59, 130, 246, 0.3)";
+                          }}
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                          </svg>
+                          View Details
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
