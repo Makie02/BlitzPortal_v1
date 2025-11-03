@@ -630,7 +630,7 @@ const DashboardForSuperAdmin = ({ progress }) => {
                   fontWeight: "700",
                 }}
               >
-                Distributor Balances
+                KAS 6 Balances
               </h3>
 
               {distributorBalances.length === 0 ? (
