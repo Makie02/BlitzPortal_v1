@@ -18,7 +18,7 @@ const UploadExportRegularPWP = () => {
     const [activityMap, setActivityMap] = useState({});
     const [userMap, setUserMap] = useState({});
     const [allRecords, setAllRecords] = useState([]);
-    
+
     // New date filter states
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
@@ -67,7 +67,7 @@ const UploadExportRegularPWP = () => {
                 filteredData = filteredData.filter(r => {
                     const activityFrom = r.activityDurationFrom ? new Date(r.activityDurationFrom) : null;
                     const activityTo = r.activityDurationTo ? new Date(r.activityDurationTo) : null;
-                    
+
                     let matchFrom = true;
                     let matchTo = true;
 
@@ -388,7 +388,7 @@ const UploadExportRegularPWP = () => {
                     }}>
                         📆 Activity Duration Filter:
                     </span>
-                    
+
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <label style={{ fontSize: "13px", color: "#4a5568", fontWeight: "500" }}>From:</label>
                         <input
@@ -702,15 +702,63 @@ const UploadExportRegularPWP = () => {
                                             })
                                             : "0.00"}
                                     </td>
-                                    <td style={{
-                                        padding: "14px 12px",
-                                        whiteSpace: "nowrap",
-                                        fontSize: "14px",
-                                        color: "#2d3748",
-                                        borderBottom: "1px solid #e2e8f0"
-                                    }}>
-                                        {r.branchType}
+                                    <td
+                                        style={{
+                                            padding: "14px 12px",
+                                            fontSize: "14px",
+                                            color: "#2d3748",
+                                            borderBottom: "1px solid #e2e8f0",
+                                            cursor: "default",
+                                            position: "relative",
+                                            maxWidth: "300px",
+                                        }}
+                                        title={r.branchType || ""}
+                                    >
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "8px",
+                                            }}
+                                        >
+                                            <span
+                                                style={{
+                                                    display: "inline-block",
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                    maxWidth: "100%",
+                                                    fontWeight: (r.branchType?.length || 0) > 100 ? "500" : "400",
+                                                }}
+                                            >
+                                                {r.branchType && r.branchType.length > 100
+                                                    ? r.branchType.slice(0, 100) + "..."
+                                                    : r.branchType || "-"}
+                                            </span>
+                                            {(r.branchType?.length || 0) > 100 && (
+                                                <span
+                                                    style={{
+                                                        flexShrink: 0,
+                                                        display: "inline-flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        width: "18px",
+                                                        height: "18px",
+                                                        borderRadius: "50%",
+                                                        backgroundColor: "#e2e8f0",
+                                                        color: "#718096",
+                                                        fontSize: "11px",
+                                                        fontWeight: "600",
+                                                        cursor: "help",
+                                                    }}
+                                                    title="Text truncated - hover to see full text"
+                                                >
+                                                    ...
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
+
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -729,26 +777,118 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {r.activityDurationTo ? new Date(r.activityDurationTo).toLocaleDateString() : ""}
                                     </td>
-                                    <td style={{
-                                        padding: "14px 12px",
-                                        whiteSpace: "nowrap",
-                                        fontSize: "14px",
-                                        color: "#2d3748",
-                                        borderBottom: "1px solid #e2e8f0",
-                                        maxWidth: "200px",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis"
-                                    }}>
-                                        {r.objective}
+                                    <td
+                                        style={{
+                                            padding: "14px 12px",
+                                            fontSize: "14px",
+                                            color: "#2d3748",
+                                            borderBottom: "1px solid #e2e8f0",
+                                            cursor: "default",
+                                            position: "relative",
+                                            maxWidth: "200px",
+                                        }}
+                                        title={r.objective || ""}
+                                    >
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "8px",
+                                            }}
+                                        >
+                                            <span
+                                                style={{
+                                                    display: "inline-block",
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                    maxWidth: "100%",
+                                                    fontWeight: (r.objective?.length || 0) > 100 ? "500" : "400",
+                                                }}
+                                            >
+                                                {r.objective && r.objective.length > 100
+                                                    ? r.objective.slice(0, 100) + "..."
+                                                    : r.objective || "-"}
+                                            </span>
+                                            {(r.objective?.length || 0) > 100 && (
+                                                <span
+                                                    style={{
+                                                        flexShrink: 0,
+                                                        display: "inline-flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        width: "18px",
+                                                        height: "18px",
+                                                        borderRadius: "50%",
+                                                        backgroundColor: "#e2e8f0",
+                                                        color: "#718096",
+                                                        fontSize: "11px",
+                                                        fontWeight: "600",
+                                                        cursor: "help",
+                                                    }}
+                                                    title="Text truncated - hover to see full text"
+                                                >
+                                                    ...
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
-                                    <td style={{
-                                        padding: "14px 12px",
-                                        whiteSpace: "nowrap",
-                                        fontSize: "14px",
-                                        color: "#2d3748",
-                                        borderBottom: "1px solid #e2e8f0"
-                                    }}>
-                                        {r.promoScheme}
+
+                                    <td
+                                        style={{
+                                            padding: "14px 12px",
+                                            fontSize: "14px",
+                                            color: "#2d3748",
+                                            borderBottom: "1px solid #e2e8f0",
+                                            cursor: "default",
+                                            position: "relative",
+                                            maxWidth: "200px",
+                                        }}
+                                        title={r.promoScheme || ""}
+                                    >
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "8px",
+                                            }}
+                                        >
+                                            <span
+                                                style={{
+                                                    display: "inline-block",
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                    maxWidth: "100%",
+                                                    fontWeight: (r.promoScheme?.length || 0) > 100 ? "500" : "400",
+                                                }}
+                                            >
+                                                {r.promoScheme && r.promoScheme.length > 100
+                                                    ? r.promoScheme.slice(0, 100) + "..."
+                                                    : r.promoScheme || "-"}
+                                            </span>
+                                            {(r.promoScheme?.length || 0) > 100 && (
+                                                <span
+                                                    style={{
+                                                        flexShrink: 0,
+                                                        display: "inline-flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        width: "18px",
+                                                        height: "18px",
+                                                        borderRadius: "50%",
+                                                        backgroundColor: "#e2e8f0",
+                                                        color: "#718096",
+                                                        fontSize: "11px",
+                                                        fontWeight: "600",
+                                                        cursor: "help",
+                                                    }}
+                                                    title="Text truncated - hover to see full text"
+                                                >
+                                                    ...
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td style={{
                                         padding: "14px 12px",
@@ -833,7 +973,7 @@ const UploadExportRegularPWP = () => {
                             borderRadius: "8px",
                             border: "none",
                             fontWeight: "600",
-                            cursor: page === 1 ? "not-allowed" : "pointer",backgroundColor: page === 1 ? "#cbd5e0" : "#3182ce",
+                            cursor: page === 1 ? "not-allowed" : "pointer", backgroundColor: page === 1 ? "#cbd5e0" : "#3182ce",
                             color: "#fff",
                             fontSize: "14px",
                             transition: "all 0.3s"
