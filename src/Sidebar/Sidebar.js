@@ -332,9 +332,11 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                 { title: "Progress", view: "Progress" },
                 { title: "Budget Status", view: "BudgetDashboard" },
                 { title: "Analytics", view: "Analytics" },
+                { title: "Budget Analytics ", view: "DashboardForSuperAdmin" },
 
 
-                
+
+
             ],
         },
         {
@@ -382,7 +384,7 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                 { title: "Claims Records List", view: "ClaimsRecords" },
                 { title: "Uploading Record SAP", view: "UploadingSap" },
 
-                
+
             ],
         },
     ];
@@ -457,7 +459,7 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
                         </span>
                         <br />
                         <span className="user-id" style={{ fontSize: '0.8rem', color: '#bbb' }}>
-                           {departmentName || 'N/A'}
+                            {departmentName || 'N/A'}
                         </span>
 
                         <br />
