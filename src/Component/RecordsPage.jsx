@@ -141,7 +141,8 @@ function RecordsPage() {
           credit_budget,
           amountbadget,
           distributor,
-          created_at
+          created_at,
+          branchType
         `)
           .order("id", { ascending: false })
           .limit(50);
@@ -213,6 +214,7 @@ function RecordsPage() {
             item.id,
             item.activity_name, // now searchable by name too
             item.distributor,
+
           ];
           return searchFields.some(
             field =>
@@ -276,6 +278,7 @@ function RecordsPage() {
           "credit_budget",
           "created_at",
           "approved_date",
+          "branchType"
         ]);
         setData(normalizedData);
       } else {
@@ -332,6 +335,7 @@ function RecordsPage() {
         { header: "CREATED DATE", key: "created_at" },
         { header: "APPROVED DATE", key: "date_responded" },
         { header: "STATUS", key: "approval_status" },
+        { header: "Account Type", key: "branchType" },
       ];
 
       // --- PREPARE DATA FOR EXPORT ---
@@ -565,44 +569,62 @@ function RecordsPage() {
 
     return userName ? userName.toUpperCase() : String(userId); // return uppercase or fallback
   };
-  const formatCellValue = (value, colName) => {
-    if (!value && value !== 0) return '-';
+ const formatCellValue = (value, colName) => {
+  if (!value && value !== 0) return '-';
 
-    if (colName === "distributor" || colName === "distributor_code") {
-      const strCode = String(value).trim();
-      const name = distributorMap[strCode];
-      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
-      return name || strCode;
+  if (colName === "distributor" || colName === "distributor_code") {
+    const strCode = String(value).trim();
+    const name = distributorMap[strCode];
+    console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
+    return name || strCode;
+  }
+
+  // Convert UserID to name for createForm column
+  if (colName === "createForm") {
+    return getUserNameById(value);
+  }
+
+  if (colName === 'created_at' && value) {
+    try {
+      return new Date(value).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    } catch {
+      return value;
     }
+  }
 
-    // Convert UserID to name for createForm column
-    if (colName === "createForm") {
-      return getUserNameById(value);
-    }
-
-    if (colName === 'created_at' && value) {
-      try {
-        return new Date(value).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric"
-        });
-      } catch {
-        return value;
-      }
-    }
-
+  // Don't truncate branchType - let it wrap naturally
+  if (colName === 'branchType') {
     return String(value);
-  };
+  }
+
+  return String(value);
+};
   // Define styles object
-  const styles = {
-    td: {
-      padding: '16px 20px',
-      borderBottom: '1px solid #e0e0e0',
-      fontSize: '14px',
-      color: '#000000ff'
-    }
-  };
+const styles = {
+  td: {
+    padding: '16px 20px',
+    borderBottom: '1px solid #e0e0e0',
+    fontSize: '14px',
+    color: '#000000ff'
+  },
+  tdBranchType: {
+    padding: '16px 20px',
+    borderBottom: '1px solid #e0e0e0',
+    fontSize: '13px',
+    color: '#000000ff',
+    width: '260px',            // Wider to show at least 1 full branch name
+    maxWidth: '260px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    cursor: 'help'
+  }
+};
+
   useEffect(() => {
     if (Object.keys(categoryMap).length > 0) {
       fetchData();
@@ -864,19 +886,29 @@ function RecordsPage() {
                   backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
                   transition: 'background-color 0.2s ease'
                 }}>
-                  {columns.map(col => (
-                    <td key={col} style={styles.td}>
-                      <span style={{
-                        maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
-                        display: 'inline-block',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {formatCellValue(row[col], col)}
-                      </span>
-                    </td>
-                  ))}
+    {columns.map(col => (
+  <td key={col} style={col === 'branchType' ? styles.tdBranchType : styles.td}>
+    {col === 'branchType' ? (
+      // branchType - show truncated with full text on hover
+      <span title={row[col] || ''}>
+        {formatCellValue(row[col], col)}
+      </span>
+    ) : (
+      // Other columns
+      <span 
+        style={{
+          maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
+          display: 'inline-block',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}
+      >
+        {formatCellValue(row[col], col)}
+      </span>
+    )}
+  </td>
+))}
                   <td style={{ ...styles.td, textAlign: 'center' }}>
                     {getStatusBadge(row.approval_status)}
                   </td>
