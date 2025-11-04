@@ -57,6 +57,7 @@ const [userNames, setUserNames] = useState({});
         sku: 'sku',
         accounts: 'Accounts',
         amount_display: 'Amount Display',
+
     };
 
     const claimsFieldNameMap = {
@@ -836,9 +837,9 @@ const handleApprove = async () => {
 
                                 if (
                                     type === 'Regular PWP' &&
-                                    ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'YearBudget'].includes(key)
+                                    ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode','remaining_balance' ,'credit_budget', 'YearBudget'].includes(key)
                                 ) return false;
-
+       
                                 if (key.toLowerCase() === 'accounts') return accountsBudgetList.length > 0;
 
                                 if (key.toLowerCase() === 'sku') return skuListing.length > 0;
@@ -859,8 +860,9 @@ const handleApprove = async () => {
 
                     </div>
 
-                 {/* 🎯 FOOTER SECTION */}
-{type !== 'Claims PWP' && skuListing.length === 0 && accountsBudgetList.length === 0 && (
+
+{/* 🎯 FOOTER SECTION */}
+{type !== 'Claims PWP' && (
     <div className="modal-footer">
         {type === 'Cover PWP' ? (
             <div className="footer-card red">
