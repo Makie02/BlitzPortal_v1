@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../supabaseClient";
 import { FaSearch } from "react-icons/fa";
 import { Modal, Button } from "react-bootstrap";
@@ -36,13 +35,6 @@ const fixCategoryNameInput = (value) => {
   }
 
   return [];
-};
-
-const calculateBillingAmount = (srp, qty, discount) => {
-  const quantity = parseFloat(qty) || 0;
-  const price = parseFloat(srp) || 0;
-  const disc = parseFloat(discount) || 0;
-  return (price * quantity) - disc;
 };
 
 // ============ FIELD CONFIGS ============
@@ -191,7 +183,7 @@ const useActivities = () => {
   return { activities, settingsMap, loading };
 };
 
-const useBudgetList = (regularpwpcode, formData, setFormData) => {
+const useBudgetList = (regularpwpcode) => {
   const [budgetList, setBudgetList] = useState([]);
   const [originalTotalBudget, setOriginalTotalBudget] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -230,17 +222,6 @@ const useBudgetList = (regularpwpcode, formData, setFormData) => {
       const updated = prev.map(item =>
         item.id === id ? { ...item, budget: parseFloat(newBudget) || 0 } : item
       );
-
-      // Update formData.remaining_balance in real-time
-      const newTotalBudget = updated.reduce((sum, item) => sum + Number(item.budget || 0), 0);
-      const budgetDiff = newTotalBudget - originalTotalBudget;
-      const newRemainingBalance = Number(formData?.initial_remaining_balance || 0) - budgetDiff;
-
-      setFormData(prev => ({
-        ...prev,
-        remaining_balance: newRemainingBalance
-      }));
-
       return updated;
     });
   };
@@ -377,7 +358,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     currentTotalBudget,
     handleBudgetChange,
     loading: budgetLoading
-  } = useBudgetList(formData?.regularpwpcode, formData, setFormData);
+  } = useBudgetList(formData?.regularpwpcode);
 
   const {
     skuList,
@@ -401,22 +382,36 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
   const [accountSearchTerm, setAccountSearchTerm] = useState("");
   const [subSearchTerm, setSubSearchTerm] = useState("");
   const [showBranchInput, setShowBranchInput] = useState(true);
-  const [formValues, setFormValues] = useState({
-    amountbadget: 0,
-    remaining_balance: 0,
-    credit_budget: 0,
-  });
 
-  // Calculated values
-  const budgetDifference = currentTotalBudget - originalTotalBudget;
-  const adjustedRemainingBalanceForBudget = Number(formData?.initial_remaining_balance || 0) - budgetDifference;
-  const unifiedRemainingBalance = (() => {
-    const currentRemainingBalance = Number(formData?.remaining_balance || 0);
-    const billingChange = currentTotalBilling - originalTotalBilling;
-    return currentRemainingBalance - billingChange;
-  })();
+  // FIXED: Use useMemo to make calculations reactive to skuList and budgetList changes
+  const budgetDifference = useMemo(() => 
+    currentTotalBudget - originalTotalBudget,
+    [currentTotalBudget, originalTotalBudget]
+  );
 
-  const showBudgetTable = formData.accounts === true || formData.activity === "LISTING FEE"; const isCoverPwp = !!formData.cover_code;
+  const adjustedRemainingBalanceForBudget = useMemo(() => {
+    const result = Number(formData?.initial_remaining_balance || 0) - currentTotalBudget;
+    console.log('📊 Budget Calculation:', {
+      initial_remaining_balance: formData?.initial_remaining_balance,
+      currentTotalBudget,
+      result
+    });
+    return result;
+  }, [formData?.initial_remaining_balance, currentTotalBudget]);
+
+  const unifiedRemainingBalance = useMemo(() => {
+    const initialBalance = Number(formData?.initial_remaining_balance || 0);
+    const result = initialBalance - currentTotalBilling;
+    console.log('📊 SKU Calculation:', {
+      initial_remaining_balance: initialBalance,
+      currentTotalBilling,
+      result
+    });
+    return result;
+  }, [formData?.initial_remaining_balance, currentTotalBilling]);
+
+  const showBudgetTable = formData.accounts === true || formData.activity === "LISTING FEE";
+  const isCoverPwp = !!formData.cover_code;
   const fieldsToRender = isCoverPwp
     ? coverPwpFieldsConfig
     : regularPwpFieldsConfig.filter(field => !['sku', 'accounts', 'amount_display'].includes(field.name));
@@ -424,34 +419,48 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
   // Initialize form data
   useEffect(() => {
     if (isOpen && rowData) {
-      const normalized = {
-        ...rowData,
-        distributor: rowData.distributor_id || rowData.distributor || "",
-        distributor_code: rowData.distributor_code_id || rowData.distributor_code || "",
-        categoryName: Array.isArray(rowData.categoryName)
-          ? rowData.categoryName
-          : typeof rowData.categoryName === 'string' && rowData.categoryName.startsWith("[")
-            ? JSON.parse(rowData.categoryName)
-            : rowData.categoryName || [],
-        initial_remaining_balance: Number(rowData.remaining_balance) || 0,
+      const fetchRemainingBalance = async () => {
+        let initialRemainingBalance = Number(rowData.remaining_balance) || 0;
+        
+        // If this is part of a Cover PWP, fetch the remaining balance from amount_badget table
+        const coverPwpCode = rowData.coverPwpCode || rowData.cover_code;
+        if (coverPwpCode) {
+          try {
+            const { data: amountBadgetData, error } = await supabase
+              .from('amount_badget')
+              .select('remainingbalance')
+              .eq('pwp_code', coverPwpCode)
+              .maybeSingle();
+
+            if (!error && amountBadgetData) {
+              initialRemainingBalance = Number(amountBadgetData.remainingbalance) || 0;
+              console.log('✅ Fetched remaining balance from amount_badget:', initialRemainingBalance);
+            } else {
+              console.log('⚠️ No amount_badget found, using rowData remaining_balance');
+            }
+          } catch (err) {
+            console.error('❌ Error fetching amount_badget:', err);
+          }
+        }
+
+        const normalized = {
+          ...rowData,
+          distributor: rowData.distributor_id || rowData.distributor || "",
+          distributor_code: rowData.distributor_code_id || rowData.distributor_code || "",
+          categoryName: Array.isArray(rowData.categoryName)
+            ? rowData.categoryName
+            : typeof rowData.categoryName === 'string' && rowData.categoryName.startsWith("[")
+              ? JSON.parse(rowData.categoryName)
+              : rowData.categoryName || [],
+          initial_remaining_balance: initialRemainingBalance,
+          remaining_balance: initialRemainingBalance,
+        };
+        setFormData(normalized);
       };
-      setFormData(normalized);
+
+      fetchRemainingBalance();
     }
   }, [isOpen, rowData]);
-
-  // Update form values
-  useEffect(() => {
-    const initialBalance = Number(formData?.initial_remaining_balance || 0);
-    const totalBudget = budgetList.reduce((sum, item) => sum + Number(item.budget || 0), 0);
-    const updatedRemainingBalance = initialBalance - totalBudget;
-
-    setFormValues(prev => ({
-      ...prev,
-      amountbadget: totalBudget,
-      credit_budget: totalBudget,
-      remaining_balance: updatedRemainingBalance,
-    }));
-  }, [budgetList, formData?.initial_remaining_balance]);
 
   // Fetch mother accounts
   useEffect(() => {
@@ -508,6 +517,11 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
 
       if (!pwpCode) {
         console.error("❌ No PWP code found");
+        Swal.fire({
+          icon: 'warning',
+          title: 'No Cover PWP Code',
+          text: 'Cannot change credit budget without a Cover PWP Code.',
+        });
         return;
       }
 
@@ -522,26 +536,37 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
 
       console.log("📦 Database Response:", { data: amountBadgetData, error });
 
-      let originalRemainingBalance;
-
-      if (error || !amountBadgetData) {
-        console.log("⚠️ No amount_badget record found, using initial_remaining_balance");
-        originalRemainingBalance = parseFloat(formData.initial_remaining_balance || 0);
-      } else {
-        console.log("✅ Found amount_badget record");
-        originalRemainingBalance = parseFloat(amountBadgetData.remainingbalance || 0);
+      if (error) {
+        console.error("❌ Database error:", error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Database Error',
+          text: 'Failed to fetch remaining balance from amount_badget table.',
+        });
+        return;
       }
 
-      console.log("💰 originalRemainingBalance (final):", originalRemainingBalance);
+      if (!amountBadgetData) {
+        console.warn("⚠️ No amount_badget record found for PWP Code:", pwpCode);
+        Swal.fire({
+          icon: 'warning',
+          title: 'No Budget Record',
+          text: 'No budget record found for this Cover PWP Code.',
+        });
+        return;
+      }
 
-      // RESET ang budgetList to original values
+      const originalRemainingBalance = parseFloat(amountBadgetData.remainingbalance || 0);
+      console.log("💰 originalRemainingBalance from DB:", originalRemainingBalance);
+
+      // RESET budgetList to 0
       setBudgetList(prev => prev.map(item => ({
         ...item,
         budget: 0
       })));
 
       setFormData((prevData) => {
-        console.log("🔄 Resetting to Original State:", {
+        console.log("🔄 Resetting to Original Balance from DB:", {
           originalRemainingBalance: originalRemainingBalance,
           resetBudgetsTo: 0
         });
@@ -558,8 +583,21 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
       setIsCreditBudgetEditable(true);
       console.log("🟢 handleChangeCreditBudget COMPLETED");
 
+      Swal.fire({
+        icon: 'success',
+        title: 'Reset Successful',
+        text: `Remaining balance reset to ₱${originalRemainingBalance.toFixed(2)}`,
+        timer: 2000,
+        showConfirmButton: false
+      });
+
     } catch (err) {
       console.error("💥 Error in handleChangeCreditBudget:", err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'An unexpected error occurred while resetting the budget.',
+      });
     }
   };
 
@@ -615,119 +653,116 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
   );
 
   // ============ SUBMIT FUNCTIONS ============
-const submitRegularPWP = async () => {
-  // Calculate the correct credit_budget value
-  const creditBudgetToSave = isCreditBudgetEditable && formData.credit_budget
-    ? parseFloat(formData.credit_budget)
-    : currentTotalBudget;
+  const submitRegularPWP = async () => {
+    const creditBudgetToSave = isCreditBudgetEditable && formData.credit_budget
+      ? parseFloat(formData.credit_budget)
+      : currentTotalBudget;
 
-  // Calculate new remaining balance by subtracting credit budget from original
-  const newRemainingBalance = parseFloat(formData.initial_remaining_balance || 0) - creditBudgetToSave;
+    const newRemainingBalance = adjustedRemainingBalanceForBudget;
 
-  const regularPwpData = {
-    regularpwpcode: formData.regularpwpcode,
-    pwptype: formData.pwptype,
-    distributor: formData.distributor,
-    accountType: formData.accountType,
-    categoryName: formData.categoryName,
-    activity: formData.activity,
-    objective: formData.objective,
-    promoScheme: formData.promoScheme,
-    activityDurationFrom: formData.activityDurationFrom,
-    activityDurationTo: formData.activityDurationTo,
-    isPartOfCoverPwp: formData.isPartOfCoverPwp,
-    coverPwpCode: formData.coverPwpCode,
-    amountbadget: creditBudgetToSave,
-    remaining_balance: parseFloat(newRemainingBalance.toFixed(2)),
-    credit_budget: creditBudgetToSave,
-    sku: formData.sku,
-    accounts: formData.accounts,
-    amount_display: formData.amount_display,
-    remarks: formData.remarks,
-    created_at: new Date().toISOString(),
+    const regularPwpData = {
+      regularpwpcode: formData.regularpwpcode,
+      pwptype: formData.pwptype,
+      distributor: formData.distributor,
+      accountType: formData.accountType,
+      categoryName: formData.categoryName,
+      activity: formData.activity,
+      objective: formData.objective,
+      promoScheme: formData.promoScheme,
+      activityDurationFrom: formData.activityDurationFrom,
+      activityDurationTo: formData.activityDurationTo,
+      isPartOfCoverPwp: formData.isPartOfCoverPwp,
+      coverPwpCode: formData.coverPwpCode,
+      amountbadget: creditBudgetToSave,
+      remaining_balance: parseFloat(newRemainingBalance.toFixed(2)),
+      credit_budget: creditBudgetToSave,
+      sku: formData.sku,
+      accounts: formData.accounts,
+      amount_display: formData.amount_display,
+      remarks: formData.remarks,
+      created_at: new Date().toISOString(),
+    };
+
+    if (!formData.regularpwpcode) {
+      throw new Error("Regular PWP Code is required but missing.");
+    }
+
+    const { data: existingRegularPwp, error: selectRegularError } = await supabase
+      .from('regular_pwp')
+      .select('id')
+      .eq('regularpwpcode', formData.regularpwpcode);
+
+    if (selectRegularError) {
+      throw new Error(`Error checking regular_pwp: ${selectRegularError.message}`);
+    }
+
+    if (existingRegularPwp.length > 0) {
+      const { error: updateRegularError } = await supabase
+        .from('regular_pwp')
+        .update(regularPwpData)
+        .eq('id', existingRegularPwp[0].id);
+
+      if (updateRegularError) {
+        throw new Error(`Error updating regular_pwp: ${updateRegularError.message}`);
+      }
+    } else {
+      const { error: insertRegularError } = await supabase
+        .from('regular_pwp')
+        .insert([regularPwpData]);
+
+      if (insertRegularError) {
+        throw new Error(`Error inserting regular_pwp: ${insertRegularError.message}`);
+      }
+    }
+
+    return { creditBudgetToSave, newRemainingBalance };
   };
 
-  if (!formData.regularpwpcode) {
-    throw new Error("Regular PWP Code is required but missing.");
-  }
+  const submitCoverPWP = async () => {
+    const coverPwpData = {
+      cover_code: formData.cover_code,
+      distributor_code: formData.distributor_code,
+      account_type: formData.account_type,
+      amount_badget: formData.amount_badget,
+      pwp_type: formData.pwp_type,
+      objective: formData.objective,
+      details: formData.details,
+      remarks: formData.remarks,
+      created_at: new Date().toISOString(),
+    };
 
-  const { data: existingRegularPwp, error: selectRegularError } = await supabase
-    .from('regular_pwp')
-    .select('id')
-    .eq('regularpwpcode', formData.regularpwpcode);
-
-  if (selectRegularError) {
-    throw new Error(`Error checking regular_pwp: ${selectRegularError.message}`);
-  }
-
-  if (existingRegularPwp.length > 0) {
-    const { error: updateRegularError } = await supabase
-      .from('regular_pwp')
-      .update(regularPwpData)
-      .eq('id', existingRegularPwp[0].id);
-
-    if (updateRegularError) {
-      throw new Error(`Error updating regular_pwp: ${updateRegularError.message}`);
+    if (!formData.cover_code) {
+      throw new Error("Cover code is required but missing.");
     }
-  } else {
-    const { error: insertRegularError } = await supabase
-      .from('regular_pwp')
-      .insert([regularPwpData]);
 
-    if (insertRegularError) {
-      throw new Error(`Error inserting regular_pwp: ${insertRegularError.message}`);
+    const { data: existingCoverPwp, error: selectCoverError } = await supabase
+      .from('cover_pwp')
+      .select('id')
+      .eq('cover_code', formData.cover_code);
+
+    if (selectCoverError) {
+      throw new Error(`Error checking cover_pwp: ${selectCoverError.message}`);
     }
-  }
 
-  return { creditBudgetToSave, newRemainingBalance };
-};
-const submitCoverPWP = async () => {
-  const coverPwpData = {
-    cover_code: formData.cover_code,
-    distributor_code: formData.distributor_code,
-    account_type: formData.account_type,
-    amount_badget: formData.amount_badget,
-    pwp_type: formData.pwp_type,
-    objective: formData.objective,
-    details: formData.details,
-    remarks: formData.remarks,
-    created_at: new Date().toISOString(),
+    if (existingCoverPwp.length > 0) {
+      const { error: updateCoverError } = await supabase
+        .from('cover_pwp')
+        .update(coverPwpData)
+        .eq('id', existingCoverPwp[0].id);
+
+      if (updateCoverError) {
+        throw new Error(`Error updating cover_pwp: ${updateCoverError.message}`);
+      }
+    } else {
+      const { error: insertCoverError } = await supabase
+        .from('cover_pwp')
+        .insert([coverPwpData]);
+
+      if (insertCoverError) {
+        throw new Error(`Error inserting cover_pwp: ${insertCoverError.message}`);
+      }
+    }
   };
-
-  if (!formData.cover_code) {
-    throw new Error("Cover code is required but missing.");
-  }
-
-  const { data: existingCoverPwp, error: selectCoverError } = await supabase
-    .from('cover_pwp')
-    .select('id')
-    .eq('cover_code', formData.cover_code);
-
-  if (selectCoverError) {
-    throw new Error(`Error checking cover_pwp: ${selectCoverError.message}`);
-  }
-
-  if (existingCoverPwp.length > 0) {
-    const { error: updateCoverError } = await supabase
-      .from('cover_pwp')
-      .update(coverPwpData)
-      .eq('id', existingCoverPwp[0].id);
-
-    if (updateCoverError) {
-      throw new Error(`Error updating cover_pwp: ${updateCoverError.message}`);
-    }
-  } else {
-    const { error: insertCoverError } = await supabase
-      .from('cover_pwp')
-      .insert([coverPwpData]);
-
-    if (insertCoverError) {
-      throw new Error(`Error inserting cover_pwp: ${insertCoverError.message}`);
-    }
-  }
-
-  // REMOVED: onClose(); - Let handleSubmit handle this
-};
 
   const handleSaveAccountstable = async () => {
     if (!formData.regularpwpcode) {
@@ -774,39 +809,40 @@ const submitCoverPWP = async () => {
     return accountsUpdated;
   };
 
-const submitAccountToRegular = async (accountsUpdated, creditBudgetValue, remainingBalanceValue) => {
-  if (!formData.regularpwpcode) {
-    throw new Error('Regular PWP Code is required but missing.');
-  }
+  const submitAccountToRegular = async (accountsUpdated, creditBudgetValue, remainingBalanceValue) => {
+    if (!formData.regularpwpcode) {
+      throw new Error('Regular PWP Code is required but missing.');
+    }
 
-  if (!accountsUpdated) {
-    throw new Error('One or more account updates failed, cannot update regular PWP.');
-  }
+    if (!accountsUpdated) {
+      throw new Error('One or more account updates failed, cannot update regular PWP.');
+    }
 
-  const { data: pwpData, error: pwpSelectError } = await supabase
-    .from('regular_pwp')
-    .select('id')
-    .eq('regularpwpcode', formData.regularpwpcode);
-
-  if (pwpSelectError) {
-    throw new Error(`Error checking regular PWP: ${pwpSelectError.message}`);
-  }
-
-  if (pwpData && pwpData.length > 0) {
-    const { error: updatePwpError } = await supabase
+    const { data: pwpData, error: pwpSelectError } = await supabase
       .from('regular_pwp')
-      .update({
-        remaining_balance: remainingBalanceValue,
-        credit_budget: creditBudgetValue,
-        amountbadget: creditBudgetValue
-      })
+      .select('id')
       .eq('regularpwpcode', formData.regularpwpcode);
 
-    if (updatePwpError) {
-      throw new Error(`Error updating regular PWP: ${updatePwpError.message}`);
+    if (pwpSelectError) {
+      throw new Error(`Error checking regular PWP: ${pwpSelectError.message}`);
     }
-  }
-};
+
+    if (pwpData && pwpData.length > 0) {
+      const { error: updatePwpError } = await supabase
+        .from('regular_pwp')
+        .update({
+          remaining_balance: remainingBalanceValue,
+          credit_budget: creditBudgetValue,
+          amountbadget: creditBudgetValue
+        })
+        .eq('regularpwpcode', formData.regularpwpcode);
+
+      if (updatePwpError) {
+        throw new Error(`Error updating regular PWP: ${updatePwpError.message}`);
+      }
+    }
+  };
+
   const submitSkuTable = async () => {
     if (!formData.regularpwpcode) {
       throw new Error('Regular PWP Code is required but missing.');
@@ -819,10 +855,10 @@ const submitAccountToRegular = async (accountsUpdated, creditBudgetValue, remain
       const computedBilling = (Number(row.srp || 0) * Number(row.qty || 0)) - Number(row.discount || 0);
 
       const payload = {
-        srp: row.srp || 0,
-        qty: row.qty || 0,
+        srp: Number(row.srp || 0),
+        qty: Number(row.qty || 0),
         uom: row.uom || 'pc',
-        discount: row.discount || 0,
+        discount: Number(row.discount || 0),
         billing_amount: computedBilling,
         total_amount: computedBilling,
         created_at: new Date().toISOString(),
@@ -842,14 +878,18 @@ const submitAccountToRegular = async (accountsUpdated, creditBudgetValue, remain
       }
 
       if (existingSku) {
-        await supabase
+        const { error: updateError } = await supabase
           .from('regular_sku')
           .update(payload)
           .eq('id', existingSku.id);
+
+        if (updateError) {
+          console.error(`Error updating SKU ${row.sku_code}:`, updateError.message);
+          throw new Error(`Failed to update SKU ${row.sku_code}`);
+        }
       }
     }
   };
-
   const submitSkuTotalToRegular = async (regularpwpcode, remaining_balance, _credit_budget, amountbadget) => {
     const resolvedAmountBudget = (amountbadget && amountbadget > 0) ? amountbadget : currentTotalBilling;
 
@@ -867,79 +907,73 @@ const submitAccountToRegular = async (accountsUpdated, creditBudgetValue, remain
     }
   };
 
-const handleSubmit = async () => {
-  setUpdating(true);
-  setError(null);
+  const handleSubmit = async () => {
+    setUpdating(true);
+    setError(null);
 
-  try {
-    const pwpCodeToDelete = formData.cover_code || formData.regularpwpcode;
+    try {
+      const pwpCodeToDelete = formData.cover_code || formData.regularpwpcode;
 
-    // Delete approval history
-    if (pwpCodeToDelete) {
-      await supabase
-        .from('Approval_History')
-        .delete()
-        .eq('PwpCode', pwpCodeToDelete);
+      if (pwpCodeToDelete) {
+        await supabase
+          .from('Approval_History')
+          .delete()
+          .eq('PwpCode', pwpCodeToDelete);
+      }
+
+      if (formData.cover_code) {
+        await submitCoverPWP();
+      } else {
+        const creditBudgetToSave = isCreditBudgetEditable && formData.credit_budget
+          ? parseFloat(formData.credit_budget)
+          : currentTotalBudget;
+
+        const newRemainingBalance = parseFloat(formData.initial_remaining_balance || 0) - creditBudgetToSave;
+
+        const accountsUpdated = await handleSaveAccountstable();
+        await submitSkuTable();
+        await submitRegularPWP();
+        await submitAccountToRegular(
+          accountsUpdated,
+          creditBudgetToSave,
+          newRemainingBalance
+        );
+        await submitSkuTotalToRegular(
+          formData.regularpwpcode,
+          newRemainingBalance,
+          currentTotalBilling,
+          creditBudgetToSave
+        );
+      }
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: 'Successfully updated all data',
+        timer: 2000,
+        showConfirmButton: false
+      });
+
+      onClose();
+      window.location.reload();
+
+    } catch (err) {
+      console.error('❌ Submit error:', err);
+
+      await Swal.fire({
+        icon: 'error',
+        title: 'Submission Failed',
+        text: err.message || 'Something went wrong during submission.',
+        confirmButtonColor: '#3b82f6'
+      });
+
+      setError(`Submit Error: ${err.message}`);
+    } finally {
+      setUpdating(false);
     }
+  };
 
-    if (formData.cover_code) {
-      // Handle Cover PWP
-      await submitCoverPWP();
-    } else {
-      // Handle Regular PWP
-      const creditBudgetToSave = isCreditBudgetEditable && formData.credit_budget
-        ? parseFloat(formData.credit_budget)
-        : currentTotalBudget;
-
-      const newRemainingBalance = parseFloat(formData.initial_remaining_balance || 0) - creditBudgetToSave;
-
-      // Execute all updates
-      const accountsUpdated = await handleSaveAccountstable();
-      await submitSkuTable();
-      await submitRegularPWP();
-      await submitAccountToRegular(
-        accountsUpdated,
-        creditBudgetToSave,
-        newRemainingBalance
-      );
-      await submitSkuTotalToRegular(
-        formData.regularpwpcode,
-        newRemainingBalance,
-        currentTotalBilling,
-        creditBudgetToSave
-      );
-    }
-
-    // Show success message
-    await Swal.fire({
-      icon: 'success',
-      title: 'Success',
-      text: 'Successfully updated all data',
-      timer: 2000,
-      showConfirmButton: false
-    });
-
-    // Close modal and reload
-    onClose();
-    window.location.reload();
-
-  } catch (err) {
-    console.error('❌ Submit error:', err);
-    
-    // Show error message
-    await Swal.fire({
-      icon: 'error',
-      title: 'Submission Failed',
-      text: err.message || 'Something went wrong during submission.',
-      confirmButtonColor: '#3b82f6'
-    });
-    
-    setError(`Submit Error: ${err.message}`);
-  } finally {
-    setUpdating(false);
-  }
-};
-  // ============ RENDER FIELD COMPONENTS ============
+  // ============ RENDER COMPONENTS ============
   const renderDistributorSelect = (name, label, value, disabled) => (
     <div key={name} style={{ display: "flex", flexDirection: "column" }}>
       <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
@@ -1003,54 +1037,54 @@ const handleSubmit = async () => {
     </div>
   );
 
-const renderCreditBudgetInput = (name, label, disabled) => {
-  const displayValue = isCreditBudgetEditable 
-    ? (formData[name] || "") 
-    : currentTotalBudget.toFixed(2);
-  
-  return (
-    <div key={name} style={{ display: "flex", flexDirection: "column" }}>
-      <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
-      <input
-        type="number"
-        name={name}
-        value={displayValue}
-        onChange={(e) => {
-          if (isCreditBudgetEditable) {
-            handleChanges(e);
-          }
-        }}
-        disabled={!isCreditBudgetEditable || disabled || updating}
-        style={{
-          padding: "10px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          background: !isCreditBudgetEditable ? "#f9f9f9" : "#fff",
-        }}
-      />
-      {/* Hide button when budget table is showing */}
-      {!showBudgetTable && (
-        <button
-          type="button"
-          onClick={handleChangeCreditBudget}
-          disabled={disabled || updating}
+  const renderCreditBudgetInput = (name, label, disabled) => {
+    const displayValue = isCreditBudgetEditable
+      ? (formData[name] || "")
+      : currentTotalBudget.toFixed(2);
+
+    return (
+      <div key={name} style={{ display: "flex", flexDirection: "column" }}>
+        <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
+        <input
+          type="number"
+          name={name}
+          value={displayValue}
+          onChange={(e) => {
+            if (isCreditBudgetEditable) {
+              handleChanges(e);
+            }
+          }}
+          disabled={!isCreditBudgetEditable || disabled || updating}
           style={{
-            marginTop: "10px",
-            padding: "8px 16px",
+            padding: "10px",
             borderRadius: "8px",
             border: "1px solid #ccc",
-            background: "#ff5f5f",
-            color: "#fff",
-            cursor: "pointer",
-            transform: "translateY(20px)",
+            background: !isCreditBudgetEditable ? "#f9f9f9" : "#fff",
           }}
-        >
-          Change?
-        </button>
-      )}
-    </div>
-  );
-};
+        />
+        {!showBudgetTable && (
+          <button
+            type="button"
+            onClick={handleChangeCreditBudget}
+            disabled={disabled || updating}
+            style={{
+              marginTop: "10px",
+              padding: "8px 16px",
+              borderRadius: "8px",
+              border: "1px solid #ccc",
+              background: "#ff5f5f",
+              color: "#fff",
+              cursor: "pointer",
+              transform: "translateY(20px)",
+            }}
+          >
+            Change?
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const renderActivitySelect = (name, label) => (
     <div key={name} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
       <label style={{ marginBottom: '6px', fontWeight: '600', fontSize: '14px' }}>
@@ -1417,27 +1451,39 @@ const renderCreditBudgetInput = (name, label, disabled) => {
     </div>
   );
 
-  const renderRemainingBalanceInput = (name, label, disabled) => (
-    <div key={name} style={{ display: "flex", flexDirection: "column" }}>
-      <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
-      <input
-        type="number"
-        name={name}
-        value={formData.remaining_balance || 0}
-        onChange={handleChange_rem}
-        disabled={disabled || updating}
-        step="0.01"
-        style={{
-          padding: "10px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          background: (disabled || updating) ? "#f9f9f9" : "#fff",
-          fontWeight: "600",
-          color: (formData.remaining_balance || 0) < 0 ? "red" : "green",
-        }}
-      />
-    </div>
-  );
+  const renderRemainingBalanceInput = (name, label, disabled) => {
+    let displayValue;
+
+    if (skuList.length > 0) {
+      displayValue = unifiedRemainingBalance;
+    } else if (showBudgetTable) {
+      displayValue = adjustedRemainingBalanceForBudget;
+    } else {
+      displayValue = formData.remaining_balance || 0;
+    }
+
+    return (
+      <div key={name} style={{ display: "flex", flexDirection: "column" }}>
+        <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
+        <input
+          type="number"
+          name={name}
+          value={displayValue.toFixed(2)}
+          onChange={handleChange_rem}
+          disabled={disabled || updating}
+          step="0.01"
+          style={{
+            padding: "10px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            background: (disabled || updating) ? "#f9f9f9" : "#fff",
+            fontWeight: "600",
+            color: displayValue < 0 ? "red" : "green",
+          }}
+        />
+      </div>
+    );
+  };
 
   const renderTextInput = (name, label, value, disabled) => (
     <div key={name} style={{ display: "flex", flexDirection: "column" }}>
@@ -1496,7 +1542,6 @@ const renderCreditBudgetInput = (name, label, disabled) => {
     return renderTextInput(name, label, value, disabled);
   };
 
-  // ============ RENDER ============
   if (!isOpen || !formData) return null;
 
   return (
@@ -1642,8 +1687,6 @@ const renderCreditBudgetInput = (name, label, disabled) => {
             </div>
           )}
 
-
-          {/* SKU Table */}
           {skuList.length > 0 && (
             <div style={{
               marginTop: "30px",
@@ -1735,6 +1778,7 @@ const renderCreditBudgetInput = (name, label, disabled) => {
                             value={srp || 0}
                             step="0.01"
                             onChange={(e) => handleSkuChange(id, "srp", e.target.value)}
+                            disabled
                             style={{
                               width: "100%",
                               padding: "8px",
@@ -1845,7 +1889,6 @@ const renderCreditBudgetInput = (name, label, disabled) => {
             </div>
           )}
 
-          {/* Action Buttons */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "16px", marginTop: "30px" }}>
             <button
               type="button"
