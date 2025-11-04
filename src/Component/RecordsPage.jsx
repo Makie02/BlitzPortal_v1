@@ -120,7 +120,6 @@ function RecordsPage() {
       createForm
     `)
     .order("id", { ascending: false })
-    .limit(50);
 
   if (cError) throw cError;
 
@@ -147,7 +146,6 @@ if (filter === "all" || filter === "regular") {
       createForm
     `)
     .order("id", { ascending: false })
-    .limit(50);
 
   if (rError) throw rError;
 
