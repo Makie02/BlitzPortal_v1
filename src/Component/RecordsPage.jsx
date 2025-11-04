@@ -230,15 +230,13 @@ if (filter === "all" || filter === "regular") {
       if (statusFilter !== "all") {
         filteredData = filteredData.filter(item => {
           const itemStatus = item.approval_status?.toLowerCase() || "pending";
-          if (statusFilter === "sent_back")
+          if (statusFilter === "disapproved")
             return (
-              itemStatus === "sent back for revision" || itemStatus === "sent back"
-            );
-          if (statusFilter === "cancelled") return itemStatus === "cancelled";
-          if (statusFilter === "pending")
+              itemStatus === "disapproved" || itemStatus === "disapproved"
+            );          if (statusFilter === "pending")
             return itemStatus === "pending" || !item.approval_status;
           if (statusFilter === "approved") return itemStatus === "approved";
-          if (statusFilter === "declined") return itemStatus === "declined";
+      
           return itemStatus === statusFilter;
         });
       }
@@ -459,21 +457,10 @@ if (filter === "all" || filter === "regular") {
         textColor = '#2e7d32';
         borderColor = '#c8e6c9';
         break;
-      case 'declined':
+      case 'disapprove':
         bgColor = '#ffebee';
         textColor = '#c62828';
         borderColor = '#ffcdd2';
-        break;
-      case 'sent back for revision':
-      case 'sent back':
-        bgColor = '#fff3e0';
-        textColor = '#e65100';
-        borderColor = '#ffcc02';
-        break;
-      case 'cancelled':
-        bgColor = '#f3e5f5';
-        textColor = '#7b1fa2';
-        borderColor = '#e1bee7';
         break;
       case 'pending':
       default:
@@ -618,8 +605,8 @@ const styles = {
     borderBottom: '1px solid #e0e0e0',
     fontSize: '13px',
     color: '#000000ff',
-    width: '260px',            // Wider to show at least 1 full branch name
-    maxWidth: '260px',
+    width: '500px',            // Wider to show at least 1 full branch name
+    maxWidth: '500px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -899,7 +886,7 @@ const styles = {
       // Other columns
       <span 
         style={{
-          maxWidth: window.innerWidth <= 568 ? '100px' : col === 'created_at' ? '150px' : '200px',
+          maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
           display: 'inline-block',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
