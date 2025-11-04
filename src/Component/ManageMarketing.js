@@ -587,7 +587,7 @@ function EnhancedDatabaseInterface() {
         textColor = '#2e7d32';
         borderColor = '#c8e6c9';
         break;
-      case 'disapprove':
+      case 'disapproved':
         bgColor = '#ffebee';
         textColor = '#c62828';
         borderColor = '#ffcdd2';
