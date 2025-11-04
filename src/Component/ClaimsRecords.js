@@ -145,7 +145,7 @@ const fetchData = useCallback(async () => {
 
     const [distributorsResult, claimsResult, usersResult, activityResult] = await Promise.all([
       supabase.from("distributors").select("code, name"),
-      supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }).limit(100),
+      supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }),
       supabase.from("Account_Users").select("UserID, name"),
       supabase.from("activity").select("code, name") // 🧩 Added this
     ]);
