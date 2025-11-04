@@ -8,7 +8,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
     const [type, setType] = useState(null);
     const [accountTypeNames, setAccountTypeNames] = useState(null);
     const [distributorName, setDistributorName] = useState(null);
-
+const [userNames, setUserNames] = useState({});
     // New state for the extra tables
     const [accountsBudgetList, setAccountsBudgetList] = useState([]);
     const [skuListing, setSkuListing] = useState([]);
@@ -40,13 +40,11 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
         account_type: 'Account Type',
         activity: 'Activity',
         pwptype: 'PWP Type',
-
         activityDurationFrom: 'Activity From',
         activityDurationTo: 'Activity To',
         isPartOfCoverPwp: 'Is Part of Cover PWP',
         coverPwpCode: 'Cover PWP Code',
         amountbadget: 'Amount Badget',
-
         objective: 'Objective',
         details: 'Details',
         remarks: 'Remarks',
@@ -56,7 +54,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
         distributor: 'Distributor',
         promoScheme: 'Promo Scheme',
         categoryName: 'Category Name',
-        sku: 'SKU',
+        sku: 'sku',
         accounts: 'Accounts',
         amount_display: 'Amount Display',
     };
@@ -72,9 +70,8 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
         createForm: 'Created By',
         notification: 'Notification',
         created_at: 'Created At',
-
-
         branchType: 'Branch Type',
+        sku: 'sku'
     };
     function base64ToUint8Array(base64) {
         try {
@@ -164,13 +161,20 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
         }
         return num.toLocaleString();
     };
-    const formatValue = (value, key) => {
-        if (!value && value !== false) return '-';
+ const formatValue = (value, key) => {
+    if (!value && value !== false) return '-';
 
-        const lowerKey = key.toLowerCase();
-
-        // 🏷️ ACCOUNT TYPE LOGIC
-        if (['account_type', 'accounttype'].includes(lowerKey)) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === 'createform' || lowerKey === 'created_form') {
+        return getUserNameById(value);
+    }
+    
+    // 🏷️ SKU and ACCOUNTS - show Yes if there's data in tables
+    if (lowerKey === 'sku' && skuListing.length > 0) return 'Yes';
+    if (lowerKey === 'accounts' && accountsBudgetList.length > 0) return 'Yes';
+    
+    // 🏷️ ACCOUNT TYPE LOGIC
+    if (['account_type', 'accounttype'].includes(lowerKey)) {
             const codes = String(value)
                 .split(',')
                 .map((c) => c.trim())
@@ -291,7 +295,9 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
             console.error('Error fetching activity name:', err.message);
         }
     };
-
+const getUserNameById = (userId) => {
+    return userNames[userId] || userNames[String(userId)] || userNames[Number(userId)] || `User ${userId}`;
+};
     // Fetch associated table data
     const fetchAccountsBudget = async (code) => {
         // Use code = regularpwpcode or whatever field in `data`
@@ -324,6 +330,28 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
     const [coverAttachments, setCoverAttachments] = useState([]);
 
     const [badOrderList, setBadOrderList] = useState([]);
+    useEffect(() => {
+    const fetchUserNames = async () => {
+        const { data, error } = await supabase
+            .from("Account_Users")
+            .select("UserID, name");
+
+        if (error) {
+            console.error("Error fetching user names:", error);
+            return;
+        }
+
+        // Create a lookup object: { UserID: name }
+        const nameMap = {};
+        data.forEach(user => {
+            nameMap[user.UserID] = user.name;
+        });
+
+        setUserNames(nameMap);
+    };
+
+    fetchUserNames();
+}, []);
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -442,7 +470,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
     }, [visaCode]);
 
 
- const handleApprove = async () => {
+const handleApprove = async () => {
     if (!visaCode) return;
 
     const result = await Swal.fire({
@@ -476,70 +504,71 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
         if (visaCode.startsWith("R")) {
             const { data: pwpData, error: pwpError } = await supabase
                 .from("regular_pwp")
-                .select("remaining_balance, coverPwpCode, credit_budget")
+                .select("remaining_balance, coverPwpCode, credit_budget, isPartOfCoverPwp")
                 .eq("regularpwpcode", visaCode)
                 .single();
 
             if (pwpError || !pwpData) {
-                Swal.fire("Error", "Failed to fetch Regular PWP budget data.", "error");
+                Swal.fire("Error", "Failed to fetch Regular PWP data.", "error");
                 return;
             }
 
-            remainingBalance = parseFloat(pwpData.remaining_balance);
-            creditBudget = parseFloat(pwpData.credit_budget);
-            coverPwpCode = pwpData.coverPwpCode;
+            // ✅ Only validate budget if it's part of a cover PWP
+            if (pwpData.isPartOfCoverPwp === 'Yes' || pwpData.isPartOfCoverPwp === true) {
+                remainingBalance = parseFloat(pwpData.remaining_balance);
+                creditBudget = parseFloat(pwpData.credit_budget);
+                coverPwpCode = pwpData.coverPwpCode;
 
-            if (isNaN(remainingBalance) || isNaN(creditBudget) || !coverPwpCode) {
-                Swal.fire("Error", "Incomplete budget data for this PWP.", "error");
-                return;
+                if (!isNaN(creditBudget) && !isNaN(remainingBalance) && coverPwpCode) {
+                    // ✅ Fetch amount_badget for the cover PWP
+                    const { data: budgetData, error: budgetError } = await supabase
+                        .from("amount_badget")
+                        .select("amountbadget, remainingbalance")
+                        .eq("pwp_code", coverPwpCode)
+                        .single();
+
+                    if (budgetError || !budgetData) {
+                        Swal.fire("Error", "Failed to fetch budget record.", "error");
+                        return;
+                    }
+
+                    const currentRemaining = parseFloat(budgetData.remainingbalance);
+
+                    // ✅ Check if kulang ang remaining balance
+                    if (currentRemaining < creditBudget) {
+                        await Swal.fire({
+                            icon: "error",
+                            title: "Denied!",
+                            html: `
+                                <b>${visaCode}</b> cannot be approved.<br/>
+                                Remaining Balance: <b>${currentRemaining.toLocaleString()}</b><br/>
+                                Required Budget: <b>${creditBudget.toLocaleString()}</b>
+                            `,
+                            confirmButtonColor: "#ef4444",
+                            confirmButtonText: "OK",
+                        });
+                        // ❌ Stop here — no database updates
+                        return;
+                    }
+
+                    // ✅ Update cover PWP remaining balance
+                    const newRemaining = currentRemaining - creditBudget;
+
+                    const { error: updateError } = await supabase
+                        .from("amount_badget")
+                        .update({
+                            remainingbalance: newRemaining,
+                            ...updatePayload,
+                        })
+                        .eq("pwp_code", coverPwpCode);
+
+                    if (updateError) {
+                        Swal.fire("Error", "Failed to update cover PWP balance.", "error");
+                        return;
+                    }
+                }
             }
-
-            // ✅ Fetch amount_badget for the cover PWP
-            const { data: budgetData, error: budgetError } = await supabase
-                .from("amount_badget")
-                .select("amountbadget, remainingbalance")
-                .eq("pwp_code", coverPwpCode)
-                .single();
-
-            if (budgetError || !budgetData) {
-                Swal.fire("Error", "Failed to fetch budget record.", "error");
-                return;
-            }
-
-            const currentRemaining = parseFloat(budgetData.remainingbalance);
-
-            // ✅ Check if kulang ang remaining balance
-            if (currentRemaining < creditBudget) {
-                await Swal.fire({
-                    icon: "error",
-                    title: "Denied!",
-                    html: `
-                        <b>${visaCode}</b> cannot be approved.<br/>
-                        Remaining Balance: <b>${currentRemaining.toLocaleString()}</b><br/>
-                        Required Budget: <b>${creditBudget.toLocaleString()}</b>
-                    `,
-                    confirmButtonColor: "#ef4444",
-                    confirmButtonText: "OK",
-                });
-                // ❌ Stop here — no database updates, no insert, no logs
-                return;
-            }
-
-            // ✅ Update cover PWP remaining balance
-            const newRemaining = currentRemaining - creditBudget;
-
-            const { error: updateError } = await supabase
-                .from("amount_badget")
-                .update({
-                    remainingbalance: newRemaining,
-                    ...updatePayload,
-                })
-                .eq("pwp_code", coverPwpCode);
-
-            if (updateError) {
-                Swal.fire("Error", "Failed to update cover PWP balance.", "error");
-                return;
-            }
+            // ✅ If not part of cover PWP, proceed without budget validation
         } else {
             // ✅ For Cover or Claims PWP
             const { error: updateError } = await supabase
@@ -553,7 +582,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
             }
         }
 
-        // ✅ Log Approval History only if approved
+        // ✅ Log Approval History
         const { error: historyError } = await supabase.from("Approval_History").insert({
             PwpCode: visaCode,
             ApproverId: userId,
@@ -569,7 +598,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
             return;
         }
 
-        // ✅ Log approved_history_budget only if approved
+        // ✅ Log approved_history_budget
         const { error: historyBudgetError } = await supabase
             .from("approved_history_budget")
             .insert({
@@ -582,7 +611,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
                 remaining_balance: remainingBalance,
                 credit_budget: creditBudget,
                 cover_pwp_code: coverPwpCode,
-                updated_amount_badget: true,
+                updated_amount_badget: coverPwpCode ? true : false,
             });
 
         if (historyBudgetError) {
@@ -590,7 +619,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
             return;
         }
 
-        // ✅ Log activity (for approved only)
+        // ✅ Log activity
         try {
             const ipRes = await fetch("https://api.ipify.org?format=json");
             const { ip } = await ipRes.json();
@@ -807,7 +836,7 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
 
                                 if (
                                     type === 'Regular PWP' &&
-                                    ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'sku', 'YearBudget'].includes(key)
+                                    ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'YearBudget'].includes(key)
                                 ) return false;
 
                                 if (key.toLowerCase() === 'accounts') return accountsBudgetList.length > 0;
@@ -818,64 +847,53 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
 
                                 return true;
                             })
-                            .map(([key, value]) => (
-                                <div className="form-group" key={key}>
-                                    <label>{formatFieldName(key)}</label>
-                                    <div className="readonly-box">
-                                        {key.toLowerCase() === 'accounts' && accountsBudgetList.length > 0 ? (
-                                            <div>
-                                                {accountsBudgetList.map((row) => (
-                                                    <div key={row.id}>
-                                                        {row.account_name} — {row.budget}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : key.toLowerCase() === 'sku' && skuListing.length > 0 ? (
-                                            <div>
-                                                {skuListing.map((row) => (
-                                                    <div key={row.id}>
-                                                        {row.sku} — {row.qty} (Billing: {row.billing_amount})
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            formatValue(value, key)
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
+                        .map(([key, value]) => (
+    <div className="form-group" key={key}>
+        <label>{formatFieldName(key)}</label>
+        <div className="readonly-box">
+            {formatValue(value, key)}
+        </div>
+    </div>
+))}
 
 
                     </div>
 
-                    {/* 🎯 FOOTER SECTION */}
-                    {type !== 'Claims PWP' && (
-                        <div className="modal-footer">
-                            {type === 'Cover PWP' ? (
-                                <div className="footer-card red">
-                                    <span className="footer-label">💸 Budget</span>
-                                    <span className="footer-value">
-                                        ₱ {Number(data.amount_badget || 0).toLocaleString()}
-                                    </span>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="footer-card green">
-                                        <span className="footer-label">💼 Remaining Budget</span>
-                                        <span className="footer-value">
-                                            ₱ {Number(coverRemaining || 0).toLocaleString()}
-                                        </span>
-                                    </div>
-                                    <div className="footer-card red">
-                                        <span className="footer-label">💸 Used Budget</span>
-                                        <span className="footer-value">
-                                            ₱ {Number(data.credit_budget || 0).toLocaleString()}
-                                        </span>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    )}
+                 {/* 🎯 FOOTER SECTION */}
+{type !== 'Claims PWP' && skuListing.length === 0 && accountsBudgetList.length === 0 && (
+    <div className="modal-footer">
+        {type === 'Cover PWP' ? (
+            <div className="footer-card red">
+                <span className="footer-label">💸 Budget</span>
+                <span className="footer-value">
+                    ₱ {Number(data.amount_badget || 0).toLocaleString()}
+                </span>
+            </div>
+        ) : data.isPartOfCoverPwp === 'Yes' || data.isPartOfCoverPwp === true ? (
+            <>
+                <div className="footer-card green">
+                    <span className="footer-label">💼 Remaining Budget</span>
+                    <span className="footer-value">
+                        ₱ {Number(coverRemaining || 0).toLocaleString()}
+                    </span>
+                </div>
+                <div className="footer-card red">
+                    <span className="footer-label">💸 Used Budget</span>
+                    <span className="footer-value">
+                        ₱ {Number(data.credit_budget || 0).toLocaleString()}
+                    </span>
+                </div>
+            </>
+        ) : (
+            <div className="footer-card blue">
+                <span className="footer-label">💰 Amount (not part of budget)</span>
+                <span className="footer-value">
+                    ₱ {Number(data.amountbadget || 0).toLocaleString()}
+                </span>
+            </div>
+        )}
+    </div>
+)}
 
                     {type === 'Regular PWP' && (
                         <div
