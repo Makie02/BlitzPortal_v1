@@ -9,12 +9,17 @@ const RecordViewModal = ({ record, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("single");
-
+  const [remainingBudget, setRemainingBudget] = useState(null);
+  const [regularSkuData, setRegularSkuData] = useState([]);
+  const [regularAccountBudgetData, setRegularAccountBudgetData] = useState([]);
+  const [categoryMap, setCategoryMap] = useState({});
+  const [distributorMap, setDistributorMap] = useState({});
+  const [activityMap, setActivityMap] = useState({});
+  const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
 
   const exportBudgetHistoryToExcel = () => {
     if (filteredBudgetHistory.length === 0) return;
 
-    // Map the data to a cleaner format
     const dataToExport = filteredBudgetHistory.map((row) => ({
       ID: row.id,
       PWP_Code: row.pwp_code,
@@ -37,12 +42,9 @@ const RecordViewModal = ({ record, onClose }) => {
     saveAs(blob, "BudgetHistory.xlsx");
   };
 
-
-  // Add this function inside your component, similar to exportBudgetHistoryToExcel
   const exportSingleRecordToExcel = () => {
     if (!fullRecord) return;
 
-    // Map the record to a cleaner format (you can adjust column names if needed)
     const dataToExport = Object.entries(fullRecord).map(([key, value]) => ({
       Column: formatColumnName(key),
       Value: formatCellValue(value, key),
@@ -57,16 +59,11 @@ const RecordViewModal = ({ record, onClose }) => {
     saveAs(blob, "RecordDetails.xlsx");
   };
 
-  // Category & Distributor Maps
-  const [categoryMap, setCategoryMap] = useState({});
-  const [distributorMap, setDistributorMap] = useState({});
-
-  // Fetch categorydetails (code → name)
   const fetchCategoryMap = async () => {
     try {
       let allData = [];
       let from = 0;
-      const chunkSize = 1000; // fetch in chunks
+      const chunkSize = 1000;
       let moreData = true;
 
       while (moreData) {
@@ -98,7 +95,6 @@ const RecordViewModal = ({ record, onClose }) => {
     }
   };
 
-  // ✅ Helper for account type conversion
   const convertCodesToNames = (value) => {
     let codes = [];
 
@@ -106,7 +102,7 @@ const RecordViewModal = ({ record, onClose }) => {
       codes = value;
     } else if (typeof value === "string") {
       try {
-        codes = JSON.parse(value); // JSON array
+        codes = JSON.parse(value);
       } catch {
         codes = value.split(",").map((c) => c.trim());
       }
@@ -123,40 +119,6 @@ const RecordViewModal = ({ record, onClose }) => {
 
     return converted.length > 0 ? converted.join(", ") : "-";
   };
-  const [activityMap, setActivityMap] = useState({});
-
-  useEffect(() => {
-    if (record) {
-      fetchFullRecord();
-      fetchCategoryMap();
-      fetchActivityMap();
-      fetchRemainingBudget(); // ✅ added
-    }
-  }, [record]);
-
-  // Fetch distributors (code → name)
-  useEffect(() => {
-    const fetchDistributorMap = async () => {
-      const { data, error } = await supabase
-        .from("distributors") // ⚠️ change table name if different
-        .select("code, name");
-
-      if (error) {
-        console.error("❌ Error fetching distributors:", error);
-        return;
-      }
-
-      const map = {};
-      data.forEach((item) => {
-        map[String(item.code)] = item.name;
-      });
-      setDistributorMap(map);
-    };
-
-    fetchDistributorMap();
-  }, []);
-
-
 
   const fetchActivityMap = async () => {
     try {
@@ -194,7 +156,38 @@ const RecordViewModal = ({ record, onClose }) => {
     }
   };
 
-  // Fetch full record
+  useEffect(() => {
+    if (record) {
+      fetchFullRecord();
+      fetchCategoryMap();
+      fetchActivityMap();
+      fetchRemainingBudget();
+      fetchRegularSkuData();
+      fetchRegularAccountBudgetData();
+    }
+  }, [record]);
+
+  useEffect(() => {
+    const fetchDistributorMap = async () => {
+      const { data, error } = await supabase
+        .from("distributors")
+        .select("code, name");
+
+      if (error) {
+        console.error("❌ Error fetching distributors:", error);
+        return;
+      }
+
+      const map = {};
+      data.forEach((item) => {
+        map[String(item.code)] = item.name;
+      });
+      setDistributorMap(map);
+    };
+
+    fetchDistributorMap();
+  }, []);
+
   useEffect(() => {
     if (record && activeTab === "single") fetchFullRecord();
     if (activeTab === "budget") fetchBudgetHistory();
@@ -236,7 +229,67 @@ const RecordViewModal = ({ record, onClose }) => {
     }
   };
 
-  const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
+  const fetchRemainingBudget = async () => {
+    try {
+      const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
+      if (!pwpCode) return;
+
+      const { data, error } = await supabase
+        .from("amount_badget")
+        .select("remainingbalance")
+        .eq("pwp_code", pwpCode)
+        .order("id", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error) throw error;
+
+      setRemainingBudget(data?.remainingbalance ?? null);
+    } catch (err) {
+      console.error("❌ Failed to fetch remaining budget:", err.message);
+      setRemainingBudget(null);
+    }
+  };
+
+  const fetchRegularSkuData = async () => {
+    try {
+      const regularCode = record?.regularpwpcode;
+      if (!regularCode) return;
+
+      const { data, error } = await supabase
+        .from("regular_sku")
+        .select("*")
+        .eq("regular_code", regularCode)
+        .order("id", { ascending: false });
+
+      if (error) throw error;
+
+      setRegularSkuData(data || []);
+    } catch (err) {
+      console.error("❌ Failed to fetch regular_sku:", err.message);
+      setRegularSkuData([]);
+    }
+  };
+
+  const fetchRegularAccountBudgetData = async () => {
+    try {
+      const regularCode = record?.regularpwpcode;
+      if (!regularCode) return;
+
+      const { data, error } = await supabase
+        .from("regular_accountlis_badget")
+        .select("*")
+        .eq("regularcode", regularCode)
+        .order("id", { ascending: false });
+
+      if (error) throw error;
+
+      setRegularAccountBudgetData(data || []);
+    } catch (err) {
+      console.error("❌ Failed to fetch regular_accountlis_badget:", err.message);
+      setRegularAccountBudgetData([]);
+    }
+  };
 
   useEffect(() => {
     if (!record) return;
@@ -263,13 +316,11 @@ const RecordViewModal = ({ record, onClose }) => {
       .replace("Id", "ID");
   };
 
-  // ✅ Format cell values with logs
   const formatCellValue = (value, colName) => {
     if (!value && value !== 0) return "-";
 
     console.log("🔍 formatCellValue:", colName, value);
 
-    // ✅ Handle account types
     if (
       colName === "account_type" ||
       colName === "account_types" ||
@@ -278,7 +329,6 @@ const RecordViewModal = ({ record, onClose }) => {
       return convertCodesToNames(value);
     }
 
-    // ✅ Convert distributor
     if (colName === "distributor" || colName === "distributor_code") {
       const strCode = String(value).trim();
       const name = distributorMap[strCode];
@@ -286,7 +336,6 @@ const RecordViewModal = ({ record, onClose }) => {
       return name || strCode;
     }
 
-    // ✅ Convert activity (code → name)
     if (colName === "activity" || colName === "activity_code") {
       const strCode = String(value).trim();
       const name = activityMap[strCode];
@@ -309,34 +358,8 @@ const RecordViewModal = ({ record, onClose }) => {
     return String(value);
   };
 
-
-  const [remainingBudget, setRemainingBudget] = useState(null);
-
-  const fetchRemainingBudget = async () => {
-    try {
-      const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
-      if (!pwpCode) return;
-
-      const { data, error } = await supabase
-        .from("amount_badget")
-        .select("remainingbalance")
-        .eq("pwp_code", pwpCode)
-        .order("id", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (error) throw error;
-
-      setRemainingBudget(data?.remainingbalance ?? null);
-    } catch (err) {
-      console.error("❌ Failed to fetch remaining budget:", err.message);
-      setRemainingBudget(null);
-    }
-  };
-
-
-
   if (!record) return null;
+
   return (
     <div
       style={{
@@ -379,7 +402,7 @@ const RecordViewModal = ({ record, onClose }) => {
         >
           <div>
             <h2 style={{ margin: "0 0 8px", fontSize: "30px", color: "#ffff" }}>
-              {activeTab === "single" ? "Record Details" : "Budget History"}
+              Record Details
             </h2>
             <div style={{ marginBottom: "8px" }}>
               {remainingBudget !== null && (
@@ -402,7 +425,6 @@ const RecordViewModal = ({ record, onClose }) => {
                   : `Regular PWP Record: ${record?.regularpwpcode || "-"}`}
               </h3>
             </div>
-
           </div>
           <button
             onClick={onClose}
@@ -424,31 +446,8 @@ const RecordViewModal = ({ record, onClose }) => {
           </button>
         </div>
 
-        {/* Tabs */}
-        {/* Tabs */}
-        <div style={{ display: "flex", borderBottom: "1px solid #e0e0e0", backgroundColor: "#f5f5f5" }}>
-          {["single", ].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              style={{
-                flex: 1,
-                padding: "12px",
-                cursor: "pointer",
-                border: "none",
-                borderBottom: activeTab === tab ? "3px solid #1e58a3ff" : "3px solid transparent",
-                backgroundColor: activeTab === tab ? "#007bacff" : "#f5f5f5",
-                color: activeTab === tab ? "white" : "#1976d2",
-                fontWeight: "500",
-                position: "relative",
-              }}
-            >
-              {tab === "single" ? "📋 Single Record" : "💰 Budget History"}
-            </button>
-          ))}
-        </div>
-        {/* Export Button (only show in single tab) */}
-        {activeTab === "single" && fullRecord && (
+        {/* Export Button */}
+        {fullRecord && (
           <div style={{ padding: "16px", textAlign: "right" }}>
             <button
               onClick={exportSingleRecordToExcel}
@@ -466,27 +465,6 @@ const RecordViewModal = ({ record, onClose }) => {
             </button>
           </div>
         )}
-
-        {/* Export Button (only show in budget tab) */}
-        {activeTab === "budget" && filteredBudgetHistory.length > 0 && (
-          <div style={{ padding: "16px", textAlign: "right" }}>
-            <button
-              onClick={exportBudgetHistoryToExcel}
-              style={{
-                padding: "10px 20px",
-                backgroundColor: "#0aac12ff",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontWeight: "500",
-              }}
-            >
-              Export to Excel
-            </button>
-          </div>
-        )}
-
 
         {/* Content */}
         <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
@@ -509,206 +487,371 @@ const RecordViewModal = ({ record, onClose }) => {
             <div style={{ textAlign: "center", color: "#d32f2f" }}>
               <p>{error}</p>
             </div>
-          ) : activeTab === "single" && fullRecord ? (
-            <div
-              style={{
-                display: "grid",
-                gap: "20px",
-                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-              }}
-            >
-{Object.entries(fullRecord)
-  .filter(([key, value]) => {
-    if (value === null || value === undefined || value === false) return false;
-
-    // Handle strings
-    if (typeof value === "string") {
-      const val = value.trim().toUpperCase();
-
-      // Empty, dash, false, empty array string, or empty object string
-      if (
-        val === "" ||
-        val === "-" ||
-        val === "EMPTY" ||
-        val === "FALSE" ||
-        val === "[]" ||
-        val === "{}"
-      ) {
-        return false;
-      }
-    }
-
-    // Handle actual arrays
-    if (Array.isArray(value) && value.length === 0) return false;
-
-    // Handle empty objects
-    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
-      return false;
-    }
-
-    return true;
-  })
-  .map(([key, value]) => {
-    const displayValue =
-      (key === "accountType" || key === "account_type") &&
-      Object.keys(categoryMap).length > 0
-        ? convertCodesToNames(value)
-        : formatCellValue(value, key);
-
-                return (
-                  <div
-                    key={key}
-                    style={{
-                      padding: "16px",
-                      backgroundColor: "#f8f9fa",
-                      borderRadius: "8px",
-                      border: "1px solid #e0e0e0",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        color: "#666",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      {formatColumnName(key)}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "14px",
-                        color: "#333",
-                        lineHeight: "1.4",
-                        wordBreak: "break-word",
-                        whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
-                        fontFamily: typeof value === "object" ? "monospace" : "inherit",
-                      }}
-                    >
-                      {displayValue}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : activeTab === "budget" ? (
+          ) : fullRecord ? (
             <div>
-              {activeTab === "budget" ? (
-                <div>
-                  {filteredBudgetHistory.length > 0 ? (
-                    <div>
-                      {/* Only display header if cover_pwp_code or pwp_code matches */}
-                      {filteredBudgetHistory.some(
-                        (b) =>
-                          b["cover_pwp_code"] === record.cover_code ||
-                          b["pwp_code"] === record.regularpwpcode
-                      ) && (
-                          <h3 style={{ margin: 0, color: "#000000ff", fontSize: "18px" }}>
-                            {record.source === "cover_pwp"
-                              ? `Cover PWP Record: ${record.cover_code || "-"}`
-                              : `Regular PWP Record: ${record.regularpwpcode || "-"}`}
-                          </h3>
-                        )}
+              {/* Single Record Details */}
+              <div
+                style={{
+                  display: "grid",
+                  gap: "20px",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                  marginBottom: "30px",
+                }}
+              >
+                {Object.entries(fullRecord)
+                  .filter(([key, value]) => {
+                    if (value === null || value === undefined || value === false) return false;
 
-                      {/* Display table only if there is at least one matching row */}
-                      {filteredBudgetHistory.some(
-                        (b) =>
-                          b["cover_pwp_code"] === record.cover_code ||
-                          b["pwp_code"] === record.regularpwpcode
-                      ) ? (
-                        <div style={{ overflowX: "auto", maxHeight: "400px" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                            <thead style={{ position: "sticky", top: 0, backgroundColor: "#f5f5f5" }}>
-                              <tr>
-                                {[
-                                  "id",
-                                  "pwp_code",
-                                  "cover_pwp_code",
-                                  "approver_id",
-                                  "date_responded",
-                                  "response",
-                                  "remaining_balance",
-                                  "credit_budget",
-                                  "type",
-                                  "created_form",
-                                ].map((col) => (
-                                  <th
-                                    key={col}
-                                    style={{
-                                      padding: "12px 16px",
-                                      textAlign: "left",
-                                      borderBottom: "2px solid #ddd",
-                                      fontSize: "12px",
-                                      fontWeight: "600",
-                                      backgroundColor: "#f5f5f5",
-                                    }}
-                                  >
-                                    {formatColumnName(col)}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredBudgetHistory
-                                .filter(
-                                  (b) =>
-                                    b["cover_pwp_code"] === record.cover_code ||
-                                    b["pwp_code"] === record.regularpwpcode
-                                )
-                                .map((row, index) => (
-                                  <tr
-                                    key={row.id || index}
-                                    style={{ backgroundColor: index % 2 === 0 ? "white" : "#fafafa" }}
-                                  >
-                                    {[
-                                      "id",
-                                      "pwp_code",
-                                      "cover_pwp_code",
-                                      "approver_id",
-                                      "date_responded",
-                                      "response",
-                                      "remaining_balance",
-                                      "credit_budget",
-                                      "type",
-                                      "created_form",
-                                    ].map((col) => (
-                                      <td
-                                        key={col}
-                                        style={{
-                                          padding: "12px 16px",
-                                          borderBottom: "1px solid #eee",
-                                          fontSize: "12px",
-                                          maxWidth: "200px",
-                                          overflow: "hidden",
-                                          textOverflow: "ellipsis",
-                                          whiteSpace: "nowrap",
-                                        }}
-                                      >
-                                        {formatCellValue(row[col], col)}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
+                    if (typeof value === "string") {
+                      const val = value.trim().toUpperCase();
+
+                      if (
+                        val === "" ||
+                        val === "-" ||
+                        val === "EMPTY" ||
+                        val === "FALSE" ||
+                        val === "[]" ||
+                        val === "{}"
+                      ) {
+                        return false;
+                      }
+                    }
+
+                    if (Array.isArray(value) && value.length === 0) return false;
+
+                    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
+                      return false;
+                    }
+
+                    return true;
+                  })
+                  .map(([key, value]) => {
+                    const displayValue =
+                      (key === "accountType" || key === "account_type") &&
+                        Object.keys(categoryMap).length > 0
+                        ? convertCodesToNames(value)
+                        : formatCellValue(value, key);
+
+                    return (
+                      <div
+                        key={key}
+                        style={{
+                          padding: "16px",
+                          backgroundColor: "#f8f9fa",
+                          borderRadius: "8px",
+                          border: "1px solid #e0e0e0",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: "#666",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.5px",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          {formatColumnName(key)}
                         </div>
-                      ) : (
-                        <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
-                          No budget history found for this record
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            color: "#333",
+                            lineHeight: "1.4",
+                            wordBreak: "break-word",
+                            whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
+                            fontFamily: typeof value === "object" ? "monospace" : "inherit",
+                          }}
+                        >
+                          {displayValue}
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
-                      No budget history found for this record
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* SKU Table - Only show if data exists */}
+              {regularSkuData.length > 0 && (
+                <div style={{ marginBottom: "30px" }}>
+                  <h3 style={{
+                    marginBottom: "16px",
+                    color: "#0080ffff",
+                    fontSize: "20px",
+                    fontWeight: "600",
+                    borderBottom: "2px solid #0080ffff",
+                    paddingBottom: "8px"
+                  }}>
+                    📦 SKU Data
+                  </h3>
+                  <div style={{ overflowX: "auto", maxHeight: "500px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead
+                        style={{
+                          position: "sticky",
+                          top: 0,
+                          backgroundColor: "#f5f5f5",
+                          zIndex: 1,
+                        }}
+                      >
+                        <tr>
+                          {[
+                            "id",
+                            "regular_code",
+                            "account_name",
+                            "sku_code",
+                            "srp",
+                            "qty",
+                            "uom",
+                            "billing_amount",
+                            "discount",
+                            "total_amount",
+                          ].map((col) => (
+                            <th
+                              key={col}
+                              style={{
+                                padding: "12px 16px",
+                                textAlign: col === "total_amount" ? "right" : "left",
+                                borderBottom: "2px solid #ddd",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                backgroundColor: "#f5f5f5",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {formatColumnName(col)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {regularSkuData.map((row, index) => (
+                          <tr
+                            key={row.id || index}
+                            style={{
+                              backgroundColor: index % 2 === 0 ? "white" : "#fafafa",
+                            }}
+                          >
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.id}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.regular_code}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.account_name}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.sku_code || "-"}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.srp
+                                ? `₱${Number(row.srp).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                                : "-"}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.qty || 0}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.uom}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.billing_amount
+                                ? `₱${Number(row.billing_amount).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                                : "-"}
+                            </td>
+                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                              {row.discount
+                                ? `₱${Number(row.discount).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                                : "-"}
+                            </td>
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                borderBottom: "1px solid #eee",
+                                fontSize: "12px",
+                                textAlign: "right",
+                              }}
+                            >
+                              {row.total_amount
+                                ? `₱${Number(row.total_amount).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                                : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+
+                      {/* ✅ TOTAL FOOTER ROW */}
+                      <tfoot>
+                        <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "600" }}>
+                          <td
+                            colSpan="9"
+                            style={{
+                              padding: "12px 16px",
+                              borderTop: "2px solid #0080ff",
+                              fontSize: "14px",
+                              textAlign: "right",
+                            }}
+                          >
+                            Total Amount:
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              borderTop: "2px solid #0080ff",
+                              fontSize: "14px",
+                              textAlign: "right",
+                              color: "#0080ff",
+                            }}
+                          >
+                            {regularSkuData.length > 0
+                              ? `₱${regularSkuData
+                                .reduce((sum, row) => sum + (Number(row.total_amount) || 0), 0)
+                                .toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                              : "-"}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+
+                  </div>
                 </div>
-              ) : null}
+              )}
 
+              {/* Account Budget Table - Only show if data exists */}
+              {regularAccountBudgetData.length > 0 && (
+                <div style={{ marginBottom: "30px" }}>
+                  <h3 style={{
+                    marginBottom: "16px",
+                    color: "#0080ffff",
+                    fontSize: "20px",
+                    fontWeight: "600",
+                    borderBottom: "2px solid #0080ffff",
+                    paddingBottom: "8px"
+                  }}>
+                    💰 Account Budget
+                  </h3>
+                  <div style={{ overflowX: "auto", maxHeight: "500px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead
+                        style={{
+                          position: "sticky",
+                          top: 0,
+                          backgroundColor: "#f5f5f5",
+                          zIndex: 1,
+                        }}
+                      >
+                        <tr>
+                          {["account_name", "budget"].map((col) => (
+                            <th
+                              key={col}
+                              style={{
+                                padding: "12px 16px",
+                                textAlign: col === "budget" ? "right" : "left",
+                                borderBottom: "2px solid #ddd",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                backgroundColor: "#f5f5f5",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {formatColumnName(col)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {regularAccountBudgetData.map((row, index) => (
+                          <tr
+                            key={row.id || index}
+                            style={{
+                              backgroundColor: index % 2 === 0 ? "white" : "#fafafa",
+                            }}
+                          >
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                borderBottom: "1px solid #eee",
+                                fontSize: "12px",
+                                textAlign: "left",
+                              }}
+                            >
+                              {row.account_name}
+                            </td>
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                borderBottom: "1px solid #eee",
+                                fontSize: "12px",
+                                textAlign: "right",
+                              }}
+                            >
+                              {row.budget
+                                ? `₱${Number(row.budget).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                                : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+
+                      <tfoot>
+                        <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "600" }}>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              borderTop: "2px solid #0080ff",
+                              fontSize: "14px",
+                              textAlign: "right",
+                            }}
+                          >
+                            Total Budget:
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              borderTop: "2px solid #0080ff",
+                              fontSize: "14px",
+                              textAlign: "right",
+                              color: "#0080ff",
+                            }}
+                          >
+                            {regularAccountBudgetData.length > 0
+                              ? `₱${regularAccountBudgetData
+                                .reduce((sum, row) => sum + (Number(row.budget) || 0), 0)
+                                .toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                              : "-"}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+
+                  </div>
+                </div>
+              )}
             </div>
           ) : null}
         </div>
