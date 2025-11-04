@@ -442,18 +442,18 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
     }, [visaCode]);
 
 
-const handleApprove = async () => {
+ const handleApprove = async () => {
     if (!visaCode) return;
 
     const result = await Swal.fire({
-        title: 'Approve this PWP?',
+        title: "Approve this PWP?",
         text: `Are you sure you want to approve ${visaCode}?`,
-        icon: 'question',
+        icon: "question",
         showCancelButton: true,
-        confirmButtonColor: '#10b981',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, Approve',
-        cancelButtonText: 'Cancel'
+        confirmButtonColor: "#10b981",
+        cancelButtonColor: "#6b7280",
+        confirmButtonText: "Yes, Approve",
+        cancelButtonText: "Cancel",
     });
 
     if (!result.isConfirmed) return;
@@ -462,37 +462,154 @@ const handleApprove = async () => {
     const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
     const userId = currentUser?.UserID || "unknown";
 
+    let remainingBalance = null;
+    let creditBudget = null;
+    let coverPwpCode = null;
+
     try {
-        // Insert approval history
-        const { error: historyError } = await supabase
-            .from("Approval_History")
-            .insert({
-                PwpCode: visaCode,
-                ApproverId: userId,
-                DateResponded: dateTime,
-                Response: "Approved",
-                Type: userType || "admin",
-                Notication: false,
-                CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
-            });
-
-        if (historyError) throw historyError;
-
-        // Update amount_badget if needed
-        const updatePayload = {
+        let updatePayload = {
             Approved: true,
             createdate: dateTime,
         };
 
-        const { error: updateError } = await supabase
-            .from("amount_badget")
-            .update(updatePayload)
-            .eq("pwp_code", visaCode);
+        // ✅ REGULAR PWP
+        if (visaCode.startsWith("R")) {
+            const { data: pwpData, error: pwpError } = await supabase
+                .from("regular_pwp")
+                .select("remaining_balance, coverPwpCode, credit_budget")
+                .eq("regularpwpcode", visaCode)
+                .single();
 
-        if (updateError) {
-            console.warn("Warning: Failed to update budget approval:", updateError.message);
+            if (pwpError || !pwpData) {
+                Swal.fire("Error", "Failed to fetch Regular PWP budget data.", "error");
+                return;
+            }
+
+            remainingBalance = parseFloat(pwpData.remaining_balance);
+            creditBudget = parseFloat(pwpData.credit_budget);
+            coverPwpCode = pwpData.coverPwpCode;
+
+            if (isNaN(remainingBalance) || isNaN(creditBudget) || !coverPwpCode) {
+                Swal.fire("Error", "Incomplete budget data for this PWP.", "error");
+                return;
+            }
+
+            // ✅ Fetch amount_badget for the cover PWP
+            const { data: budgetData, error: budgetError } = await supabase
+                .from("amount_badget")
+                .select("amountbadget, remainingbalance")
+                .eq("pwp_code", coverPwpCode)
+                .single();
+
+            if (budgetError || !budgetData) {
+                Swal.fire("Error", "Failed to fetch budget record.", "error");
+                return;
+            }
+
+            const currentRemaining = parseFloat(budgetData.remainingbalance);
+
+            // ✅ Check if kulang ang remaining balance
+            if (currentRemaining < creditBudget) {
+                await Swal.fire({
+                    icon: "error",
+                    title: "Denied!",
+                    html: `
+                        <b>${visaCode}</b> cannot be approved.<br/>
+                        Remaining Balance: <b>${currentRemaining.toLocaleString()}</b><br/>
+                        Required Budget: <b>${creditBudget.toLocaleString()}</b>
+                    `,
+                    confirmButtonColor: "#ef4444",
+                    confirmButtonText: "OK",
+                });
+                // ❌ Stop here — no database updates, no insert, no logs
+                return;
+            }
+
+            // ✅ Update cover PWP remaining balance
+            const newRemaining = currentRemaining - creditBudget;
+
+            const { error: updateError } = await supabase
+                .from("amount_badget")
+                .update({
+                    remainingbalance: newRemaining,
+                    ...updatePayload,
+                })
+                .eq("pwp_code", coverPwpCode);
+
+            if (updateError) {
+                Swal.fire("Error", "Failed to update cover PWP balance.", "error");
+                return;
+            }
+        } else {
+            // ✅ For Cover or Claims PWP
+            const { error: updateError } = await supabase
+                .from("amount_badget")
+                .update(updatePayload)
+                .eq("pwp_code", visaCode);
+
+            if (updateError) {
+                Swal.fire("Error", "Failed to update amount_badget.", "error");
+                return;
+            }
         }
 
+        // ✅ Log Approval History only if approved
+        const { error: historyError } = await supabase.from("Approval_History").insert({
+            PwpCode: visaCode,
+            ApproverId: userId,
+            DateResponded: dateTime,
+            Response: "Approved",
+            Type: userType || "admin",
+            Notication: false,
+            CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
+        });
+
+        if (historyError) {
+            Swal.fire("Error", "Failed to log approval. Please try again.", "error");
+            return;
+        }
+
+        // ✅ Log approved_history_budget only if approved
+        const { error: historyBudgetError } = await supabase
+            .from("approved_history_budget")
+            .insert({
+                pwp_code: visaCode,
+                approver_id: userId,
+                date_responded: dateTime,
+                response: "Approved",
+                type: userType || "admin",
+                created_form: data?.createForm || data?.CreatedForm || "unknown",
+                remaining_balance: remainingBalance,
+                credit_budget: creditBudget,
+                cover_pwp_code: coverPwpCode,
+                updated_amount_badget: true,
+            });
+
+        if (historyBudgetError) {
+            Swal.fire("Error", "Failed to log approval + budget.", "error");
+            return;
+        }
+
+        // ✅ Log activity (for approved only)
+        try {
+            const ipRes = await fetch("https://api.ipify.org?format=json");
+            const { ip } = await ipRes.json();
+            const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+            const geo = await geoRes.json();
+
+            await supabase.from("RecentActivity").insert({
+                userId,
+                device: navigator.userAgent || "Unknown Device",
+                location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+                ip,
+                time: dateTime,
+                action: `Approved ${visaCode}`,
+            });
+        } catch (logErr) {
+            console.warn("Activity logging failed:", logErr.message);
+        }
+
+        // ✅ Success Message
         Swal.fire({
             icon: "success",
             title: "Approved!",
@@ -502,60 +619,61 @@ const handleApprove = async () => {
             onClose();
             window.location.reload();
         });
+
     } catch (error) {
         console.error("Approval error:", error);
         Swal.fire("Error", "Failed to approve. Please try again.", "error");
     }
 };
 
-const handleDisapprove = async () => {
-    if (!visaCode) return;
+    const handleDisapprove = async () => {
+        if (!visaCode) return;
 
-    const result = await Swal.fire({
-        title: 'Disapprove this PWP?',
-        text: `Are you sure you want to disapprove ${visaCode}?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, Disapprove',
-        cancelButtonText: 'Cancel'
-    });
-
-    if (!result.isConfirmed) return;
-
-    const dateTime = new Date().toISOString();
-    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-    const userId = currentUser?.UserID || "unknown";
-
-    try {
-        const { error } = await supabase
-            .from("Approval_History")
-            .insert({
-                PwpCode: visaCode,
-                ApproverId: userId,
-                DateResponded: dateTime,
-                Response: "Disapprove",
-                Type: userType || null,
-                Notication: false,
-                CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
-            });
-
-        if (error) throw error;
-
-        Swal.fire({
-            icon: "success",
-            title: "Disapproved",
-            confirmButtonText: "OK",
-        }).then(() => {
-            onClose();
-            window.location.reload();
+        const result = await Swal.fire({
+            title: 'Disapprove this PWP?',
+            text: `Are you sure you want to disapprove ${visaCode}?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes, Disapprove',
+            cancelButtonText: 'Cancel'
         });
-    } catch (error) {
-        console.error("Disapproval error:", error);
-        Swal.fire("Error", "Failed to disapprove. Please try again.", "error");
-    }
-};
+
+        if (!result.isConfirmed) return;
+
+        const dateTime = new Date().toISOString();
+        const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+        const userId = currentUser?.UserID || "unknown";
+
+        try {
+            const { error } = await supabase
+                .from("Approval_History")
+                .insert({
+                    PwpCode: visaCode,
+                    ApproverId: userId,
+                    DateResponded: dateTime,
+                    Response: "Disapprove",
+                    Type: userType || null,
+                    Notication: false,
+                    CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
+                });
+
+            if (error) throw error;
+
+            Swal.fire({
+                icon: "success",
+                title: "Disapproved",
+                confirmButtonText: "OK",
+            }).then(() => {
+                onClose();
+                window.location.reload();
+            });
+        } catch (error) {
+            console.error("Disapproval error:", error);
+            Swal.fire("Error", "Failed to disapprove. Please try again.", "error");
+        }
+    };
 
 
     const [categoryMap, setCategoryMap] = useState({});
@@ -585,6 +703,36 @@ const handleDisapprove = async () => {
         fetchCategories();
     }, []);
 
+    const [coverRemaining, setCoverRemaining] = useState(0);
+
+    // ✅ Fetch cover PWP remaining balance
+    useEffect(() => {
+        const fetchCoverRemaining = async () => {
+            try {
+                // check kung may coverPwpCode sa data
+                if (!data?.coverPwpCode) return;
+
+                const { data: budgetData, error } = await supabase
+                    .from("amount_badget")
+                    .select("remainingbalance")
+                    .eq("pwp_code", data.coverPwpCode)
+                    .single();
+
+                if (error) {
+                    console.error("Error fetching cover remaining balance:", error.message);
+                    return;
+                }
+
+                setCoverRemaining(parseFloat(budgetData?.remainingbalance || 0));
+            } catch (err) {
+                console.error("Unexpected error:", err);
+            }
+        };
+
+        fetchCoverRemaining();
+    }, [data?.coverPwpCode]);
+
+
     if (!data) return null;
 
     return (
@@ -594,6 +742,39 @@ const handleDisapprove = async () => {
                     <h2>
                         View {type} - {visaCode}
                     </h2>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            backgroundColor: '#007bff',
+                            color: '#fff',
+                            border: 'none',
+                            padding: '10px 22px',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            boxShadow: '0 3px 6px rgba(0, 123, 255, 0.4)',
+                            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#0056b3';
+                            e.currentTarget.style.boxShadow = '0 5px 12px rgba(0, 86, 179, 0.6)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#007bff';
+                            e.currentTarget.style.boxShadow = '0 3px 6px rgba(0, 123, 255, 0.4)';
+                        }}
+                        onMouseDown={(e) => {
+                            e.currentTarget.style.backgroundColor = '#004494';
+                            e.currentTarget.style.boxShadow = '0 2px 5px rgba(0, 68, 148, 0.8)';
+                        }}
+                        onMouseUp={(e) => {
+                            e.currentTarget.style.backgroundColor = '#0056b3';
+                            e.currentTarget.style.boxShadow = '0 5px 12px rgba(0, 86, 179, 0.6)';
+                        }}
+                    >
+                        X
+                    </button>
                 </div>
 
                 <div className="modal-content-scrollable">
@@ -601,43 +782,43 @@ const handleDisapprove = async () => {
 
 
                         {/* ✅ Rest of the Form Fields */}
- {Object.entries(data)
-    .filter(([key, value]) => {
-        // ✅ Hide fields with null, undefined, empty string, or whitespace-only values
-        if (value === null || value === undefined) return false;
-        if (typeof value === 'string' && value.trim() === '') return false;
-        if (value === '-') return false;
-        
-        // ✅ Hide empty arrays (including when displayed as "[ ]" or "[]")
-        if (Array.isArray(value) && value.length === 0) return false;
-        
-        // ✅ Hide if formatValue would return empty or just brackets
-        const formatted = formatValue(value, key);
-        if (formatted === '[ ]' || formatted === '[]' || formatted.trim() === '') return false;
+                        {Object.entries(data)
+                            .filter(([key, value]) => {
+                                // ✅ Hide fields with null, undefined, empty string, or whitespace-only values
+                                if (value === null || value === undefined) return false;
+                                if (typeof value === 'string' && value.trim() === '') return false;
+                                if (value === '-') return false;
 
-        // Hide these fields specifically for Claims PWP
-        if (
-            type === 'Claims PWP' &&
-            ['objective', 'promo_scheme', 'remarks'].includes(key)
-        ) return false;
+                                // ✅ Hide empty arrays (including when displayed as "[ ]" or "[]")
+                                if (Array.isArray(value) && value.length === 0) return false;
 
-        // Hide these general fields for all types
-        if (['notification', 'amount_badget'].includes(key)) return false;
+                                // ✅ Hide if formatValue would return empty or just brackets
+                                const formatted = formatValue(value, key);
+                                if (formatted === '[ ]' || formatted === '[]' || formatted.trim() === '') return false;
 
-        if (
-            type === 'Regular PWP' &&
-            ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'sku', 'YearBudget'].includes(key)
-        ) return false;
+                                // Hide these fields specifically for Claims PWP
+                                if (
+                                    type === 'Claims PWP' &&
+                                    ['objective', 'promo_scheme', 'remarks'].includes(key)
+                                ) return false;
 
-        if (key.toLowerCase() === 'accounts') return accountsBudgetList.length > 0;
+                                // Hide these general fields for all types
+                                if (['notification', 'amount_badget'].includes(key)) return false;
 
-        if (key.toLowerCase() === 'sku') return skuListing.length > 0;
+                                if (
+                                    type === 'Regular PWP' &&
+                                    ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode', 'credit_budget', 'remaining_balance', 'sku', 'YearBudget'].includes(key)
+                                ) return false;
 
-        if (key.toLowerCase() === 'amount_display') return value === true || value === 'Yes';
+                                if (key.toLowerCase() === 'accounts') return accountsBudgetList.length > 0;
 
-        return true;
-    })
-    .map(([key, value]) => (
+                                if (key.toLowerCase() === 'sku') return skuListing.length > 0;
+
+                                if (key.toLowerCase() === 'amount_display') return value === true || value === 'Yes';
+
+                                return true;
+                            })
+                            .map(([key, value]) => (
                                 <div className="form-group" key={key}>
                                     <label>{formatFieldName(key)}</label>
                                     <div className="readonly-box">
@@ -682,7 +863,7 @@ const handleDisapprove = async () => {
                                     <div className="footer-card green">
                                         <span className="footer-label">💼 Remaining Budget</span>
                                         <span className="footer-value">
-                                            ₱ {Number(data.remaining_balance || 0).toLocaleString()}
+                                            ₱ {Number(coverRemaining || 0).toLocaleString()}
                                         </span>
                                     </div>
                                     <div className="footer-card red">
@@ -1092,59 +1273,59 @@ const handleDisapprove = async () => {
 
 
 
-              <div className="modal-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-    <button
-        onClick={handleApprove}
-        style={{
-            backgroundColor: '#10b981',
-            color: '#fff',
-            border: 'none',
-            padding: '10px 24px',
-            fontSize: '16px',
-            fontWeight: '600',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            boxShadow: '0 3px 6px rgba(16, 185, 129, 0.4)',
-            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
-        }}
-        onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#059669';
-            e.currentTarget.style.boxShadow = '0 5px 12px rgba(5, 150, 105, 0.6)';
-        }}
-        onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#10b981';
-            e.currentTarget.style.boxShadow = '0 3px 6px rgba(16, 185, 129, 0.4)';
-        }}
-    >
-        ✓ Approve
-    </button>
+                <div className="modal-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={handleApprove}
+                        style={{
+                            backgroundColor: '#10b981',
+                            color: '#fff',
+                            border: 'none',
+                            padding: '10px 24px',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            boxShadow: '0 3px 6px rgba(16, 185, 129, 0.4)',
+                            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#059669';
+                            e.currentTarget.style.boxShadow = '0 5px 12px rgba(5, 150, 105, 0.6)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#10b981';
+                            e.currentTarget.style.boxShadow = '0 3px 6px rgba(16, 185, 129, 0.4)';
+                        }}
+                    >
+                        ✓ Approve
+                    </button>
 
-    <button
-        onClick={handleDisapprove}
-        style={{
-            backgroundColor: '#ef4444',
-            color: '#fff',
-            border: 'none',
-            padding: '10px 24px',
-            fontSize: '16px',
-            fontWeight: '600',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            boxShadow: '0 3px 6px rgba(239, 68, 68, 0.4)',
-            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
-        }}
-        onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#dc2626';
-            e.currentTarget.style.boxShadow = '0 5px 12px rgba(220, 38, 38, 0.6)';
-        }}
-        onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#ef4444';
-            e.currentTarget.style.boxShadow = '0 3px 6px rgba(239, 68, 68, 0.4)';
-        }}
-    >
-        ✕ Disapprove
-    </button>
-{/* 
+                    <button
+                        onClick={handleDisapprove}
+                        style={{
+                            backgroundColor: '#ef4444',
+                            color: '#fff',
+                            border: 'none',
+                            padding: '10px 24px',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            boxShadow: '0 3px 6px rgba(239, 68, 68, 0.4)',
+                            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#dc2626';
+                            e.currentTarget.style.boxShadow = '0 5px 12px rgba(220, 38, 38, 0.6)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#ef4444';
+                            e.currentTarget.style.boxShadow = '0 3px 6px rgba(239, 68, 68, 0.4)';
+                        }}
+                    >
+                        ✕ Disapprove
+                    </button>
+                    {/* 
     <button
         onClick={onClose}
         style={{
@@ -1171,7 +1352,7 @@ const handleDisapprove = async () => {
         Close
     </button>
     */}
-</div>
+                </div>
             </div >
         </div >
     );
