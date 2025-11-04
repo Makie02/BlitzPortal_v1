@@ -106,55 +106,57 @@ function RecordsPage() {
       let regularData = [];
 
       // --- FETCH COVER PWP ---
-      if (filter === "all" || filter === "cover") {
-        const { data: cData, error: cError } = await supabase
-          .from("cover_pwp")
-          .select(`
-          id,
-          cover_code,
-          activity,
-          credit_budget,
-          amountbadget,
-          distributor,
-          created_at
-        `)
-          .order("id", { ascending: false })
-          .limit(50);
+     if (filter === "all" || filter === "cover") {
+  const { data: cData, error: cError } = await supabase
+    .from("cover_pwp")
+    .select(`
+      id,
+      cover_code,
+      activity,
+      credit_budget,
+      amountbadget,
+      distributor,
+      created_at,
+      createForm
+    `)
+    .order("id", { ascending: false })
+    .limit(50);
 
-        if (cError) throw cError;
+  if (cError) throw cError;
 
-        coverData = (cData || []).map(item => ({
-          ...item,
-          source: "cover_pwp",
-          pwp_code: item.cover_code,
-        }));
-      }
+  coverData = (cData || []).map(item => ({
+    ...item,
+    source: "cover_pwp",
+    pwp_code: item.cover_code,
+  }));
+}
 
-      // --- FETCH REGULAR PWP ---
-      if (filter === "all" || filter === "regular") {
-        const { data: rData, error: rError } = await supabase
-          .from("regular_pwp")
-          .select(`
-          id,
-          regularpwpcode,
-          activity,
-          credit_budget,
-          amountbadget,
-          distributor,
-          created_at,
-          branchType
-        `)
-          .order("id", { ascending: false })
-          .limit(50);
+// ✅ FETCH FOR REGULAR PWP
+if (filter === "all" || filter === "regular") {
+  const { data: rData, error: rError } = await supabase
+    .from("regular_pwp")
+    .select(`
+      id,
+      regularpwpcode,
+      activity,
+      credit_budget,
+      amountbadget,
+      distributor,
+      created_at,
+      branchType,
+      createForm
+    `)
+    .order("id", { ascending: false })
+    .limit(50);
 
-        if (rError) throw rError;
+  if (rError) throw rError;
 
-        regularData = (rData || []).map(item => ({
-          ...item,
-          source: "regular_pwp",
-          pwp_code: item.regularpwpcode,
-        }));
-      }
+  regularData = (rData || []).map(item => ({
+    ...item,
+    source: "regular_pwp",
+    pwp_code: item.regularpwpcode,
+  }));
+}
 
       const mergedData = [...coverData, ...regularData];
 
@@ -897,7 +899,7 @@ const styles = {
       // Other columns
       <span 
         style={{
-          maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
+          maxWidth: window.innerWidth <= 568 ? '100px' : col === 'created_at' ? '150px' : '200px',
           display: 'inline-block',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
