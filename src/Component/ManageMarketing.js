@@ -42,18 +42,12 @@ function EnhancedDatabaseInterface() {
   };
 
   // Filter data by user BEFORE pagination
-  const filteredByUser = data.filter(row => {
-    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-    const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-    const role = currentUser?.role || "";
+  // Filter data by user BEFORE pagination
 
-    if (role === 'admin') return true;
-    return row.createForm?.toLowerCase().trim() === currentUserName;
-  });
+  // ✅ NEW
+  const totalPages = Math.ceil(data.length / rowsPerPage);
 
-  const totalPages = Math.ceil(filteredByUser.length / rowsPerPage);
-
-  const paginatedData = filteredByUser.slice(
+  const paginatedData = data.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   );
@@ -111,250 +105,261 @@ function EnhancedDatabaseInterface() {
     fetchUsers();
   }, []);
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(false);
-      setError(null);
+const fetchData = useCallback(async () => {
+  try {
+    setLoading(true);  // ✅ Changed to true
+    setError(null);
 
-      let coverData = [];
-      let regularData = [];
-      let allColumns = [];
+    let coverData = [];
+    let regularData = [];
+    let allColumns = [];
 
-      if (filter === "all" || filter === "cover") {
-        const { data: cData, error: cError } = await supabase
-          .from("cover_pwp")
-          .select(COVER_COLUMNS.join(','))
-          .order("id", { ascending: false })
-          .limit(50);
+    if (filter === "all" || filter === "cover") {
+      const { data: cData, error: cError } = await supabase
+        .from("cover_pwp")
+        .select(COVER_COLUMNS.join(','))
+        .order("id", { ascending: false });  // ✅ Removed .limit(50)
 
-        if (cError) throw cError;
-        coverData = (cData || []).map((item) => ({
-          ...filterColumns(item, COVER_COLUMNS),
-          source: "cover_pwp",
-          pwp_code: item.cover_code
-        }));
-      }
-
-      if (filter === "all" || filter === "claims") {
-        const [distributorsResult, claimsResult] = await Promise.all([
-          supabase.from("distributors").select("code, name"),
-          supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }).limit(50)
-        ]);
-
-        if (distributorsResult.error) throw distributorsResult.error;
-        if (claimsResult.error) throw claimsResult.error;
-
-        const neededAccountTypeCodes = new Set();
-        (claimsResult.data || []).forEach(item => {
-          if (item.account_types) {
-            if (typeof item.account_types === "string" && item.account_types.includes("[")) {
-              try {
-                const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
-                codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
-              } catch {
-                const matches = item.account_types.match(/[A-Z0-9]+/g);
-                if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
-              }
-            } else {
-              neededAccountTypeCodes.add(item.account_types.trim());
-            }
-          }
-        });
-
-        const { data: accountTypesData, error: accountTypesError } = await supabase
-          .from("categorydetails")
-          .select("code, name")
-          .in("code", Array.from(neededAccountTypeCodes));
-
-        if (accountTypesError) throw accountTypesError;
-
-        const distributorsMap = new Map();
-        const accountTypesMap = new Map();
-
-        distributorsResult.data?.forEach(distributor => {
-          distributorsMap.set(distributor.code.toString(), distributor.name);
-        });
-
-        accountTypesData?.forEach(accountType => {
-          accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
-        });
-
-        const claimsFormatted = (claimsResult.data || []).map((item) => {
-          const distributorText = distributorsMap.get(item.distributor?.toString()) || item.distributor || '-';
-
-          let accountTypesText = '-';
-          if (item.account_types) {
-            let codes = [];
-            if (typeof item.account_types === "string" && item.account_types.includes("[")) {
-              try {
-                codes = JSON.parse(item.account_types.replace(/'/g, '"'));
-              } catch {
-                const matches = item.account_types.match(/[A-Z0-9]+/g);
-                if (matches) codes = matches;
-              }
-            } else {
-              codes = [item.account_types];
-            }
-            accountTypesText = codes
-              .map(code => accountTypesMap.get(code?.toString().trim()) || code)
-              .join(", ");
-          }
-
-          return {
-            ...filterColumns(item, CLAIMS_COLUMNS),
-            source: "Claims_pwp",
-            pwp_code: item.code_pwp,
-            distributor: distributorText,
-            account_types: accountTypesText
-          };
-        });
-
-        coverData = [...coverData, ...claimsFormatted];
-      }
-
-      if (filter === "all" || filter === "regular") {
-        const { data: rData, error: rError } = await supabase
-          .from("regular_pwp")
-          .select(REGULAR_COLUMNS.join(','))
-          .order("id", { ascending: false })
-          .limit(50);
-
-        if (rError) throw rError;
-        regularData = (rData || []).map((item) => ({
-          ...filterColumns(item, REGULAR_COLUMNS),
-          source: "regular_pwp",
-          pwp_code: item.regularpwpcode
-        }));
-      }
-
-      const mergedData = [...coverData, ...regularData];
-
-      const allPwpCodes = mergedData
-        .map(item => item.pwp_code)
-        .filter(code => code);
-
-      const approvalStatusMap = await getApprovalStatus(allPwpCodes);
-
-      const dataWithApprovalStatus = mergedData.map(item => ({
-        ...item,
-        approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
-        date_responded: approvalStatusMap[item.pwp_code]?.date_responded,
-        approval_created: approvalStatusMap[item.pwp_code]?.approval_created
+      if (cError) throw cError;
+      coverData = (cData || []).map((item) => ({
+        ...filterColumns(item, COVER_COLUMNS),
+        source: "cover_pwp",
+        pwp_code: item.cover_code
       }));
+    }
 
-      let filteredData = dataWithApprovalStatus;
+    if (filter === "all" || filter === "claims") {
+      const [distributorsResult, claimsResult] = await Promise.all([
+        supabase.from("distributors").select("code, name"),
+        supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false })  // ✅ Removed .limit(50)
+      ]);
 
-      if (searchQuery) {
-        filteredData = filteredData.filter(item => {
-          const searchFields = [
-            item.code,
-            item.cover_code,
-            item.regularpwpcode,
-            item.id,
-            item.account_type,
-            item.accountType,
-            item.pwp_type,
-            item.pwptype,
-            item.createForm
-          ];
+      if (distributorsResult.error) throw distributorsResult.error;
+      if (claimsResult.error) throw claimsResult.error;
 
-          return searchFields.some(field =>
-            field && field.toString().toLowerCase().includes(searchQuery.toLowerCase())
-          );
-        });
-      }
-
-      if (statusFilter !== "all") {
-        filteredData = filteredData.filter(item => {
-          const itemStatus = item.approval_status ? item.approval_status.toLowerCase() : 'pending';
-          if (statusFilter === "pending") {
-            return itemStatus === "pending" || !item.approval_status;
+      const neededAccountTypeCodes = new Set();
+      (claimsResult.data || []).forEach(item => {
+        if (item.account_types) {
+          if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+            try {
+              const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+              codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
+            } catch {
+              const matches = item.account_types.match(/[A-Z0-9]+/g);
+              if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
+            }
+          } else {
+            neededAccountTypeCodes.add(item.account_types.trim());
           }
-          if (statusFilter === "approved") {
-            return itemStatus === "approved";
+        }
+      });
+
+      const { data: accountTypesData, error: accountTypesError } = await supabase
+        .from("categorydetails")
+        .select("code, name")
+        .in("code", Array.from(neededAccountTypeCodes));
+
+      if (accountTypesError) throw accountTypesError;
+
+      const distributorsMap = new Map();
+      const accountTypesMap = new Map();
+
+      distributorsResult.data?.forEach(distributor => {
+        distributorsMap.set(distributor.code.toString(), distributor.name);
+      });
+
+      accountTypesData?.forEach(accountType => {
+        accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
+      });
+
+      const claimsFormatted = (claimsResult.data || []).map((item) => {
+        const distributorText = distributorsMap.get(item.distributor?.toString()) || item.distributor || '-';
+
+        let accountTypesText = '-';
+        if (item.account_types) {
+          let codes = [];
+          if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+            try {
+              codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+            } catch {
+              const matches = item.account_types.match(/[A-Z0-9]+/g);
+              if (matches) codes = matches;
+            }
+          } else {
+            codes = [item.account_types];
           }
-          if (statusFilter === "disapprove") {
-            return itemStatus === "disapprove";
-          }
-          return itemStatus === statusFilter;
-        });
-      }
-
-      if (dateFrom) {
-        filteredData = filteredData.filter(item => {
-          if (!item.created_at) return false;
-          const itemDate = new Date(item.created_at);
-          const fromDate = new Date(dateFrom);
-          return itemDate >= fromDate;
-        });
-      }
-
-      if (dateTo) {
-        filteredData = filteredData.filter(item => {
-          if (!item.created_at) return false;
-          const itemDate = new Date(item.created_at);
-          const toDate = new Date(dateTo);
-          toDate.setHours(23, 59, 59, 999);
-          return itemDate <= toDate;
-        });
-      }
-
-      if (filteredData.length > 0) {
-        const regularCols = REGULAR_COLUMNS.filter(col => col !== 'regularpwpcode');
-        const coverCols = COVER_COLUMNS.filter(col => col !== 'cover_code');
-
-        if (filter === "all") {
-          allColumns = ['id', 'code', 'pwptype', 'created_at', 'createForm',];
-        } else if (filter === "cover") {
-          allColumns = ['id', 'cover_code', ...coverCols.slice(1)];
-        } else if (filter === "regular") {
-          allColumns = ['id', 'regularpwpcode', ...regularCols.slice(1)];
-        } else if (filter === "claims") {
-          allColumns = CLAIMS_COLUMNS;
+          accountTypesText = codes
+            .map(code => accountTypesMap.get(code?.toString().trim()) || code)
+            .join(", ");
         }
 
-        const userIdToNameMap = new Map(
-          users.map(u => [u.UserID, u.name.toUpperCase().trim()])
+        return {
+          ...filterColumns(item, CLAIMS_COLUMNS),
+          source: "Claims_pwp",
+          pwp_code: item.code_pwp,
+          distributor: distributorText,
+          account_types: accountTypesText
+        };
+      });
+
+      coverData = [...coverData, ...claimsFormatted];
+    }
+
+    if (filter === "all" || filter === "regular") {
+      const { data: rData, error: rError } = await supabase
+        .from("regular_pwp")
+        .select(REGULAR_COLUMNS.join(','))
+        .order("id", { ascending: false });  // ✅ Removed .limit(50)
+
+      if (rError) throw rError;
+      regularData = (rData || []).map((item) => ({
+        ...filterColumns(item, REGULAR_COLUMNS),
+        source: "regular_pwp",
+        pwp_code: item.regularpwpcode
+      }));
+    }
+
+    const mergedData = [...coverData, ...regularData];
+
+    const allPwpCodes = mergedData  // ✅ Fixed typo from 'mergedDataa'
+      .map(item => item.pwp_code)
+      .filter(code => code);
+
+    const approvalStatusMap = await getApprovalStatus(allPwpCodes);
+    
+    const dataWithApprovalStatus = mergedData.map(item => ({
+      ...item,
+      approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
+      date_responded: approvalStatusMap[item.pwp_code]?.date_responded,
+      approval_created: approvalStatusMap[item.pwp_code]?.approval_created
+    }));
+
+    let filteredData = dataWithApprovalStatus;
+
+    // ✅ FILTER BY USER BEFORE CONVERTING IDs TO NAMES
+    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+    const currentUserID = currentUser?.UserID ?? null;
+    const role = currentUser?.role || "";
+
+    if (role !== 'admin') {
+      filteredData = filteredData.filter(item => {
+        const itemCreatorID = Number(item.createForm);
+        return itemCreatorID === currentUserID;
+      });
+    }
+
+    if (searchQuery) {
+      filteredData = filteredData.filter(item => {
+        const searchFields = [
+          item.code,
+          item.cover_code,
+          item.regularpwpcode,
+          item.code_pwp,
+          item.id,
+          item.account_type,
+          item.accountType,
+          item.pwp_type,
+          item.pwptype,
+          item.createForm
+        ];
+
+        return searchFields.some(field =>
+          field && field.toString().toLowerCase().includes(searchQuery.toLowerCase())
         );
+      });
+    }
 
-        const normalizedData = filteredData.map(item => {
-          let createFormValue = item.createForm;
-          if (createFormValue) {
-            const numVal = Number(createFormValue);
-            if (!isNaN(numVal) && userIdToNameMap.has(numVal)) {
-              createFormValue = userIdToNameMap.get(numVal);
-            }
+    if (statusFilter !== "all") {
+      filteredData = filteredData.filter(item => {
+        const itemStatus = item.approval_status ? item.approval_status.toLowerCase() : 'pending';
+        if (statusFilter === "pending") {
+          return itemStatus === "pending" || !item.approval_status;
+        }
+        if (statusFilter === "approved") {
+          return itemStatus === "approved";
+        }
+        if (statusFilter === "disapprove") {
+          return itemStatus === "disapprove";
+        }
+        return itemStatus === statusFilter;
+      });
+    }
+
+    if (dateFrom) {
+      filteredData = filteredData.filter(item => {
+        if (!item.created_at) return false;
+        const itemDate = new Date(item.created_at);
+        const fromDate = new Date(dateFrom);
+        return itemDate >= fromDate;
+      });
+    }
+
+    if (dateTo) {
+      filteredData = filteredData.filter(item => {
+        if (!item.created_at) return false;
+        const itemDate = new Date(item.created_at);
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        return itemDate <= toDate;
+      });
+    }
+
+    if (filteredData.length > 0) {
+      const regularCols = REGULAR_COLUMNS.filter(col => col !== 'regularpwpcode');
+      const coverCols = COVER_COLUMNS.filter(col => col !== 'cover_code');
+
+      if (filter === "all") {
+        allColumns = ['id', 'code', 'pwptype', 'created_at', 'createForm'];
+      } else if (filter === "cover") {
+        allColumns = ['id', 'cover_code', ...coverCols.slice(1)];
+      } else if (filter === "regular") {
+        allColumns = ['id', 'regularpwpcode', ...regularCols.slice(1)];
+      } else if (filter === "claims") {
+        allColumns = CLAIMS_COLUMNS;
+      }
+
+      const userIdToNameMap = new Map(
+        users.map(u => [u.UserID, u.name.toUpperCase().trim()])
+      );
+
+      const normalizedData = filteredData.map(item => {
+        let createFormValue = item.createForm;
+        if (createFormValue) {
+          const numVal = Number(createFormValue);
+          if (!isNaN(numVal) && userIdToNameMap.has(numVal)) {
+            createFormValue = userIdToNameMap.get(numVal);
           }
+        }
 
-          if (filter === "all") {
-            return {
-              ...item,
-              createForm: createFormValue,
-              code: item.regularpwpcode || item.cover_code || item.code_pwp || '-',
-              accountType: item.accountType || item.account_type || '-',
-              pwptype: item.pwptype || item.pwp_type || '-',
-              pwp_type: item.pwp_type || item.pwptype || '-',
-            };
-          }
-
+        if (filter === "all") {
           return {
             ...item,
-            createForm: createFormValue
+            createForm: createFormValue,
+            code: item.regularpwpcode || item.cover_code || item.code_pwp || '-',
+            accountType: item.accountType || item.account_type || '-',
+            pwptype: item.pwptype || item.pwp_type || '-',
+            pwp_type: item.pwp_type || item.pwptype || '-',
           };
-        });
+        }
 
-        setColumns(allColumns);
-        setData(normalizedData);
-      } else {
-        setData([]);
-        setColumns([]);
-      }
-    } catch (err) {
-      setError(`Unexpected error: ${err.message}`);
-    } finally {
-      setLoading(false);
+        return {
+          ...item,
+          createForm: createFormValue
+        };
+      });
+
+      setColumns(allColumns);
+      setData(normalizedData);
+    } else {
+      setData([]);
+      setColumns([]);
     }
-  }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, CLAIMS_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, users]);
+  } catch (err) {
+    setError(`Unexpected error: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+}, [filter, REGULAR_COLUMNS, COVER_COLUMNS, CLAIMS_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, users]);
 
   const handleEdit = async (row) => {
     let tableName = "regular_pwp";
@@ -454,7 +459,7 @@ function EnhancedDatabaseInterface() {
 
       if (row.source === "Claims_pwp") {
         const claimsCode = row.code_pwp || row.pwp_code;
-        
+
         if (!claimsCode) {
           setError("Claims code missing for deletion.");
           setUpdating(false);
@@ -477,7 +482,7 @@ function EnhancedDatabaseInterface() {
       }
       else if (row.source === "cover_pwp") {
         const coverCode = row.cover_code || row.pwp_code;
-        
+
         if (!coverCode) {
           setError("Cover code missing for deletion.");
           setUpdating(false);
@@ -498,7 +503,7 @@ function EnhancedDatabaseInterface() {
       }
       else if (row.source === "regular_pwp") {
         const regularCode = row.regularpwpcode || row.pwp_code;
-        
+
         if (!regularCode) {
           setError("Regular code missing for deletion.");
           setUpdating(false);
@@ -1130,7 +1135,7 @@ function EnhancedDatabaseInterface() {
         </div>
       </div>
 
-      {filteredByUser.length > 0 && (
+      {data.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', alignItems: 'center', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '14px' }}>Rows per page:</span>
