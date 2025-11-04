@@ -21,13 +21,16 @@ function ClaimsRecords() {
     'id', 
     'code_pwp',      
     'distributor',
-    'account_types',
-    'activity',
-    'createForm', 
-    'amount_budget',       
-    'created_at'    
+    'account_types',    
+    'created_at', 
+    'createForm'       
   ], []);
 
+  const totalPages = Math.ceil(data.length / rowsPerPage);
+  const paginatedData = data.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
 
   // Helper function to convert codes to readable text
 const convertCodeToText = useCallback((code, type, accountTypesMap, distributorsMap) => {
@@ -55,7 +58,7 @@ const convertCodeToText = useCallback((code, type, accountTypesMap, distributors
     return codes
       .map(singleCode => {
         const cleanCode = singleCode.toString().trim().toUpperCase();
-        return accountTypesMap.get(cleanCode) || ` (${cleanCode})`;
+        return accountTypesMap.get(cleanCode) || `(${cleanCode})`;
       })
       .join(', ');
   }
@@ -63,7 +66,7 @@ const convertCodeToText = useCallback((code, type, accountTypesMap, distributors
   // 🔁 DISTRIBUTOR LOGIC
   if (type === 'distributor') {
     const cleanCode = code.toString().trim();
-    return distributorsMap.get(cleanCode) || ` Distributor (${cleanCode})`;
+    return distributorsMap.get(cleanCode) || `Distributor (${cleanCode})`;
   }
 
   return code;
@@ -106,7 +109,7 @@ const convertCodeToText = useCallback((code, type, accountTypesMap, distributors
     });
     return filtered;
   }, []);
-{/*
+
   // Function to get approval status for PWP codes
   const getApprovalStatus = useCallback(async (pwpCodes) => {
     try {
@@ -135,7 +138,7 @@ const convertCodeToText = useCallback((code, type, accountTypesMap, distributors
       return {};
     }
   }, []);
-*/}
+
   // Main fetch function
 
 const fetchData = useCallback(async () => {
@@ -143,37 +146,15 @@ const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    const [distributorsResult, claimsResult, usersResult, activityResult] = await Promise.all([
+    const [distributorsResult, claimsResult] = await Promise.all([
       supabase.from("distributors").select("code, name"),
-      supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false }),
-      supabase.from("Account_Users").select("UserID, name"),
-      supabase.from("activity").select("code, name") // 🧩 Added this
+      supabase.from("Claims_pwp").select(CLAIMS_COLUMNS.join(',')).order("id", { ascending: false })
     ]);
 
     if (distributorsResult.error) throw distributorsResult.error;
     if (claimsResult.error) throw claimsResult.error;
-    if (usersResult.error) throw usersResult.error;
-    if (activityResult.error) throw activityResult.error;
 
-    // 🧠 Create Maps
-    const distributorsMap = new Map();
-    const accountTypesMap = new Map();
-    const usersMap = new Map();
-    const activityMap = new Map(); // 🧩 Added this
-
-    distributorsResult.data?.forEach(dist => {
-      distributorsMap.set(dist.code.toString(), dist.name);
-    });
-
-    usersResult.data?.forEach(user => {
-      usersMap.set(user.UserID.toString(), user.name);
-    });
-
-    activityResult.data?.forEach(act => {
-      activityMap.set(act.code.toString(), act.name);
-    });
-
-    // 🧩 Collect all account type codes
+    // Step 1 — Kunin ang lahat ng needed account_types codes mula sa claims
     const neededAccountTypeCodes = new Set();
     (claimsResult.data || []).forEach(item => {
       if (item.account_types) {
@@ -181,7 +162,8 @@ const fetchData = useCallback(async () => {
           try {
             const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
             codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
-          } catch {
+          } catch (innerErr) {
+            console.error("Error parsing account_types:", innerErr);
             const matches = item.account_types.match(/[A-Z0-9]+/g);
             if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
           }
@@ -191,6 +173,7 @@ const fetchData = useCallback(async () => {
       }
     });
 
+    // Step 2 — Fetch only those account_types from categorydetails
     const { data: accountTypesData, error: accountTypesError } = await supabase
       .from("categorydetails")
       .select("code, name")
@@ -198,41 +181,44 @@ const fetchData = useCallback(async () => {
 
     if (accountTypesError) throw accountTypesError;
 
+    // Step 3 — Build maps
+    const distributorsMap = new Map();
+    const accountTypesMap = new Map();
+
+    distributorsResult.data?.forEach(distributor => {
+      distributorsMap.set(distributor.code.toString(), distributor.name);
+    });
+
     accountTypesData?.forEach(accountType => {
       accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
     });
 
-    // 🧩 Process Data
-    const processedData = (claimsResult.data || []).map(item => {
-      const creatorName = usersMap.get(item.createForm?.toString()) || "Unknown User";
-      const activityName = activityMap.get(item.activity?.toString()) || item.activity || "Unknown Activity";
+    console.log("✅ Account Types Map:", Array.from(accountTypesMap.entries()));
 
-      return {
-        ...filterColumns(item, CLAIMS_COLUMNS),
-        source: "Claims_pwp",
-        code_pwp: item.code_pwp || item.code || item.claim_code,
-        distributor_text: convertCodeToText(item.distributor, 'distributor', accountTypesMap, distributorsMap),
-        account_types_text: (() => {
-          let codes = [];
-          if (typeof item.account_types === "string" && item.account_types.includes("[")) {
-            try {
-              codes = JSON.parse(item.account_types.replace(/'/g, '"'));
-            } catch {
-              const matches = item.account_types.match(/[A-Z0-9]+/g);
-              if (matches) codes = matches;
-            }
-          } else {
-            codes = [item.account_types];
+    // Step 4 — Process claims
+    const processedData = (claimsResult.data || []).map((item) => ({
+      ...filterColumns(item, CLAIMS_COLUMNS),
+      source: "Claims_pwp",
+      code_pwp: item.code_pwp || item.code || item.claim_code,
+      distributor_text: convertCodeToText(item.distributor, 'distributor', accountTypesMap, distributorsMap),
+      account_types_text: (() => {
+        let codes = [];
+        if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+          try {
+            codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+          } catch (innerErr) {
+            console.error("Error parsing account_types in map:", innerErr);
+            const matches = item.account_types.match(/[A-Z0-9]+/g);
+            if (matches) codes = matches;
           }
-          return codes
-            .map(code => accountTypesMap.get(code?.toString().trim()) || ` ${code}`)
-            .join(", ");
-        })(),
-        // ✅ Replace with readable names
-        createForm: creatorName,
-        activity: activityName
-      };
-    });
+        } else {
+          codes = [item.account_types];
+        }
+        return codes
+          .map(code => accountTypesMap.get(code?.toString().trim()) || `(${code})`)
+          .join(", ");
+      })()
+    }));
 
     setColumns(CLAIMS_COLUMNS);
     setData(processedData);
@@ -247,8 +233,6 @@ const fetchData = useCallback(async () => {
 }, [CLAIMS_COLUMNS, filterColumns, convertCodeToText]);
 
 
-
-
   // Event handlers
   const handleViewRecord = useCallback((record) => {
     setSelectedRecord(record);
@@ -260,25 +244,6 @@ const fetchData = useCallback(async () => {
     setSelectedRecord(null);
   }, []);
 
-
-  // Filter data based on current user (unless admin)
-const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-const role = currentUser?.role || "";
-
-const filteredData = useMemo(() => {
-  if (role === 'admin') return data;
-  return data.filter(row => row.createForm?.toLowerCase().trim() === currentUserName);
-}, [data, currentUserName, role]);
-
-// Pagination using filteredData
-const totalPages = Math.ceil(filteredData.length / rowsPerPage);
-const paginatedData = filteredData.slice(
-  (currentPage - 1) * rowsPerPage,
-  currentPage * rowsPerPage
-);
-
-{/*
   // Status badge component
   const getStatusBadge = useCallback((status) => {
     const statusLower = status ? status.toLowerCase() : 'pending';
@@ -303,7 +268,6 @@ const paginatedData = filteredData.slice(
     }
 
     return (
-      
       <span
         style={{
           padding: '4px 12px',
@@ -321,7 +285,7 @@ const paginatedData = filteredData.slice(
       </span>
     );
   }, []);
-*/}
+
   // Format column names
   const formatColumnName = useCallback((colName) => {
     return colName
@@ -520,7 +484,7 @@ const paginatedData = filteredData.slice(
                   onBlur={(e) => e.target.style.borderColor = '#e1e8ed'}
                 />
               </div>
-{/*
+
               <div className="filter-item">
                 <select
                   value={statusFilter}
@@ -540,7 +504,7 @@ const paginatedData = filteredData.slice(
                   <option value="pending">Pending</option>
                 </select>
               </div>
-*/}
+
               {/* Date Range */}
               <div style={{ 
                 display: 'flex', 
@@ -623,21 +587,19 @@ const paginatedData = filteredData.slice(
                     {formatColumnName(col)}
                   </th>
                 ))}
-            {/*
-<th style={{
-  padding: '16px 20px',
-  textAlign: 'center',
-  fontWeight: '600',
-  color: '#fcfcfcff',
-  fontSize: '14px',
-  borderBottom: '2px solid #e0e0e0',
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px',
-  width: '120px'
-}}>
-  Status
-</th>
-*/}
+                <th style={{
+                  padding: '16px 20px',
+                  textAlign: 'center',
+                  fontWeight: '600',
+                  color: '#fcfcfcff',
+                  fontSize: '14px',
+                  borderBottom: '2px solid #e0e0e0',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  width: '120px'
+                }}>
+                  Status
+                </th>
                 <th style={{
                   padding: '16px 20px',
                   textAlign: 'center',
@@ -671,10 +633,10 @@ const paginatedData = filteredData.slice(
                         {renderCellValue(row, col)}
                       </span>
                     </td>
-                  ))}{/*
+                  ))}
                   <td style={{...styles.td, textAlign: 'center'}}>
                     {getStatusBadge(row.approval_status)}
-                  </td>*/}
+                  </td>
                   <td style={{...styles.td, textAlign: 'center'}}>
                     <button 
                       onClick={() => handleViewRecord(row)} 
