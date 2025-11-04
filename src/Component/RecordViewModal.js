@@ -5,183 +5,318 @@ import { saveAs } from "file-saver";
 
 const RecordViewModal = ({ record, onClose }) => {
   const [fullRecord, setFullRecord] = useState(null);
-  const [accountList, setAccountList] = useState([]);
-  const [skuList, setSkuList] = useState([]);
+  const [budgetHistory, setBudgetHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [categoryMap, setCategoryMap] = useState({});
-  const [distributorMap, setDistributorMap] = useState({});
-  const [activityMap, setActivityMap] = useState({});
-  const [remainingBudget, setRemainingBudget] = useState(null);
   const [activeTab, setActiveTab] = useState("single");
 
-  // ===================== Excel Export =====================
-const exportSingleRecordToExcel = () => {
-  if (!fullRecord) return;
 
-  const wb = XLSX.utils.book_new();
+  const exportBudgetHistoryToExcel = () => {
+    if (filteredBudgetHistory.length === 0) return;
 
-  // ------------------ Main Record ------------------
-  const recordData = Object.fromEntries(
-    Object.entries(fullRecord).map(([key, value]) => [
-      formatColumnName(key),
-      formatCellValue(value, key),
-    ])
-  );
-  const wsRecord = XLSX.utils.json_to_sheet([recordData]);
-  XLSX.utils.book_append_sheet(wb, wsRecord, "RecordDetails");
-
-  // ------------------ Accounts ------------------
-  if (accountList.length > 0) {
-    const accData = accountList.map((a) => ({
-      "Account Name": a.account_name,
-      "Budget": a.budget,
+    // Map the data to a cleaner format
+    const dataToExport = filteredBudgetHistory.map((row) => ({
+      ID: row.id,
+      PWP_Code: row.pwp_code,
+      Cover_PWP_Code: row.cover_pwp_code,
+      Approver_ID: row.approver_id,
+      Date_Responded: row.date_responded,
+      Response: row.response,
+      Remaining_Balance: row.remaining_balance,
+      Credit_Budget: row.credit_budget,
+      Type: row.type,
+      Created_Form: row.created_form,
     }));
 
-    // Add total row
-    const totalBudget = accountList.reduce((sum, a) => sum + Number(a.budget || 0), 0);
-    accData.push({
-      "Account Name": "Total",
-      "Budget": totalBudget,
-    });
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "BudgetHistory");
 
-    const wsAcc = XLSX.utils.json_to_sheet(accData);
-    XLSX.utils.book_append_sheet(wb, wsAcc, "Accounts");
-  }
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+    saveAs(blob, "BudgetHistory.xlsx");
+  };
 
-  // ------------------ SKUs ------------------
-  if (skuList.length > 0) {
-    const skuData = skuList.map((s) => ({
-      "Account Name": s.account_name,
-      "SKU Code": s.sku_code || "-",
-      "SRP": s.srp,
-      "Qty": s.qty,
-      "UOM": s.uom,
-      "Billing Amount": s.billing_amount,
-      "Discount": s.discount,
-      "Total Amount": s.total_amount,
+
+  // Add this function inside your component, similar to exportBudgetHistoryToExcel
+  const exportSingleRecordToExcel = () => {
+    if (!fullRecord) return;
+
+    // Map the record to a cleaner format (you can adjust column names if needed)
+    const dataToExport = Object.entries(fullRecord).map(([key, value]) => ({
+      Column: formatColumnName(key),
+      Value: formatCellValue(value, key),
     }));
 
-    // Add total row
-    const totalBilling = skuList.reduce((sum, s) => sum + Number(s.billing_amount || 0), 0);
-    const totalDiscount = skuList.reduce((sum, s) => sum + Number(s.discount || 0), 0);
-    const totalAmount = skuList.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
-    skuData.push({
-      "Account Name": "Total",
-      "SKU Code": "",
-      "SRP": "",
-      "Qty": "",
-      "UOM": "",
-      "Billing Amount": totalBilling,
-      "Discount": totalDiscount,
-      "Total Amount": totalAmount,
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "RecordDetails");
+
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+    saveAs(blob, "RecordDetails.xlsx");
+  };
+
+  // Category & Distributor Maps
+  const [categoryMap, setCategoryMap] = useState({});
+  const [distributorMap, setDistributorMap] = useState({});
+
+  // Fetch categorydetails (code → name)
+  const fetchCategoryMap = async () => {
+    try {
+      let allData = [];
+      let from = 0;
+      const chunkSize = 1000; // fetch in chunks
+      let moreData = true;
+
+      while (moreData) {
+        const { data, error } = await supabase
+          .from("categorydetails")
+          .select("code, name")
+          .range(from, from + chunkSize - 1);
+
+        if (error) throw error;
+
+        if (data.length > 0) {
+          allData = [...allData, ...data];
+          from += chunkSize;
+        } else {
+          moreData = false;
+        }
+      }
+
+      console.log(`✅ categorydetails raw data: ${allData.length} rows loaded`);
+
+      const map = {};
+      allData.forEach((item) => {
+        map[String(item.code).trim()] = item.name;
+      });
+
+      setCategoryMap(map);
+    } catch (err) {
+      console.error("❌ Failed to fetch category details:", err.message);
+    }
+  };
+
+  // ✅ Helper for account type conversion
+  const convertCodesToNames = (value) => {
+    let codes = [];
+
+    if (Array.isArray(value)) {
+      codes = value;
+    } else if (typeof value === "string") {
+      try {
+        codes = JSON.parse(value); // JSON array
+      } catch {
+        codes = value.split(",").map((c) => c.trim());
+      }
+    } else if (value) {
+      codes = [value];
+    }
+
+    const converted = codes.map((code) => {
+      const strCode = String(code).trim();
+      const name = categoryMap[strCode];
+      console.log("👉 Converting account_type:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
     });
 
-    const wsSKU = XLSX.utils.json_to_sheet(skuData);
-    XLSX.utils.book_append_sheet(wb, wsSKU, "SKUs");
-  }
+    return converted.length > 0 ? converted.join(", ") : "-";
+  };
+  const [activityMap, setActivityMap] = useState({});
 
-  // ------------------ Save ------------------
-  const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-  saveAs(blob, "RecordDetails.xlsx");
-};
+  useEffect(() => {
+    if (record) {
+      fetchFullRecord();
+      fetchCategoryMap();
+      fetchActivityMap();
+      fetchRemainingBudget(); // ✅ added
+    }
+  }, [record]);
 
-  // ===================== Data Fetching =====================
+  // Fetch distributors (code → name)
+  useEffect(() => {
+    const fetchDistributorMap = async () => {
+      const { data, error } = await supabase
+        .from("distributors") // ⚠️ change table name if different
+        .select("code, name");
+
+      if (error) {
+        console.error("❌ Error fetching distributors:", error);
+        return;
+      }
+
+      const map = {};
+      data.forEach((item) => {
+        map[String(item.code)] = item.name;
+      });
+      setDistributorMap(map);
+    };
+
+    fetchDistributorMap();
+  }, []);
+
+
+
+  const fetchActivityMap = async () => {
+    try {
+      let allData = [];
+      let from = 0;
+      const chunkSize = 1000;
+      let moreData = true;
+
+      while (moreData) {
+        const { data, error } = await supabase
+          .from("activity")
+          .select("code, name")
+          .range(from, from + chunkSize - 1);
+
+        if (error) throw error;
+
+        if (data.length > 0) {
+          allData = [...allData, ...data];
+          from += chunkSize;
+        } else {
+          moreData = false;
+        }
+      }
+
+      console.log(`✅ activity raw data: ${allData.length} rows loaded`);
+
+      const map = {};
+      allData.forEach((item) => {
+        map[String(item.code).trim()] = item.name;
+      });
+
+      setActivityMap(map);
+    } catch (err) {
+      console.error("❌ Failed to fetch activity:", err.message);
+    }
+  };
+
+  // Fetch full record
+  useEffect(() => {
+    if (record && activeTab === "single") fetchFullRecord();
+    if (activeTab === "budget") fetchBudgetHistory();
+  }, [record, activeTab]);
+
+  const fetchFullRecord = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const tableName = record.source || "regular_pwp";
+      const { data, error: fetchError } = await supabase
+        .from(tableName)
+        .select("*")
+        .eq("id", record.id)
+        .single();
+      if (fetchError) throw fetchError;
+      setFullRecord(data);
+    } catch (err) {
+      setError(`Failed to fetch record details: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchBudgetHistory = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const { data, error: fetchError } = await supabase
+        .from("approved_history_budget")
+        .select("*")
+        .order("id", { ascending: false });
+      if (fetchError) throw fetchError;
+      setBudgetHistory(data || []);
+    } catch (err) {
+      setError(`Failed to fetch budget history: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
+
   useEffect(() => {
     if (!record) return;
 
-    const fetchMapsAndData = async () => {
-      setLoading(true);
-      try {
-        const tableName = record.source || "regular_pwp";
-        const { data: recordData, error: recError } = await supabase
-          .from(tableName)
-          .select("*")
-          .eq("id", record.id)
-          .single();
-        if (recError) throw recError;
-
-        setFullRecord(recordData);
-
-        // Fetch accounts and SKUs and **wait for them**
-        const accounts = await fetchAccountList(recordData);
-        const skus = await fetchSKUList(recordData);
-        setAccountList(accounts);
-        setSkuList(skus);
-
-        // Maps
-        fetchCategoryMap();
-        fetchDistributorMap();
-        fetchActivityMap();
-
-        // Remaining budget
-        fetchRemainingBudget();
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+    if (activeTab === "budget") {
+      if (budgetHistory.length === 0) {
+        fetchBudgetHistory();
       }
-    };
 
-    fetchMapsAndData();
-  }, [record]);
-
-
-  const fetchCategoryMap = async () => {
-    const { data, error } = await supabase.from("categorydetails").select("code, name");
-    if (!error && data) {
-      const map = {};
-      data.forEach((item) => (map[item.code] = item.name));
-      setCategoryMap(map);
+      const filtered = budgetHistory.filter(
+        (b) =>
+          b["Cover PWP Code"] === record.cover_code ||
+          b["PWP Code"] === record.regularpwpcode
+      );
+      setFilteredBudgetHistory(filtered);
     }
+  }, [activeTab, record, budgetHistory]);
+
+  const formatColumnName = (colName) => {
+    return colName
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase())
+      .replace("Pwp", "PWP")
+      .replace("Id", "ID");
   };
 
-  const fetchDistributorMap = async () => {
-    const { data, error } = await supabase.from("distributors").select("code, name");
-    if (!error && data) {
-      const map = {};
-      data.forEach((item) => (map[item.code] = item.name));
-      setDistributorMap(map);
+  // ✅ Format cell values with logs
+  const formatCellValue = (value, colName) => {
+    if (!value && value !== 0) return "-";
+
+    console.log("🔍 formatCellValue:", colName, value);
+
+    // ✅ Handle account types
+    if (
+      colName === "account_type" ||
+      colName === "account_types" ||
+      colName === "accountType"
+    ) {
+      return convertCodesToNames(value);
     }
-  };
 
-  const fetchActivityMap = async () => {
-    const { data, error } = await supabase.from("activity").select("code, name");
-    if (!error && data) {
-      const map = {};
-      data.forEach((item) => (map[item.code] = item.name));
-      setActivityMap(map);
+    // ✅ Convert distributor
+    if (colName === "distributor" || colName === "distributor_code") {
+      const strCode = String(value).trim();
+      const name = distributorMap[strCode];
+      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
     }
+
+    // ✅ Convert activity (code → name)
+    if (colName === "activity" || colName === "activity_code") {
+      const strCode = String(value).trim();
+      const name = activityMap[strCode];
+      console.log("👉 Converting activity:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
+    }
+
+    if (colName === "created_at" && value) {
+      try {
+        return new Date(value).toLocaleString();
+      } catch {
+        return value;
+      }
+    }
+
+    if (typeof value === "object") {
+      return JSON.stringify(value, null, 2);
+    }
+
+    return String(value);
   };
 
-  const fetchAccountList = async (source) => {
-    if (!source) return [];
-    const regularCode = source.regularpwpcode || source.code;
-    const { data, error } = await supabase
-      .from("regular_accountlis_badget")
-      .select("regularcode, account_name, budget, total_budget")
-      .eq("regularcode", regularCode);
-    if (!error && data) return data;
-    return [];
-  };
 
-  const fetchSKUList = async (source) => {
-    if (!source) return [];
-    const regularCode = source.regularpwpcode || source.code;
-    const { data, error } = await supabase
-      .from("regular_sku")
-      .select("regular_code, account_name, sku_code, srp, qty, uom, billing_amount, discount, total_amount")
-      .eq("regular_code", regularCode);
-    if (!error && data) return data;
-    return [];
-  };
-
+  const [remainingBudget, setRemainingBudget] = useState(null);
 
   const fetchRemainingBudget = async () => {
     try {
-      const pwpCode = record.source === "cover_pwp" ? record.cover_code : record.regularpwpcode;
+      const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
       if (!pwpCode) return;
+
       const { data, error } = await supabase
         .from("amount_badget")
         .select("remainingbalance")
@@ -189,245 +324,393 @@ const exportSingleRecordToExcel = () => {
         .order("id", { ascending: false })
         .limit(1)
         .single();
-      if (!error && data) setRemainingBudget(data.remainingbalance);
+
+      if (error) throw error;
+
+      setRemainingBudget(data?.remainingbalance ?? null);
     } catch (err) {
-      console.error(err);
+      console.error("❌ Failed to fetch remaining budget:", err.message);
       setRemainingBudget(null);
     }
   };
 
-  // ===================== Helpers =====================
-  const formatColumnName = (col) =>
-    col
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (l) => l.toUpperCase())
-      .replace("Pwp", "PWP")
-      .replace("Id", "ID");
 
-  const formatCellValue = (value, col) => {
-    if (value === null || value === undefined) return "-";
-    if (col === "account_type" || col === "accountType") return convertCodesToNames(value);
-    if (col === "distributor" || col === "distributor_code") return distributorMap[value] || value;
-    if (col === "activity" || col === "activity_code") return activityMap[value] || value;
-    if (col === "created_at") return new Date(value).toLocaleString();
-    if (typeof value === "object") return JSON.stringify(value);
-    return String(value);
-  };
-
-  const convertCodesToNames = (value) => {
-    if (!value) return "-";
-    const codes = Array.isArray(value) ? value : String(value).split(",");
-    const names = codes.map((c) => categoryMap[c.trim()] || c.trim());
-    return names.join(", ");
-  };
-
-  const formatCurrency = (value) =>
-    value !== null && value !== undefined
-      ? `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-      : "-";
 
   if (!record) return null;
-
   return (
     <div
       style={{
         position: "fixed",
-        inset: 0,
-        backgroundColor: "rgba(0,0,0,0.75)",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: "20px",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.7)",
         zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
       }}
-      onClick={onClose}
     >
       <div
         style={{
           backgroundColor: "white",
-          borderRadius: "16px",
+          borderRadius: "12px",
           maxWidth: "95vw",
           maxHeight: "90vh",
           width: "100%",
           display: "flex",
           flexDirection: "column",
-          overflow: "hidden",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.3)",
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ padding: "24px", background: "#3b82f6", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2>{activeTab === "single" ? "📋 Record Details" : "💰 Budget History"}</h2>
-          <button onClick={onClose} style={{ fontSize: "24px", background: "transparent", color: "white", border: "none", cursor: "pointer" }}>
-            ✕
+        <div
+          style={{
+            padding: "24px 30px",
+            backgroundColor: "#0080ffff",
+            color: "white",
+            borderRadius: "12px 12px 0 0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: "30px", color: "#ffff" }}>
+              {activeTab === "single" ? "Record Details" : "Budget History"}
+            </h2>
+            <div style={{ marginBottom: "8px" }}>
+              {remainingBudget !== null && (
+                <div style={{
+                  fontSize: "16px",
+                  fontWeight: "600",
+                  color: "#1e58a3",
+                  backgroundColor: "#e3f2fd",
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  display: "inline-block",
+                  marginBottom: "4px",
+                }}>
+                  Remaining Budget: {remainingBudget.toLocaleString(undefined, { style: 'currency', currency: 'PHP' })}
+                </div>
+              )}
+              <h3 style={{ margin: 0, color: "#ffffffff", fontSize: "18px" }}>
+                {record?.source === "cover_pwp"
+                  ? `Cover PWP Record: ${record?.cover_code || "-"}`
+                  : `Regular PWP Record: ${record?.regularpwpcode || "-"}`}
+              </h3>
+            </div>
+
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              backgroundColor: "rgba(255,255,255,0.2)",
+              color: "white",
+              border: "none",
+              borderRadius: "50%",
+              width: "40px",
+              height: "40px",
+              cursor: "pointer",
+              fontSize: "18px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ×
           </button>
         </div>
 
-        {/* Export */}
+        {/* Tabs */}
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: "1px solid #e0e0e0", backgroundColor: "#f5f5f5" }}>
+          {["single", ].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                flex: 1,
+                padding: "12px",
+                cursor: "pointer",
+                border: "none",
+                borderBottom: activeTab === tab ? "3px solid #1e58a3ff" : "3px solid transparent",
+                backgroundColor: activeTab === tab ? "#007bacff" : "#f5f5f5",
+                color: activeTab === tab ? "white" : "#1976d2",
+                fontWeight: "500",
+                position: "relative",
+              }}
+            >
+              {tab === "single" ? "📋 Single Record" : "💰 Budget History"}
+            </button>
+          ))}
+        </div>
+        {/* Export Button (only show in single tab) */}
         {activeTab === "single" && fullRecord && (
-          <div style={{ padding: "16px", borderBottom: "1px solid #e5e7eb" }}>
+          <div style={{ padding: "16px", textAlign: "right" }}>
             <button
               onClick={exportSingleRecordToExcel}
-              style={{ padding: "10px 20px", backgroundColor: "#10b981", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#0aac12ff",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: "500",
+              }}
             >
-              📊 Export to Excel
+              Export Single Record to Excel
             </button>
           </div>
         )}
 
+        {/* Export Button (only show in budget tab) */}
+        {activeTab === "budget" && filteredBudgetHistory.length > 0 && (
+          <div style={{ padding: "16px", textAlign: "right" }}>
+            <button
+              onClick={exportBudgetHistoryToExcel}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#0aac12ff",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: "500",
+              }}
+            >
+              Export to Excel
+            </button>
+          </div>
+        )}
+
+
         {/* Content */}
-        <div style={{ flex: 1, overflow: "auto", padding: "16px" }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
           {loading ? (
-            <p>Loading...</p>
-          ) : error ? (
-            <p style={{ color: "red" }}>{error}</p>
-          ) : (
-            <>
-              {/* Record Info */}
-              {/* Record Info */}
+            <div style={{ textAlign: "center", padding: "40px" }}>
               <div
                 style={{
-                  display: "grid",
-                  gap: "16px",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  width: "40px",
+                  height: "40px",
+                  border: "4px solid #e3f2fd",
+                  borderTop: "4px solid #1976d2",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                  margin: "0 auto 20px",
                 }}
-              >
-                {fullRecord &&
-                  Object.entries(fullRecord)
-                    .filter(
-                      ([k, v]) =>
-                        v !== null &&
-                        v !== undefined &&
-                        k !== "amountbadget" && // hide this key 
-                        k !== "categoryCode" &&
-                        k !== "sensitive_field" // you can add more keys here
-                    )
-                    .map(([key, value]) => (
-                      <div
-                        key={key}
-                        style={{
-                          padding: "12px",
-                          background: "white",
-                          borderRadius: "8px",
-                          border: "1px solid #e5e7eb",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            color: "#6b7280",
-                          }}
-                        >
-                          {formatColumnName(key)}
-                        </div>
-                        <div style={{ fontSize: "14px", fontWeight: "500" }}>
-                          {formatCellValue(value, key)}
-                        </div>
-                      </div>
-                    ))}
-              </div>
+              ></div>
+              <p>Loading...</p>
+            </div>
+          ) : error ? (
+            <div style={{ textAlign: "center", color: "#d32f2f" }}>
+              <p>{error}</p>
+            </div>
+          ) : activeTab === "single" && fullRecord ? (
+            <div
+              style={{
+                display: "grid",
+                gap: "20px",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              }}
+            >
+{Object.entries(fullRecord)
+  .filter(([key, value]) => {
+    if (value === null || value === undefined || value === false) return false;
 
+    // Handle strings
+    if (typeof value === "string") {
+      const val = value.trim().toUpperCase();
 
-              {/* Account Table */}
-              {accountList
-                .filter((a) => a.regularcode === (fullRecord?.regularpwpcode || fullRecord?.code))
-                .length > 0 && (() => {
-                  const filteredAccounts = accountList.filter(
-                    (a) => a.regularcode === (fullRecord?.regularpwpcode || fullRecord?.code)
-                  );
-                  const totalBudget = filteredAccounts.reduce((sum, acc) => sum + Number(acc.budget || 0), 0);
+      // Empty, dash, false, empty array string, or empty object string
+      if (
+        val === "" ||
+        val === "-" ||
+        val === "EMPTY" ||
+        val === "FALSE" ||
+        val === "[]" ||
+        val === "{}"
+      ) {
+        return false;
+      }
+    }
 
-                  return (
-                    <div style={{ marginTop: "24px" }}>
-                      <h3>💼 Accounts</h3>
-                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                        <thead style={{ background: "#3b82f6", color: "white" }}>
-                          <tr>
-                            <th style={{ padding: "8px" }}>Account Name</th>
-                            <th style={{ padding: "8px" }}>Budget</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredAccounts.map((item, idx) => (
-                            <tr key={idx}>
-                              <td style={{ padding: "8px" }}>{item.account_name}</td>
-                              <td style={{ padding: "8px" }}>{formatCurrency(item.budget)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr style={{ fontWeight: "bold", background: "#f3f4f6" }}>
-                            <td style={{ padding: "8px", textAlign: "right" }}>Total:</td>
-                            <td style={{ padding: "8px" }}>{formatCurrency(totalBudget)}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
+    // Handle actual arrays
+    if (Array.isArray(value) && value.length === 0) return false;
+
+    // Handle empty objects
+    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
+      return false;
+    }
+
+    return true;
+  })
+  .map(([key, value]) => {
+    const displayValue =
+      (key === "accountType" || key === "account_type") &&
+      Object.keys(categoryMap).length > 0
+        ? convertCodesToNames(value)
+        : formatCellValue(value, key);
+
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      padding: "16px",
+                      backgroundColor: "#f8f9fa",
+                      borderRadius: "8px",
+                      border: "1px solid #e0e0e0",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#666",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      {formatColumnName(key)}
                     </div>
-                  );
-                })()}
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        color: "#333",
+                        lineHeight: "1.4",
+                        wordBreak: "break-word",
+                        whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
+                        fontFamily: typeof value === "object" ? "monospace" : "inherit",
+                      }}
+                    >
+                      {displayValue}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : activeTab === "budget" ? (
+            <div>
+              {activeTab === "budget" ? (
+                <div>
+                  {filteredBudgetHistory.length > 0 ? (
+                    <div>
+                      {/* Only display header if cover_pwp_code or pwp_code matches */}
+                      {filteredBudgetHistory.some(
+                        (b) =>
+                          b["cover_pwp_code"] === record.cover_code ||
+                          b["pwp_code"] === record.regularpwpcode
+                      ) && (
+                          <h3 style={{ margin: 0, color: "#000000ff", fontSize: "18px" }}>
+                            {record.source === "cover_pwp"
+                              ? `Cover PWP Record: ${record.cover_code || "-"}`
+                              : `Regular PWP Record: ${record.regularpwpcode || "-"}`}
+                          </h3>
+                        )}
 
+                      {/* Display table only if there is at least one matching row */}
+                      {filteredBudgetHistory.some(
+                        (b) =>
+                          b["cover_pwp_code"] === record.cover_code ||
+                          b["pwp_code"] === record.regularpwpcode
+                      ) ? (
+                        <div style={{ overflowX: "auto", maxHeight: "400px" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead style={{ position: "sticky", top: 0, backgroundColor: "#f5f5f5" }}>
+                              <tr>
+                                {[
+                                  "id",
+                                  "pwp_code",
+                                  "cover_pwp_code",
+                                  "approver_id",
+                                  "date_responded",
+                                  "response",
+                                  "remaining_balance",
+                                  "credit_budget",
+                                  "type",
+                                  "created_form",
+                                ].map((col) => (
+                                  <th
+                                    key={col}
+                                    style={{
+                                      padding: "12px 16px",
+                                      textAlign: "left",
+                                      borderBottom: "2px solid #ddd",
+                                      fontSize: "12px",
+                                      fontWeight: "600",
+                                      backgroundColor: "#f5f5f5",
+                                    }}
+                                  >
+                                    {formatColumnName(col)}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredBudgetHistory
+                                .filter(
+                                  (b) =>
+                                    b["cover_pwp_code"] === record.cover_code ||
+                                    b["pwp_code"] === record.regularpwpcode
+                                )
+                                .map((row, index) => (
+                                  <tr
+                                    key={row.id || index}
+                                    style={{ backgroundColor: index % 2 === 0 ? "white" : "#fafafa" }}
+                                  >
+                                    {[
+                                      "id",
+                                      "pwp_code",
+                                      "cover_pwp_code",
+                                      "approver_id",
+                                      "date_responded",
+                                      "response",
+                                      "remaining_balance",
+                                      "credit_budget",
+                                      "type",
+                                      "created_form",
+                                    ].map((col) => (
+                                      <td
+                                        key={col}
+                                        style={{
+                                          padding: "12px 16px",
+                                          borderBottom: "1px solid #eee",
+                                          fontSize: "12px",
+                                          maxWidth: "200px",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {formatCellValue(row[col], col)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+                          No budget history found for this record
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+                      No budget history found for this record
+                    </div>
+                  )}
+                </div>
+              ) : null}
 
-            </>
-          )}
-          {/* SKU Table */}
-          {/* SKU Table */}
-        {skuList
-  .filter((s) => s.regular_code === (fullRecord?.regularpwpcode || fullRecord?.code))
-  .length > 0 && (() => {
-    const filteredSKUs = skuList.filter(
-      (s) => s.regular_code === (fullRecord?.regularpwpcode || fullRecord?.code)
-    );
-
-    const totalBilling = filteredSKUs.reduce((sum, s) => sum + Number(s.billing_amount || 0), 0);
-    const totalDiscount = filteredSKUs.reduce((sum, s) => sum + Number(s.discount || 0), 0);
-    const totalAmount = filteredSKUs.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
-
-    return (
-      <div style={{ marginTop: "24px" }}>
-        <h3>🛒 SKUs</h3>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead style={{ background: "#3b82f6", color: "white" }}>
-            <tr>
-              <th style={{ padding: "8px" }}>Account Name</th>
-              <th style={{ padding: "8px" }}>SKU Code</th>
-              <th style={{ padding: "8px" }}>SRP</th>
-              <th style={{ padding: "8px" }}>Qty</th>
-              <th style={{ padding: "8px" }}>UOM</th>
-              <th style={{ padding: "8px" }}>Billing Amount</th>
-              <th style={{ padding: "8px" }}>Discount</th>
-              <th style={{ padding: "8px" }}>Total Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredSKUs.map((item, idx) => (
-              <tr key={idx}>
-                <td style={{ padding: "8px" }}>{item.account_name}</td>
-                <td style={{ padding: "8px" }}>{item.sku_code || "-"}</td>
-                <td style={{ padding: "8px" }}>{formatCurrency(item.srp)}</td>
-                <td style={{ padding: "8px" }}>{item.qty}</td>
-                <td style={{ padding: "8px" }}>{item.uom}</td>
-                <td style={{ padding: "8px" }}>{formatCurrency(item.billing_amount)}</td>
-                <td style={{ padding: "8px" }}>{formatCurrency(item.discount)}</td>
-                <td style={{ padding: "8px" }}>{formatCurrency(item.total_amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr style={{ fontWeight: "bold", background: "#f3f4f6" }}>
-              <td colSpan={5} style={{ padding: "8px", textAlign: "right" }}>Total:</td>
-              <td style={{ padding: "8px" }}>{formatCurrency(totalBilling)}</td>
-              <td style={{ padding: "8px" }}>{formatCurrency(totalDiscount)}</td>
-              <td style={{ padding: "8px" }}>{formatCurrency(totalAmount)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    );
-  })()}
-
-
-
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
