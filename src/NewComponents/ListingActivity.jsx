@@ -21,6 +21,7 @@ export default function ListingActivity() {
     'sku',
     'various',
     'walk_in',
+    'MotherAccount2'
   ];
 
   // Fetch activities and settings
