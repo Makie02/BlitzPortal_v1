@@ -17,6 +17,7 @@ import { saveAs } from "file-saver";
 import { motion } from "framer-motion";
 import { FiChevronRight } from "react-icons/fi"; // or FaArrowRight
 import Papa from "papaparse"; // make sure you have this installed
+import MotherAccount2 from "../NewComponents/MotherAccount2";
 
 const RegularVisaForm = () => {
   const [userApprovers, setUserApprovers] = useState([]);
@@ -53,13 +54,13 @@ const RegularVisaForm = () => {
 
 
 const [settings, setSettings] = useState({});
-
+const [motherAccount2List, setMotherAccount2List] = useState([]);
 
   const [accountSkuRows, setAccountSkuRows] = useState({}); // Object to store SKU rows per account
   const [selectedAccountForSku, setSelectedAccountForSku] =
     useState("ALL_ACCOUNTS");
   // Step 0: Form data
-  const [formData, setFormData] = useState({
+const [formData, setFormData] = useState({
     regularpwpcode: "",
     accountType: "",
     activity: "",
@@ -67,24 +68,24 @@ const [settings, setSettings] = useState({});
     notification: false,
     objective: "",
     promoScheme: "",
-    activityDurationFrom: new Date().toISOString().split("T")[0], // today
-    activityDurationTo: new Date().toISOString().split("T")[0], // today
+    activityDurationFrom: new Date().toISOString().split("T")[0],
+    activityDurationTo: new Date().toISOString().split("T")[0],
     rowsCategories: [
       { category: "", amount: "" },
       { category: "", amount: "" },
     ],
-    branchType: [], // add this
-
+    branchType: [],
     isPartOfCoverPwp: false,
     coverPwpCode: "",
     distributor: "",
     amountbadget: "0",
     categoryCode: [],
     categoryName: [],
-    sku: null, // New Field
-    accounts: null, // New Field
-    amount_display: null, // New Field
+    sku: null,
+    accounts: null,
+    amount_display: null,
     accountType2: "",
+    MotherAccount2: null, // ✅ Added
   });
 
   const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
@@ -150,7 +151,29 @@ const [settings, setSettings] = useState({});
 
     return () => clearInterval(intervalId); // Cleanup
   }, [formData.regularpwpcode]);
+useEffect(() => {
+  const fetchMotherAccount2 = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("MotherAccount2")
+        .select("*")
+        .eq("status", true) // Only get active records
+        .order("name", { ascending: true });
 
+      if (error) {
+        console.error("❌ Error fetching MotherAccount2:", error);
+        return;
+      }
+
+      console.log("✅ MotherAccount2 data fetched:", data);
+      setMotherAccount2List(data || []);
+    } catch (err) {
+      console.error("❌ Unexpected error fetching MotherAccount2:", err);
+    }
+  };
+
+  fetchMotherAccount2();
+}, []);
   useEffect(() => {
     // This effect runs whenever `allRegularPwpCodes` changes
     if (!formData.regularpwpcode && allRegularPwpCodes.length > 0) {
@@ -378,7 +401,6 @@ useEffect(() => {
   const [selectedListings, setSelectedListings] = useState([]);
   const [showListingModal, setShowListingModal] = useState(false);
   const [selectedSkus, setSelectedSkus] = useState([]);
-
   const [loadingListings, setLoadingListings] = useState(false);
 
   useEffect(() => {
@@ -652,7 +674,7 @@ useEffect(() => {
   const fetchSettings = async () => {
     const { data, error } = await supabase
       .from("activity_settings")
-      .select("category,activity_code, sku, accounts,amount_display,various,walk_in,mother1,VariousAccount,branch");
+      .select("category,activity_code, sku, accounts,amount_display,various,walk_in,mother1,VariousAccount,branch,MotherAccount2");
     if (error) {
       console.error("❌ Error loading settings:", error);
       return;
@@ -669,6 +691,7 @@ useEffect(() => {
         VariousAccount:setting.VariousAccount === true,
         various: setting.various === true,
         walk_in: setting.walk_in === true,
+        MotherAccount2: setting.MotherAccount2 === true,
 
       };
     });
@@ -2354,35 +2377,48 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
         const name = Object.values(subAccounts).flat().find((s) => s.id === formData.accountType)?.name;
         convertedAccountType = name ? [name] : [];
       }
+ // ✅ Prepare main submission object
+      // ✅ For MotherAccount2, store it in accountType instead
+      let finalAccountType = convertedAccountType;
+      
+      // If MotherAccount2 is selected, use it as accountType
+      if (formData.MotherAccount2) {
+        finalAccountType = [formData.MotherAccount2];
+      }
+      // If Various Account is selected, use it
+      else if (formData.accountType2) {
+        finalAccountType = [formData.accountType2];
+      }
 
       // ✅ Prepare main submission object
-      const submissionData = {
-        regularpwpcode: formData.regularpwpcode,
-        accountType: convertedAccountType,
-        VariousAccount: formData.accountType2,
-        branchType: formData.branchType || [],
-        activity: formData.activity,
-        pwptype: formData.pwptype || "Regular",
-        notification: formData.notification,
-        objective: formData.objective,
-        promoScheme: formData.promoScheme,
-        activityDurationFrom: formData.activityDurationFrom,
-        activityDurationTo: formData.activityDurationTo,
-        isPartOfCoverPwp: formData.isPartOfCoverPwp,
-        coverPwpCode: formData.coverPwpCode,
-        distributor: distributorCode,
-        amountbadget: formData.amountbadget,
-        categoryCode: formData.categoryCode || [],
-        categoryName: formData.categoryName || [],
-        sku: formData.sku,
-        accounts: formData.accounts,
-        amount_display: formData.amount_display,
-        remarks: formData.remarks || "",
-        created_at: new Date().toISOString(),
-        createForm: createdBy,
-        credit_budget: creditBudget,
-        remaining_balance: remainingBalance,
-      };
+     const submissionData = {
+  regularpwpcode: formData.regularpwpcode,
+  accountType: convertedAccountType,
+  VariousAccount: formData.accountType2,
+  accountType: finalAccountType, // ✅ Now includes MotherAccount2
+  branchType: formData.branchType || [],
+  activity: formData.activity,
+  pwptype: formData.pwptype || "Regular",
+  notification: formData.notification,
+  objective: formData.objective,
+  promoScheme: formData.promoScheme,
+  activityDurationFrom: formData.activityDurationFrom,
+  activityDurationTo: formData.activityDurationTo,
+  isPartOfCoverPwp: formData.isPartOfCoverPwp,
+  coverPwpCode: formData.coverPwpCode,
+  distributor: distributorCode,
+  amountbadget: formData.amountbadget,
+  categoryCode: formData.categoryCode || [],
+  categoryName: formData.categoryName || [],
+  sku: formData.sku,
+  accounts: formData.accounts,
+  amount_display: formData.amount_display,
+  remarks: formData.remarks || "",
+  created_at: new Date().toISOString(),
+  createForm: createdBy,
+  credit_budget: creditBudget,
+  remaining_balance: remainingBalance,
+};
 
       // ✅ Insert main form
       const { error: formInsertError } = await supabase.from("regular_pwp").insert([submissionData]).select();
@@ -3274,7 +3310,80 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
     </div>
   </div>
 ) : null}
+{/* Mother Account 2 - Conditionally displayed */}
+{formData.activity && settingsMap[formData.activity]?.MotherAccount2 ? (
+  <div className="col-md-4" style={{ position: "relative" }}>
+    <label>
+      Mother Account <span style={{ color: "red" }}>*</span>
+    </label>
 
+    <div
+      className="form-control"
+      onClick={() => setShowModal_Account2(true)}
+      style={{
+        cursor: "pointer",
+        position: "relative",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "5px",
+        minHeight: "40px",
+      }}
+    >
+      {formData.MotherAccount2 ? (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            backgroundColor: "#0050a5ff",
+            color: "#fff",
+            padding: "3px 8px",
+            borderRadius: "5px",
+            fontSize: "14px",
+            fontWeight: "500",
+          }}
+        >
+          {formData.MotherAccount2}
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              setFormData({ ...formData, MotherAccount2: null });
+            }}
+            style={{
+              marginLeft: "5px",
+              cursor: "pointer",
+              fontWeight: "bold",
+              color: "#fff",
+              backgroundColor: "#ff4d4f",
+              borderRadius: "5%",
+              width: "16px",
+              height: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "12px",
+            }}
+          >
+            ✖
+          </span>
+        </span>
+      ) : (
+        <span style={{ color: "#888" }}>Select Mother Account </span>
+      )}
+
+      <span
+        style={{
+          pointerEvents: "none",
+          fontSize: "18px",
+          color: "#555",
+          marginLeft: "auto",
+        }}
+      >
+        🔍
+      </span>
+    </div>
+  </div>
+) : null}
 {/* Branch Selector - Conditionally displayed */}
 {formData.activity && settingsMap[formData.activity]?.branch && showBranchInput ? (
   <div className="col-md-4" style={{ position: "relative" }}>
@@ -3885,74 +3994,72 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
     </Modal.Title>
   </Modal.Header>
 
-  <Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
-    <input
-      type="text"
-      className="form-control mb-3"
-      placeholder="Search mother accounts..."
-      value={accountSearchTerm2}
-      onChange={(e) => setAccountSearchTerm2(e.target.value)}
-      style={{ borderColor: "#007bff" }}
-    />
+<Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
+  <input
+    type="text"
+    className="form-control mb-3"
+    placeholder="Search mother accounts..."
+    value={accountSearchTerm2}
+    onChange={(e) => setAccountSearchTerm2(e.target.value)}
+    style={{ borderColor: "#007bff" }}
+  />
 
-    {(() => {
-      const availableGroupCodes = getAvailableGroupCodes();
+  {(() => {
+    // Filter by search term
+    const filteredAccounts = motherAccount2List.filter((opt) => {
+      const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm2.toLowerCase()) ||
+                           opt.code.toString().includes(accountSearchTerm2.toLowerCase());
+      return matchesSearch;
+    });
 
-      // Filter by search term AND available group codes
-      const filteredAccounts = accountTypes.filter((opt) => {
-        const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm2.toLowerCase());
-        const hasGroupCode = availableGroupCodes.has(opt.code?.toString().trim());
+    console.log(`📋 Showing ${filteredAccounts.length} out of ${motherAccount2List.length} mother accounts (Mother 2)`);
 
-        if (!hasGroupCode) {
-          console.log(`🚫 Hiding "${opt.name}" (${opt.code}) - no data available`);
-        }
-
-        return matchesSearch && hasGroupCode;
-      });
-
-      console.log(`📋 Showing ${filteredAccounts.length} out of ${accountTypes.length} mother accounts (Mother 2)`);
-
-      if (filteredAccounts.length === 0) {
-        return (
-          <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
-            No mother accounts available for this distributor
-          </div>
-        );
-      }
-
-      return filteredAccounts.map((opt) => (
-        <div
-          key={opt.id}
-          style={{
-            padding: "8px 10px",
-            borderBottom: "1px solid #eee",
-            cursor: "pointer",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-          onClick={() => {
-            console.log('🔍 Selected Mother Account 2:', opt);
-            console.log('📋 Code:', opt.code);
-            console.log('📝 Name:', opt.name);
-            console.log('🆔 ID:', opt.id);
-
-            // Auto-set to "VARIOUS" and close modal
-            setSelectedVariousAccount(opt);
-            setFormData((prev) => ({
-              ...prev,
-              accountType2: "VARIOUS"
-            }));
-            setShowModal_Account2(false);
-          }}
-        >
-          <span>{opt.name}</span>
-          <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
-          <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
+    if (filteredAccounts.length === 0) {
+      return (
+        <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+          No mother accounts available
         </div>
-      ));
-    })()}
-  </Modal.Body>
+      );
+    }
+
+    return filteredAccounts.map((opt) => (
+      <div
+        key={opt.id}
+        style={{
+          padding: "12px 16px", // ✅ Reduced padding (was 8px 10px)
+          borderBottom: "1px solid #eee",
+          cursor: "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          transition: "background-color 0.2s",
+        }}
+        onClick={() => {
+          console.log('🔍 Selected Mother Account 2:', opt);
+          console.log('📋 Code:', opt.code);
+          console.log('📝 Name:', opt.name);
+          console.log('🆔 ID:', opt.id);
+
+          // Save the mother account name to MotherAccount2 field
+          setFormData((prev) => ({
+            ...prev,
+            MotherAccount2: opt.name
+          }));
+          setShowModal_Account2(false);
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "#f5f5f5";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "transparent";
+        }}
+      >
+        {/* ✅ Only show name, hide code */}
+        <span style={{ fontSize: "15px", color: "#333" }}>{opt.name}</span>
+      </div>
+    ));
+  })()}
+</Modal.Body>
 
   <Modal.Footer>
     <Button variant="light" onClick={() => setShowModal_Account2(false)}>
