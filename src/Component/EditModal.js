@@ -54,12 +54,12 @@ const coverPwpFieldsConfig = [
 const regularPwpFieldsConfig = [
   { name: "regularpwpcode", label: "REGULAR CODE", disabled: true },
   { name: "pwptype", label: "PWP TYPE", disabled: true },
-  { name: "distributor", label: "Distributor", disabled: true },
-  { name: "accountType", label: "Account Type", disabled: true },
-  { name: "categoryName", label: "Category", disabled: true },
-  { name: "activity", label: "Activity", disabled: true },
+  { name: "distributor", label: "Distributor", disabled: true},
+  { name: "accountType", label: "Account Type" , disabled: true },
+  { name: "categoryName", label: "Category" },
+  { name: "activity", label: "Activity",disabled: true },
   { name: "objective", label: "Objective" },
-  { name: "branchType", label: "branchType" },
+  { name: "branchType", label: "branchType" , disabled: true },
   { name: "promoScheme", label: "Promo Scheme" },
   { name: "activityDurationFrom", label: "Activity Duration From", type: "date" },
   { name: "activityDurationTo", label: "Activity Duration To", type: "date" },
@@ -73,6 +73,7 @@ const regularPwpFieldsConfig = [
   { name: "remarks", label: "Remarks" },
 ];
 
+// ============ CUSTOM HOOKS ============
 // ============ CUSTOM HOOKS ============
 const useDistributors = (loggedInUsername) => {
   const [filteredDistributors, setFilteredDistributors] = useState([]);
@@ -96,6 +97,46 @@ const useDistributors = (loggedInUsername) => {
   }, [loggedInUsername]);
 
   return { filteredDistributors, loading };
+};
+
+// ADD THIS NEW HOOK - labas siya ng useSkuList
+const useDistributorMap = () => {
+  const [distributorMap, setDistributorMap] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    async function fetchDistributors() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('distributors')
+          .select('code, name');
+
+        if (error) throw error;
+
+        // Create lookup map: { code: name }
+        const map = {};
+        data?.forEach(d => {
+          map[d.code] = d.name;
+        });
+
+        setDistributorMap(map);
+      } catch (error) {
+        console.error('Error fetching distributors:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDistributors();
+  }, []); // Run once on mount
+
+  // Helper function to convert code to name
+  const getDistributorName = (code) => {
+    return distributorMap[code] || code; // Fallback to code if not found
+  };
+
+  return { distributorMap, getDistributorName, loading };
 };
 
 const useCategories = () => {
@@ -288,6 +329,43 @@ const useSkuList = (regularpwpcode) => {
     fetchSkuList();
   }, [regularpwpcode]);
 
+
+    const [distributors, setDistributors] = useState([]);
+  const [distributorMap, setDistributorMap] = useState({});
+
+  // Fetch distributors on mount
+  useEffect(() => {
+    async function fetchDistributors() {
+      try {
+        const { data, error } = await supabase
+          .from('distributors')
+          .select('code, name');
+
+        if (error) throw error;
+
+        // Create lookup map: { code: name }
+        const map = {};
+        data?.forEach(d => {
+          map[d.code] = d.name;
+        });
+
+        setDistributors(data || []);
+        setDistributorMap(map);
+      } catch (error) {
+        console.error('Error fetching distributors:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDistributors();
+  }, []); // Run once on mount
+
+  // Helper function to convert code to name
+  const getDistributorName = (code) => {
+    return distributorMap[code] || code; // Fallback to code if not found
+  };
+
   const handleSkuChange = (id, field, value) => {
     const updatedSkuList = skuList.map((item) => {
       if (item.id !== id) return item;
@@ -461,6 +539,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
       fetchRemainingBalance();
     }
   }, [isOpen, rowData]);
+  const { distributorMap, getDistributorName } = useDistributorMap();
 
   // Fetch mother accounts
   useEffect(() => {
@@ -974,34 +1053,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
   };
 
   // ============ RENDER COMPONENTS ============
-  const renderDistributorSelect = (name, label, value, disabled) => (
-    <div key={name} style={{ display: "flex", flexDirection: "column" }}>
-      <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
-      <select
-        name={name}
-        value={value || ""}
-        onChange={handleChange}
-        disabled={disabled || updating}
-        style={{
-          padding: "10px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          background: disabled ? "#f9f9f9" : "#fff",
-          cursor: disabled ? "not-allowed" : "pointer",
-        }}
-      >
-        <option value="">-- Select --</option>
-        {filteredDistributors.map((dist) => (
-          <option key={dist.id} value={dist.code}>
-            {dist.distributor_name}
-          </option>
-        ))}
-        {value && !filteredDistributors.some(d => d.code === value) && (
-          <option value={value}>{value}</option>
-        )}
-      </select>
-    </div>
-  );
+
 
   const renderDateInput = (name, label, value, disabled) => (
     <div key={name} style={{ display: "flex", flexDirection: "column", marginBottom: "16px", position: "relative" }}>
@@ -1104,7 +1156,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
             amount_display: setting.amount_display || false,
           }));
         }}
-        disabled={updating}
+        disabled
         style={{
           padding: '10px',
           borderRadius: '8px',
@@ -1121,18 +1173,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
           </option>
         ))}
       </select>
-      <span style={{
-        position: 'absolute',
-        right: '20px',
-        top: '65%',
-        transform: 'translateY(-50%)',
-        pointerEvents: 'none',
-        color: '#555',
-        fontSize: '14px',
-        userSelect: 'none',
-      }}>
-        ▼
-      </span>
+
     </div>
   );
 
@@ -1143,34 +1184,23 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
         <input
           type="text"
           readOnly
-          value={fixCategoryNameInput(formData.categoryName).join(", ")}
+          value={formData.categoryName}
           onClick={() => setShowCategoryModal(true)}
           placeholder="Select Categories"
+          disabled
           style={{
             padding: "10px",
             paddingRight: "35px",
             borderRadius: "8px",
             border: "1px solid",
-            borderColor: fixCategoryNameInput(formData.categoryName).length > 0 ? "green" : "#ccc",
             cursor: "pointer",
             transition: "border-color 0.3s",
             width: "100%",
             boxSizing: "border-box",
           }}
-          disabled={updating}
+         
         />
-        <span style={{
-          position: "absolute",
-          top: "50%",
-          right: "10px",
-          transform: "translateY(-50%)",
-          pointerEvents: "none",
-          color: "#555",
-          fontSize: "18px",
-          userSelect: "none",
-        }}>
-          🔍
-        </span>
+   
       </div>
 
       {showCategoryModal && (
@@ -1286,216 +1316,56 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     </div>
   );
 
-  const renderAccountTypeInput = (name, label) => (
-    <div key={name} style={{ position: "relative", minHeight: 60 }}>
-      <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
-      <input
-        type="text"
-        className="form-control"
-        placeholder="Select or type account"
-        value={
-          Array.isArray(formData.accountType)
-            ? accountTypes
-              .filter(acc => formData.accountType.includes(acc.id))
-              .map(acc => acc.name)
-              .join(", ")
-            : accountTypes.find(acc => acc.id === formData.accountType)?.name || formData.accountType || ""
-        }
-        onChange={(e) => setFormData(prev => ({ ...prev, accountType: e.target.value }))}
-        onClick={() => setShowModalCategory(prev => ({ ...prev, [name]: true }))}
-        style={{ padding: "10px", cursor: "pointer" }}
-      />
+ 
 
-      {showModalCategory[name] && (
-        <div
+  const renderRemainingBalanceInput = (name, label, disabled) => {
+    let displayValue;
+
+    if (skuList.length > 0) {
+      displayValue = unifiedRemainingBalance;
+    } else if (showBudgetTable) {
+      displayValue = adjustedRemainingBalanceForBudget;
+    } else {
+      displayValue = formData.remaining_balance || 0;
+    }
+
+    return (
+      <div key={name} style={{ display: "flex", flexDirection: "column" }}>
+        <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
+        <input
+          type="number"
+          name={name}
+          value={displayValue.toFixed(2)}
+          onChange={handleChange_rem}
+          disabled={disabled || updating}
+          step="0.01"
           style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.6)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
+            padding: "10px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            background: (disabled || updating) ? "#f9f9f9" : "#fff",
+            fontWeight: "600",
+            color: displayValue < 0 ? "red" : "green",
           }}
-          onClick={() => setShowModalCategory(prev => ({ ...prev, [name]: false }))}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: "#f0f5ff",
-              borderRadius: "12px",
-              padding: "25px",
-              width: "420px",
-              maxHeight: "450px",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
-            <h3 style={{ marginBottom: "16px", textAlign: "center", color: "#1e40af", fontWeight: "700", fontSize: "20px" }}>
-              Select Account
-            </h3>
+        />
+      </div>
+    );
+  };
 
-            {!selectedMother && (
-              <>
-                <input
-                  type="text"
-                  className="form-control mb-3"
-                  placeholder="Search mother accounts..."
-                  value={accountSearchTerm}
-                  onChange={(e) => setAccountSearchTerm(e.target.value)}
-                  style={{ borderColor: "#007bff" }}
-                />
-                {accountTypes
-                  .filter(opt => opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase()))
-                  .map(opt => (
-                    <div
-                      key={opt.id}
-                      style={{ padding: "8px 10px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                      onClick={() => {
-                        setSelectedMother(opt);
-                        fetchSubAccounts(opt);
-                        if (opt.name === "NON-CHAIN") {
-                          setShowBranchInput(false);
-                          setFormData(prev => ({ ...prev, accountType: [] }));
-                        } else {
-                          setShowBranchInput(true);
-                        }
-                      }}
-                    >
-                      <span>({opt.code}) - {opt.name}</span>
-                      <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
-                    </div>
-                  ))}
-              </>
-            )}
-
-            {selectedMother && (
-              <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setSelectedMother(null)}
-                  style={{ marginBottom: "10px" }}
-                >
-                  ← Back to Mother Accounts
-                </Button>
-
-                <input
-                  type="text"
-                  className="form-control mb-2"
-                  placeholder="Search sub accounts..."
-                  value={subSearchTerm}
-                  onChange={(e) => setSubSearchTerm(e.target.value)}
-                  style={{ borderColor: "#007bff" }}
-                />
-
-                {subAccounts[selectedMother.id]
-                  ?.filter(s => s.name.toLowerCase().includes(subSearchTerm.toLowerCase()))
-                  .map(s => (
-                    <div key={s.id} style={{ display: "flex", alignItems: "center", padding: "4px 0" }}>
-                      <input
-                        type="checkbox"
-                        checked={
-                          selectedMother.name === "NON-CHAIN"
-                            ? (formData.accountType || []).includes(s.id)
-                            : formData.accountType === s.id
-                        }
-                        onChange={() => {
-                          if (selectedMother.name === "NON-CHAIN") {
-                            let updated = [...(formData.accountType || [])];
-                            if (updated.includes(s.id)) updated = updated.filter(x => x !== s.id);
-                            else updated.push(s.id);
-                            setFormData(prev => ({ ...prev, accountType: updated }));
-                          } else {
-                            setFormData(prev => ({ ...prev, accountType: s.name }));
-                            setShowModalCategory(prev => ({ ...prev, [name]: false }));
-                          }
-                        }}
-                        id={`sub_${s.id}`}
-                        style={{ width: "18px", height: "18px", cursor: "pointer" }}
-                      />
-                      <label htmlFor={`sub_${s.id}`} style={{ marginLeft: "6px", cursor: "pointer" }}>
-                        {s.name} <span style={{ color: "#888", fontSize: "12px" }}>({s.id})</span>
-                      </label>
-                    </div>
-                  ))}
-              </>
-            )}
-
-            <button
-              onClick={() => setShowModalCategory(prev => ({ ...prev, [name]: false }))}
-              style={{
-                padding: "12px 20px",
-                backgroundColor: "#3b82f6",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                fontWeight: "600",
-                fontSize: "16px",
-                cursor: "pointer",
-                alignSelf: "center",
-                width: "100%",
-                maxWidth: "180px",
-                marginTop: "12px",
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-const renderRemainingBalanceInput = (name, label, disabled) => {
-  // Hide remaining balance if isPartOfCoverPwp is false
-  if (formData.isPartOfCoverPwp === false) {
-    return null;
-  }
-
-  let displayValue;
-
-  if (skuList.length > 0) {
-    displayValue = unifiedRemainingBalance;
-  } else if (showBudgetTable) {
-    displayValue = adjustedRemainingBalanceForBudget;
-  } else {
-    displayValue = formData.remaining_balance || 0;
+const renderTextInput = (name, label, value, disabled) => {
+  // Special case para sa distributor - display name instead of code
+  let displayValue = value;
+  if (name === "distributor") {
+    displayValue = getDistributorName(value);
   }
 
   return (
     <div key={name} style={{ display: "flex", flexDirection: "column" }}>
       <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
       <input
-        type="number"
-        name={name}
-        value={displayValue.toFixed(2)}
-        onChange={handleChange_rem}
-        disabled={disabled || updating}
-        step="0.01"
-        style={{
-          padding: "10px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          background: (disabled || updating) ? "#f9f9f9" : "#fff",
-          fontWeight: "600",
-          color: displayValue < 0 ? "red" : "green",
-        }}
-      />
-    </div>
-  );
-};
-  const renderTextInput = (name, label, value, disabled) => (
-    <div key={name} style={{ display: "flex", flexDirection: "column" }}>
-      <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
-      <input
         type="text"
         name={name}
-        value={value}
+        value={displayValue}
         onChange={handleChange}
         disabled={disabled || updating}
         style={{
@@ -1507,14 +1377,12 @@ const renderRemainingBalanceInput = (name, label, disabled) => {
       />
     </div>
   );
+};
 
   const renderField = ({ name, label, disabled, type }) => {
     const value = formData[name] ?? (type === "checkbox" ? false : "");
 
-    if (type === "select" && (name === "distributor" || name === "distributor_code")) {
-      return renderDistributorSelect(name, label, value, disabled);
-    }
-
+  
     if (name === "activityDurationFrom" || name === "activityDurationTo") {
       return renderDateInput(name, label, value, disabled);
     }
@@ -1524,7 +1392,7 @@ const renderRemainingBalanceInput = (name, label, disabled) => {
     }
 
     if (name === "activity") {
-      return renderActivitySelect(name, label);
+      return renderActivitySelect(name, label, disabled);
     }
 
     if (name === "categoryName") {
@@ -1535,9 +1403,7 @@ const renderRemainingBalanceInput = (name, label, disabled) => {
       return renderCheckbox(name, label, value, disabled);
     }
 
-    if (name === "accountType" || name === "account_type") {
-      return renderAccountTypeInput(name, label);
-    }
+  
 
     if (name === "remaining_balance") {
       return renderRemainingBalanceInput(name, label, disabled);
@@ -1643,53 +1509,49 @@ const renderRemainingBalanceInput = (name, label, disabled) => {
                       </tr>
                     ))}
                   </tbody>
-             <tfoot>
-  {formData.isPartOfCoverPwp !== false && (
-    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Remaining Balance</td>
-      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-        {Number(formData?.initial_remaining_balance || 0).toFixed(2)}
-      </td>
-    </tr>
-  )}
-  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Total Budget</td>
-    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-      {originalTotalBudget.toFixed(2)}
-    </td>
-  </tr>
-  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Current Total Budget</td>
-    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-      {currentTotalBudget.toFixed(2)}
-    </td>
-  </tr>
-  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Budget Difference</td>
-    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-      {budgetDifference.toFixed(2)}
-    </td>
-  </tr>
-  {formData.isPartOfCoverPwp !== false && (
-    <tr style={{
-      fontWeight: "bold",
-      backgroundColor: "#e3f2fd",
-      color: "#1565c0",
-      fontSize: "16px",
-    }}>
-      <td style={{ padding: "12px", border: "2px solid #1976d2" }}>Remaining Balance</td>
-      <td style={{ padding: "12px", border: "2px solid #1976d2", textAlign: "right" }}>
-        {adjustedRemainingBalanceForBudget.toFixed(2)}
-      </td>
-    </tr>
-  )}
-  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Credit Budget</td>
-    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-      {currentTotalBudget.toFixed(2)}
-    </td>
-  </tr>
-</tfoot>
+                  <tfoot>
+                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Remaining Balance</td>
+                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+                        {Number(formData?.initial_remaining_balance || 0).toFixed(2)}
+                      </td>
+                    </tr>
+                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Total Budget</td>
+                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+                        {originalTotalBudget.toFixed(2)}
+                      </td>
+                    </tr>
+                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Current Total Budget</td>
+                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+                        {currentTotalBudget.toFixed(2)}
+                      </td>
+                    </tr>
+                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Budget Difference</td>
+                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+                        {budgetDifference.toFixed(2)}
+                      </td>
+                    </tr>
+                    <tr style={{
+                      fontWeight: "bold",
+                      backgroundColor: "#e3f2fd",
+                      color: "#1565c0",
+                      fontSize: "16px",
+                    }}>
+                      <td style={{ padding: "12px", border: "2px solid #1976d2" }}>Remaining Balance</td>
+                      <td style={{ padding: "12px", border: "2px solid #1976d2", textAlign: "right" }}>
+                        {adjustedRemainingBalanceForBudget.toFixed(2)}
+                      </td>
+                    </tr>
+                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Credit Budget</td>
+                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+                        {currentTotalBudget.toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               )}
             </div>
