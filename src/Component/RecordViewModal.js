@@ -42,22 +42,27 @@ const RecordViewModal = ({ record, onClose }) => {
     saveAs(blob, "BudgetHistory.xlsx");
   };
 
-  const exportSingleRecordToExcel = () => {
-    if (!fullRecord) return;
+const exportSingleRecordToExcel = () => {
+  if (!fullRecord) return;
 
-    const dataToExport = Object.entries(fullRecord).map(([key, value]) => ({
-      Column: formatColumnName(key),
-      Value: formatCellValue(value, key),
-    }));
+  // 🧩 Step 1: Prepare one-row data
+  const formattedRecord = {};
+  Object.entries(fullRecord).forEach(([key, value]) => {
+    formattedRecord[formatColumnName(key)] = formatCellValue(value, key);
+  });
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "RecordDetails");
+  // 🧩 Step 2: Create worksheet from array of one object
+  const worksheet = XLSX.utils.json_to_sheet([formattedRecord]);
 
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-    saveAs(blob, "RecordDetails.xlsx");
-  };
+  // 🧩 Step 3: Build and save workbook
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "RecordDetails");
+
+  const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+  saveAs(blob, "RecordDetails.xlsx");
+};
+
 
   const fetchCategoryMap = async () => {
     try {
@@ -419,11 +424,48 @@ const RecordViewModal = ({ record, onClose }) => {
                   Remaining Budget: {remainingBudget.toLocaleString(undefined, { style: 'currency', currency: 'PHP' })}
                 </div>
               )}
-              <h3 style={{ margin: 0, color: "#ffffffff", fontSize: "18px" }}>
-                {record?.source === "cover_pwp"
-                  ? `Cover PWP Record: ${record?.cover_code || "-"}`
-                  : `Regular PWP Record: ${record?.regularpwpcode || "-"}`}
-              </h3>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  background: "linear-gradient(90deg, #004aad, #007bff)",
+                  color: "white",
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  fontSize: "16px",
+                  fontWeight: "600",
+                  letterSpacing: "0.5px",
+                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)",
+                }}
+              >
+                <span
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.2)",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    fontSize: "14px",
+                    fontWeight: "500",
+                  }}
+                >
+                  {record?.source === "cover_pwp" ? "Cover PWP Record" : "Regular PWP Record"}
+                </span>
+                <span
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: "700",
+                    backgroundColor: "#ffffff",
+                    color: "#004aad",
+                    padding: "4px 12px",
+                    borderRadius: "6px",
+                  }}
+                >
+                  {record?.source === "cover_pwp"
+                    ? record?.cover_code || "-"
+                    : record?.regularpwpcode || "-"}
+                </span>
+              </div>
+
             </div>
           </div>
           <button
@@ -500,28 +542,20 @@ const RecordViewModal = ({ record, onClose }) => {
               >
                 {Object.entries(fullRecord)
                   .filter(([key, value]) => {
+                    // Hide specific columns
+                    const hiddenFields = ["id", "regularpwpcode", "pwptype", "remaining_balance", "credit_budget", 'amountbadget'];
+                    if (hiddenFields.includes(key.toLowerCase())) return false;
+
                     if (value === null || value === undefined || value === false) return false;
 
                     if (typeof value === "string") {
                       const val = value.trim().toUpperCase();
-
-                      if (
-                        val === "" ||
-                        val === "-" ||
-                        val === "EMPTY" ||
-                        val === "FALSE" ||
-                        val === "[]" ||
-                        val === "{}"
-                      ) {
-                        return false;
-                      }
+                      if (["", "-", "EMPTY", "FALSE", "[]", "{}"].includes(val)) return false;
                     }
 
                     if (Array.isArray(value) && value.length === 0) return false;
-
-                    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
+                    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0)
                       return false;
-                    }
 
                     return true;
                   })
@@ -570,7 +604,52 @@ const RecordViewModal = ({ record, onClose }) => {
                       </div>
                     );
                   })}
+
               </div>
+              {/* Footer Section */}
+              {/* Footer Section */}
+              <div
+                style={{
+                  padding: "16px 30px",
+                  backgroundColor: "#f1f5f9",
+                  borderTop: "1px solid #ddd",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "40px",
+                  alignItems: "center",
+                }}
+              >
+                {/* Remaining Balance */}
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
+                    Remaining Balance
+                  </div>
+                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#0d6efd" }}>
+                    ₱{" "}
+                    {fullRecord?.remaining_balance
+                      ? Number(fullRecord.remaining_balance).toLocaleString("en-PH", {
+                        minimumFractionDigits: 2,
+                      })
+                      : "0.00"}
+                  </div>
+                </div>
+
+                {/* Credit Budget */}
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
+                    Credit Budget
+                  </div>
+                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#16a34a" }}>
+                    ₱{" "}
+                    {fullRecord?.credit_budget
+                      ? Number(fullRecord.credit_budget).toLocaleString("en-PH", {
+                        minimumFractionDigits: 2,
+                      })
+                      : "0.00"}
+                  </div>
+                </div>
+              </div>
+
 
               {/* SKU Table - Only show if data exists */}
               {regularSkuData.length > 0 && (
