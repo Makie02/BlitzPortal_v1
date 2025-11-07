@@ -8,10 +8,12 @@ const ViewDataModal = ({ visaCode, onClose, userType }) => {
     const [type, setType] = useState(null);
     const [accountTypeNames, setAccountTypeNames] = useState(null);
     const [distributorName, setDistributorName] = useState(null);
-const [userNames, setUserNames] = useState({});
+    const [userNames, setUserNames] = useState({});
     // New state for the extra tables
     const [accountsBudgetList, setAccountsBudgetList] = useState([]);
     const [skuListing, setSkuListing] = useState([]);
+    const [isApproved, setIsApproved] = useState(false);
+
 
     const coverFieldNameMap = {
         cover_code: 'Cover Code',
@@ -23,7 +25,7 @@ const [userNames, setUserNames] = useState({});
         details: 'Details',
         remarks: 'Remarks',
         notification: 'Notification',
-        created_at: 'Created At',
+        created_at: 'Date Created',
         createForm: 'Created Form',
         ispartofcovervisa: 'Is Part of Cover Visa',
         coverVisaCode: 'Cover Visa Code',
@@ -42,19 +44,19 @@ const [userNames, setUserNames] = useState({});
         pwptype: 'PWP Type',
         activityDurationFrom: 'Activity From',
         activityDurationTo: 'Activity To',
-        isPartOfCoverPwp: 'Is Part of Cover PWP',
+        isPartOfCoverPwp: 'Is Part of Approved Budget?',
         coverPwpCode: 'Cover PWP Code',
         amountbadget: 'Amount Badget',
         objective: 'Objective',
         details: 'Details',
         remarks: 'Remarks',
         notification: 'Notification',
-        created_at: 'Created At',
-        createForm: 'Created Form',
+        created_at: 'Date Created',
+        createForm: 'Agent Name',
         distributor: 'Distributor',
         promoScheme: 'Promo Scheme',
         categoryName: 'Category Name',
-        sku: 'sku',
+        sku: 'SKU',
         accounts: 'Accounts',
         amount_display: 'Amount Display',
 
@@ -353,6 +355,31 @@ const getUserNameById = (userId) => {
 
     fetchUserNames();
 }, []);
+// ✅ Check if PWP is already approved
+useEffect(() => {
+    const checkApprovalStatus = async () => {
+        try {
+            if (!visaCode) return;
+
+            const { data, error } = await supabase
+                .from("Approval_History")
+                .select("Response")
+                .eq("PwpCode", visaCode)
+                .eq("Response", "Approved")
+                .single();
+
+            if (data && !error) {
+                setIsApproved(true);
+            }
+        } catch (err) {
+            // No approval record found, keep buttons enabled
+            console.log("No approval found yet");
+        }
+    };
+
+    checkApprovalStatus();
+}, [visaCode]);
+
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -683,7 +710,7 @@ const handleApprove = async () => {
                     PwpCode: visaCode,
                     ApproverId: userId,
                     DateResponded: dateTime,
-                    Response: "Disapprove",
+                    Response: "Disapproved",
                     Type: userType || null,
                     Notication: false,
                     CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
@@ -734,6 +761,8 @@ const handleApprove = async () => {
     }, []);
 
     const [coverRemaining, setCoverRemaining] = useState(0);
+    const [distributorRemaining, setDistributorRemaining] = useState(0);
+
 
     // ✅ Fetch cover PWP remaining balance
     useEffect(() => {
@@ -762,7 +791,36 @@ const handleApprove = async () => {
         fetchCoverRemaining();
     }, [data?.coverPwpCode]);
 
+// ✅ Fetch distributor's remaining budget for standalone Regular PWP
+useEffect(() => {
+    const fetchDistributorRemaining = async () => {
+        try {
+            // Only for Regular PWP that is NOT part of Cover PWP
+            if (type !== 'Regular PWP') return;
+            if (data?.isPartOfCoverPwp === 'Yes' || data?.isPartOfCoverPwp === true) return;
+            if (!data?.distributor) return;
 
+            const { data: budgetData, error } = await supabase
+                .from("amount_badget")
+                .select("remainingbalance")
+                .eq("distributor", data.distributor)
+                .order("createdate", { ascending: false })
+                .limit(1)
+                .single();
+
+            if (error) {
+                console.error("Error fetching distributor remaining balance:", error.message);
+                return;
+            }
+
+            setDistributorRemaining(parseFloat(budgetData?.remainingbalance || 0));
+        } catch (err) {
+            console.error("Unexpected error:", err);
+        }
+    };
+
+    fetchDistributorRemaining();
+}, [type, data?.distributor, data?.isPartOfCoverPwp]);
     if (!data) return null;
 
     return (
@@ -808,57 +866,76 @@ const handleApprove = async () => {
                 </div>
 
                 <div className="modal-content-scrollable">
-                    <div className="modal-form-content">
+ <div className="modal-form-content">
+  {/* ✅ Custom Field Order for Regular PWP */}
+  {type === 'Regular PWP' ? (
+    [
+      'distributor',
+      'activity',
+      'accountType',
+      'branchType',
+      'objective',
+      'promoScheme',
+      'activityDurationFrom',
+      'activityDurationTo',
+      'isPartOfCoverPwp',
+      'accounts',
+      'created_at',
+      'createForm',
+    ]
+      .filter((key) => {
+        const value = data[key];
 
+        // ✅ Hide null/undefined/empty values
+        if (value === null || value === undefined) return false;
+        if (typeof value === 'string' && value.trim() === '') return false;
+        if (value === '-') return false;
+        if (Array.isArray(value) && value.length === 0) return false;
 
-                        {/* ✅ Rest of the Form Fields */}
-                        {Object.entries(data)
-                            .filter(([key, value]) => {
-                                // ✅ Hide fields with null, undefined, empty string, or whitespace-only values
-                                if (value === null || value === undefined) return false;
-                                if (typeof value === 'string' && value.trim() === '') return false;
-                                if (value === '-') return false;
+        const formatted = formatValue(value, key);
+        if (formatted === '[ ]' || formatted === '[]' || formatted.trim() === '') return false;
 
-                                // ✅ Hide empty arrays (including when displayed as "[ ]" or "[]")
-                                if (Array.isArray(value) && value.length === 0) return false;
+        // ✅ Special conditions
+        if (key.toLowerCase() === 'accounts' && accountsBudgetList.length > 0) return false;
+        if (key.toLowerCase() === 'sku' && skuListing.length > 0) return false;
 
-                                // ✅ Hide if formatValue would return empty or just brackets
-                                const formatted = formatValue(value, key);
-                                if (formatted === '[ ]' || formatted === '[]' || formatted.trim() === '') return false;
+        return true;
+      })
+      .map((key) => {
+        const value = data[key];
+        return (
+          <div className="form-group" key={key}>
+            <label>{formatFieldName(key)}</label>
+            <div className="readonly-box">{formatValue(value, key)}</div>
+          </div>
+        );
+      })
+  ) : (
+    // ✅ ELSE condition: For other form types
+    Object.entries(data)
+      .filter(([key, value]) => {
+        if (value === null || value === undefined) return false;
+        if (typeof value === 'string' && value.trim() === '') return false;
+        if (value === '-') return false;
+        if (Array.isArray(value) && value.length === 0) return false;
 
-                                // Hide these fields specifically for Claims PWP
-                                if (
-                                    type === 'Claims PWP' &&
-                                    ['objective', 'promo_scheme', 'remarks'].includes(key)
-                                ) return false;
+        const formatted = formatValue(value, key);
+        if (formatted === '[ ]' || formatted === '[]' || formatted.trim() === '') return false;
 
-                                // Hide these general fields for all types
-                                if (['notification', 'amount_badget'].includes(key)) return false;
+        // ✅ Common hidden fields
+        if (['notification', 'amount_badget'].includes(key)) return false;
 
-                                if (
-                                    type === 'Regular PWP' &&
-                                    ['amount_badget', 'amountbadget', , 'id', 'coverVisaCode', 'notification', 'categoryCode','remaining_balance' ,'credit_budget', 'YearBudget'].includes(key)
-                                ) return false;
-       
-                                if (key.toLowerCase() === 'accounts') return accountsBudgetList.length > 0;
-
-                                if (key.toLowerCase() === 'sku') return skuListing.length > 0;
-
-                                if (key.toLowerCase() === 'amount_display') return value === true || value === 'Yes';
-
-                                return true;
-                            })
-                        .map(([key, value]) => (
-    <div className="form-group" key={key}>
-        <label>{formatFieldName(key)}</label>
-        <div className="readonly-box">
-            {formatValue(value, key)}
+        return true;
+      })
+      .map(([key, value]) => (
+        <div className="form-group" key={key}>
+          <label>{formatFieldName(key)}</label>
+          <div className="readonly-box">{formatValue(value, key)}</div>
         </div>
-    </div>
-))}
+      ))
+  )}
+</div>
 
-
-                    </div>
 
 
 {/* 🎯 FOOTER SECTION */}
@@ -886,14 +963,30 @@ const handleApprove = async () => {
                     </span>
                 </div>
             </>
-        ) : (
-            <div className="footer-card blue">
-                <span className="footer-label">💰 Amount (not part of budget)</span>
-                <span className="footer-value">
-                    ₱ {Number(data.amountbadget || 0).toLocaleString()}
-                </span>
-            </div>
-        )}
+       ) : (
+    <>
+        <div className="footer-card green">
+            <span className="footer-label">💼 Remaining Budget</span>
+            <span className="footer-value">
+                ₱ {Number(distributorRemaining || 0).toLocaleString()}
+            </span>
+        </div>
+        <div className="footer-card blue">
+            <span className="footer-label">💰 Amount (not part of budget)</span>
+            <span className="footer-value">
+                ₱ {Number(
+                    skuListing.length > 0
+                        ? skuListing
+                            .filter(row => row.sku_code !== 'Total:' && row.sku_code !== 'Total')
+                            .reduce((acc, row) => acc + (parseFloat(row.total_amount) || 0), 0)
+                        : accountsBudgetList.length > 0
+                            ? accountsBudgetList.reduce((acc, row) => acc + parseFloat(row.budget || 0), 0)
+                            : data.amountbadget || 0
+                ).toLocaleString()}
+            </span>
+        </div>
+    </>
+)}
     </div>
 )}
 
@@ -1295,83 +1388,69 @@ const handleApprove = async () => {
 
                 <div className="modal-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                     <button
-                        onClick={handleApprove}
-                        style={{
-                            backgroundColor: '#10b981',
-                            color: '#fff',
-                            border: 'none',
-                            padding: '10px 24px',
-                            fontSize: '16px',
-                            fontWeight: '600',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            boxShadow: '0 3px 6px rgba(16, 185, 129, 0.4)',
-                            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#059669';
-                            e.currentTarget.style.boxShadow = '0 5px 12px rgba(5, 150, 105, 0.6)';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = '#10b981';
-                            e.currentTarget.style.boxShadow = '0 3px 6px rgba(16, 185, 129, 0.4)';
-                        }}
-                    >
-                        ✓ Approve
-                    </button>
+    onClick={handleApprove}
+    disabled={isApproved}
+    style={{
+        backgroundColor: isApproved ? '#9ca3af' : '#10b981',
+        color: '#fff',
+        border: 'none',
+        padding: '10px 24px',
+        fontSize: '16px',
+        fontWeight: '600',
+        borderRadius: '6px',
+        cursor: isApproved ? 'not-allowed' : 'pointer',
+        boxShadow: '0 3px 6px rgba(16, 185, 129, 0.4)',
+        transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
+        opacity: isApproved ? 0.6 : 1,
+    }}
+    onMouseEnter={(e) => {
+        if (!isApproved) {
+            e.currentTarget.style.backgroundColor = '#059669';
+            e.currentTarget.style.boxShadow = '0 5px 12px rgba(5, 150, 105, 0.6)';
+        }
+    }}
+    onMouseLeave={(e) => {
+        if (!isApproved) {
+            e.currentTarget.style.backgroundColor = '#10b981';
+            e.currentTarget.style.boxShadow = '0 3px 6px rgba(16, 185, 129, 0.4)';
+        }
+    }}
+>
+    ✓ Approve
+</button>
 
-                    <button
-                        onClick={handleDisapprove}
-                        style={{
-                            backgroundColor: '#ef4444',
-                            color: '#fff',
-                            border: 'none',
-                            padding: '10px 24px',
-                            fontSize: '16px',
-                            fontWeight: '600',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            boxShadow: '0 3px 6px rgba(239, 68, 68, 0.4)',
-                            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#dc2626';
-                            e.currentTarget.style.boxShadow = '0 5px 12px rgba(220, 38, 38, 0.6)';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = '#ef4444';
-                            e.currentTarget.style.boxShadow = '0 3px 6px rgba(239, 68, 68, 0.4)';
-                        }}
-                    >
-                        ✕ Disapprove
-                    </button>
-                    {/* 
-    <button
-        onClick={onClose}
-        style={{
-            backgroundColor: '#6b7280',
-            color: '#fff',
-            border: 'none',
-            padding: '10px 24px',
-            fontSize: '16px',
-            fontWeight: '600',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            boxShadow: '0 3px 6px rgba(107, 114, 128, 0.4)',
-            transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
-        }}
-        onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#4b5563';
-            e.currentTarget.style.boxShadow = '0 5px 12px rgba(75, 85, 99, 0.6)';
-        }}
-        onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#6b7280';
-            e.currentTarget.style.boxShadow = '0 3px 6px rgba(107, 114, 128, 0.4)';
-        }}
-    >
-        Close
-    </button>
-    */}
+<button
+    onClick={handleDisapprove}
+    disabled={isApproved}
+    style={{
+        backgroundColor: isApproved ? '#9ca3af' : '#ef4444',
+        color: '#fff',
+        border: 'none',
+        padding: '10px 24px',
+        fontSize: '16px',
+        fontWeight: '600',
+        borderRadius: '6px',
+        cursor: isApproved ? 'not-allowed' : 'pointer',
+        boxShadow: '0 3px 6px rgba(239, 68, 68, 0.4)',
+        transition: 'background-color 0.3s ease, box-shadow 0.2s ease',
+        opacity: isApproved ? 0.6 : 1,
+    }}
+    onMouseEnter={(e) => {
+        if (!isApproved) {
+            e.currentTarget.style.backgroundColor = '#dc2626';
+            e.currentTarget.style.boxShadow = '0 5px 12px rgba(220, 38, 38, 0.6)';
+        }
+    }}
+    onMouseLeave={(e) => {
+        if (!isApproved) {
+            e.currentTarget.style.backgroundColor = '#ef4444';
+            e.currentTarget.style.boxShadow = '0 3px 6px rgba(239, 68, 68, 0.4)';
+        }
+    }}
+>
+    ✕ Disapprove
+</button>
+  
                 </div>
             </div >
         </div >
