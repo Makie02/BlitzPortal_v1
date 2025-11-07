@@ -54,10 +54,10 @@ const coverPwpFieldsConfig = [
 const regularPwpFieldsConfig = [
   { name: "regularpwpcode", label: "REGULAR CODE", disabled: true },
   { name: "pwptype", label: "PWP TYPE", disabled: true },
-  { name: "distributor", label: "Distributor", type: "select" },
-  { name: "accountType", label: "Account Type" },
-  { name: "categoryName", label: "Category" },
-  { name: "activity", label: "Activity" },
+  { name: "distributor", label: "Distributor", disabled: true },
+  { name: "accountType", label: "Account Type", disabled: true },
+  { name: "categoryName", label: "Category", disabled: true },
+  { name: "activity", label: "Activity", disabled: true },
   { name: "objective", label: "Objective" },
   { name: "branchType", label: "branchType" },
   { name: "promoScheme", label: "Promo Scheme" },
@@ -1451,40 +1451,44 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     </div>
   );
 
-  const renderRemainingBalanceInput = (name, label, disabled) => {
-    let displayValue;
+const renderRemainingBalanceInput = (name, label, disabled) => {
+  // Hide remaining balance if isPartOfCoverPwp is false
+  if (formData.isPartOfCoverPwp === false) {
+    return null;
+  }
 
-    if (skuList.length > 0) {
-      displayValue = unifiedRemainingBalance;
-    } else if (showBudgetTable) {
-      displayValue = adjustedRemainingBalanceForBudget;
-    } else {
-      displayValue = formData.remaining_balance || 0;
-    }
+  let displayValue;
 
-    return (
-      <div key={name} style={{ display: "flex", flexDirection: "column" }}>
-        <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
-        <input
-          type="number"
-          name={name}
-          value={displayValue.toFixed(2)}
-          onChange={handleChange_rem}
-          disabled={disabled || updating}
-          step="0.01"
-          style={{
-            padding: "10px",
-            borderRadius: "8px",
-            border: "1px solid #ccc",
-            background: (disabled || updating) ? "#f9f9f9" : "#fff",
-            fontWeight: "600",
-            color: displayValue < 0 ? "red" : "green",
-          }}
-        />
-      </div>
-    );
-  };
+  if (skuList.length > 0) {
+    displayValue = unifiedRemainingBalance;
+  } else if (showBudgetTable) {
+    displayValue = adjustedRemainingBalanceForBudget;
+  } else {
+    displayValue = formData.remaining_balance || 0;
+  }
 
+  return (
+    <div key={name} style={{ display: "flex", flexDirection: "column" }}>
+      <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
+      <input
+        type="number"
+        name={name}
+        value={displayValue.toFixed(2)}
+        onChange={handleChange_rem}
+        disabled={disabled || updating}
+        step="0.01"
+        style={{
+          padding: "10px",
+          borderRadius: "8px",
+          border: "1px solid #ccc",
+          background: (disabled || updating) ? "#f9f9f9" : "#fff",
+          fontWeight: "600",
+          color: displayValue < 0 ? "red" : "green",
+        }}
+      />
+    </div>
+  );
+};
   const renderTextInput = (name, label, value, disabled) => (
     <div key={name} style={{ display: "flex", flexDirection: "column" }}>
       <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
@@ -1639,49 +1643,53 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot>
-                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Remaining Balance</td>
-                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-                        {Number(formData?.initial_remaining_balance || 0).toFixed(2)}
-                      </td>
-                    </tr>
-                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Total Budget</td>
-                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-                        {originalTotalBudget.toFixed(2)}
-                      </td>
-                    </tr>
-                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Current Total Budget</td>
-                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-                        {currentTotalBudget.toFixed(2)}
-                      </td>
-                    </tr>
-                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Budget Difference</td>
-                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-                        {budgetDifference.toFixed(2)}
-                      </td>
-                    </tr>
-                    <tr style={{
-                      fontWeight: "bold",
-                      backgroundColor: "#e3f2fd",
-                      color: "#1565c0",
-                      fontSize: "16px",
-                    }}>
-                      <td style={{ padding: "12px", border: "2px solid #1976d2" }}>Remaining Balance</td>
-                      <td style={{ padding: "12px", border: "2px solid #1976d2", textAlign: "right" }}>
-                        {adjustedRemainingBalanceForBudget.toFixed(2)}
-                      </td>
-                    </tr>
-                    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
-                      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Credit Budget</td>
-                      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
-                        {currentTotalBudget.toFixed(2)}
-                      </td>
-                    </tr>
-                  </tfoot>
+             <tfoot>
+  {formData.isPartOfCoverPwp !== false && (
+    <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+      <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Remaining Balance</td>
+      <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+        {Number(formData?.initial_remaining_balance || 0).toFixed(2)}
+      </td>
+    </tr>
+  )}
+  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Original Total Budget</td>
+    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+      {originalTotalBudget.toFixed(2)}
+    </td>
+  </tr>
+  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Current Total Budget</td>
+    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+      {currentTotalBudget.toFixed(2)}
+    </td>
+  </tr>
+  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Budget Difference</td>
+    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+      {budgetDifference.toFixed(2)}
+    </td>
+  </tr>
+  {formData.isPartOfCoverPwp !== false && (
+    <tr style={{
+      fontWeight: "bold",
+      backgroundColor: "#e3f2fd",
+      color: "#1565c0",
+      fontSize: "16px",
+    }}>
+      <td style={{ padding: "12px", border: "2px solid #1976d2" }}>Remaining Balance</td>
+      <td style={{ padding: "12px", border: "2px solid #1976d2", textAlign: "right" }}>
+        {adjustedRemainingBalanceForBudget.toFixed(2)}
+      </td>
+    </tr>
+  )}
+  <tr style={{ fontWeight: "bold", backgroundColor: "#f0f0f0" }}>
+    <td style={{ padding: "8px", border: "1px solid #ddd" }}>Credit Budget</td>
+    <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "right" }}>
+      {currentTotalBudget.toFixed(2)}
+    </td>
+  </tr>
+</tfoot>
                 </table>
               )}
             </div>
