@@ -51,6 +51,8 @@ import UploadExportRegularPWP from "./Create/UploadExportRegularPWP.jsx";
 import KasBudgetCard from "./Component/KAS.js";
 import DistributorBudgetCard from "./Component/DistributorBudgetCard.js";
 import DashboardForSuperAdmin from "./Component/DashboardForSuperAdmin.js";
+import HighestClaimed from "./Component/HighestClaimed.jsx";
+import TotalSupportPerAccount from "./Component/AnnouncementForm.jsx";
 function App() {
 
   // Track online/offline status
@@ -409,8 +411,12 @@ function App() {
       case "DistributorBudgetCard": return <DistributorBudgetCard setCurrentView={setCurrentView} />;
       case "DashboardForSuperAdmin": return <DashboardForSuperAdmin setCurrentView={setCurrentView} />;
 
+      case "HighestClaimed": return <HighestClaimed setCurrentView={setCurrentView} />;
+
+      case "TotalSupportPerAccount": return <TotalSupportPerAccount setCurrentView={setCurrentView} />;
 
 
+      
       default: return <Dashboard setCurrentView={setCurrentView} />;
     }
   };
