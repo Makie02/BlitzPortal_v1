@@ -16,7 +16,6 @@ export default function TotalSupportPerAccount({setCurrentView}) {
   const [dateTo, setDateTo] = useState('');
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [selectedRows, setSelectedRows] = useState(new Set());
-  const [showSummary, setShowSummary] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -33,7 +32,7 @@ export default function TotalSupportPerAccount({setCurrentView}) {
     if (searchTerm) {
       const filtered = pivotData.filter(item =>
         item.account_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.pwp_codes_display?.toLowerCase().includes(searchTerm.toLowerCase())
+        item.pwp_code?.toLowerCase().includes(searchTerm.toLowerCase())
       );
       setFilteredData(filtered);
       setCurrentPage(1);
@@ -57,18 +56,20 @@ export default function TotalSupportPerAccount({setCurrentView}) {
     const activities = Array.from(new Set(sourceData.map(item => item.activity_name))).filter(Boolean).sort();
     setActivityColumns(activities);
 
+    // Group by account name ONLY (merge same stores from different PWP codes)
     const grouped = {};
     sourceData.forEach(item => {
       const cleanName = cleanAccountName(item.account_name);
-      const key = cleanName;
+      const key = cleanName; // Only use account name as key
+      
       if (!grouped[key]) {
         grouped[key] = {
+          pwp_code: item.pwp_code, // Store first PWP code for reference
           account_name: cleanName,
-          pwp_codes: new Set(),
           activities: {}
         };
       }
-      if (item.pwp_code) grouped[key].pwp_codes.add(item.pwp_code);
+      
       if (item.activity_name) {
         if (!grouped[key].activities[item.activity_name]) {
           grouped[key].activities[item.activity_name] = 0;
@@ -82,11 +83,16 @@ export default function TotalSupportPerAccount({setCurrentView}) {
 
     const pivotArray = Object.values(grouped).map((item, idx) => {
       const grandTotal = Object.values(item.activities).reduce((sum, val) => sum + val, 0);
-      const pwpCodesString = Array.from(item.pwp_codes).sort().join(', ');
-      return { ...item, pwp_codes_display: pwpCodesString, grandTotal, id: idx };
+      return { 
+        ...item, 
+        grandTotal, 
+        id: idx 
+      };
     });
 
+    // Sort by account name
     pivotArray.sort((a, b) => (a.account_name || '').localeCompare(b.account_name || ''));
+    
     setPivotData(pivotArray);
   };
 
@@ -159,23 +165,46 @@ export default function TotalSupportPerAccount({setCurrentView}) {
       const approvedBudget = budgetData.filter(item => approvedPwpCodes.has(item.regularcode));
       const approvedSku = skuData.filter(item => approvedPwpCodes.has(item.regular_code));
 
-      const budgetMap = {};
+      // Split account names with commas and create separate entries
+      const expandedBudget = [];
       approvedBudget.forEach(item => {
+        const accountNames = item.account_name ? item.account_name.split(',').map(n => n.trim()) : [''];
+        accountNames.forEach(singleAccount => {
+          expandedBudget.push({
+            ...item,
+            account_name: singleAccount
+          });
+        });
+      });
+
+      const expandedSku = [];
+      approvedSku.forEach(item => {
+        const accountNames = item.account_name ? item.account_name.split(',').map(n => n.trim()) : [''];
+        accountNames.forEach(singleAccount => {
+          expandedSku.push({
+            ...item,
+            account_name: singleAccount
+          });
+        });
+      });
+
+      const budgetMap = {};
+      expandedBudget.forEach(item => {
         const key = `${item.regularcode}|${item.account_name}`;
         if (!budgetMap[key]) budgetMap[key] = 0;
         budgetMap[key] += parseFloat(item.budget) || 0;
       });
 
       const skuMap = {};
-      approvedSku.forEach(item => {
+      expandedSku.forEach(item => {
         const key = `${item.regular_code}|${item.account_name}`;
         if (!skuMap[key]) skuMap[key] = 0;
         skuMap[key] += parseFloat(item.total_amount) || 0;
       });
 
       const accountsSet = new Set([
-        ...approvedBudget.map(item => `${item.regularcode}|${item.account_name}`),
-        ...approvedSku.map(item => `${item.regular_code}|${item.account_name}`)
+        ...expandedBudget.map(item => `${item.regularcode}|${item.account_name}`),
+        ...expandedSku.map(item => `${item.regular_code}|${item.account_name}`)
       ]);
 
       let transformedData = [];
@@ -210,20 +239,32 @@ export default function TotalSupportPerAccount({setCurrentView}) {
         });
       });
 
+      // Handle PWP data with amount_display and split branch types
       const existingKeys = new Set(transformedData.map(d => `${d.pwp_code}|${d.account_name}`));
-      const newPwpRows = pwpData
+      const newPwpRows = [];
+      
+      pwpData
         .filter(item => item.amount_display === true && approvedPwpCodes.has(item.regularpwpcode))
-        .map(item => ({
-          pwp_code: item.regularpwpcode,
-          account_name: cleanAccountName(item.branchType) || 'Unknown',
-          activity_name: activityMap[item.activity] || item.activity || 'N/A',
-          budget: 0,
-          sku_total_amount: 0,
-          credit_budget: parseFloat(item.credit_budget) || 0,
-          total_amount: parseFloat(item.credit_budget) || 0,
-          DateResponded: pwpDateMap[item.regularpwpcode] || null,
-        }))
-        .filter(row => !existingKeys.has(`${row.pwp_code}|${row.account_name}`));
+        .forEach(item => {
+          const branchType = item.branchType || 'Unknown';
+          const branches = branchType.split(',').map(name => cleanAccountName(name.trim()));
+          
+          branches.forEach(branch => {
+            const key = `${item.regularpwpcode}|${branch}`;
+            if (!existingKeys.has(key)) {
+              newPwpRows.push({
+                pwp_code: item.regularpwpcode,
+                account_name: branch,
+                activity_name: activityMap[item.activity] || item.activity || 'N/A',
+                budget: 0,
+                sku_total_amount: 0,
+                credit_budget: parseFloat(item.credit_budget) || 0,
+                total_amount: parseFloat(item.credit_budget) || 0,
+                DateResponded: pwpDateMap[item.regularpwpcode] || null,
+              });
+            }
+          });
+        });
 
       const finalData = [...transformedData, ...newPwpRows];
 
@@ -296,14 +337,10 @@ export default function TotalSupportPerAccount({setCurrentView}) {
       doc.setFont('helvetica', 'normal');
       doc.text(`Generated: ${new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}`, pageWidth / 2, 22, { align: 'center' });
       
-      const tableHeaders = [['Store', 'PWP Code(s)', ...activityColumns, 'Grand Total']];
+      const tableHeaders = [['Store', ...activityColumns, 'Grand Total']];
       const tableData = selectedItems.map(item => {
-        const pwpCodes = item.pwp_codes_display || '';
-        const truncatedPwp = pwpCodes.length > 25 ? pwpCodes.substring(0, 25) + '...' : pwpCodes;
-        
         return [
           item.account_name || '',
-          truncatedPwp,
           ...activityColumns.map(activity => {
             const value = item.activities?.[activity] || 0;
             return value > 0 ? parseFloat(value).toFixed(2) : '-';
@@ -320,14 +357,14 @@ export default function TotalSupportPerAccount({setCurrentView}) {
         headStyles: { fillColor: [33, 150, 243], fontSize: 8, fontStyle: 'bold', halign: 'center' },
         bodyStyles: { fontSize: 7, halign: 'right' },
         columnStyles: {
-          0: { cellWidth: 35, halign: 'left' },
-          1: { cellWidth: 30, halign: 'left' }
+          0: { cellWidth: 50, halign: 'left' }
         },
         styles: { overflow: 'linebreak', cellPadding: 1.5 },
         margin: { left: 8, right: 8 }
       });
       
       const finalY = doc.lastAutoTable.finalY + 10;
+      const { summaryActivities, totalGrandTotal, count } = getSelectedSummary();
       
       if (finalY + 60 > pageHeight) {
         doc.addPage();
@@ -419,10 +456,9 @@ export default function TotalSupportPerAccount({setCurrentView}) {
       ? filteredData.filter(item => selectedRows.has(item.id))
       : filteredData;
 
-    const headers = ['Store', 'PWP Code(s)', ...activityColumns, 'Grand Total'];
+    const headers = ['Store', ...activityColumns, 'Grand Total'];
     const rows = dataToExport.map(item => [
       item.account_name || '',
-      item.pwp_codes_display || '',
       ...activityColumns.map(activity => {
         const value = item.activities?.[activity] || 0;
         return value ? parseFloat(value).toFixed(2) : '0.00';
@@ -430,29 +466,22 @@ export default function TotalSupportPerAccount({setCurrentView}) {
       item.grandTotal ? parseFloat(item.grandTotal).toFixed(2) : '0.00'
     ]);
 
-    // Calculate totals for footer
+    const { summaryActivities, totalGrandTotal } = getSelectedSummary();
     const footerTotals = activityColumns.map(activity => {
-      const total = dataToExport.reduce((sum, item) => {
-        return sum + (item.activities?.[activity] || 0);
-      }, 0);
+      const total = summaryActivities[activity] || 0;
       return parseFloat(total).toFixed(2);
     });
 
-    const grandTotalSum = dataToExport.reduce((sum, item) => sum + item.grandTotal, 0);
+    rows.push(['', ...activityColumns.map(() => ''), '']);
 
-    // Add empty row for spacing
-    rows.push(['', '', ...activityColumns.map(() => ''), '']);
-
-    // Add GRAND TOTAL row
     const footerLabel = selectedRows.size > 0 
       ? `GRAND TOTAL (${selectedRows.size} selected)`
       : 'GRAND TOTAL';
     
     rows.push([
       footerLabel,
-      '',
       ...footerTotals,
-      parseFloat(grandTotalSum).toFixed(2)
+      parseFloat(totalGrandTotal).toFixed(2)
     ]);
 
     const csvContent = [
@@ -580,7 +609,7 @@ export default function TotalSupportPerAccount({setCurrentView}) {
                 onClick={() => setCurrentView('HighestClaimed')} 
                 style={{ flex: isMobile ? '1' : 'initial', padding: '8px 16px', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}
               >
-                Highest Claimed
+              Highest Support to Claim
               </button>
               <button onClick={() => setShowDateFilter(!showDateFilter)} style={{ flex: isMobile ? '1' : 'initial', padding: '8px 16px', background: showDateFilter ? '#2196F3' : 'white', color: showDateFilter ? 'white' : '#2196F3', border: '1px solid #2196F3', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>{showDateFilter ? 'Hide' : 'Dates'}</button>
               <button onClick={fetchData} style={{ flex: isMobile ? '1' : 'initial', padding: '8px 16px', background: 'white', color: '#2196F3', border: '1px solid #2196F3', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>Refresh</button>
@@ -625,9 +654,8 @@ export default function TotalSupportPerAccount({setCurrentView}) {
                         style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                       />
                     </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'white', minWidth: '250px', position: 'sticky', left: '60px', background: '#2196F3', zIndex: 3 }}>PWP Code(s)</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'white', minWidth: '180px', position: 'sticky', left: '310px', background: '#2196F3', zIndex: 3 }}>Store</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '13px', fontWeight: '600', color: 'white', minWidth: '140px', background: '#1976D2', position: 'sticky', left: '490px', zIndex: 3 }}>Grand Total</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'white', minWidth: '250px', position: 'sticky', left: '60px', background: '#2196F3', zIndex: 3 }}>Store</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '13px', fontWeight: '600', color: 'white', minWidth: '140px', background: '#1976D2', position: 'sticky', left: '310px', zIndex: 3 }}>Grand Total</th>
                     {activityColumns.map((activity, idx) => <th key={idx} style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: 'white', minWidth: '140px', whiteSpace: 'normal', wordWrap: 'break-word' }} title={activity}>{activity}</th>)}
                   </tr></thead>
                   <tbody>
@@ -641,9 +669,8 @@ export default function TotalSupportPerAccount({setCurrentView}) {
                             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                           />
                         </td>
-                        <td style={{ padding: '12px 16px', fontSize: '13px', color: '#333', fontWeight: '500', position: 'sticky', left: '60px', background: selectedRows.has(item.id) ? '#E3F2FD' : 'inherit', zIndex: 2, maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.pwp_codes_display}>{item.pwp_codes_display || '-'}</td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', color: '#666', position: 'sticky', left: '310px', background: selectedRows.has(item.id) ? '#E3F2FD' : 'inherit', zIndex: 2, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.account_name}>{item.account_name}</td>
-                        <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '600', color: '#1976D2', textAlign: 'right', background: selectedRows.has(item.id) ? '#BBDEFB' : (index % 2 === 0 ? '#E3F2FD' : '#BBDEFB'), position: 'sticky', left: '490px', zIndex: 2 }}>{formatCurrency(item.grandTotal)}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', color: '#666', position: 'sticky', left: '60px', background: selectedRows.has(item.id) ? '#E3F2FD' : 'inherit', zIndex: 2 }} title={item.account_name}>{item.account_name}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '600', color: '#1976D2', textAlign: 'right', background: selectedRows.has(item.id) ? '#BBDEFB' : (index % 2 === 0 ? '#E3F2FD' : '#BBDEFB'), position: 'sticky', left: '310px', zIndex: 2 }}>{formatCurrency(item.grandTotal)}</td>
                         {activityColumns.map((activity, idx) => {
                           const value = item.activities?.[activity] || 0;
                           return <td key={idx} style={{ padding: '12px 16px', fontSize: '13px', color: value > 0 ? '#333' : '#999', textAlign: 'right' }}>{value > 0 ? formatCurrency(value) : '-'}</td>;
@@ -651,10 +678,10 @@ export default function TotalSupportPerAccount({setCurrentView}) {
                       </tr>
                     ))}
                     <tr style={{ background: '#f5f5f5', fontWeight: 'bold', borderTop: '2px solid #2196F3' }}>
-                      <td style={{ padding: '12px 16px', fontWeight: '700', color: '#333', position: 'sticky', left: 0, background: '#f5f5f5', zIndex: 2 }} colSpan="3">
+                      <td style={{ padding: '12px 16px', fontWeight: '700', color: '#333', position: 'sticky', left: 0, background: '#f5f5f5', zIndex: 2 }} colSpan="2">
                         GRAND TOTAL {selectedRows.size > 0 && `(${count} selected)`}
                       </td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '700', color: 'white', textAlign: 'right', background: '#1976D2', position: 'sticky', left: '490px', zIndex: 2 }}>
+                      <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '700', color: 'white', textAlign: 'right', background: '#1976D2', position: 'sticky', left: '310px', zIndex: 2 }}>
                         {formatCurrency(totalGrandTotal)}
                       </td>
                       {activityColumns.map((activity, idx) => {
@@ -682,7 +709,7 @@ export default function TotalSupportPerAccount({setCurrentView}) {
                       style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                     />
                   </div>
-                  <div style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '2px solid #2196F3' }}><div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>Account Name</div><div style={{ fontSize: '14px', fontWeight: '600', color: '#333', wordBreak: 'break-word', paddingRight: '32px' }}>{item.account_name}</div></div>
+                  <div style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '2px solid #2196F3' }}><div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>Store</div><div style={{ fontSize: '14px', fontWeight: '600', color: '#333', wordBreak: 'break-word', paddingRight: '32px' }}>{item.account_name}</div></div>
                   <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '2px solid #2196F3', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}><div style={{ fontSize: '14px', fontWeight: '600', color: '#1976D2' }}>Grand Total</div><div style={{ fontSize: '16px', fontWeight: '700', color: '#1976D2' }}>{formatCurrency(item.grandTotal)}</div></div>
                   <div><div style={{ fontSize: '12px', color: '#999', marginBottom: '8px', fontWeight: '600' }}>Activities</div>
                     {activityColumns.map((activity, idx) => {
