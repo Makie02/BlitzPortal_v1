@@ -106,10 +106,10 @@ function RecordsPage() {
       let regularData = [];
 
       // --- FETCH COVER PWP ---
-     if (filter === "all" || filter === "cover") {
-  const { data: cData, error: cError } = await supabase
-    .from("cover_pwp")
-    .select(`
+      if (filter === "all" || filter === "cover") {
+        const { data: cData, error: cError } = await supabase
+          .from("cover_pwp")
+          .select(`
       id,
       cover_code,
       activity,
@@ -119,22 +119,22 @@ function RecordsPage() {
       created_at,
       createForm
     `)
-    .order("id", { ascending: false })
+          .order("id", { ascending: false })
 
-  if (cError) throw cError;
+        if (cError) throw cError;
 
-  coverData = (cData || []).map(item => ({
-    ...item,
-    source: "cover_pwp",
-    pwp_code: item.cover_code,
-  }));
-}
+        coverData = (cData || []).map(item => ({
+          ...item,
+          source: "cover_pwp",
+          pwp_code: item.cover_code,
+        }));
+      }
 
-// ✅ FETCH FOR REGULAR PWP
-if (filter === "all" || filter === "regular") {
-  const { data: rData, error: rError } = await supabase
-    .from("regular_pwp")
-    .select(`
+      // ✅ FETCH FOR REGULAR PWP
+      if (filter === "all" || filter === "regular") {
+        const { data: rData, error: rError } = await supabase
+          .from("regular_pwp")
+          .select(`
       id,
       regularpwpcode,
       activity,
@@ -145,16 +145,16 @@ if (filter === "all" || filter === "regular") {
       branchType,
       createForm
     `)
-    .order("id", { ascending: false })
+          .order("id", { ascending: false })
 
-  if (rError) throw rError;
+        if (rError) throw rError;
 
-  regularData = (rData || []).map(item => ({
-    ...item,
-    source: "regular_pwp",
-    pwp_code: item.regularpwpcode,
-  }));
-}
+        regularData = (rData || []).map(item => ({
+          ...item,
+          source: "regular_pwp",
+          pwp_code: item.regularpwpcode,
+        }));
+      }
 
       const mergedData = [...coverData, ...regularData];
 
@@ -231,10 +231,10 @@ if (filter === "all" || filter === "regular") {
           if (statusFilter === "disapproved")
             return (
               itemStatus === "disapproved" || itemStatus === "disapproved"
-            );          if (statusFilter === "pending")
+            ); if (statusFilter === "pending")
             return itemStatus === "pending" || !item.approval_status;
           if (statusFilter === "approved") return itemStatus === "approved";
-      
+
           return itemStatus === statusFilter;
         });
       }
@@ -556,61 +556,61 @@ if (filter === "all" || filter === "regular") {
 
     return userName ? userName.toUpperCase() : String(userId); // return uppercase or fallback
   };
- const formatCellValue = (value, colName) => {
-  if (!value && value !== 0) return '-';
+  const formatCellValue = (value, colName) => {
+    if (!value && value !== 0) return '-';
 
-  if (colName === "distributor" || colName === "distributor_code") {
-    const strCode = String(value).trim();
-    const name = distributorMap[strCode];
-    console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
-    return name || strCode;
-  }
-
-  // Convert UserID to name for createForm column
-  if (colName === "createForm") {
-    return getUserNameById(value);
-  }
-
-  if (colName === 'created_at' && value) {
-    try {
-      return new Date(value).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric"
-      });
-    } catch {
-      return value;
+    if (colName === "distributor" || colName === "distributor_code") {
+      const strCode = String(value).trim();
+      const name = distributorMap[strCode];
+      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
+      return name || strCode;
     }
-  }
 
-  // Don't truncate branchType - let it wrap naturally
-  if (colName === 'branchType') {
+    // Convert UserID to name for createForm column
+    if (colName === "createForm") {
+      return getUserNameById(value);
+    }
+
+    if (colName === 'created_at' && value) {
+      try {
+        return new Date(value).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+      } catch {
+        return value;
+      }
+    }
+
+    // Don't truncate branchType - let it wrap naturally
+    if (colName === 'branchType') {
+      return String(value);
+    }
+
     return String(value);
-  }
-
-  return String(value);
-};
+  };
   // Define styles object
-const styles = {
-  td: {
-    padding: '16px 20px',
-    borderBottom: '1px solid #e0e0e0',
-    fontSize: '14px',
-    color: '#000000ff'
-  },
-  tdBranchType: {
-    padding: '16px 20px',
-    borderBottom: '1px solid #e0e0e0',
-    fontSize: '13px',
-    color: '#000000ff',
-    width: '500px',            // Wider to show at least 1 full branch name
-    maxWidth: '500px',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    cursor: 'help'
-  }
-};
+  const styles = {
+    td: {
+      padding: '16px 20px',
+      borderBottom: '1px solid #e0e0e0',
+      fontSize: '14px',
+      color: '#000000ff'
+    },
+    tdBranchType: {
+      padding: '16px 20px',
+      borderBottom: '1px solid #e0e0e0',
+      fontSize: '13px',
+      color: '#000000ff',
+      width: '500px',            // Wider to show at least 1 full branch name
+      maxWidth: '500px',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      cursor: 'help'
+    }
+  };
 
   useEffect(() => {
     if (Object.keys(categoryMap).length > 0) {
@@ -713,10 +713,13 @@ const styles = {
                 >
                   <option value="all">All Status</option>
                   <option value="approved">Approved</option>
-                  <option value="declined">Declined</option>
-                  <option value="sent_back">Sent Back</option>
-                  <option value="cancelled">Cancelled</option>
+
                   <option value="pending">Pending</option>
+                  <option value="cancelled">Cancelled</option>
+
+                  <option value="disapprove">Disapproved</option>
+
+
                 </select>
               </div>
 
@@ -873,29 +876,29 @@ const styles = {
                   backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
                   transition: 'background-color 0.2s ease'
                 }}>
-    {columns.map(col => (
-  <td key={col} style={col === 'branchType' ? styles.tdBranchType : styles.td}>
-    {col === 'branchType' ? (
-      // branchType - show truncated with full text on hover
-      <span title={row[col] || ''}>
-        {formatCellValue(row[col], col)}
-      </span>
-    ) : (
-      // Other columns
-      <span 
-        style={{
-          maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
-          display: 'inline-block',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}
-      >
-        {formatCellValue(row[col], col)}
-      </span>
-    )}
-  </td>
-))}
+                  {columns.map(col => (
+                    <td key={col} style={col === 'branchType' ? styles.tdBranchType : styles.td}>
+                      {col === 'branchType' ? (
+                        // branchType - show truncated with full text on hover
+                        <span title={row[col] || ''}>
+                          {formatCellValue(row[col], col)}
+                        </span>
+                      ) : (
+                        // Other columns
+                        <span
+                          style={{
+                            maxWidth: window.innerWidth <= 768 ? '100px' : col === 'created_at' ? '150px' : '200px',
+                            display: 'inline-block',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {formatCellValue(row[col], col)}
+                        </span>
+                      )}
+                    </td>
+                  ))}
                   <td style={{ ...styles.td, textAlign: 'center' }}>
                     {getStatusBadge(row.approval_status)}
                   </td>
