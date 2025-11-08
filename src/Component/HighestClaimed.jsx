@@ -427,7 +427,7 @@ export default function HighestClaimed({setCurrentView}) {
         <div style={{ background: 'white', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
           <div style={{ padding: '24px', borderBottom: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', flexWrap: 'wrap', gap: '10px' }}>
             <h2 style={{ margin: 0, fontSize: isMobile ? '18px' : '24px', fontWeight: 'bold', color: '#333' }}>
-              Highest Claimed Support
+             Highest Support to Claim
             </h2>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
