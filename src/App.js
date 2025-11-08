@@ -52,7 +52,7 @@ import KasBudgetCard from "./Component/KAS.js";
 import DistributorBudgetCard from "./Component/DistributorBudgetCard.js";
 import DashboardForSuperAdmin from "./Component/DashboardForSuperAdmin.js";
 import HighestClaimed from "./Component/HighestClaimed.jsx";
-import TotalSupportPerAccount from "./Component/AnnouncementForm.jsx";
+import TotalSupportPerAccount from "./Component/TotalSupportPerAccount.jsx";
 function App() {
 
   // Track online/offline status
