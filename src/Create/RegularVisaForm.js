@@ -2229,22 +2229,22 @@ const RegularVisaForm = () => {
   // 🔹 Handle All Submissions (SKU + Form + Budgets)
 
   const submit_all = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  try {
-    // ✅ Get logged-in user info
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-    const createdBy = parsedUser?.name || "Unknown";
+    try {
+      // ✅ Get logged-in user info
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const createdBy = parsedUser?.name || "Unknown";
 
-    // ✅ VALIDATION 1: Check if Remaining Budget from Branches Table is negative
-    const totalFromBranches = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
-    const remainingBudgetBranches = selectedBalance - totalFromBranches;
+      // ✅ VALIDATION 1: Check if Remaining Budget from Branches Table is negative
+      const totalFromBranches = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+      const remainingBudgetBranches = selectedBalance - totalFromBranches;
 
-    if (remainingBudgetBranches < 0) {
-      await Swal.fire({
-        title: "⚠️ Invalid Budget (Branches)",
-        html: `
+      if (remainingBudgetBranches < 0) {
+        await Swal.fire({
+          title: "⚠️ Invalid Budget (Branches)",
+          html: `
           <p style="font-size: 16px; margin-bottom: 10px;">
             Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetBranches.toLocaleString()})</strong>
           </p>
@@ -2256,22 +2256,22 @@ const RegularVisaForm = () => {
             Please adjust the budget allocation before submitting.
           </p>
         `,
-        icon: "error",
-        confirmButtonText: "OK",
-        confirmButtonColor: "#dc2626"
-      });
-      return; // ❌ Stop submission
-    }
+          icon: "error",
+          confirmButtonText: "OK",
+          confirmButtonColor: "#dc2626"
+        });
+        return; // ❌ Stop submission
+      }
 
-    // ✅ VALIDATION 2: Check if "IS PART OF BUDGET?" Remaining Budget is negative
-    const allocatedAmount = parseFloat(formData.amountbadget || 0);
-    const originalBudget = selectedBalance; // ₱9,500.00 in your example
-    const remainingBudgetForm = originalBudget - allocatedAmount;
+      // ✅ VALIDATION 2: Check if "IS PART OF BUDGET?" Remaining Budget is negative
+      const allocatedAmount = parseFloat(formData.amountbadget || 0);
+      const originalBudget = selectedBalance; // ₱9,500.00 in your example
+      const remainingBudgetForm = originalBudget - allocatedAmount;
 
-    if (remainingBudgetForm < 0) {
-      await Swal.fire({
-        title: "⚠️ Invalid Budget (Form)",
-        html: `
+      if (remainingBudgetForm < 0) {
+        await Swal.fire({
+          title: "⚠️ Invalid Budget (Form)",
+          html: `
           <p style="font-size: 16px; margin-bottom: 10px;">
             Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetForm.toLocaleString()})</strong>
           </p>
@@ -2283,103 +2283,103 @@ const RegularVisaForm = () => {
             Please reduce the Amount Budget field before submitting.
           </p>
         `,
-        icon: "error",
-        confirmButtonText: "OK",
-        confirmButtonColor: "#dc2626"
+          icon: "error",
+          confirmButtonText: "OK",
+          confirmButtonColor: "#dc2626"
+        });
+        return; // ❌ Stop submission
+      }
+
+      // Show loading modal
+      await Swal.fire({
+        title: "Submitting...",
+        html: "Please wait while we save your data.",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+        timer: 3000,
+        timerProgressBar: true,
       });
-      return; // ❌ Stop submission
-    }
 
-    // Show loading modal
-    await Swal.fire({
-      title: "Submitting...",
-      html: "Please wait while we save your data.",
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading(),
-      timer: 3000,
-      timerProgressBar: true,
-    });
-
-    // Step 2: Save Form Data + Attachments
-    console.log(
-      `[${new Date().toLocaleString()}] 📝 Submitting form data...`
-    );
-    await handleSubmitFormAndAttachments();
-    console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
-
-    console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
-    await handleSku();
-    console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
-
-await saveRecentActivity();
-console.log(`[${new Date().toLocaleString()}] ✅ RecentActivity submitted.`);
-    // 🔍 Only submit Bad Order data if activity is "BAD ORDER"
-    if (formData.activityName === "BAD ORDER") {
-      const badorderSuccess = await postBadOrderCategories();
-      if (!badorderSuccess) return;
-    }
-
-    // Step 3: Save Budget Data
-    console.log(
-      `[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`
-    );
-
-    const filteredRows = rowsAccounts.filter((row) =>
-      (formData.branchType || []).includes(row.account_name) // ✅ match by name only
-    );
-
-    const totalBudget = filteredRows
-      .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
-      .toFixed(2);
-
-    const budgetRowsToInsert = filteredRows.map((row) => ({
-      regularcode: formData.regularpwpcode,
-      account_name: row.account_name, // ✅ only name
-      budget: row.budget || 0,
-      created_at: row.created_at || new Date().toISOString(),
-      createform: createdBy, // ✅ Now uses logged-in user's name
-      total_budget: totalBudget,
-    }));
-
-    if (budgetRowsToInsert.length > 0) {
-      const { data, error } = await supabase
-        .from("regular_accountlis_badget")
-        .insert(budgetRowsToInsert);
-
-      if (error) throw error;
-
+      // Step 2: Save Form Data + Attachments
       console.log(
-        `[${new Date().toLocaleString()}] ✅ Budget data saved:`,
-        data
+        `[${new Date().toLocaleString()}] 📝 Submitting form data...`
       );
-    } else {
+      await handleSubmitFormAndAttachments();
+      console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
+
+      console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
+      await handleSku();
+      console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
+
+      await saveRecentActivity();
+      console.log(`[${new Date().toLocaleString()}] ✅ RecentActivity submitted.`);
+      // 🔍 Only submit Bad Order data if activity is "BAD ORDER"
+      if (formData.activityName === "BAD ORDER") {
+        const badorderSuccess = await postBadOrderCategories();
+        if (!badorderSuccess) return;
+      }
+
+      // Step 3: Save Budget Data
       console.log(
-        `[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`
+        `[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`
       );
+
+      const filteredRows = rowsAccounts.filter((row) =>
+        (formData.branchType || []).includes(row.account_name) // ✅ match by name only
+      );
+
+      const totalBudget = filteredRows
+        .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+        .toFixed(2);
+
+      const budgetRowsToInsert = filteredRows.map((row) => ({
+        regularcode: formData.regularpwpcode,
+        account_name: row.account_name, // ✅ only name
+        budget: row.budget || 0,
+        created_at: row.created_at || new Date().toISOString(),
+        createform: createdBy, // ✅ Now uses logged-in user's name
+        total_budget: totalBudget,
+      }));
+
+      if (budgetRowsToInsert.length > 0) {
+        const { data, error } = await supabase
+          .from("regular_accountlis_badget")
+          .insert(budgetRowsToInsert);
+
+        if (error) throw error;
+
+        console.log(
+          `[${new Date().toLocaleString()}] ✅ Budget data saved:`,
+          data
+        );
+      } else {
+        console.log(
+          `[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`
+        );
+      }
+
+      // Success Modal
+      await Swal.fire({
+        title: "Success!",
+        text: "Your data has been successfully submitted and saved.",
+        icon: "success",
+        confirmButtonText: "Ok",
+      });
+
+      window.location.reload();
+    } catch (error) {
+      console.error(
+        `[${new Date().toLocaleString()}] ❌ Submit All Error:`,
+        error
+      );
+      Swal.fire({
+        title: "Error!",
+        text: `There was an issue submitting your data: ${error.message}`,
+        icon: "error",
+        confirmButtonText: "Try Again",
+      });
     }
-
-    // Success Modal
-    await Swal.fire({
-      title: "Success!",
-      text: "Your data has been successfully submitted and saved.",
-      icon: "success",
-      confirmButtonText: "Ok",
-    });
-
-    window.location.reload();
-  } catch (error) {
-    console.error(
-      `[${new Date().toLocaleString()}] ❌ Submit All Error:`,
-      error
-    );
-    Swal.fire({
-      title: "Error!",
-      text: `There was an issue submitting your data: ${error.message}`,
-      icon: "error",
-      confirmButtonText: "Try Again",
-    });
-  }
-};
+  };
 
   // Convert file to base64 string
   // Convert file to base64 string (with Data URL)
@@ -2539,51 +2539,51 @@ console.log(`[${new Date().toLocaleString()}] ✅ RecentActivity submitted.`);
 
 
 
-const saveRecentActivity = async () => {
-  try {
-    // ✅ Get user from localStorage directly
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-    const userId = parsedUser?.UserID || "Unknown";
+  const saveRecentActivity = async () => {
+    try {
+      // ✅ Get user from localStorage directly
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = parsedUser?.UserID || "Unknown";
 
-    // 1. Get public IP
-    const ipRes = await fetch("https://api.ipify.org?format=json");
-    const { ip } = await ipRes.json();
+      // 1. Get public IP
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const { ip } = await ipRes.json();
 
-    // 2. Get geolocation info
-    const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-    const geo = await geoRes.json();
+      // 2. Get geolocation info
+      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+      const geo = await geoRes.json();
 
-    // 3. Build activity entry
-    const activity = {
-      Device: navigator.userAgent || "Unknown Device",
-      Location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
-      IP: ip,
-      Time: new Date().toISOString(),
-      Action: "Create Form Regular PWP",
-    };
+      // 3. Build activity entry
+      const activity = {
+        Device: navigator.userAgent || "Unknown Device",
+        Location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
+        IP: ip,
+        Time: new Date().toISOString(),
+        Action: "Create Form Regular PWP",
+      };
 
-    // 4. Save to Supabase only
-    const { error } = await supabase.from("RecentActivity").insert([
-      {
-        userId: userId,
-        device: activity.Device,
-        location: activity.Location,
-        ip: activity.IP,
-        time: activity.Time,
-        action: activity.Action,
-      },
-    ]);
+      // 4. Save to Supabase only
+      const { error } = await supabase.from("RecentActivity").insert([
+        {
+          userId: userId,
+          device: activity.Device,
+          location: activity.Location,
+          ip: activity.IP,
+          time: activity.Time,
+          action: activity.Action,
+        },
+      ]);
 
-    if (error) {
-      console.error("❌ Supabase insert error:", error.message);
-    } else {
-      console.log("✅ Activity saved to Supabase");
+      if (error) {
+        console.error("❌ Supabase insert error:", error.message);
+      } else {
+        console.log("✅ Activity saved to Supabase");
+      }
+    } catch (err) {
+      console.error("❌ Failed to log activity:", err.message || err);
     }
-  } catch (err) {
-    console.error("❌ Failed to log activity:", err.message || err);
-  }
-};
+  };
 
   const [message, setMessage] = useState("");
 
@@ -4778,18 +4778,44 @@ const saveRecentActivity = async () => {
                   type="button"
                   className="btn btn-primary mt-3"
                   onClick={() => {
-                    // ✅ Validation: If YES but no Cover PWP Code
+                    const missingFields = [];
+
+                    // ✅ Check required fields dynamically
+                    if (!formData.activity) {
+                      missingFields.push("Activity");
+                    }
+
                     if (formData.isPartOfCoverPwp && !formData.coverPwpCode) {
+                      missingFields.push("Total Budget for The Year");
+                    }
+
+                    const setting = settingsMap[formData.activity];
+
+                    if (
+                      setting?.amount_display &&
+                      (
+                        formData.amountbadget === "" ||
+                        formData.amountbadget === null ||
+                        Number(formData.amountbadget) === 0 ||
+                        isNaN(Number(formData.amountbadget))
+                      )
+                    ) {
+                      missingFields.push("Amount Budget");
+                    }
+
+                    // ✅ If any required field is missing → show Swal warning
+                    if (missingFields.length > 0) {
                       Swal.fire({
                         icon: "warning",
-                        title: "Missing Total Budget for The Year ",
-                        text: "Please select a Total Budget before proceeding.",
+                        title: "Missing Required Fields",
+                        html: `
+          Please fill in the following required fields before proceeding:<br/><br/>
+          <b>${missingFields.join("<br/>")}</b>
+        `,
                         confirmButtonColor: "#0d6efd",
                       });
                       return;
                     }
-
-                    const setting = settingsMap[formData.activity];
 
                     console.log(
                       "▶️ Next pressed. formData.activity:",
@@ -4798,9 +4824,10 @@ const saveRecentActivity = async () => {
                       setting
                     );
 
+                    // ✅ Step navigation logic
                     if (formData.activityName === "BAD ORDER") {
                       setStep(4);
-                      console.log("⛔ BAD ORDER selected → skipping SKU/accounts checks, going to Step 3");
+                      console.log("⛔ BAD ORDER selected → skipping SKU/accounts checks, going to Step 4");
                     } else if (setting?.sku) {
                       setStep(1);
                       console.log("🛒 SKU found → going to Step 1");
@@ -4817,6 +4844,7 @@ const saveRecentActivity = async () => {
                 >
                   Next
                 </button>
+
               </div>
 
             </form >
