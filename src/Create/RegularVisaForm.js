@@ -53,14 +53,14 @@ const RegularVisaForm = () => {
 
 
 
-const [settings, setSettings] = useState({});
-const [motherAccount2List, setMotherAccount2List] = useState([]);
+  const [settings, setSettings] = useState({});
+  const [motherAccount2List, setMotherAccount2List] = useState([]);
 
   const [accountSkuRows, setAccountSkuRows] = useState({}); // Object to store SKU rows per account
   const [selectedAccountForSku, setSelectedAccountForSku] =
     useState("ALL_ACCOUNTS");
   // Step 0: Form data
-const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState({
     regularpwpcode: "",
     accountType: "",
     activity: "",
@@ -151,29 +151,29 @@ const [formData, setFormData] = useState({
 
     return () => clearInterval(intervalId); // Cleanup
   }, [formData.regularpwpcode]);
-useEffect(() => {
-  const fetchMotherAccount2 = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("MotherAccount2")
-        .select("*")
-        .eq("status", true) // Only get active records
-        .order("name", { ascending: true });
+  useEffect(() => {
+    const fetchMotherAccount2 = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("MotherAccount2")
+          .select("*")
+          .eq("status", true) // Only get active records
+          .order("name", { ascending: true });
 
-      if (error) {
-        console.error("❌ Error fetching MotherAccount2:", error);
-        return;
+        if (error) {
+          console.error("❌ Error fetching MotherAccount2:", error);
+          return;
+        }
+
+        console.log("✅ MotherAccount2 data fetched:", data);
+        setMotherAccount2List(data || []);
+      } catch (err) {
+        console.error("❌ Unexpected error fetching MotherAccount2:", err);
       }
+    };
 
-      console.log("✅ MotherAccount2 data fetched:", data);
-      setMotherAccount2List(data || []);
-    } catch (err) {
-      console.error("❌ Unexpected error fetching MotherAccount2:", err);
-    }
-  };
-
-  fetchMotherAccount2();
-}, []);
+    fetchMotherAccount2();
+  }, []);
   useEffect(() => {
     // This effect runs whenever `allRegularPwpCodes` changes
     if (!formData.regularpwpcode && allRegularPwpCodes.length > 0) {
@@ -302,29 +302,29 @@ useEffect(() => {
       console.warn("[DEBUG] No loggedInUser found in localStorage.");
     }
   }, []);
-const fetchActivitySettings = async () => {
+  const fetchActivitySettings = async () => {
     const { data: settingsData, error: settingsError } = await supabase
-        .from('activity_settings')
-        .select('*');
+      .from('activity_settings')
+      .select('*');
 
     if (settingsError) {
-        console.error('Error loading activity settings:', settingsError.message);
-        return;
+      console.error('Error loading activity settings:', settingsError.message);
+      return;
     }
 
     const settingsMap = {};
     settingsData.forEach(s => {
-        settingsMap[s.activity_code] = s;
+      settingsMap[s.activity_code] = s;
     });
 
     setSettings(settingsMap);
-};
+  };
 
-// Call it in useEffect
-useEffect(() => {
+  // Call it in useEffect
+  useEffect(() => {
     fetchActivities();
     fetchActivitySettings(); // ✅ Add this
-}, []);
+  }, []);
 
   React.useEffect(() => {
     async function fetchCoverPwpWithStatus() {
@@ -685,10 +685,10 @@ useEffect(() => {
         sku: setting.sku === true,
         accounts: setting.accounts === true,
         amount_display: setting.amount_display === true,
-        branch:setting.branch===true,
+        branch: setting.branch === true,
         category: setting.category === true,
-        mother1:setting.mother1 === true,
-        VariousAccount:setting.VariousAccount === true,
+        mother1: setting.mother1 === true,
+        VariousAccount: setting.VariousAccount === true,
         various: setting.various === true,
         walk_in: setting.walk_in === true,
         MotherAccount2: setting.MotherAccount2 === true,
@@ -736,9 +736,9 @@ useEffect(() => {
   const [accountSearchTerm, setAccountSearchTerm] = useState("");
   const [showModal_Account, setShowModal_Account] = useState(false);
   const [showModal_Account2, setShowModal_Account2] = useState(false);
-const [accountSearchTerm2, setAccountSearchTerm2] = useState("");
-const [isVariousAccountMode, setIsVariousAccountMode] = useState(false);
-const [selectedVariousAccount, setSelectedVariousAccount] = useState(null);
+  const [accountSearchTerm2, setAccountSearchTerm2] = useState("");
+  const [isVariousAccountMode, setIsVariousAccountMode] = useState(false);
+  const [selectedVariousAccount, setSelectedVariousAccount] = useState(null);
 
   // Get selected account names for display
   // const getAccountNames = () => {
@@ -824,10 +824,10 @@ const [selectedVariousAccount, setSelectedVariousAccount] = useState(null);
       }
 
       console.log(`📦 Selected Distributor:
-Code: ${selectedDistrib.code}
-Name: ${selectedDistrib.name}
-Description: ${selectedDistrib.description?.trim() || "N/A"}
-Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
+  Code: ${selectedDistrib.code}
+  Name: ${selectedDistrib.name}
+  Description: ${selectedDistrib.description?.trim() || "N/A"}
+  Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
 
       // ✅ Check if data already cached
       if (accountsListCache[selectedDistrib.code]) {
@@ -2227,103 +2227,159 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
   };
 
   // 🔹 Handle All Submissions (SKU + Form + Budgets)
+
   const submit_all = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    try {
-      // Show loading modal
+  try {
+    // ✅ Get logged-in user info
+    const storedUser = localStorage.getItem("loggedInUser");
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    const createdBy = parsedUser?.name || "Unknown";
+
+    // ✅ VALIDATION 1: Check if Remaining Budget from Branches Table is negative
+    const totalFromBranches = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+    const remainingBudgetBranches = selectedBalance - totalFromBranches;
+
+    if (remainingBudgetBranches < 0) {
       await Swal.fire({
-        title: "Submitting...",
-        html: "Please wait while we save your data.",
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading(),
-        timer: 3000,
-        timerProgressBar: true,
-      });
-
-      // Step 1: Save SKUs
-
-      // Step 2: Save Form Data + Attachments
-      console.log(
-        `[${new Date().toLocaleString()}] 📝 Submitting form data...`
-      );
-      await handleSubmitFormAndAttachments();
-      console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
-
-      console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
-      await handleSku();
-      console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
-
-      // 🔍 Only submit Bad Order data if activity is "BAD ORDER"
-      if (formData.activityName === "BAD ORDER") {
-        const badorderSuccess = await postBadOrderCategories();
-        if (!badorderSuccess) return;
-      }
-
-      // Step 3: Save Budget Data
-      // Step 3: Save Budget Data
-      console.log(
-        `[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`
-      );
-
-      const filteredRows = rowsAccounts.filter((row) =>
-        (formData.branchType || []).includes(row.account_name) // ✅ match by name only
-      );
-
-      const totalBudget = filteredRows
-        .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
-        .toFixed(2);
-
-      const budgetRowsToInsert = filteredRows.map((row) => ({
-        regularcode: formData.regularpwpcode,
-        account_name: row.account_name, // ✅ only name
-        budget: row.budget || 0,
-        created_at: row.created_at || new Date().toISOString(),
-        createform: "ADMINISTRATOR",
-        total_budget: totalBudget,
-      }));
-
-      if (budgetRowsToInsert.length > 0) {
-        const { data, error } = await supabase
-          .from("regular_accountlis_badget")
-          .insert(budgetRowsToInsert);
-
-        if (error) throw error;
-
-        console.log(
-          `[${new Date().toLocaleString()}] ✅ Budget data saved:`,
-          data
-        );
-      } else {
-        console.log(
-          `[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`
-        );
-      }
-
-
-      // Success Modal
-      await Swal.fire({
-        title: "Success!",
-        text: "Your data has been successfully submitted and saved.",
-        icon: "success",
-        confirmButtonText: "Ok",
-      });
-
-      window.location.reload();
-    } catch (error) {
-      console.error(
-        `[${new Date().toLocaleString()}] ❌ Submit All Error:`,
-        error
-      );
-      Swal.fire({
-        title: "Error!",
-        text: `There was an issue submitting your data: ${error.message}`,
+        title: "⚠️ Invalid Budget (Branches)",
+        html: `
+          <p style="font-size: 16px; margin-bottom: 10px;">
+            Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetBranches.toLocaleString()})</strong>
+          </p>
+          <p style="font-size: 14px; color: #6b7280;">
+            Total from Branches Table: <strong>₱${totalFromBranches.toLocaleString()}</strong><br>
+            Original Budget: <strong>₱${selectedBalance.toLocaleString()}</strong>
+          </p>
+          <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
+            Please adjust the budget allocation before submitting.
+          </p>
+        `,
         icon: "error",
-        confirmButtonText: "Try Again",
+        confirmButtonText: "OK",
+        confirmButtonColor: "#dc2626"
       });
+      return; // ❌ Stop submission
     }
-  };
 
+    // ✅ VALIDATION 2: Check if "IS PART OF BUDGET?" Remaining Budget is negative
+    const allocatedAmount = parseFloat(formData.amountbadget || 0);
+    const originalBudget = selectedBalance; // ₱9,500.00 in your example
+    const remainingBudgetForm = originalBudget - allocatedAmount;
+
+    if (remainingBudgetForm < 0) {
+      await Swal.fire({
+        title: "⚠️ Invalid Budget (Form)",
+        html: `
+          <p style="font-size: 16px; margin-bottom: 10px;">
+            Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetForm.toLocaleString()})</strong>
+          </p>
+          <p style="font-size: 14px; color: #6b7280;">
+            Allocated (Form): <strong>₱${allocatedAmount.toLocaleString()}</strong><br>
+            Original Budget: <strong>₱${originalBudget.toLocaleString()}</strong>
+          </p>
+          <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
+            Please reduce the Amount Budget field before submitting.
+          </p>
+        `,
+        icon: "error",
+        confirmButtonText: "OK",
+        confirmButtonColor: "#dc2626"
+      });
+      return; // ❌ Stop submission
+    }
+
+    // Show loading modal
+    await Swal.fire({
+      title: "Submitting...",
+      html: "Please wait while we save your data.",
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading(),
+      timer: 3000,
+      timerProgressBar: true,
+    });
+
+    // Step 2: Save Form Data + Attachments
+    console.log(
+      `[${new Date().toLocaleString()}] 📝 Submitting form data...`
+    );
+    await handleSubmitFormAndAttachments();
+    console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
+
+    console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
+    await handleSku();
+    console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
+
+await saveRecentActivity();
+console.log(`[${new Date().toLocaleString()}] ✅ RecentActivity submitted.`);
+    // 🔍 Only submit Bad Order data if activity is "BAD ORDER"
+    if (formData.activityName === "BAD ORDER") {
+      const badorderSuccess = await postBadOrderCategories();
+      if (!badorderSuccess) return;
+    }
+
+    // Step 3: Save Budget Data
+    console.log(
+      `[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`
+    );
+
+    const filteredRows = rowsAccounts.filter((row) =>
+      (formData.branchType || []).includes(row.account_name) // ✅ match by name only
+    );
+
+    const totalBudget = filteredRows
+      .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+      .toFixed(2);
+
+    const budgetRowsToInsert = filteredRows.map((row) => ({
+      regularcode: formData.regularpwpcode,
+      account_name: row.account_name, // ✅ only name
+      budget: row.budget || 0,
+      created_at: row.created_at || new Date().toISOString(),
+      createform: createdBy, // ✅ Now uses logged-in user's name
+      total_budget: totalBudget,
+    }));
+
+    if (budgetRowsToInsert.length > 0) {
+      const { data, error } = await supabase
+        .from("regular_accountlis_badget")
+        .insert(budgetRowsToInsert);
+
+      if (error) throw error;
+
+      console.log(
+        `[${new Date().toLocaleString()}] ✅ Budget data saved:`,
+        data
+      );
+    } else {
+      console.log(
+        `[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`
+      );
+    }
+
+    // Success Modal
+    await Swal.fire({
+      title: "Success!",
+      text: "Your data has been successfully submitted and saved.",
+      icon: "success",
+      confirmButtonText: "Ok",
+    });
+
+    window.location.reload();
+  } catch (error) {
+    console.error(
+      `[${new Date().toLocaleString()}] ❌ Submit All Error:`,
+      error
+    );
+    Swal.fire({
+      title: "Error!",
+      text: `There was an issue submitting your data: ${error.message}`,
+      icon: "error",
+      confirmButtonText: "Try Again",
+    });
+  }
+};
 
   // Convert file to base64 string
   // Convert file to base64 string (with Data URL)
@@ -2377,10 +2433,10 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
         const name = Object.values(subAccounts).flat().find((s) => s.id === formData.accountType)?.name;
         convertedAccountType = name ? [name] : [];
       }
- // ✅ Prepare main submission object
+      // ✅ Prepare main submission object
       // ✅ For MotherAccount2, store it in accountType instead
       let finalAccountType = convertedAccountType;
-      
+
       // If MotherAccount2 is selected, use it as accountType
       if (formData.MotherAccount2) {
         finalAccountType = [formData.MotherAccount2];
@@ -2391,34 +2447,34 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
       }
 
       // ✅ Prepare main submission object
-     const submissionData = {
-  regularpwpcode: formData.regularpwpcode,
-  accountType: convertedAccountType,
-  VariousAccount: formData.accountType2,
-  accountType: finalAccountType, // ✅ Now includes MotherAccount2
-  branchType: formData.branchType || [],
-  activity: formData.activity,
-  pwptype: formData.pwptype || "Regular",
-  notification: formData.notification,
-  objective: formData.objective,
-  promoScheme: formData.promoScheme,
-  activityDurationFrom: formData.activityDurationFrom,
-  activityDurationTo: formData.activityDurationTo,
-  isPartOfCoverPwp: formData.isPartOfCoverPwp,
-  coverPwpCode: formData.coverPwpCode,
-  distributor: distributorCode,
-  amountbadget: formData.amountbadget,
-  categoryCode: formData.categoryCode || [],
-  categoryName: formData.categoryName || [],
-  sku: formData.sku,
-  accounts: formData.accounts,
-  amount_display: formData.amount_display,
-  remarks: formData.remarks || "",
-  created_at: new Date().toISOString(),
-  createForm: createdBy,
-  credit_budget: creditBudget,
-  remaining_balance: remainingBalance,
-};
+      const submissionData = {
+        regularpwpcode: formData.regularpwpcode,
+        accountType: convertedAccountType,
+        VariousAccount: formData.accountType2,
+        accountType: finalAccountType, // ✅ Now includes MotherAccount2
+        branchType: formData.branchType || [],
+        activity: formData.activity,
+        pwptype: formData.pwptype || "Regular",
+        notification: formData.notification,
+        objective: formData.objective,
+        promoScheme: formData.promoScheme,
+        activityDurationFrom: formData.activityDurationFrom,
+        activityDurationTo: formData.activityDurationTo,
+        isPartOfCoverPwp: formData.isPartOfCoverPwp,
+        coverPwpCode: formData.coverPwpCode,
+        distributor: distributorCode,
+        amountbadget: formData.amountbadget,
+        categoryCode: formData.categoryCode || [],
+        categoryName: formData.categoryName || [],
+        sku: formData.sku,
+        accounts: formData.accounts,
+        amount_display: formData.amount_display,
+        remarks: formData.remarks || "",
+        created_at: new Date().toISOString(),
+        createForm: createdBy,
+        credit_budget: creditBudget,
+        remaining_balance: remainingBalance,
+      };
 
       // ✅ Insert main form
       const { error: formInsertError } = await supabase.from("regular_pwp").insert([submissionData]).select();
@@ -2483,47 +2539,51 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
 
 
 
-  const saveRecentActivity = async ({ UserId }) => {
-    try {
-      // 1. Get public IP
-      const ipRes = await fetch("https://api.ipify.org?format=json");
-      const { ip } = await ipRes.json();
+const saveRecentActivity = async () => {
+  try {
+    // ✅ Get user from localStorage directly
+    const storedUser = localStorage.getItem("loggedInUser");
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    const userId = parsedUser?.UserID || "Unknown";
 
-      // 2. Get geolocation info
-      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-      const geo = await geoRes.json();
+    // 1. Get public IP
+    const ipRes = await fetch("https://api.ipify.org?format=json");
+    const { ip } = await ipRes.json();
 
-      // 3. Build activity entry
-      const activity = {
-        Device: navigator.userAgent || "Unknown Device",
-        Location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"
-          }`,
-        IP: ip,
-        Time: new Date().toISOString(),
-        Action: "Create Form Regular PWP",
-      };
+    // 2. Get geolocation info
+    const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+    const geo = await geoRes.json();
 
-      // 4. Save to Supabase only
-      const { error } = await supabase.from("RecentActivity").insert([
-        {
-          userId: UserId,
-          device: activity.Device,
-          location: activity.Location,
-          ip: activity.IP,
-          time: activity.Time,
-          action: activity.Action,
-        },
-      ]);
+    // 3. Build activity entry
+    const activity = {
+      Device: navigator.userAgent || "Unknown Device",
+      Location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
+      IP: ip,
+      Time: new Date().toISOString(),
+      Action: "Create Form Regular PWP",
+    };
 
-      if (error) {
-        console.error("❌ Supabase insert error:", error.message);
-      } else {
-        console.log("✅ Activity saved to Supabase");
-      }
-    } catch (err) {
-      console.error("❌ Failed to log activity:", err.message || err);
+    // 4. Save to Supabase only
+    const { error } = await supabase.from("RecentActivity").insert([
+      {
+        userId: userId,
+        device: activity.Device,
+        location: activity.Location,
+        ip: activity.IP,
+        time: activity.Time,
+        action: activity.Action,
+      },
+    ]);
+
+    if (error) {
+      console.error("❌ Supabase insert error:", error.message);
+    } else {
+      console.log("✅ Activity saved to Supabase");
     }
-  };
+  } catch (err) {
+    console.error("❌ Failed to log activity:", err.message || err);
+  }
+};
 
   const [message, setMessage] = useState("");
 
@@ -2916,64 +2976,64 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                 </div>
 
                 {/* Activity */}
-             <div className="col-md-4" style={{ position: "relative" }}>
-  <label>
-    Activity <span style={{ color: "red" }}>*</span>
-  </label>
-  <select
-    name="activity"
-    className="form-control"
-    value={formData.activity}
-    onChange={handleFormChange}
-  >
-    <option value="">Select Activity</option>
-    {activities
-      .filter(opt => {
-        const setting = settings[opt.code] || {};
-        return setting.regular === true; // ✅ Filter by 'regular' checkbox
-      })
-      .map((opt) => (
-        <option key={opt.id} value={opt.code}>
-          {opt.name}
-        </option>
-      ))}
-  </select>
+                <div className="col-md-4" style={{ position: "relative" }}>
+                  <label>
+                    Activity <span style={{ color: "red" }}>*</span>
+                  </label>
+                  <select
+                    name="activity"
+                    className="form-control"
+                    value={formData.activity}
+                    onChange={handleFormChange}
+                  >
+                    <option value="">Select Activity</option>
+                    {activities
+                      .filter(opt => {
+                        const setting = settings[opt.code] || {};
+                        return setting.regular === true; // ✅ Filter by 'regular' checkbox
+                      })
+                      .map((opt) => (
+                        <option key={opt.id} value={opt.code}>
+                          {opt.name}
+                        </option>
+                      ))}
+                  </select>
 
-  {/* Dropdown arrow */}
-  <span
-    style={{
-      position: "absolute",
-      right: "20px",
-      top: "70%",
-      transform: "translateY(-50%)",
-      pointerEvents: "none",
-      color: "#555",
-      fontSize: "14px",
-      userSelect: "none",
-    }}
-  >
-    ▼
-  </span>
+                  {/* Dropdown arrow */}
+                  <span
+                    style={{
+                      position: "absolute",
+                      right: "20px",
+                      top: "70%",
+                      transform: "translateY(-50%)",
+                      pointerEvents: "none",
+                      color: "#555",
+                      fontSize: "14px",
+                      userSelect: "none",
+                    }}
+                  >
+                    ▼
+                  </span>
 
-  {/* Checkmark */}
-  {formData.activity && (
-    <span
-      style={{
-        position: "absolute",
-        right: "40px",
-        top: "55%",
-        transform: "translateY(-20%)",
-        color: "green",
-        fontWeight: "bold",
-        fontSize: "25px",
-        pointerEvents: "none",
-        userSelect: "none",
-      }}
-    >
-      ✓
-    </span>
-  )}
-</div>
+                  {/* Checkmark */}
+                  {formData.activity && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: "40px",
+                        top: "55%",
+                        transform: "translateY(-20%)",
+                        color: "green",
+                        fontWeight: "bold",
+                        fontSize: "25px",
+                        pointerEvents: "none",
+                        userSelect: "none",
+                      }}
+                    >
+                      ✓
+                    </span>
+                  )}
+                </div>
                 {shouldShowCategory() && (
                   <div className="col-md-4" style={{ position: "relative" }}>
                     <label>
@@ -3101,326 +3161,326 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                 )}
 
 
-{/* Mother Account1 - Conditionally displayed */}
-{formData.activity && settingsMap[formData.activity]?.mother1 ? (
-  <div className="col-md-4" style={{ position: "relative" }}>
-    <label>
-      Mother Account <span style={{ color: "red" }}>*</span>
-    </label>
+                {/* Mother Account1 - Conditionally displayed */}
+                {formData.activity && settingsMap[formData.activity]?.mother1 ? (
+                  <div className="col-md-4" style={{ position: "relative" }}>
+                    <label>
+                      Mother Account <span style={{ color: "red" }}>*</span>
+                    </label>
 
-    <div
-      className="form-control"
-      onClick={() => setShowModal_Account(true)}
-      style={{
-        cursor: "pointer",
-        position: "relative",
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: "5px",
-        minHeight: "40px",
-      }}
-    >
-      {selectedMother?.name === "NON-CHAIN"
-        ? (formData.accountType || []).map((id) => {
-          const sub = Object.values(subAccounts)
-            .flat()
-            .find((s) => s.id === id);
-          if (!sub) return null;
-          return (
-            <span
-              key={id}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                backgroundColor: "#0050a5ff",
-                color: "#fff",
-                padding: "3px 8px",
-                borderRadius: "5px",
-                fontSize: "14px",
-                fontWeight: "500",
-                marginRight: "5px",
-              }}
-            >
-              {sub.name}
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFormData((prev) => ({
-                    ...prev,
-                    accountType: prev.accountType.filter((x) => x !== id),
-                  }));
-                }}
-                style={{
-                  marginLeft: "5px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  color: "#fff",
-                  backgroundColor: "#ff4d4f",
-                  borderRadius: "5%",
-                  width: "16px",
-                  height: "16px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "12px",
-                }}
-              >
-                ✖
-              </span>
-            </span>
-          );
-        })
-        : (() => {
-          const sub = Object.values(subAccounts)
-            .flat()
-            .find((s) => s.id === formData.accountType);
-          return sub ? (
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                backgroundColor: "#0050a5ff",
-                color: "#fff",
-                padding: "3px 8px",
-                borderRadius: "5px",
-                fontSize: "14px",
-                fontWeight: "500",
-              }}
-            >
-              {sub.name}
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFormData({ ...formData, accountType: null });
-                  setShowBranchInput(false);
-                }}
-                style={{
-                  marginLeft: "5px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  color: "#fff",
-                  backgroundColor: "#ff4d4f",
-                  borderRadius: "5%",
-                  width: "16px",
-                  height: "16px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "12px",
-                }}
-              >
-                ✖
-              </span>
-            </span>
-          ) : (
-            <span style={{ color: "#888" }}>Select Account Type</span>
-          );
-        })()}
+                    <div
+                      className="form-control"
+                      onClick={() => setShowModal_Account(true)}
+                      style={{
+                        cursor: "pointer",
+                        position: "relative",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: "5px",
+                        minHeight: "40px",
+                      }}
+                    >
+                      {selectedMother?.name === "NON-CHAIN"
+                        ? (formData.accountType || []).map((id) => {
+                          const sub = Object.values(subAccounts)
+                            .flat()
+                            .find((s) => s.id === id);
+                          if (!sub) return null;
+                          return (
+                            <span
+                              key={id}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                backgroundColor: "#0050a5ff",
+                                color: "#fff",
+                                padding: "3px 8px",
+                                borderRadius: "5px",
+                                fontSize: "14px",
+                                fontWeight: "500",
+                                marginRight: "5px",
+                              }}
+                            >
+                              {sub.name}
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    accountType: prev.accountType.filter((x) => x !== id),
+                                  }));
+                                }}
+                                style={{
+                                  marginLeft: "5px",
+                                  cursor: "pointer",
+                                  fontWeight: "bold",
+                                  color: "#fff",
+                                  backgroundColor: "#ff4d4f",
+                                  borderRadius: "5%",
+                                  width: "16px",
+                                  height: "16px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                ✖
+                              </span>
+                            </span>
+                          );
+                        })
+                        : (() => {
+                          const sub = Object.values(subAccounts)
+                            .flat()
+                            .find((s) => s.id === formData.accountType);
+                          return sub ? (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                backgroundColor: "#0050a5ff",
+                                color: "#fff",
+                                padding: "3px 8px",
+                                borderRadius: "5px",
+                                fontSize: "14px",
+                                fontWeight: "500",
+                              }}
+                            >
+                              {sub.name}
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFormData({ ...formData, accountType: null });
+                                  setShowBranchInput(false);
+                                }}
+                                style={{
+                                  marginLeft: "5px",
+                                  cursor: "pointer",
+                                  fontWeight: "bold",
+                                  color: "#fff",
+                                  backgroundColor: "#ff4d4f",
+                                  borderRadius: "5%",
+                                  width: "16px",
+                                  height: "16px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                ✖
+                              </span>
+                            </span>
+                          ) : (
+                            <span style={{ color: "#888" }}>Select Account Type</span>
+                          );
+                        })()}
 
-      <span
-        style={{
-          pointerEvents: "none",
-          fontSize: "18px",
-          color: "#555",
-          marginLeft: "auto",
-        }}
-      >
-        🔍
-      </span>
-    </div>
-  </div>
-) : null}
+                      <span
+                        style={{
+                          pointerEvents: "none",
+                          fontSize: "18px",
+                          color: "#555",
+                          marginLeft: "auto",
+                        }}
+                      >
+                        🔍
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
 
-{/* Various Account  - Conditionally displayed */}
-{formData.activity && settingsMap[formData.activity]?.VariousAccount ? (
-  <div className="col-md-4" style={{ position: "relative" }}>
-    <label>
-      Various Account  <span style={{ color: "red" }}>*</span>
-    </label>
+                {/* Various Account  - Conditionally displayed */}
+                {formData.activity && settingsMap[formData.activity]?.VariousAccount ? (
+                  <div className="col-md-4" style={{ position: "relative" }}>
+                    <label>
+                      Various Account  <span style={{ color: "red" }}>*</span>
+                    </label>
 
-    <div
-      className="form-control"
-      onClick={() => {
-        setShowModal_Account(true);
-        setIsVariousAccountMode(true);
-      }}
-      style={{
-        cursor: "pointer",
-        position: "relative",
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: "5px",
-        minHeight: "40px",
-      }}
-    >
-      {formData.accountType2 ? (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            backgroundColor: "#0050a5ff",
-            color: "#fff",
-            padding: "3px 8px",
-            borderRadius: "5px",
-            fontSize: "14px",
-            fontWeight: "500",
-          }}
-        >
-          VARIOUS
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedVariousAccount(null);
-              setFormData({ ...formData, accountType2: null });
-            }}
-            style={{
-              marginLeft: "5px",
-              cursor: "pointer",
-              fontWeight: "bold",
-              color: "#fff",
-              backgroundColor: "#ff4d4f",
-              borderRadius: "5%",
-              width: "16px",
-              height: "16px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "12px",
-            }}
-          >
-            ✖
-          </span>
-        </span>
-      ) : (
-        <span style={{ color: "#888" }}>Select Various Account</span>
-      )}
+                    <div
+                      className="form-control"
+                      onClick={() => {
+                        setShowModal_Account(true);
+                        setIsVariousAccountMode(true);
+                      }}
+                      style={{
+                        cursor: "pointer",
+                        position: "relative",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: "5px",
+                        minHeight: "40px",
+                      }}
+                    >
+                      {formData.accountType2 ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            backgroundColor: "#0050a5ff",
+                            color: "#fff",
+                            padding: "3px 8px",
+                            borderRadius: "5px",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                          }}
+                        >
+                          VARIOUS
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedVariousAccount(null);
+                              setFormData({ ...formData, accountType2: null });
+                            }}
+                            style={{
+                              marginLeft: "5px",
+                              cursor: "pointer",
+                              fontWeight: "bold",
+                              color: "#fff",
+                              backgroundColor: "#ff4d4f",
+                              borderRadius: "5%",
+                              width: "16px",
+                              height: "16px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "12px",
+                            }}
+                          >
+                            ✖
+                          </span>
+                        </span>
+                      ) : (
+                        <span style={{ color: "#888" }}>Select Various Account</span>
+                      )}
 
-      <span
-        style={{
-          pointerEvents: "none",
-          fontSize: "18px",
-          color: "#555",
-          marginLeft: "auto",
-        }}
-      >
-        🔍
-      </span>
-    </div>
-  </div>
-) : null}
-{/* Mother Account 2 - Conditionally displayed */}
-{formData.activity && settingsMap[formData.activity]?.MotherAccount2 ? (
-  <div className="col-md-4" style={{ position: "relative" }}>
-    <label>
-      Mother Account <span style={{ color: "red" }}>*</span>
-    </label>
+                      <span
+                        style={{
+                          pointerEvents: "none",
+                          fontSize: "18px",
+                          color: "#555",
+                          marginLeft: "auto",
+                        }}
+                      >
+                        🔍
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+                {/* Mother Account 2 - Conditionally displayed */}
+                {formData.activity && settingsMap[formData.activity]?.MotherAccount2 ? (
+                  <div className="col-md-4" style={{ position: "relative" }}>
+                    <label>
+                      Mother Account <span style={{ color: "red" }}>*</span>
+                    </label>
 
-    <div
-      className="form-control"
-      onClick={() => setShowModal_Account2(true)}
-      style={{
-        cursor: "pointer",
-        position: "relative",
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: "5px",
-        minHeight: "40px",
-      }}
-    >
-      {formData.MotherAccount2 ? (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            backgroundColor: "#0050a5ff",
-            color: "#fff",
-            padding: "3px 8px",
-            borderRadius: "5px",
-            fontSize: "14px",
-            fontWeight: "500",
-          }}
-        >
-          {formData.MotherAccount2}
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              setFormData({ ...formData, MotherAccount2: null });
-            }}
-            style={{
-              marginLeft: "5px",
-              cursor: "pointer",
-              fontWeight: "bold",
-              color: "#fff",
-              backgroundColor: "#ff4d4f",
-              borderRadius: "5%",
-              width: "16px",
-              height: "16px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "12px",
-            }}
-          >
-            ✖
-          </span>
-        </span>
-      ) : (
-        <span style={{ color: "#888" }}>Select Mother Account </span>
-      )}
+                    <div
+                      className="form-control"
+                      onClick={() => setShowModal_Account2(true)}
+                      style={{
+                        cursor: "pointer",
+                        position: "relative",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: "5px",
+                        minHeight: "40px",
+                      }}
+                    >
+                      {formData.MotherAccount2 ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            backgroundColor: "#0050a5ff",
+                            color: "#fff",
+                            padding: "3px 8px",
+                            borderRadius: "5px",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                          }}
+                        >
+                          {formData.MotherAccount2}
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFormData({ ...formData, MotherAccount2: null });
+                            }}
+                            style={{
+                              marginLeft: "5px",
+                              cursor: "pointer",
+                              fontWeight: "bold",
+                              color: "#fff",
+                              backgroundColor: "#ff4d4f",
+                              borderRadius: "5%",
+                              width: "16px",
+                              height: "16px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "12px",
+                            }}
+                          >
+                            ✖
+                          </span>
+                        </span>
+                      ) : (
+                        <span style={{ color: "#888" }}>Select Mother Account </span>
+                      )}
 
-      <span
-        style={{
-          pointerEvents: "none",
-          fontSize: "18px",
-          color: "#555",
-          marginLeft: "auto",
-        }}
-      >
-        🔍
-      </span>
-    </div>
-  </div>
-) : null}
-{/* Branch Selector - Conditionally displayed */}
-{formData.activity && settingsMap[formData.activity]?.branch && showBranchInput ? (
-  <div className="col-md-4" style={{ position: "relative" }}>
-    <label>
-      Branch <span style={{ color: "red" }}>*</span>
-    </label>
-    <div
-      className="form-control"
-      onClick={() => {
-        if (!formData.accountType) return alert("Select a Sub Account first");
+                      <span
+                        style={{
+                          pointerEvents: "none",
+                          fontSize: "18px",
+                          color: "#555",
+                          marginLeft: "auto",
+                        }}
+                      >
+                        🔍
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+                {/* Branch Selector - Conditionally displayed */}
+                {formData.activity && settingsMap[formData.activity]?.branch && showBranchInput ? (
+                  <div className="col-md-4" style={{ position: "relative" }}>
+                    <label>
+                      Branch <span style={{ color: "red" }}>*</span>
+                    </label>
+                    <div
+                      className="form-control"
+                      onClick={() => {
+                        if (!formData.accountType) return alert("Select a Sub Account first");
 
-        const selectedSub = subAccounts[selectedMother.id]?.find(
-          (s) => s.id === formData.accountType
-        );
+                        const selectedSub = subAccounts[selectedMother.id]?.find(
+                          (s) => s.id === formData.accountType
+                        );
 
-        if (!selectedSub) return alert("Sub account not found!");
+                        if (!selectedSub) return alert("Sub account not found!");
 
-        console.log("🔍 Selected Sub Account:", selectedSub);
-        console.log("📦 Mother Code:", selectedSub.code);
-        console.log("🎯 Group Code:", selectedSub.group_code);
-        console.log("🏢 Selected Mother:", selectedMother);
+                        console.log("🔍 Selected Sub Account:", selectedSub);
+                        console.log("📦 Mother Code:", selectedSub.code);
+                        console.log("🎯 Group Code:", selectedSub.group_code);
+                        console.log("🏢 Selected Mother:", selectedMother);
 
-        setShowModal_Branch(true);
-        fetchBranches(selectedSub.code, selectedSub.group_code);
-      }}
-      style={{
-        cursor: "pointer",
-        minHeight: "40px",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "5px",
-      }}
-    >
-      {getBranchNames()}
-    </div>
-  </div>
-) : null}
+                        setShowModal_Branch(true);
+                        fetchBranches(selectedSub.code, selectedSub.group_code);
+                      }}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: "40px",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "5px",
+                      }}
+                    >
+                      {getBranchNames()}
+                    </div>
+                  </div>
+                ) : null}
 
 
                 {/* Marketing Type */}
@@ -3575,18 +3635,18 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
               </div>
               <div className="card mt-4 shadow-sm">
                 <style>{`
-                                    .card-header {
-                                    background: linear-gradient(135deg,rgb(11, 48, 168),rgb(255, 255, 255));
-                                    color: white;
-                                    font-weight: 700;
-                                    padding: 1rem 1.5rem;
-                                    border-radius: 0.75rem 0.75rem 0 0;
-                                    
-                                    }
-                                    .card-header h3 {
-                                    margin-bottom: 0;
-                                    }   
-                                `}</style>
+                                      .card-header {
+                                      background: linear-gradient(135deg,rgb(11, 48, 168),rgb(255, 255, 255));
+                                      color: white;
+                                      font-weight: 700;
+                                      padding: 1rem 1.5rem;
+                                      border-radius: 0.75rem 0.75rem 0 0;
+                                      
+                                      }
+                                      .card-header h3 {
+                                      margin-bottom: 0;
+                                      }   
+                                  `}</style>
 
                 <div className="card-header">
                   <h3 className="mb-0">Timeline</h3>
@@ -3843,39 +3903,39 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                               alignItems: "center",
                             }}
                             // Sa onClick ng mother account selection
-                           onClick={() => {
-  console.log('🔍 Selected Mother Account:', opt);
-  
-  if (isVariousAccountMode) {
-    // Mother Account 2 - Auto set to mother account ID and show "VARIOUS"
-    setSelectedVariousAccount(opt);
-    setFormData((prev) => ({
-      ...prev,
-     accountType2: "VARIOUS"
-    }));
-    setShowModal_Account(false);
-    setIsVariousAccountMode(false);
-  } else {
-    // Mother Account 1 - Normal flow (goes to sub-accounts then branch)
-    setSelectedMother(opt);
-    fetchSubAccounts(opt);
+                            onClick={() => {
+                              console.log('🔍 Selected Mother Account:', opt);
 
-    if (opt.name === "NON-CHAIN") {
-      setShowBranchInput(false);
-      setFormData((prev) => ({
-        ...prev,
-        accountType: [],
-        branchType: []
-      }));
-    } else {
-      setShowBranchInput(true);
-      setFormData((prev) => ({
-        ...prev,
-        branchType: []
-      }));
-    }
-  }
-}}
+                              if (isVariousAccountMode) {
+                                // Mother Account 2 - Auto set to mother account ID and show "VARIOUS"
+                                setSelectedVariousAccount(opt);
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  accountType2: "VARIOUS"
+                                }));
+                                setShowModal_Account(false);
+                                setIsVariousAccountMode(false);
+                              } else {
+                                // Mother Account 1 - Normal flow (goes to sub-accounts then branch)
+                                setSelectedMother(opt);
+                                fetchSubAccounts(opt);
+
+                                if (opt.name === "NON-CHAIN") {
+                                  setShowBranchInput(false);
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    accountType: [],
+                                    branchType: []
+                                  }));
+                                } else {
+                                  setShowBranchInput(true);
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    branchType: []
+                                  }));
+                                }
+                              }
+                            }}
                           >
                             <span>{opt.name}</span>
                             <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
@@ -3981,92 +4041,92 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                   </Button>
                 </Modal.Footer>
               </Modal>
-  {/* Modal Mother Account2 */}
-<Modal
-  show={showModal_Account2}
-  onHide={() => setShowModal_Account2(false)}
-  centered
-  size="lg"
->
-  <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
-    <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-      Select Mother Account Type 2
-    </Modal.Title>
-  </Modal.Header>
+              {/* Modal Mother Account2 */}
+              <Modal
+                show={showModal_Account2}
+                onHide={() => setShowModal_Account2(false)}
+                centered
+                size="lg"
+              >
+                <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
+                  <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+                    Select Mother Account Type 2
+                  </Modal.Title>
+                </Modal.Header>
 
-<Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
-  <input
-    type="text"
-    className="form-control mb-3"
-    placeholder="Search mother accounts..."
-    value={accountSearchTerm2}
-    onChange={(e) => setAccountSearchTerm2(e.target.value)}
-    style={{ borderColor: "#007bff" }}
-  />
+                <Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
+                  <input
+                    type="text"
+                    className="form-control mb-3"
+                    placeholder="Search mother accounts..."
+                    value={accountSearchTerm2}
+                    onChange={(e) => setAccountSearchTerm2(e.target.value)}
+                    style={{ borderColor: "#007bff" }}
+                  />
 
-  {(() => {
-    // Filter by search term
-    const filteredAccounts = motherAccount2List.filter((opt) => {
-      const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm2.toLowerCase()) ||
-                           opt.code.toString().includes(accountSearchTerm2.toLowerCase());
-      return matchesSearch;
-    });
+                  {(() => {
+                    // Filter by search term
+                    const filteredAccounts = motherAccount2List.filter((opt) => {
+                      const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm2.toLowerCase()) ||
+                        opt.code.toString().includes(accountSearchTerm2.toLowerCase());
+                      return matchesSearch;
+                    });
 
-    console.log(`📋 Showing ${filteredAccounts.length} out of ${motherAccount2List.length} mother accounts (Mother 2)`);
+                    console.log(`📋 Showing ${filteredAccounts.length} out of ${motherAccount2List.length} mother accounts (Mother 2)`);
 
-    if (filteredAccounts.length === 0) {
-      return (
-        <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
-          No mother accounts available
-        </div>
-      );
-    }
+                    if (filteredAccounts.length === 0) {
+                      return (
+                        <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+                          No mother accounts available
+                        </div>
+                      );
+                    }
 
-    return filteredAccounts.map((opt) => (
-      <div
-        key={opt.id}
-        style={{
-          padding: "12px 16px", // ✅ Reduced padding (was 8px 10px)
-          borderBottom: "1px solid #eee",
-          cursor: "pointer",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          transition: "background-color 0.2s",
-        }}
-        onClick={() => {
-          console.log('🔍 Selected Mother Account 2:', opt);
-          console.log('📋 Code:', opt.code);
-          console.log('📝 Name:', opt.name);
-          console.log('🆔 ID:', opt.id);
+                    return filteredAccounts.map((opt) => (
+                      <div
+                        key={opt.id}
+                        style={{
+                          padding: "12px 16px", // ✅ Reduced padding (was 8px 10px)
+                          borderBottom: "1px solid #eee",
+                          cursor: "pointer",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          transition: "background-color 0.2s",
+                        }}
+                        onClick={() => {
+                          console.log('🔍 Selected Mother Account 2:', opt);
+                          console.log('📋 Code:', opt.code);
+                          console.log('📝 Name:', opt.name);
+                          console.log('🆔 ID:', opt.id);
 
-          // Save the mother account name to MotherAccount2 field
-          setFormData((prev) => ({
-            ...prev,
-            MotherAccount2: opt.name
-          }));
-          setShowModal_Account2(false);
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "#f5f5f5";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "transparent";
-        }}
-      >
-        {/* ✅ Only show name, hide code */}
-        <span style={{ fontSize: "15px", color: "#333" }}>{opt.name}</span>
-      </div>
-    ));
-  })()}
-</Modal.Body>
+                          // Save the mother account name to MotherAccount2 field
+                          setFormData((prev) => ({
+                            ...prev,
+                            MotherAccount2: opt.name
+                          }));
+                          setShowModal_Account2(false);
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#f5f5f5";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                      >
+                        {/* ✅ Only show name, hide code */}
+                        <span style={{ fontSize: "15px", color: "#333" }}>{opt.name}</span>
+                      </div>
+                    ));
+                  })()}
+                </Modal.Body>
 
-  <Modal.Footer>
-    <Button variant="light" onClick={() => setShowModal_Account2(false)}>
-      Close
-    </Button>
-  </Modal.Footer>
-</Modal>
+                <Modal.Footer>
+                  <Button variant="light" onClick={() => setShowModal_Account2(false)}>
+                    Close
+                  </Button>
+                </Modal.Footer>
+              </Modal>
               {/* Modal Branch */}
               <Modal
                 show={showModal_Branch}
@@ -4223,71 +4283,71 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
 
 
               <style>{`
-                                .card-3d {
-                                    transition: transform 0.3s ease, box-shadow 0.3s ease;
-                                    cursor: pointer;
-                                    will-change: transform;
-                                    border-radius: 0.75rem;
-                                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                                    padding: 1rem 1.5rem; /* add consistent padding */
-                                }
+                                  .card-3d {
+                                      transition: transform 0.3s ease, box-shadow 0.3s ease;
+                                      cursor: pointer;
+                                      will-change: transform;
+                                      border-radius: 0.75rem;
+                                      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                                      padding: 1rem 1.5rem; /* add consistent padding */
+                                  }
 
-                                .card-3d .card-header {
-                                    background: 'linear-gradient(135deg,rgb(11, 48, 168), #d9edf7)', // gentle blue gradient
-                                    color: white;
-                                    font-weight: 700;
-                                    font-size: 1.25rem;
-                                    border-radius: 0.75rem 0.75rem 0 0;
-                                    padding: 1rem 1.5rem;
-                                    margin: -1rem -1.5rem 1rem; /* offset to align with card padding */
-                                }
+                                  .card-3d .card-header {
+                                      background: 'linear-gradient(135deg,rgb(11, 48, 168), #d9edf7)', // gentle blue gradient
+                                      color: white;
+                                      font-weight: 700;
+                                      font-size: 1.25rem;
+                                      border-radius: 0.75rem 0.75rem 0 0;
+                                      padding: 1rem 1.5rem;
+                                      margin: -1rem -1.5rem 1rem; /* offset to align with card padding */
+                                  }
 
-                                .toggle-group {
-                                    display: flex;
-                                    gap: 1rem;
-                                }
+                                  .toggle-group {
+                                      display: flex;
+                                      gap: 1rem;
+                                  }
 
-                                .toggle-checkbox {
-                                    display: none;
-                                }
+                                  .toggle-checkbox {
+                                      display: none;
+                                  }
 
-                                .toggle-label {
-                                    padding: 0.5rem 1.25rem;
-                                    border-radius: 50px;
-                                    border: 2px solid #007bff;
-                                    color: #007bff;
-                                    font-weight: 600;
-                                    cursor: pointer;
-                                    user-select: none;
-                                    transition: all 0.25s ease;
-                                    box-shadow: 0 0 8px transparent;
-                                    display: flex;
-                                    align-items: center;
-                                    justify-content: center;
-                                    min-width: 70px; /* consistent button width */
-                                    text-align: center;
-                                }
+                                  .toggle-label {
+                                      padding: 0.5rem 1.25rem;
+                                      border-radius: 50px;
+                                      border: 2px solid #007bff;
+                                      color: #007bff;
+                                      font-weight: 600;
+                                      cursor: pointer;
+                                      user-select: none;
+                                      transition: all 0.25s ease;
+                                      box-shadow: 0 0 8px transparent;
+                                      display: flex;
+                                      align-items: center;
+                                      justify-content: center;
+                                      min-width: 70px; /* consistent button width */
+                                      text-align: center;
+                                  }
 
-                                .toggle-checkbox:checked + .toggle-label {
-                                    background-color: #007bff;
-                                    color: white;
-                                    box-shadow: 0 0 12px #007bff;
-                                }
+                                  .toggle-checkbox:checked + .toggle-label {
+                                      background-color: #007bff;
+                                      color: white;
+                                      box-shadow: 0 0 12px #007bff;
+                                  }
 
-                                .toggle-label:hover {
-                                    background-color: #e6f0ff;
-                                }
+                                  .toggle-label:hover {
+                                      background-color: #e6f0ff;
+                                  }
 
-                                /* Fix input field container for better alignment */
-                                .cover-visa-code-container {
-                                    margin-top: 1rem;
-                                    max-width: 320px;
-                                }
+                                  /* Fix input field container for better alignment */
+                                  .cover-visa-code-container {
+                                      margin-top: 1rem;
+                                      max-width: 320px;
+                                  }
 
-                                .cover-visa-code-container label {
-                                    font-weight: 600;
-                                }
-                                `}</style>
+                                  .cover-visa-code-container label {
+                                      font-weight: 600;
+                                  }
+                                  `}</style>
 
               <div className="card card-3d mt-4">
                 <div className="card-header fw-bold">IS PART OF BUDGET?</div>
@@ -6145,13 +6205,13 @@ Agent Code: ${selectedDistrib.agent_code || "N/A"}`);
                 <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
                   <h4 className="mb-0">📦 Bad Order Category Listing</h4>
                   {/* <div className="d-flex gap-2 align-items-center">
-                                                   <Button variant="success" onClick={triggerFileInput} className="d-flex align-items-center">
-                                                       <FaFileExcel className="me-2" /> Import Excel
-                                                   </Button>
-                                                   <Button variant="secondary" onClick={handleExport} className="d-flex align-items-center">
-                                                       <FaDownload className="me-2" /> Export Excel
-                                                   </Button>
-                                               </div> */}
+                                                    <Button variant="success" onClick={triggerFileInput} className="d-flex align-items-center">
+                                                        <FaFileExcel className="me-2" /> Import Excel
+                                                    </Button>
+                                                    <Button variant="secondary" onClick={handleExport} className="d-flex align-items-center">
+                                                        <FaDownload className="me-2" /> Export Excel
+                                                    </Button>
+                                                </div> */}
                 </Card.Header>
 
                 <Card.Body>
