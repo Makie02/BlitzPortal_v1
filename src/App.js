@@ -53,6 +53,7 @@ import DistributorBudgetCard from "./Component/DistributorBudgetCard.js";
 import DashboardForSuperAdmin from "./Component/DashboardForSuperAdmin.js";
 import HighestClaimed from "./Component/HighestClaimed.jsx";
 import TotalSupportPerAccount from "./Component/TotalSupportPerAccount.jsx";
+import ApprovedHistoryBudgetTable from "./Component/RecordsHistoryBudget.js";
 function App() {
 
   // Track online/offline status
@@ -414,6 +415,7 @@ function App() {
       case "HighestClaimed": return <HighestClaimed setCurrentView={setCurrentView} />;
 
       case "TotalSupportPerAccount": return <TotalSupportPerAccount setCurrentView={setCurrentView} />;
+      case "RecordsHistoryBudget": return <ApprovedHistoryBudgetTable setCurrentView={setCurrentView} />;
 
 
       
