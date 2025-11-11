@@ -381,6 +381,8 @@ function Sidebar({ sidebarExpanded, setSidebarExpanded, setCurrentView, setLogge
             title: "Records and Reports",
             submenu: [
                 { title: "View Records", view: "RecordsPage" },
+                { title: "Records History Budget ", view: "RecordsHistoryBudget" },
+
                 { title: "Claims Records List", view: "ClaimsRecords" },
                 { title: "Uploading Record SAP", view: "UploadingSap" },
                 { title: "Total Support P.A", view: "TotalSupportPerAccount" },
