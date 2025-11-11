@@ -130,12 +130,30 @@ export default function AccountsListManager() {
             // Reset loading progress
             setLoadingProgress({ current: 0, total: 0 });
 
+            // Sort importData: duplicates first, then new records
+            // IMPORTANT: Create NEW array using [...importData] then sort
+            const sortedImportData = [...importData].sort((a, b) => {
+                const aIsDuplicate = existingBpCodes.has(a.bp_code.trim().toUpperCase());
+                const bIsDuplicate = existingBpCodes.has(b.bp_code.trim().toUpperCase());
+
+                // Duplicates come first (return -1 if a is duplicate and b is not)
+                if (aIsDuplicate && !bIsDuplicate) return -1;
+                if (!aIsDuplicate && bIsDuplicate) return 1;
+                return 0;
+            });
+
+            // Update the importData state with sorted data
+            setImportData(sortedImportData);
+
+            // Reset to page 1 to show duplicates first
+            setCurrentPageExcel(1);
+
             // Show alert
             if (duplicateCount > 0) {
                 Swal.fire({
                     icon: "warning",
                     title: "Duplicates Found!",
-                    text: `Found ${duplicateCount} duplicate record(s) out of ${importData.length}. Checked against ${allExistingRecords.length} existing records.`,
+                    text: `Found ${duplicateCount} duplicate record(s) out of ${importData.length}. Checked against ${allExistingRecords.length} existing records. Duplicates are now shown first.`,
                 });
             } else {
                 Swal.fire({
