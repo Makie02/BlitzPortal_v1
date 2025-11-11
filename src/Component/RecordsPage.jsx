@@ -460,6 +460,11 @@ function RecordsPage() {
         textColor = '#c62828';
         borderColor = '#ffcdd2';
         break;
+      case 'cancelled':
+        bgColor = '#ffebee';
+        textColor = '#ff0022ff';
+        borderColor = '#ffcdd2';
+        break;
       case 'pending':
       default:
         bgColor = '#fff3cd';
@@ -571,7 +576,31 @@ function RecordsPage() {
       return getUserNameById(value);
     }
 
+    // Format credit_budget with peso sign and comma separators
+    if (colName === 'credit_budget' || colName === 'amountbadget') {
+      const numValue = Number(value);
+      if (isNaN(numValue)) return '-';
+      // Only show decimals if they're not .00
+      if (numValue % 1 === 0) {
+        return `₱ ${numValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+      }
+      return `₱ ${numValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
     if (colName === 'created_at' && value) {
+      try {
+        return new Date(value).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+      } catch {
+        return value;
+      }
+    }
+
+    // Format approved_date with better styling
+    if (colName === 'approved_date' && value) {
       try {
         return new Date(value).toLocaleDateString("en-US", {
           year: "numeric",
