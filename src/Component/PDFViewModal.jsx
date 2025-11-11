@@ -1,10 +1,4 @@
 
-
-
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from "../supabaseClient";
 import logomega from '../Assets/logomega.png';
@@ -25,6 +19,7 @@ function PDFViewModal({ record, onClose }) {
     const [loading, setLoading] = useState(true);
 
     const [accountList, setAccountList] = useState([]);
+const [skuProductMap, setSkuProductMap] = useState({});
 
     useEffect(() => {
         const fetchAccountList = async () => {
@@ -113,9 +108,48 @@ function PDFViewModal({ record, onClose }) {
 
         fetchActivityName();
     }, [fullRecord, record]);
+ const [skuList, setSkuList] = useState([]);
+useEffect(() => {
+    const fetchProductNames = async () => {
+        // First check if we already have the map from RecordsPage
+        if (record?.sku_product_map) {
+            setSkuProductMap(record.sku_product_map);
+            console.log("✅ Using SKU map from RecordsPage:", record.sku_product_map);
+            return;
+        }
 
+        // Otherwise fetch from category_listing
+        if (skuList.length === 0) return;
 
-    const [skuList, setSkuList] = useState([]);
+        const skuCodes = skuList.map(item => item.sku_code).filter(Boolean);
+        if (skuCodes.length === 0) return;
+
+        try {
+            const { data: productData, error } = await supabase
+                .from("category_listing")
+                .select("sku_code, name")
+                .in("sku_code", skuCodes);
+
+            if (error) {
+                console.error("Error fetching product names:", error);
+                return;
+            }
+
+            const map = {};
+            productData?.forEach(item => {
+                map[String(item.sku_code)] = item.name;
+            });
+            
+            setSkuProductMap(map);
+            console.log("✅ SKU Product Map loaded:", map);
+        } catch (err) {
+            console.error("Failed to fetch product names:", err);
+        }
+    };
+
+    fetchProductNames();
+}, [skuList, record]);
+   
 
     useEffect(() => {
         const fetchSKUList = async () => {
@@ -505,40 +539,43 @@ const handleExportPDF = async () => {
         }
 
         // ===== SKU List =====
-        if (skuList && skuList.length > 0) {
-            checkPageBreak(40);
-            doc.setFontSize(13);
-            doc.setFillColor(25, 118, 210);
-            doc.setTextColor(255, 255, 255);
-            doc.setFont('helvetica', 'bold');
-            doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
-            doc.text('SKU INFORMATION', margin + 5, yPos + 7);
-            yPos += 14;
+     if (skuList && skuList.length > 0) {
+    checkPageBreak(40);
+    doc.setFontSize(13);
+    doc.setFillColor(25, 118, 210);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
+    doc.text('SKU INFORMATION', margin + 5, yPos + 7);
+    yPos += 14;
 
-            const skuTableData = skuList.map(item => [
-                item.sku_code || '-',
-                item.account_name || '-',
-                formatCurrency(item.srp),
-                item.qty || '-',
-                item.uom || '-',
-                formatCurrency(item.billing_amount),
-                formatCurrency(item.discount),
-                formatCurrency(item.total_amount)
-            ]);
+    const skuTableData = skuList.map(item => {
+        const productName = skuProductMap[String(item.sku_code)] || '-';
+        return [
+            item.sku_code || '-',
+            productName,  // ✅ ADD PRODUCT NAME HERE
+            item.account_name || '-',
+            formatCurrency(item.srp),
+            item.qty || '-',
+            item.uom || '-',
+            formatCurrency(item.billing_amount),
+            formatCurrency(item.discount),
+            formatCurrency(item.total_amount)
+        ];
+    });
 
-            const totalAmount = skuList.reduce(
-                (sum, item) => sum + Number(item.total_amount || 0),
-                0
-            );
-            skuTableData.push(['', '', '', '', '', '', 'TOTAL', formatCurrency(totalAmount)]);
+    const totalAmount = skuList.reduce(
+        (sum, item) => sum + Number(item.total_amount || 0),
+        0
+    );
+    skuTableData.push(['', '', '', '', '', '', '', 'TOTAL', formatCurrency(totalAmount)]);
 
-            drawTable(
-                ['SKU', 'Account', 'SRP', 'Qty', 'UOM', 'Billing', 'Disc', 'Total'],
-                skuTableData,
-                [20, 25, 20, 15, 15, 20, 20, 25]
-            );
-        }
-
+    drawTable(
+        ['SKU', 'Product Name', 'Account', 'SRP', 'Qty', 'UOM', 'Billing', 'Disc', 'Total'],
+        skuTableData,
+        [18, 35, 22, 18, 12, 12, 18, 18, 22]  // ✅ Adjusted column widths
+    );
+}
         // ===== System Information =====
         checkPageBreak(30);
         doc.setFontSize(13);
@@ -1267,76 +1304,82 @@ const handleExportPDF = async () => {
                         )}
 
 
-                        {data.source === "regular_pwp" && data.sku && skuList.length > 0 && (
-                            <>
-                                <SectionHeader title="SKU Information" />
-                                <div style={{ overflowX: "auto", marginBottom: "30px" }}>
-                                    <table
-                                        style={{
-                                            width: "100%",
-                                            borderCollapse: "collapse",
-                                            fontSize: "14px",
-                                        }}
-                                    >
-                                        <thead>
-                                            <tr
-                                                style={{
-                                                    backgroundColor: "#1976d2",
-                                                    color: "white",
-                                                    textAlign: "left",
-                                                }}
-                                            >
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>SKU Code</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Account Name</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>SRP</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Qty</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>UOM</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Billing Amount</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Discount</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total Amount</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {skuList.map((item, idx) => (
-                                                <tr
-                                                    key={idx}
-                                                    style={{
-                                                        backgroundColor: idx % 2 === 0 ? "#fafafa" : "#ffffff",
-                                                    }}
-                                                >
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.sku_code}</td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.account_name}</td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.srp).toLocaleString()}</td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.qty}</td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.uom}</td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.billing_amount).toLocaleString()}</td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.discount).toLocaleString()}</td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.total_amount).toLocaleString()}</td>
-                                                </tr>
-                                            ))}
+                       {data.source === "regular_pwp" && data.sku && skuList.length > 0 && (
+    <>
+        <SectionHeader title="SKU Information" />
+        <div style={{ overflowX: "auto", marginBottom: "30px" }}>
+            <table
+                style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "14px",
+                }}
+            >
+                <thead>
+                    <tr
+                        style={{
+                            backgroundColor: "#1976d2",
+                            color: "white",
+                            textAlign: "left",
+                        }}
+                    >
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>SKU Code</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Product Name</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Account Name</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>SRP</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Qty</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>UOM</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Billing Amount</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Discount</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {skuList.map((item, idx) => {
+                        const productName = skuProductMap[String(item.sku_code)] || '-';
+                        
+                        return (
+                            <tr
+                                key={idx}
+                                style={{
+                                    backgroundColor: idx % 2 === 0 ? "#fafafa" : "#ffffff",
+                                }}
+                            >
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.sku_code}</td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd", fontWeight: "500" }}>
+                                    {productName}
+                                </td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.account_name}</td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.srp).toLocaleString()}</td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.qty}</td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.uom}</td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.billing_amount).toLocaleString()}</td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.discount).toLocaleString()}</td>
+                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.total_amount).toLocaleString()}</td>
+                            </tr>
+                        );
+                    })}
 
-                                            {/* Total Row */}
-                                            <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "bold" }}>
-                                                <td
-                                                    colSpan="7"
-                                                    style={{ padding: "10px", border: "1px solid #ddd", textAlign: "right" }}
-                                                >
-                                                    TOTAL:
-                                                </td>
-                                                <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                                                    ₱
-                                                    {skuList
-                                                        .reduce((sum, item) => sum + Number(item.total_amount || 0), 0)
-                                                        .toLocaleString()}
-                                                </td>
-
-                                            </tr>
-                                        </tbody>
-                                    </table>
-
-                                </div>
-                            </>
-                        )}
+                    {/* Total Row */}
+                    <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "bold" }}>
+                        <td
+                            colSpan="8"
+                            style={{ padding: "10px", border: "1px solid #ddd", textAlign: "right" }}
+                        >
+                            TOTAL:
+                        </td>
+                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
+                            ₱
+                            {skuList
+                                .reduce((sum, item) => sum + Number(item.total_amount || 0), 0)
+                                .toLocaleString()}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </>
+)}
 
                         {/* Footer */}
                         <div style={{
