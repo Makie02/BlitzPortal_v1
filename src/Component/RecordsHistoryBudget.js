@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from "../supabaseClient";
+import * as XLSX from 'xlsx';
 
 export default function ApprovedHistoryBudgetTable() {
   const [data, setData] = useState([]);
@@ -17,7 +18,6 @@ export default function ApprovedHistoryBudgetTable() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // ✅ Get logged-in user info
       const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
       const userId = currentUser?.UserID || null;
       const userName = currentUser?.name || null;
@@ -29,7 +29,6 @@ export default function ApprovedHistoryBudgetTable() {
         return;
       }
 
-      // ✅ Fetch approved history records
       const { data: records, error } = await supabase
         .from('approved_history_budget')
         .select('*')
@@ -37,41 +36,33 @@ export default function ApprovedHistoryBudgetTable() {
 
       if (error) throw error;
 
-      // ✅ Fetch amount_badget data for remaining balances
       const { data: budgetData, error: budgetError } = await supabase
         .from('amount_badget')
         .select('pwp_code, remainingbalance');
 
       if (budgetError) throw budgetError;
 
-      // Create a map for quick lookup of remaining balance by pwp_code
       const budgetMap = {};
       (budgetData || []).forEach(item => {
         budgetMap[item.pwp_code] = item.remainingbalance;
       });
 
-      // ✅ Filter by created_form matching either UserID or name, and exclude N/A status
       const filteredByUser = (records || []).filter(record => {
         const createdForm = record.created_form;
         const status = record.status;
         
-        // ❌ Skip if created_form is null, undefined, empty, or 'N/A'
         if (!createdForm || createdForm.toLowerCase() === 'n/a') {
           return false;
         }
 
-        // ❌ Skip if status is 'N/A' (case-insensitive)
         if (!status || status.toLowerCase() === 'n/a') {
           return false;
         }
         
-        // Check if created_form matches UserID or name (case-insensitive)
         return createdForm === String(userId) || 
                createdForm?.toLowerCase() === userName?.toLowerCase();
       });
 
-      // ✅ Merge remaining balance from amount_badget table
-      // Use cover_pwp_code if available, otherwise use pwp_code
       const enrichedData = filteredByUser.map(record => {
         const lookupCode = record.cover_pwp_code || record.pwp_code;
         return {
@@ -100,7 +91,6 @@ export default function ApprovedHistoryBudgetTable() {
     return matchesSearch && matchesStatus && matchesResponse;
   });
 
-  // Pagination calculations
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
@@ -108,7 +98,6 @@ export default function ApprovedHistoryBudgetTable() {
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
-  // ✅ Only total APPROVED records for credit budget
   const approvedData = filteredData.filter(item => 
     item.response?.toLowerCase() === 'approved'
   );
@@ -117,7 +106,6 @@ export default function ApprovedHistoryBudgetTable() {
     sum + (parseFloat(item.credit_budget) || 0), 0
   );
 
-  // ✅ Get remaining balance from the original remaining_balance (from amount_badget)
   const totalRemainingBalance = approvedData.reduce((sum, item) => 
     sum + (parseFloat(item.remaining_balance) || 0), 0
   );
@@ -158,6 +146,62 @@ export default function ApprovedHistoryBudgetTable() {
     return `₱${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // ========== EXPORT TO EXCEL FUNCTION - ETO NA KUPAL! ==========
+  const exportToExcel = () => {
+    try {
+      const exportData = filteredData.map((item, index) => ({
+        'No.': index + 1,
+        'ID': item.id,
+        'PWP Code': item.pwp_code || 'N/A',
+        'Cover PWP Code': item.cover_pwp_code || 'N/A',
+        'Created By': item.created_form || 'N/A',
+        'Approver ID': item.approver_id || 'N/A',
+        'Response': item.response || 'N/A',
+        'Status': item.status || 'N/A',
+        'Type': item.type || 'admin',
+        'Credit Budget': parseFloat(item.credit_budget || 0).toFixed(2),
+        'Remaining Balance': parseFloat(item.remaining_balance || 0).toFixed(2),
+        'Date Responded': formatDate(item.date_responded)
+      }));
+
+      exportData.push({
+        'No.': '',
+        'ID': '',
+        'PWP Code': '',
+        'Cover PWP Code': '',
+        'Created By': '',
+        'Approver ID': '',
+        'Response': '',
+        'Status': '⭐ GRAND TOTAL',
+        'Type': '',
+        'Credit Budget': totalCreditBudget.toFixed(2),
+        'Remaining Balance': totalRemainingBalance.toFixed(2),
+        'Date Responded': `Total Records: ${filteredData.length}`
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+      worksheet['!cols'] = [
+        { wch: 5 }, { wch: 8 }, { wch: 15 }, { wch: 15 },
+        { wch: 20 }, { wch: 20 }, { wch: 12 }, { wch: 15 },
+        { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 20 }
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Approved History Budget');
+
+      const currentDate = new Date().toISOString().split('T')[0];
+      const filename = `Approved_History_Budget_${currentDate}.xlsx`;
+
+      XLSX.writeFile(workbook, filename);
+
+      alert('✅ Excel file exported successfully!');
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      alert('❌ Failed to export Excel file. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div style={{
@@ -169,8 +213,7 @@ export default function ApprovedHistoryBudgetTable() {
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
-            width: 60,
-            height: 60,
+            width: 60, height: 60,
             border: '6px solid rgba(255,255,255,0.3)',
             borderTop: '6px solid white',
             borderRadius: '50%',
@@ -185,12 +228,8 @@ export default function ApprovedHistoryBudgetTable() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      padding: '40px 20px'
-    }}>
+    <div style={{ minHeight: '100vh', padding: '40px 20px' }}>
       <div style={{ maxWidth: 1600, margin: '0 auto' }}>
-        {/* Header Section */}
         <div style={{
           background: 'white',
           borderRadius: 20,
@@ -218,9 +257,8 @@ export default function ApprovedHistoryBudgetTable() {
                 💰 Approved History Budget
               </h1>
             </div>
-            <button
-              onClick={fetchData}
-              style={{
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={fetchData} style={{
                 background: 'linear-gradient(135deg, #667eea 0%, #0040b8ff 100%)',
                 color: 'white',
                 padding: '14px 32px',
@@ -234,21 +272,29 @@ export default function ApprovedHistoryBudgetTable() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 12px 32px rgba(102, 126, 234, 0.5)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 8px 24px rgba(102, 126, 234, 0.4)';
-              }}
-            >
-              🔄 Refresh Data
-            </button>
+              }}>
+                🔄 Refresh Data
+              </button>
+              <button onClick={exportToExcel} style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: 'white',
+                padding: '14px 32px',
+                borderRadius: 12,
+                border: 'none',
+                fontWeight: 700,
+                fontSize: 16,
+                cursor: 'pointer',
+                boxShadow: '0 8px 24px rgba(16, 185, 129, 0.4)',
+                transition: 'all 0.3s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10
+              }}>
+                📥 Export to Excel
+              </button>
+            </div>
           </div>
 
-          {/* Filters */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -262,10 +308,7 @@ export default function ApprovedHistoryBudgetTable() {
                 type="text"
                 placeholder="Search PWP Code, Approver..."
                 value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -275,8 +318,6 @@ export default function ApprovedHistoryBudgetTable() {
                   outline: 'none',
                   transition: 'all 0.3s ease'
                 }}
-                onFocus={(e) => e.target.style.borderColor = '#667eea'}
-                onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
               />
             </div>
             <div>
@@ -285,10 +326,7 @@ export default function ApprovedHistoryBudgetTable() {
               </label>
               <select
                 value={filterStatus}
-                onChange={(e) => {
-                  setFilterStatus(e.target.value);
-                  setCurrentPage(1);
-                }}
+                onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -312,10 +350,7 @@ export default function ApprovedHistoryBudgetTable() {
               </label>
               <select
                 value={filterResponse}
-                onChange={(e) => {
-                  setFilterResponse(e.target.value);
-                  setCurrentPage(1);
-                }}
+                onChange={(e) => { setFilterResponse(e.target.value); setCurrentPage(1); }}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -335,7 +370,6 @@ export default function ApprovedHistoryBudgetTable() {
           </div>
         </div>
 
-        {/* Stats Cards */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -391,7 +425,6 @@ export default function ApprovedHistoryBudgetTable() {
           </div>
         </div>
 
-        {/* Table */}
         <div style={{
           background: 'white',
           borderRadius: 20,
@@ -401,32 +434,25 @@ export default function ApprovedHistoryBudgetTable() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{                background: 'linear-gradient(135deg, #667eea 0%, #0040b8ff 100%)',
- }}>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>ID</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>PWP Code</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Cover PWP</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Created By</th>
-                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Response</th>
-                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Status</th>
-                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Type</th>
-                  <th style={{ padding: 20, textAlign: 'right', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Credit Budget</th>
-                  <th style={{ padding: 20, textAlign: 'right', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Remaining</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Date</th>
+                <tr style={{ background: 'linear-gradient(135deg, #667eea 0%, #0040b8ff 100%)' }}>
+                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>ID</th>
+                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>PWP Code</th>
+                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>Cover PWP</th>
+                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>Created By</th>
+                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13 }}>Response</th>
+                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13 }}>Status</th>
+                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13 }}>Type</th>
+                  <th style={{ padding: 20, textAlign: 'right', color: 'white', fontWeight: 700, fontSize: 13 }}>Credit Budget</th>
+                  <th style={{ padding: 20, textAlign: 'right', color: 'white', fontWeight: 700, fontSize: 13 }}>Remaining</th>
+                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>Date</th>
                 </tr>
               </thead>
               <tbody>
                 {currentItems.map((item, index) => (
-                  <tr 
-                    key={item.id}
-                    style={{
-                      background: index % 2 === 0 ? '#f9fafb' : 'white',
-                      borderBottom: '1px solid #e5e7eb',
-                      transition: 'all 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#eef2ff'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? '#f9fafb' : 'white'}
-                  >
+                  <tr key={item.id} style={{
+                    background: index % 2 === 0 ? '#f9fafb' : 'white',
+                    borderBottom: '1px solid #e5e7eb'
+                  }}>
                     <td style={{ padding: '16px 20px' }}>
                       <span style={{
                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -435,20 +461,11 @@ export default function ApprovedHistoryBudgetTable() {
                         borderRadius: 20,
                         fontSize: 13,
                         fontWeight: 700
-                      }}>
-                        #{item.id}
-                      </span>
+                      }}>#{item.id}</span>
                     </td>
-                    <td style={{ padding: '16px 20px', fontWeight: 700, color: '#1f2937', fontSize: 15 }}>
-                      {item.pwp_code}
-                    </td>
-                    <td style={{ padding: '16px 20px', color: '#6b7280', fontSize: 14 }}>
-                      {item.cover_pwp_code || 'N/A'}
-                    </td>
-           
-                    <td style={{ padding: '16px 20px', color: '#374151', fontSize: 14 }}>
-                      {item.created_form || 'N/A'}
-                    </td>
+                    <td style={{ padding: '16px 20px', fontWeight: 700, color: '#1f2937' }}>{item.pwp_code}</td>
+                    <td style={{ padding: '16px 20px', color: '#6b7280' }}>{item.cover_pwp_code || 'N/A'}</td>
+                    <td style={{ padding: '16px 20px', color: '#374151' }}>{item.created_form || 'N/A'}</td>
                     <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                       <span style={{
                         background: getResponseColor(item.response),
@@ -456,12 +473,8 @@ export default function ApprovedHistoryBudgetTable() {
                         padding: '6px 16px',
                         borderRadius: 20,
                         fontSize: 12,
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.5
-                      }}>
-                        {item.response}
-                      </span>
+                        fontWeight: 700
+                      }}>{item.response}</span>
                     </td>
                     <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                       <span style={{
@@ -472,9 +485,7 @@ export default function ApprovedHistoryBudgetTable() {
                         fontSize: 12,
                         fontWeight: 700,
                         border: `2px solid ${getStatusColor(item.status)}`
-                      }}>
-                        {item.status || 'N/A'}
-                      </span>
+                      }}>{item.status || 'N/A'}</span>
                     </td>
                     <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                       <span style={{
@@ -484,14 +495,12 @@ export default function ApprovedHistoryBudgetTable() {
                         borderRadius: 8,
                         fontSize: 12,
                         fontWeight: 600
-                      }}>
-                        {item.type || 'admin'}
-                      </span>
+                      }}>{item.type || 'admin'}</span>
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', color: '#059669', fontWeight: 800, fontSize: 15 }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'right', color: '#059669', fontWeight: 800 }}>
                       {formatCurrency(item.credit_budget)}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', color: '#d97706', fontWeight: 800, fontSize: 15 }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'right', color: '#d97706', fontWeight: 800 }}>
                       {formatCurrency(item.remaining_balance)}
                     </td>
                     <td style={{ padding: '16px 20px', color: '#6b7280', fontSize: 13 }}>
@@ -500,36 +509,28 @@ export default function ApprovedHistoryBudgetTable() {
                   </tr>
                 ))}
               </tbody>
-              {/* Grand Totals Footer */}
               <tfoot>
                 <tr style={{ background: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)' }}>
-                  <td colSpan="8" style={{ padding: '24px 20px', textAlign: 'right', color: 'white', fontWeight: 800, fontSize: 18 }}>
+                  <td colSpan="7" style={{ padding: '24px 20px', textAlign: 'right', color: 'white', fontWeight: 800, fontSize: 18 }}>
                     📊 GRAND TOTALS
                   </td>
                   <td style={{ padding: '24px 20px', textAlign: 'right' }}>
-                    <div style={{ color: '#10b981', fontSize: 20, fontWeight: 800 }}>
-                      {formatCurrency(totalCreditBudget)}
-                    </div>
-                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4, fontWeight: 600 }}>CREDIT BUDGET</div>
+                    <div style={{ color: '#10b981', fontSize: 20, fontWeight: 800 }}>{formatCurrency(totalCreditBudget)}</div>
+                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4 }}>CREDIT BUDGET</div>
                   </td>
                   <td style={{ padding: '24px 20px', textAlign: 'right' }}>
-                    <div style={{ color: '#f59e0b', fontSize: 20, fontWeight: 800 }}>
-                      {formatCurrency(totalRemainingBalance)}
-                    </div>
-                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4, fontWeight: 600 }}>REMAINING</div>
+                    <div style={{ color: '#f59e0b', fontSize: 20, fontWeight: 800 }}>{formatCurrency(totalRemainingBalance)}</div>
+                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4 }}>REMAINING</div>
                   </td>
                   <td style={{ padding: '24px 20px', textAlign: 'center' }}>
-                    <div style={{ color: '#667eea', fontSize: 20, fontWeight: 800 }}>
-                      {filteredData.length}
-                    </div>
-                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4, fontWeight: 600 }}>RECORDS</div>
+                    <div style={{ color: '#667eea', fontSize: 20, fontWeight: 800 }}>{filteredData.length}</div>
+                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4 }}>RECORDS</div>
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
 
-          {/* Pagination */}
           {filteredData.length > 0 && (
             <div style={{
               padding: '24px',
@@ -554,9 +555,7 @@ export default function ApprovedHistoryBudgetTable() {
                     background: currentPage === 1 ? '#f3f4f6' : 'white',
                     color: currentPage === 1 ? '#9ca3af' : '#374151',
                     cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                    fontWeight: 600,
-                    fontSize: 14,
-                    transition: 'all 0.2s ease'
+                    fontWeight: 600
                   }}
                 >
                   ← Previous
@@ -564,11 +563,7 @@ export default function ApprovedHistoryBudgetTable() {
                 
                 {[...Array(totalPages)].map((_, i) => {
                   const pageNum = i + 1;
-                  if (
-                    pageNum === 1 ||
-                    pageNum === totalPages ||
-                    (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
-                  ) {
+                  if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
                     return (
                       <button
                         key={pageNum}
@@ -582,8 +577,6 @@ export default function ApprovedHistoryBudgetTable() {
                           color: currentPage === pageNum ? 'white' : '#374151',
                           cursor: 'pointer',
                           fontWeight: 700,
-                          fontSize: 14,
-                          transition: 'all 0.2s ease',
                           minWidth: 45
                         }}
                       >
@@ -606,9 +599,7 @@ export default function ApprovedHistoryBudgetTable() {
                     background: currentPage === totalPages ? '#f3f4f6' : 'white',
                     color: currentPage === totalPages ? '#9ca3af' : '#374151',
                     cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                    fontWeight: 600,
-                    fontSize: 14,
-                    transition: 'all 0.2s ease'
+                    fontWeight: 600
                   }}
                 >
                   Next →
@@ -625,7 +616,7 @@ export default function ApprovedHistoryBudgetTable() {
             }}>
               <div style={{ fontSize: 80, marginBottom: 20 }}>📭</div>
               <h3 style={{ fontSize: 24, fontWeight: 700, color: '#374151', marginBottom: 12 }}>No Records Found</h3>
-              <p style={{ color: '#6b7280', fontSize: 16 }}>Try adjusting your search or filters to find what you're looking for</p>
+              <p style={{ color: '#6b7280', fontSize: 16 }}>Try adjusting your search or filters</p>
             </div>
           )}
         </div>
