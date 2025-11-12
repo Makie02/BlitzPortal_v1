@@ -2228,7 +2228,7 @@ const RegularVisaForm = () => {
 
   // 🔹 Handle All Submissions (SKU + Form + Budgets)
 
-  const submit_all = async (e) => {
+const submit_all = async (e) => {
     e.preventDefault();
 
     try {
@@ -2238,56 +2238,62 @@ const RegularVisaForm = () => {
       const createdBy = parsedUser?.name || "Unknown";
 
       // ✅ VALIDATION 1: Check if Remaining Budget from Branches Table is negative
-      const totalFromBranches = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
-      const remainingBudgetBranches = selectedBalance - totalFromBranches;
+      // ⚠️ ONLY validate if there are budget rows AND selectedBalance exists
+      if (rowsAccounts.length > 0 && selectedBalance != null) {
+        const totalFromBranches = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+        const remainingBudgetBranches = selectedBalance - totalFromBranches;
 
-      if (remainingBudgetBranches < 0) {
-        await Swal.fire({
-          title: "⚠️ Invalid Budget (Branches)",
-          html: `
-          <p style="font-size: 16px; margin-bottom: 10px;">
-            Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetBranches.toLocaleString()})</strong>
-          </p>
-          <p style="font-size: 14px; color: #6b7280;">
-            Total from Branches Table: <strong>₱${totalFromBranches.toLocaleString()}</strong><br>
-            Original Budget: <strong>₱${selectedBalance.toLocaleString()}</strong>
-          </p>
-          <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
-            Please adjust the budget allocation before submitting.
-          </p>
-        `,
-          icon: "error",
-          confirmButtonText: "OK",
-          confirmButtonColor: "#dc2626"
-        });
-        return; // ❌ Stop submission
+        if (remainingBudgetBranches < 0) {
+          await Swal.fire({
+            title: "⚠️ Invalid Budget (Branches)",
+            html: `
+            <p style="font-size: 16px; margin-bottom: 10px;">
+              Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetBranches.toLocaleString()})</strong>
+            </p>
+            <p style="font-size: 14px; color: #6b7280;">
+              Total from Branches Table: <strong>₱${totalFromBranches.toLocaleString()}</strong><br>
+              Original Budget: <strong>₱${selectedBalance.toLocaleString()}</strong>
+            </p>
+            <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
+              Please adjust the budget allocation before submitting.
+            </p>
+          `,
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc2626"
+          });
+          return; // ❌ Stop submission
+        }
       }
 
       // ✅ VALIDATION 2: Check if "IS PART OF BUDGET?" Remaining Budget is negative
-      const allocatedAmount = parseFloat(formData.amountbadget || 0);
-      const originalBudget = selectedBalance; // ₱9,500.00 in your example
-      const remainingBudgetForm = originalBudget - allocatedAmount;
+      // ⚠️ ONLY validate if amountbadget has a value AND selectedBalance exists
+      if (formData.amountbadget && parseFloat(formData.amountbadget) > 0 && selectedBalance != null) {
+        const allocatedAmount = parseFloat(formData.amountbadget);
+        const originalBudget = selectedBalance;
+        const remainingBudgetForm = originalBudget - allocatedAmount;
 
-      if (remainingBudgetForm < 0) {
-        await Swal.fire({
-          title: "⚠️ Invalid Budget (Form)",
-          html: `
-          <p style="font-size: 16px; margin-bottom: 10px;">
-            Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetForm.toLocaleString()})</strong>
-          </p>
-          <p style="font-size: 14px; color: #6b7280;">
-            Allocated (Form): <strong>₱${allocatedAmount.toLocaleString()}</strong><br>
-            Original Budget: <strong>₱${originalBudget.toLocaleString()}</strong>
-          </p>
-          <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
-            Please reduce the Amount Budget field before submitting.
-          </p>
-        `,
-          icon: "error",
-          confirmButtonText: "OK",
-          confirmButtonColor: "#dc2626"
-        });
-        return; // ❌ Stop submission
+        if (remainingBudgetForm < 0) {
+          await Swal.fire({
+            title: "⚠️ Invalid Budget (Form)",
+            html: `
+            <p style="font-size: 16px; margin-bottom: 10px;">
+              Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetForm.toLocaleString()})</strong>
+            </p>
+            <p style="font-size: 14px; color: #6b7280;">
+              Allocated (Form): <strong>₱${allocatedAmount.toLocaleString()}</strong><br>
+              Original Budget: <strong>₱${originalBudget.toLocaleString()}</strong>
+            </p>
+            <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
+              Please reduce the Amount Budget field before submitting.
+            </p>
+          `,
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc2626"
+          });
+          return; // ❌ Stop submission
+        }
       }
 
       // Show loading modal
@@ -2313,48 +2319,51 @@ const RegularVisaForm = () => {
 
       await saveRecentActivity();
       console.log(`[${new Date().toLocaleString()}] ✅ RecentActivity submitted.`);
+      
       // 🔍 Only submit Bad Order data if activity is "BAD ORDER"
       if (formData.activityName === "BAD ORDER") {
         const badorderSuccess = await postBadOrderCategories();
         if (!badorderSuccess) return;
       }
 
-      // Step 3: Save Budget Data
-      console.log(
-        `[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`
-      );
-
-      const filteredRows = rowsAccounts.filter((row) =>
-        (formData.branchType || []).includes(row.account_name) // ✅ match by name only
-      );
-
-      const totalBudget = filteredRows
-        .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
-        .toFixed(2);
-
-      const budgetRowsToInsert = filteredRows.map((row) => ({
-        regularcode: formData.regularpwpcode,
-        account_name: row.account_name, // ✅ only name
-        budget: row.budget || 0,
-        created_at: row.created_at || new Date().toISOString(),
-        createform: createdBy, // ✅ Now uses logged-in user's name
-        total_budget: totalBudget,
-      }));
-
-      if (budgetRowsToInsert.length > 0) {
-        const { data, error } = await supabase
-          .from("regular_accountlis_badget")
-          .insert(budgetRowsToInsert);
-
-        if (error) throw error;
-
+      // Step 3: Save Budget Data (ONLY if there are budget rows and selectedBalance exists)
+      if (rowsAccounts.length > 0 && (formData.branchType || []).length > 0 && selectedBalance != null) {
         console.log(
-          `[${new Date().toLocaleString()}] ✅ Budget data saved:`,
-          data
+          `[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`
         );
+
+        const filteredRows = rowsAccounts.filter((row) =>
+          (formData.branchType || []).includes(row.account_name)
+        );
+
+        const totalBudget = filteredRows
+          .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+          .toFixed(2);
+
+        const budgetRowsToInsert = filteredRows.map((row) => ({
+          regularcode: formData.regularpwpcode,
+          account_name: row.account_name,
+          budget: row.budget || 0,
+          created_at: row.created_at || new Date().toISOString(),
+          createform: createdBy,
+          total_budget: totalBudget,
+        }));
+
+        if (budgetRowsToInsert.length > 0) {
+          const { data, error } = await supabase
+            .from("regular_accountlis_badget")
+            .insert(budgetRowsToInsert);
+
+          if (error) throw error;
+
+          console.log(
+            `[${new Date().toLocaleString()}] ✅ Budget data saved:`,
+            data
+          );
+        }
       } else {
         console.log(
-          `[${new Date().toLocaleString()}] ℹ️ No budget rows to insert.`
+          `[${new Date().toLocaleString()}] ℹ️ No budget data to save (not part of budget or no balance selected).`
         );
       }
 
@@ -2380,9 +2389,7 @@ const RegularVisaForm = () => {
       });
     }
   };
-
-  // Convert file to base64 string
-  // Convert file to base64 string (with Data URL)
+ 
   const toBase64 = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
