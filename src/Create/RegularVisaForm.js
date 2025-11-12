@@ -88,34 +88,27 @@ const RegularVisaForm = () => {
     MotherAccount2: null, // ✅ Added
   });
 
-  const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]); // Stores all regular pwp codes
-  const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true); // Loading state
+  const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]);
+  const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true);
 
   // ---------------- Generate new code ----------------
   const generateRegularCode = (existingCodes = []) => {
-    const year = new Date().getFullYear(); // Current year
+    const year = new Date().getFullYear();
     const prefix = `R${year}-`;
 
-    // Filter existing codes with this year's prefix and extract numbers
     const codesForYear = existingCodes
       .filter((code) => code?.startsWith(prefix))
       .map((code) => parseInt(code.replace(prefix, ""), 10))
       .filter((num) => !isNaN(num));
 
     const newNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
-    const newCode = `${prefix}${newNumber}`;
-
-    console.log("🔹 Existing codes:", existingCodes);
-    console.log("🔹 Codes for this year:", codesForYear);
-    console.log("🔹 Generated new code:", newCode);
-
-    return newCode;
+    return `${prefix}${newNumber}`;
   };
 
-  // ---------------- Fetch codes ----------------
+  // ---------------- Fetch initial codes ----------------
   const fetchRegularPwpCodes = async () => {
     try {
-      console.log("⏳ Fetching regular PWP codes...");
+      setLoadingRegularPwpCodes(true);
       const { data, error } = await supabase
         .from("regular_pwp")
         .select("regularpwpcode");
@@ -123,34 +116,52 @@ const RegularVisaForm = () => {
       if (error) throw error;
 
       const codes = data.map((row) => row.regularpwpcode).filter(Boolean);
-      console.log("✅ Fetched codes:", codes);
-
       setAllRegularPwpCodes(codes);
 
-      // If formData code is empty or already exists, generate a new one
+      // Generate a new code if needed
       if (!formData.regularpwpcode || codes.includes(formData.regularpwpcode)) {
         const newCode = generateRegularCode(codes);
-        console.log("✏️ Updating formData with new code:", newCode);
         setFormData((prev) => ({ ...prev, regularpwpcode: newCode }));
       }
-
-      setLoadingRegularPwpCodes(false);
     } catch (err) {
-      console.error("❌ Error fetching regular pwp codes:", err);
+      console.error("Error fetching codes:", err);
+    } finally {
       setLoadingRegularPwpCodes(false);
     }
   };
 
-  // ---------------- Real-time polling ----------------
+  // ---------------- Real-time subscription ----------------
   useEffect(() => {
-    fetchRegularPwpCodes(); // Initial fetch
+    fetchRegularPwpCodes(); // initial fetch
 
-    const intervalId = setInterval(() => {
-      fetchRegularPwpCodes();
-    }, 5000); // Poll every 5 seconds
+    const subscription = supabase
+      .channel("public:regular_pwp")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "regular_pwp" },
+        (payload) => {
+          console.log("New PWP code added:", payload.new.regularpwpcode);
 
-    return () => clearInterval(intervalId); // Cleanup
-  }, [formData.regularpwpcode]);
+          setAllRegularPwpCodes((prev) => {
+            const updated = [...prev, payload.new.regularpwpcode];
+            // Update formData if needed
+            if (!formData.regularpwpcode || prev.includes(formData.regularpwpcode)) {
+              const newCode = generateRegularCode(updated);
+              setFormData((prevForm) => ({ ...prevForm, regularpwpcode: newCode }));
+            }
+            return updated;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
+
+
+
   useEffect(() => {
     const fetchMotherAccount2 = async () => {
       try {
@@ -2228,118 +2239,127 @@ const RegularVisaForm = () => {
 
   // 🔹 Handle All Submissions (SKU + Form + Budgets)
 
-const submit_all = async (e) => {
+  const submit_all = async (e) => {
     e.preventDefault();
 
     try {
-      // ✅ Get logged-in user info
+      // ✅ Logged-in user
       const storedUser = localStorage.getItem("loggedInUser");
       const parsedUser = storedUser ? JSON.parse(storedUser) : null;
       const createdBy = parsedUser?.name || "Unknown";
 
-      // ✅ VALIDATION 1: Check if Remaining Budget from Branches Table is negative
-      // ⚠️ ONLY validate if there are budget rows AND selectedBalance exists
+      // ✅ VALIDATION 1 - Branches table negative check
       if (rowsAccounts.length > 0 && selectedBalance != null) {
-        const totalFromBranches = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+        const totalFromBranches = rowsAccounts.reduce(
+          (sum, row) => sum + (parseFloat(row.budget) || 0),
+          0
+        );
         const remainingBudgetBranches = selectedBalance - totalFromBranches;
 
         if (remainingBudgetBranches < 0) {
           await Swal.fire({
             title: "⚠️ Invalid Budget (Branches)",
             html: `
-            <p style="font-size: 16px; margin-bottom: 10px;">
-              Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetBranches.toLocaleString()})</strong>
-            </p>
-            <p style="font-size: 14px; color: #6b7280;">
-              Total from Branches Table: <strong>₱${totalFromBranches.toLocaleString()}</strong><br>
-              Original Budget: <strong>₱${selectedBalance.toLocaleString()}</strong>
-            </p>
-            <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
-              Please adjust the budget allocation before submitting.
-            </p>
+            <p style="font-size: 16px;">Remaining Budget is <strong style="color:#dc2626;">negative (₱${remainingBudgetBranches.toLocaleString()})</strong></p>
+            <p>Total from Branches: <strong>₱${totalFromBranches.toLocaleString()}</strong><br>
+            Original Budget: <strong>₱${selectedBalance.toLocaleString()}</strong></p>
           `,
             icon: "error",
             confirmButtonText: "OK",
-            confirmButtonColor: "#dc2626"
+            confirmButtonColor: "#dc2626",
           });
-          return; // ❌ Stop submission
+          return;
         }
       }
 
-      // ✅ VALIDATION 2: Check if "IS PART OF BUDGET?" Remaining Budget is negative
-      // ⚠️ ONLY validate if amountbadget has a value AND selectedBalance exists
+      // ✅ VALIDATION 2 - Form budget negative check
       if (formData.amountbadget && parseFloat(formData.amountbadget) > 0 && selectedBalance != null) {
         const allocatedAmount = parseFloat(formData.amountbadget);
-        const originalBudget = selectedBalance;
-        const remainingBudgetForm = originalBudget - allocatedAmount;
+        const remainingBudgetForm = selectedBalance - allocatedAmount;
 
         if (remainingBudgetForm < 0) {
           await Swal.fire({
             title: "⚠️ Invalid Budget (Form)",
             html: `
-            <p style="font-size: 16px; margin-bottom: 10px;">
-              Remaining Budget is <strong style="color: #dc2626;">negative (₱${remainingBudgetForm.toLocaleString()})</strong>
-            </p>
-            <p style="font-size: 14px; color: #6b7280;">
-              Allocated (Form): <strong>₱${allocatedAmount.toLocaleString()}</strong><br>
-              Original Budget: <strong>₱${originalBudget.toLocaleString()}</strong>
-            </p>
-            <p style="font-size: 14px; margin-top: 10px; color: #dc2626;">
-              Please reduce the Amount Budget field before submitting.
-            </p>
+            <p style="font-size: 16px;">Remaining Budget is <strong style="color:#dc2626;">negative (₱${remainingBudgetForm.toLocaleString()})</strong></p>
+            <p>Allocated (Form): ₱${allocatedAmount.toLocaleString()}<br>
+            Original Budget: ₱${selectedBalance.toLocaleString()}</p>
           `,
             icon: "error",
             confirmButtonText: "OK",
-            confirmButtonColor: "#dc2626"
+            confirmButtonColor: "#dc2626",
           });
-          return; // ❌ Stop submission
+          return;
         }
       }
 
-      // Show loading modal
+      // 🌀 Show custom line-loading modal with countdown
+      let timeLeft = 5; // seconds
       await Swal.fire({
-        title: "Submitting...",
-        html: "Please wait while we save your data.",
+        title: "⏳ Submitting Data...",
+        html: `
+        <div id="progress-container" style="width:100%; background:#eee; border-radius:6px; height:10px; margin-top:10px;">
+          <div id="progress-bar" style="width:0%; height:100%; background:linear-gradient(90deg, #4f46e5, #06b6d4); border-radius:6px; transition:width 0.3s;"></div>
+        </div>
+        <p id="countdown-text" style="margin-top:8px; font-size:14px; color:#555;">
+          Please wait <strong>${timeLeft}</strong> seconds...
+        </p>
+      `,
         allowOutsideClick: false,
-        didOpen: () => Swal.showLoading(),
-        timer: 3000,
-        timerProgressBar: true,
+        showConfirmButton: false,
+        didOpen: () => {
+          const progressBar = Swal.getHtmlContainer().querySelector("#progress-bar");
+          const countdownText = Swal.getHtmlContainer().querySelector("#countdown-text");
+
+          let elapsed = 0;
+          const totalTime = timeLeft * 1000; // convert to ms
+          const interval = 100; // update every 0.1s
+
+          const timer = setInterval(() => {
+            elapsed += interval;
+            const progress = Math.min((elapsed / totalTime) * 100, 100);
+            progressBar.style.width = `${progress}%`;
+
+            const secondsLeft = Math.ceil((totalTime - elapsed) / 1000);
+            countdownText.innerHTML = `Please wait <strong>${secondsLeft}</strong> seconds...`;
+
+            if (elapsed >= totalTime) {
+              clearInterval(timer);
+              Swal.close();
+            }
+          }, interval);
+        },
       });
 
-      // Step 2: Save Form Data + Attachments
-      console.log(
-        `[${new Date().toLocaleString()}] 📝 Submitting form data...`
-      );
+      // 📝 Submit all required data
       await handleSubmitFormAndAttachments();
-      console.log(`[${new Date().toLocaleString()}] ✅ Form data submitted.`);
-
-      console.log(`[${new Date().toLocaleString()}] 📝 Submitting SKUs...`);
       await handleSku();
-      console.log(`[${new Date().toLocaleString()}] ✅ SKUs submitted.`);
-
       await saveRecentActivity();
-      console.log(`[${new Date().toLocaleString()}] ✅ RecentActivity submitted.`);
-      
-      // 🔍 Only submit Bad Order data if activity is "BAD ORDER"
+
+      // 🔍 Submit BAD ORDER category if applicable
       if (formData.activityName === "BAD ORDER") {
         const badorderSuccess = await postBadOrderCategories();
         if (!badorderSuccess) return;
       }
 
-      // Step 3: Save Budget Data (ONLY if there are budget rows and selectedBalance exists)
-      if (rowsAccounts.length > 0 && (formData.branchType || []).length > 0 && selectedBalance != null) {
-        console.log(
-          `[${new Date().toLocaleString()}] 💾 Saving budget data to Supabase...`
-        );
+      // 💾 SAVE TO regular_accountlis_badget
+      if (rowsAccounts.length > 0) {
+        console.log(`[${new Date().toLocaleString()}] 💾 Saving budget data...`);
 
-        const filteredRows = rowsAccounts.filter((row) =>
-          (formData.branchType || []).includes(row.account_name)
-        );
+        // ✅ Use selected branches or fallback to all
+        const filteredRows =
+          (formData.branchType || []).length > 0
+            ? rowsAccounts.filter((row) =>
+              (formData.branchType || []).includes(row.account_name)
+            )
+            : rowsAccounts;
 
+        // ✅ Compute total
         const totalBudget = filteredRows
           .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
           .toFixed(2);
 
+        // ✅ Prepare rows for insert
         const budgetRowsToInsert = filteredRows.map((row) => ({
           regularcode: formData.regularpwpcode,
           account_name: row.account_name,
@@ -2349,38 +2369,41 @@ const submit_all = async (e) => {
           total_budget: totalBudget,
         }));
 
-        if (budgetRowsToInsert.length > 0) {
-          const { data, error } = await supabase
-            .from("regular_accountlis_badget")
-            .insert(budgetRowsToInsert);
+        const { data, error } = await supabase
+          .from("regular_accountlis_badget")
+          .insert(budgetRowsToInsert);
 
-          if (error) throw error;
+        if (error) throw error;
 
-          console.log(
-            `[${new Date().toLocaleString()}] ✅ Budget data saved:`,
-            data
-          );
-        }
+        console.log(`[${new Date().toLocaleString()}] ✅ Budget data saved`, data);
       } else {
-        console.log(
-          `[${new Date().toLocaleString()}] ℹ️ No budget data to save (not part of budget or no balance selected).`
-        );
+        console.log(`[${new Date().toLocaleString()}] ⚠️ No rows to save.`);
       }
 
-      // Success Modal
+      // ✅ Success modal
       await Swal.fire({
-        title: "Success!",
-        text: "Your data has been successfully submitted and saved.",
+        title: "✅ Success!",
+        html: `
+        <p>Your data has been successfully submitted and saved.</p>
+        <div style="height:6px; background:linear-gradient(90deg,#16a34a,#4ade80); width:0%; border-radius:4px;" id="success-bar"></div>
+      `,
         icon: "success",
-        confirmButtonText: "Ok",
+        showConfirmButton: false,
+        timer: 2000,
+        didOpen: () => {
+          const bar = Swal.getHtmlContainer().querySelector("#success-bar");
+          let w = 0;
+          const successTimer = setInterval(() => {
+            w += 5;
+            bar.style.width = `${w}%`;
+            if (w >= 100) clearInterval(successTimer);
+          }, 100);
+        },
       });
 
       window.location.reload();
     } catch (error) {
-      console.error(
-        `[${new Date().toLocaleString()}] ❌ Submit All Error:`,
-        error
-      );
+      console.error(`[${new Date().toLocaleString()}] ❌ Submit Error:`, error);
       Swal.fire({
         title: "Error!",
         text: `There was an issue submitting your data: ${error.message}`,
@@ -2389,7 +2412,9 @@ const submit_all = async (e) => {
       });
     }
   };
- 
+
+
+
   const toBase64 = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -2873,18 +2898,11 @@ const submit_all = async (e) => {
                         letterSpacing: "1px",
                         fontSize: "24px",
                         textAlign: "right",
-                        color: "red", // This ensures the whole <h2> is red
+                        color: "red",
                       }}
                     >
-                      <span
-                        className={
-                          formData.regularpwpcode ? "text-danger" : "text-muted"
-                        }
-                      >
-                        {loadingRegularPwpCodes
-                          ? "Generating..."
-                          : formData.regularpwpcode ||
-                          generateRegularCode(allRegularPwpCodes)}
+                      <span className={formData.regularpwpcode ? "text-danger" : "text-muted"}>
+                        {loadingRegularPwpCodes ? "Generating..." : formData.regularpwpcode}
                       </span>
                     </h2>
                   </div>
