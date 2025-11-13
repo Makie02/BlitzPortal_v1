@@ -19,7 +19,7 @@ function PDFViewModal({ record, onClose }) {
     const [loading, setLoading] = useState(true);
 
     const [accountList, setAccountList] = useState([]);
-const [skuProductMap, setSkuProductMap] = useState({});
+    const [skuProductMap, setSkuProductMap] = useState({});
 
     useEffect(() => {
         const fetchAccountList = async () => {
@@ -108,48 +108,48 @@ const [skuProductMap, setSkuProductMap] = useState({});
 
         fetchActivityName();
     }, [fullRecord, record]);
- const [skuList, setSkuList] = useState([]);
-useEffect(() => {
-    const fetchProductNames = async () => {
-        // First check if we already have the map from RecordsPage
-        if (record?.sku_product_map) {
-            setSkuProductMap(record.sku_product_map);
-            console.log("✅ Using SKU map from RecordsPage:", record.sku_product_map);
-            return;
-        }
-
-        // Otherwise fetch from category_listing
-        if (skuList.length === 0) return;
-
-        const skuCodes = skuList.map(item => item.sku_code).filter(Boolean);
-        if (skuCodes.length === 0) return;
-
-        try {
-            const { data: productData, error } = await supabase
-                .from("category_listing")
-                .select("sku_code, name")
-                .in("sku_code", skuCodes);
-
-            if (error) {
-                console.error("Error fetching product names:", error);
+    const [skuList, setSkuList] = useState([]);
+    useEffect(() => {
+        const fetchProductNames = async () => {
+            // First check if we already have the map from RecordsPage
+            if (record?.sku_product_map) {
+                setSkuProductMap(record.sku_product_map);
+                console.log("✅ Using SKU map from RecordsPage:", record.sku_product_map);
                 return;
             }
 
-            const map = {};
-            productData?.forEach(item => {
-                map[String(item.sku_code)] = item.name;
-            });
-            
-            setSkuProductMap(map);
-            console.log("✅ SKU Product Map loaded:", map);
-        } catch (err) {
-            console.error("Failed to fetch product names:", err);
-        }
-    };
+            // Otherwise fetch from category_listing
+            if (skuList.length === 0) return;
 
-    fetchProductNames();
-}, [skuList, record]);
-   
+            const skuCodes = skuList.map(item => item.sku_code).filter(Boolean);
+            if (skuCodes.length === 0) return;
+
+            try {
+                const { data: productData, error } = await supabase
+                    .from("category_listing")
+                    .select("sku_code, name")
+                    .in("sku_code", skuCodes);
+
+                if (error) {
+                    console.error("Error fetching product names:", error);
+                    return;
+                }
+
+                const map = {};
+                productData?.forEach(item => {
+                    map[String(item.sku_code)] = item.name;
+                });
+
+                setSkuProductMap(map);
+                console.log("✅ SKU Product Map loaded:", map);
+            } catch (err) {
+                console.error("Failed to fetch product names:", err);
+            }
+        };
+
+        fetchProductNames();
+    }, [skuList, record]);
+
 
     useEffect(() => {
         const fetchSKUList = async () => {
@@ -269,378 +269,378 @@ useEffect(() => {
 
 
 
-const handleExportPDF = async () => {
-    setIsGeneratingPDF(true);
-    try {
-        const data = fullRecord || record || {};
-        const pwpCode = data.regularpwpcode || data.cover_code || data.code || 'N/A';
-        const recordType = data.source === 'cover_pwp' ? 'Cover PWP' : 'Regular PWP';
-
-        const doc = new jsPDF('p', 'mm', 'a4');
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const margin = 15;
-        let yPos = 10;
-
-        // ===== Header Section with Logo and Info Box =====
+    const handleExportPDF = async () => {
+        setIsGeneratingPDF(true);
         try {
-            // Add logo image to PDF (left side)
-            doc.addImage(logomega, 'PNG', margin, yPos, 60, 18);
-        } catch (error) {
-            console.warn('Could not add logo to PDF:', error);
-        }
+            const data = fullRecord || record || {};
+            const pwpCode = data.regularpwpcode || data.cover_code || data.code || 'N/A';
+            const recordType = data.source === 'cover_pwp' ? 'Cover PWP' : 'Regular PWP';
 
-        // PWP Code, Type, and Status Box on the right side
-        const boxX = pageWidth - margin - 65;
-        const boxY = yPos;
-        const boxWidth = 65;
-        const boxHeight = 24;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const margin = 15;
+            let yPos = 10;
 
-        // Draw rounded border for info box
-        doc.setDrawColor(25, 118, 210);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 2, 2);
-
-        // Add light background
-        doc.setFillColor(240, 248, 255);
-        doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 2, 2, 'F');
-        doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 2, 2, 'S');
-
-        let rightY = boxY + 6;
-        const labelX = boxX + 3;
-        const valueX = boxX + 22;
-
-        doc.setFontSize(8);
-        doc.setTextColor(0, 0, 0);
-        
-        // PWP Code
-        doc.setFont('helvetica', 'bold');
-        doc.text('PWP Code:', labelX, rightY);
-        doc.setFont('helvetica', 'normal');
-        doc.text(pwpCode, valueX, rightY);
-        rightY += 6;
-
-        // Type
-        doc.setFont('helvetica', 'bold');
-        doc.text('Type:', labelX, rightY);
-        doc.setFont('helvetica', 'normal');
-        doc.text(recordType, valueX, rightY);
-        rightY += 6;
-
-        // Status with colored badge
-        doc.setFont('helvetica', 'bold');
-        doc.text('Status:', labelX, rightY);
-        
-        const statusText = data.approval_status || 'Pending';
-        const statusColors = {
-            'Approved': [46, 125, 50],
-            'Pending': [255, 152, 0],
-            'Declined': [211, 47, 47],
-            'Sent Back': [245, 124, 0]
-        };
-        const statusColor = statusColors[statusText] || [138, 109, 59];
-        
-        doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
-        doc.setFont('helvetica', 'bold');
-        doc.text(statusText, valueX, rightY);
-
-        yPos += 30;
-
-        // ===== Horizontal line separator =====
-        doc.setDrawColor(200, 200, 200);
-        doc.setLineWidth(0.3);
-        doc.line(margin, yPos, pageWidth - margin, yPos);
-        yPos += 8;
-
-
-
-        // Helper function to check if we need a new page
-        const checkPageBreak = (requiredHeight) => {
-            if (yPos + requiredHeight > pageHeight - 20) {
-                doc.addPage();
-                yPos = 20;
-                return true;
+            // ===== Header Section with Logo and Info Box =====
+            try {
+                // Add logo image to PDF (left side)
+                doc.addImage(logomega, 'PNG', margin, yPos, 60, 18);
+            } catch (error) {
+                console.warn('Could not add logo to PDF:', error);
             }
-            return false;
-        };
 
-        // Helper to sanitize text for PDF (remove special characters that cause encoding issues)
-        const sanitizeForPDF = (text) => {
-            if (!text) return '-';
-            return String(text)
-                .replace(/₱/g, 'PHP ')
-                .replace(/[^\x00-\x7F]/g, '')
-                .trim();
-        };
+            // PWP Code, Type, and Status Box on the right side
+            const boxX = pageWidth - margin - 65;
+            const boxY = yPos;
+            const boxWidth = 65;
+            const boxHeight = 24;
 
-        // Helper to draw a simple table
-        const drawTable = (headers, rows, colWidths) => {
-            const rowHeight = 10;
-            const headerHeight = 12;
-            
-            // Draw header with gradient effect
-            doc.setFillColor(25, 118, 210);
-            doc.roundedRect(margin, yPos, pageWidth - 2 * margin, headerHeight, 1, 1, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'bold');
-            
-            let xPos = margin + 4;
-            headers.forEach((header, i) => {
-                doc.text(String(header), xPos, yPos + 8);
-                xPos += colWidths[i];
-            });
-            
-            yPos += headerHeight;
-            
-            // Draw rows with alternating colors
-            doc.setTextColor(0, 0, 0);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(9);
-            
-            rows.forEach((row, rowIndex) => {
-                checkPageBreak(rowHeight + 2);
-                
-                // Alternating row colors
-                if (rowIndex % 2 === 0) {
-                    doc.setFillColor(248, 249, 250);
-                } else {
-                    doc.setFillColor(255, 255, 255);
-                }
-                doc.rect(margin, yPos, pageWidth - 2 * margin, rowHeight, 'F');
-                
-                // Draw subtle row border
-                doc.setDrawColor(230, 230, 230);
-                doc.setLineWidth(0.1);
-                doc.line(margin, yPos + rowHeight, pageWidth - margin, yPos + rowHeight);
-                
-                xPos = margin + 4;
-                row.forEach((cell, i) => {
-                    const text = sanitizeForPDF(cell);
-                    const maxWidth = colWidths[i] - 6;
-                    
-                    // Bold for TOTAL row
-                    if (String(cell).toUpperCase() === 'TOTAL') {
-                        doc.setFont('helvetica', 'bold');
-                        doc.setTextColor(25, 118, 210);
-                    }
-                    
-                    const lines = doc.splitTextToSize(text, maxWidth);
-                    doc.text(lines[0], xPos, yPos + 7);
-                    
-                    // Reset font
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(0, 0, 0);
-                    
-                    xPos += colWidths[i];
-                });
-                
-                yPos += rowHeight;
-            });
-            
-            // Draw table border
+            // Draw rounded border for info box
             doc.setDrawColor(25, 118, 210);
             doc.setLineWidth(0.5);
-            doc.rect(margin, yPos - (rows.length * rowHeight) - headerHeight, pageWidth - 2 * margin, (rows.length * rowHeight) + headerHeight);
-            
-            yPos += 8;
-        };
+            doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 2, 2);
 
-        // ===== Basic Info Section =====
-        checkPageBreak(40);
-        doc.setFontSize(13);
-        doc.setFillColor(25, 118, 210);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
-        doc.text('BASIC INFORMATION', margin + 5, yPos + 7);
-        yPos += 14;
+            // Add light background
+            doc.setFillColor(240, 248, 255);
+            doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 2, 2, 'F');
+            doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 2, 2, 'S');
 
-        const basicInfo = [];
-        
-        if (data.source === 'regular_pwp') {
-            basicInfo.push(
-                ['PWP Type', data.pwptype || data.pwp_type || '-'],
-                ['Branch Type', data.branchType || '-'],
-                ['Distributor', distributorName || data.distributor || '-'],
-                ['Account Type', formatArray(data.accountType)],
-                ['Activity', activityName || data.activity || '-'],
-                ['Promo Scheme', data.promoScheme || '-'],
-                ['Duration From', formatDate(data.activityDurationFrom)],
-                ['Duration To', formatDate(data.activityDurationTo)],
-                ['Credit Budget', formatCurrency(data.credit_budget)],
-                ['Remaining Balance', formatCurrency(data.remaining_balance)]
-            );
-        } else {
-            basicInfo.push(
-                ['Cover Code', data.cover_code || '-'],
-                ['Distributor Code', data.distributor_code || '-'],
-                ['PWP Type', data.pwp_type || '-'],
-                ['Amount Budget', formatCurrency(data.amount_badget)],
-                ['Notification', data.notification ? 'Enabled' : 'Disabled']
-            );
-        }
+            let rightY = boxY + 6;
+            const labelX = boxX + 3;
+            const valueX = boxX + 22;
 
-        drawTable(['Field', 'Value'], basicInfo, [60, 120]);
-
-        // ===== Objective (if exists) =====
-        if (data.source === 'regular_pwp' && data.objective) {
-            checkPageBreak(30);
-            
-            // Objective box
-            doc.setFillColor(250, 250, 250);
-            doc.setDrawColor(200, 200, 200);
-            doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 8, 1, 1, 'FD');
-            
-            doc.setFontSize(11);
-            doc.setTextColor(25, 118, 210);
-            doc.setFont('helvetica', 'bold');
-            doc.text('Objective:', margin + 3, yPos + 6);
-            yPos += 12;
-            
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(9);
+            doc.setFontSize(8);
             doc.setTextColor(0, 0, 0);
-            const splitObjective = doc.splitTextToSize(data.objective, pageWidth - 2 * margin - 6);
-            
-            // Draw background for objective text
-            const objHeight = splitObjective.length * 5 + 4;
-            doc.setFillColor(255, 255, 255);
-            doc.roundedRect(margin, yPos - 2, pageWidth - 2 * margin, objHeight, 1, 1, 'F');
-            
-            doc.text(splitObjective, margin + 3, yPos);
-            yPos += splitObjective.length * 5 + 8;
-        }
 
-        // ===== Account List =====
-        if (accountList && accountList.length > 0) {
+            // PWP Code
+            doc.setFont('helvetica', 'bold');
+            doc.text('PWP Code:', labelX, rightY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(pwpCode, valueX, rightY);
+            rightY += 6;
+
+            // Type
+            doc.setFont('helvetica', 'bold');
+            doc.text('Type:', labelX, rightY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(recordType, valueX, rightY);
+            rightY += 6;
+
+            // Status with colored badge
+            doc.setFont('helvetica', 'bold');
+            doc.text('Status:', labelX, rightY);
+
+            const statusText = data.approval_status || 'Pending';
+            const statusColors = {
+                'Approved': [46, 125, 50],
+                'Pending': [255, 152, 0],
+                'Declined': [211, 47, 47],
+                'Sent Back': [245, 124, 0]
+            };
+            const statusColor = statusColors[statusText] || [138, 109, 59];
+
+            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+            doc.setFont('helvetica', 'bold');
+            doc.text(statusText, valueX, rightY);
+
+            yPos += 30;
+
+            // ===== Horizontal line separator =====
+            doc.setDrawColor(200, 200, 200);
+            doc.setLineWidth(0.3);
+            doc.line(margin, yPos, pageWidth - margin, yPos);
+            yPos += 8;
+
+
+
+            // Helper function to check if we need a new page
+            const checkPageBreak = (requiredHeight) => {
+                if (yPos + requiredHeight > pageHeight - 20) {
+                    doc.addPage();
+                    yPos = 20;
+                    return true;
+                }
+                return false;
+            };
+
+            // Helper to sanitize text for PDF (remove special characters that cause encoding issues)
+            const sanitizeForPDF = (text) => {
+                if (!text) return '-';
+                return String(text)
+                    .replace(/₱/g, 'PHP ')
+                    .replace(/[^\x00-\x7F]/g, '')
+                    .trim();
+            };
+
+            // Helper to draw a simple table
+            const drawTable = (headers, rows, colWidths) => {
+                const rowHeight = 10;
+                const headerHeight = 12;
+
+                // Draw header with gradient effect
+                doc.setFillColor(25, 118, 210);
+                doc.roundedRect(margin, yPos, pageWidth - 2 * margin, headerHeight, 1, 1, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
+
+                let xPos = margin + 4;
+                headers.forEach((header, i) => {
+                    doc.text(String(header), xPos, yPos + 8);
+                    xPos += colWidths[i];
+                });
+
+                yPos += headerHeight;
+
+                // Draw rows with alternating colors
+                doc.setTextColor(0, 0, 0);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+
+                rows.forEach((row, rowIndex) => {
+                    checkPageBreak(rowHeight + 2);
+
+                    // Alternating row colors
+                    if (rowIndex % 2 === 0) {
+                        doc.setFillColor(248, 249, 250);
+                    } else {
+                        doc.setFillColor(255, 255, 255);
+                    }
+                    doc.rect(margin, yPos, pageWidth - 2 * margin, rowHeight, 'F');
+
+                    // Draw subtle row border
+                    doc.setDrawColor(230, 230, 230);
+                    doc.setLineWidth(0.1);
+                    doc.line(margin, yPos + rowHeight, pageWidth - margin, yPos + rowHeight);
+
+                    xPos = margin + 4;
+                    row.forEach((cell, i) => {
+                        const text = sanitizeForPDF(cell);
+                        const maxWidth = colWidths[i] - 6;
+
+                        // Bold for TOTAL row
+                        if (String(cell).toUpperCase() === 'TOTAL') {
+                            doc.setFont('helvetica', 'bold');
+                            doc.setTextColor(25, 118, 210);
+                        }
+
+                        const lines = doc.splitTextToSize(text, maxWidth);
+                        doc.text(lines[0], xPos, yPos + 7);
+
+                        // Reset font
+                        doc.setFont('helvetica', 'normal');
+                        doc.setTextColor(0, 0, 0);
+
+                        xPos += colWidths[i];
+                    });
+
+                    yPos += rowHeight;
+                });
+
+                // Draw table border
+                doc.setDrawColor(25, 118, 210);
+                doc.setLineWidth(0.5);
+                doc.rect(margin, yPos - (rows.length * rowHeight) - headerHeight, pageWidth - 2 * margin, (rows.length * rowHeight) + headerHeight);
+
+                yPos += 8;
+            };
+
+            // ===== Basic Info Section =====
             checkPageBreak(40);
             doc.setFontSize(13);
             doc.setFillColor(25, 118, 210);
             doc.setTextColor(255, 255, 255);
             doc.setFont('helvetica', 'bold');
             doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
-            doc.text('ACCOUNTS BUDGET', margin + 5, yPos + 7);
+            doc.text('BASIC INFORMATION', margin + 5, yPos + 7);
             yPos += 14;
 
-            const accountTableData = accountList.map(item => [
-                item.account_name || '-',
-                formatCurrency(item.budget),
-                formatCurrency(item.total_budget)
-            ]);
+            const basicInfo = [];
 
-            const totalBudget = accountList.reduce(
-                (sum, item) => sum + Number(item.total_budget || 0),
-                0
-            );
-            accountTableData.push(['TOTAL', '', formatCurrency(totalBudget)]);
+            if (data.source === 'regular_pwp') {
+                basicInfo.push(
+                    ['PWP Type', data.pwptype || data.pwp_type || '-'],
+                    ['Branch Type', data.branchType || '-'],
+                    ['Distributor', distributorName || data.distributor || '-'],
+                    ['Account Type', formatArray(data.accountType)],
+                    ['Activity', activityName || data.activity || '-'],
+                    ['Promo Scheme', data.promoScheme || '-'],
+                    ['Duration From', formatDate(data.activityDurationFrom)],
+                    ['Duration To', formatDate(data.activityDurationTo)],
+                    ['Credit Budget', formatCurrency(data.credit_budget)],
+                    ['Remaining Balance', formatCurrency(data.remaining_balance)]
+                );
+            } else {
+                basicInfo.push(
+                    ['Cover Code', data.cover_code || '-'],
+                    ['Distributor Code', data.distributor_code || '-'],
+                    ['PWP Type', data.pwp_type || '-'],
+                    ['Amount Budget', formatCurrency(data.amount_badget)],
+                    ['Notification', data.notification ? 'Enabled' : 'Disabled']
+                );
+            }
 
-            drawTable(['Account Name', 'Budget', 'Total Budget'], accountTableData, [70, 55, 55]);
+            drawTable(['Field', 'Value'], basicInfo, [60, 120]);
+
+            // ===== Objective (if exists) =====
+            if (data.source === 'regular_pwp' && data.objective) {
+                checkPageBreak(30);
+
+                // Objective box
+                doc.setFillColor(250, 250, 250);
+                doc.setDrawColor(200, 200, 200);
+                doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 8, 1, 1, 'FD');
+
+                doc.setFontSize(11);
+                doc.setTextColor(25, 118, 210);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Objective:', margin + 3, yPos + 6);
+                yPos += 12;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(0, 0, 0);
+                const splitObjective = doc.splitTextToSize(data.objective, pageWidth - 2 * margin - 6);
+
+                // Draw background for objective text
+                const objHeight = splitObjective.length * 5 + 4;
+                doc.setFillColor(255, 255, 255);
+                doc.roundedRect(margin, yPos - 2, pageWidth - 2 * margin, objHeight, 1, 1, 'F');
+
+                doc.text(splitObjective, margin + 3, yPos);
+                yPos += splitObjective.length * 5 + 8;
+            }
+
+            // ===== Account List =====
+            if (accountList && accountList.length > 0) {
+                checkPageBreak(40);
+                doc.setFontSize(13);
+                doc.setFillColor(25, 118, 210);
+                doc.setTextColor(255, 255, 255);
+                doc.setFont('helvetica', 'bold');
+                doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
+                doc.text('ACCOUNTS BUDGET', margin + 5, yPos + 7);
+                yPos += 14;
+
+                const accountTableData = accountList.map(item => [
+                    item.account_name || '-',
+                    formatCurrency(item.budget),
+                    formatCurrency(item.total_budget)
+                ]);
+
+                const totalBudget = accountList.reduce(
+                    (sum, item) => sum + Number(item.total_budget || 0),
+                    0
+                );
+                accountTableData.push(['TOTAL', '', formatCurrency(totalBudget)]);
+
+                drawTable(['Account Name', 'Budget', 'Total Budget'], accountTableData, [70, 55, 55]);
+            }
+
+            // ===== SKU List =====
+            if (skuList && skuList.length > 0) {
+                checkPageBreak(40);
+                doc.setFontSize(13);
+                doc.setFillColor(25, 118, 210);
+                doc.setTextColor(255, 255, 255);
+                doc.setFont('helvetica', 'bold');
+                doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
+                doc.text('SKU INFORMATION', margin + 5, yPos + 7);
+                yPos += 14;
+
+                const skuTableData = skuList.map(item => {
+                    const productName = skuProductMap[String(item.sku_code)] || '-';
+                    return [
+                        item.sku_code || '-',
+                        productName,  // ✅ ADD PRODUCT NAME HERE
+                        item.account_name || '-',
+                        formatCurrency(item.srp),
+                        item.qty || '-',
+                        item.uom || '-',
+                        formatCurrency(item.billing_amount),
+                        formatCurrency(item.discount),
+                        formatCurrency(item.total_amount)
+                    ];
+                });
+
+                const totalAmount = skuList.reduce(
+                    (sum, item) => sum + Number(item.total_amount || 0),
+                    0
+                );
+                skuTableData.push(['', '', '', '', '', '', '', 'TOTAL', formatCurrency(totalAmount)]);
+
+                drawTable(
+                    ['SKU', 'Product Name', 'Account', 'SRP', 'Qty', 'UOM', 'Billing', 'Disc', 'Total'],
+                    skuTableData,
+                    [18, 35, 22, 18, 12, 12, 18, 18, 22]  // ✅ Adjusted column widths
+                );
+            }
+            // ===== System Information =====
+            checkPageBreak(30);
+            doc.setFontSize(13);
+            doc.setFillColor(25, 118, 210);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
+            doc.text('SYSTEM INFORMATION', margin + 5, yPos + 7);
+            yPos += 14;
+
+            const systemInfo = [
+                ['Assigned By', creatorName || 'Unknown'],
+                ['Created Date', formatDateTime(data.created_at)]
+            ];
+
+            drawTable(['Field', 'Value'], systemInfo, [60, 120]);
+
+            // ===== Footer on all pages =====
+            const pageCount = doc.internal.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+
+                // Footer line
+                doc.setDrawColor(25, 118, 210);
+                doc.setLineWidth(0.5);
+                doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
+
+                doc.setFontSize(8);
+                doc.setTextColor(100, 100, 100);
+                doc.setFont('helvetica', 'normal');
+
+                // Page number
+                doc.text(
+                    `Page ${i} of ${pageCount}`,
+                    pageWidth / 2,
+                    pageHeight - 10,
+                    { align: 'center' }
+                );
+
+                // Generated date
+                doc.text(
+                    `Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+                    margin,
+                    pageHeight - 10
+                );
+
+                // Company/System name
+                doc.text(
+                    'PWP System',
+                    pageWidth - margin,
+                    pageHeight - 10,
+                    { align: 'right' }
+                );
+            }
+
+            // ===== Save File =====
+            doc.save(`PWP_${pwpCode}_${new Date().toISOString().split('T')[0]}.pdf`);
+            console.log('✅ PDF generated successfully');
+        } catch (error) {
+            console.error('❌ PDF generation failed:', error);
+            alert('Error generating PDF: ' + error.message);
+        } finally {
+            setIsGeneratingPDF(false);
         }
-
-        // ===== SKU List =====
-     if (skuList && skuList.length > 0) {
-    checkPageBreak(40);
-    doc.setFontSize(13);
-    doc.setFillColor(25, 118, 210);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
-    doc.text('SKU INFORMATION', margin + 5, yPos + 7);
-    yPos += 14;
-
-    const skuTableData = skuList.map(item => {
-        const productName = skuProductMap[String(item.sku_code)] || '-';
-        return [
-            item.sku_code || '-',
-            productName,  // ✅ ADD PRODUCT NAME HERE
-            item.account_name || '-',
-            formatCurrency(item.srp),
-            item.qty || '-',
-            item.uom || '-',
-            formatCurrency(item.billing_amount),
-            formatCurrency(item.discount),
-            formatCurrency(item.total_amount)
-        ];
-    });
-
-    const totalAmount = skuList.reduce(
-        (sum, item) => sum + Number(item.total_amount || 0),
-        0
-    );
-    skuTableData.push(['', '', '', '', '', '', '', 'TOTAL', formatCurrency(totalAmount)]);
-
-    drawTable(
-        ['SKU', 'Product Name', 'Account', 'SRP', 'Qty', 'UOM', 'Billing', 'Disc', 'Total'],
-        skuTableData,
-        [18, 35, 22, 18, 12, 12, 18, 18, 22]  // ✅ Adjusted column widths
-    );
-}
-        // ===== System Information =====
-        checkPageBreak(30);
-        doc.setFontSize(13);
-        doc.setFillColor(25, 118, 210);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 10, 1, 1, 'F');
-        doc.text('SYSTEM INFORMATION', margin + 5, yPos + 7);
-        yPos += 14;
-
-        const systemInfo = [
-            ['Assigned By', creatorName || 'Unknown'],
-            ['Created Date', formatDateTime(data.created_at)]
-        ];
-
-        drawTable(['Field', 'Value'], systemInfo, [60, 120]);
-
-        // ===== Footer on all pages =====
-        const pageCount = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= pageCount; i++) {
-            doc.setPage(i);
-            
-            // Footer line
-            doc.setDrawColor(25, 118, 210);
-            doc.setLineWidth(0.5);
-            doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
-            
-            doc.setFontSize(8);
-            doc.setTextColor(100, 100, 100);
-            doc.setFont('helvetica', 'normal');
-            
-            // Page number
-            doc.text(
-                `Page ${i} of ${pageCount}`,
-                pageWidth / 2,
-                pageHeight - 10,
-                { align: 'center' }
-            );
-            
-            // Generated date
-            doc.text(
-                `Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
-                margin,
-                pageHeight - 10
-            );
-            
-            // Company/System name
-            doc.text(
-                'PWP System',
-                pageWidth - margin,
-                pageHeight - 10,
-                { align: 'right' }
-            );
-        }
-
-        // ===== Save File =====
-        doc.save(`PWP_${pwpCode}_${new Date().toISOString().split('T')[0]}.pdf`);
-        console.log('✅ PDF generated successfully');
-    } catch (error) {
-        console.error('❌ PDF generation failed:', error);
-        alert('Error generating PDF: ' + error.message);
-    } finally {
-        setIsGeneratingPDF(false);
-    }
-};
+    };
     // NEW: Excel Export
     const handleExportExcel = () => {
         setIsGeneratingExcel(true);
@@ -1261,7 +1261,6 @@ const handleExportPDF = async () => {
                                             >
                                                 <th style={{ padding: "10px", border: "1px solid #ddd" }}>Account Name</th>
                                                 <th style={{ padding: "10px", border: "1px solid #ddd" }}>Budget</th>
-                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total Budget</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1276,16 +1275,12 @@ const handleExportPDF = async () => {
                                                     <td style={{ padding: "8px", border: "1px solid #ddd" }}>
                                                         ₱{Number(item.budget).toLocaleString()}
                                                     </td>
-                                                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>
-                                                        ₱{Number(item.total_budget).toLocaleString()}
-                                                    </td>
                                                 </tr>
                                             ))}
 
                                             {/* Total Row */}
                                             <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "bold" }}>
                                                 <td
-                                                    colSpan="2"
                                                     style={{ padding: "10px", border: "1px solid #ddd", textAlign: "right" }}
                                                 >
                                                     TOTAL:
@@ -1293,7 +1288,86 @@ const handleExportPDF = async () => {
                                                 <td style={{ padding: "10px", border: "1px solid #ddd" }}>
                                                     ₱
                                                     {accountList
-                                                        .reduce((sum, item) => sum + Number(item.total_budget || 0), 0)
+                                                        .reduce((sum, item) => sum + Number(item.budget || 0), 0)
+                                                        .toLocaleString()}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                </div>
+                            </>
+                        )}
+
+
+                        {data.source === "regular_pwp" && data.sku && skuList.length > 0 && (
+                            <>
+                                <SectionHeader title="SKU Information" />
+                                <div style={{ overflowX: "auto", marginBottom: "30px" }}>
+                                    <table
+                                        style={{
+                                            width: "100%",
+                                            borderCollapse: "collapse",
+                                            fontSize: "14px",
+                                        }}
+                                    >
+                                        <thead>
+                                            <tr
+                                                style={{
+                                                    backgroundColor: "#1976d2",
+                                                    color: "white",
+                                                    textAlign: "left",
+                                                }}
+                                            >
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>SKU Code</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Product Name</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Account Name</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>SRP</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Qty</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>UOM</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Billing Amount</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Discount</th>
+                                                <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {skuList.map((item, idx) => {
+                                                const productName = skuProductMap[String(item.sku_code)] || '-';
+
+                                                return (
+                                                    <tr
+                                                        key={idx}
+                                                        style={{
+                                                            backgroundColor: idx % 2 === 0 ? "#fafafa" : "#ffffff",
+                                                        }}
+                                                    >
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.sku_code}</td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd", fontWeight: "500" }}>
+                                                            {productName}
+                                                        </td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.account_name}</td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.srp).toLocaleString()}</td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.qty}</td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.uom}</td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.billing_amount).toLocaleString()}</td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.discount).toLocaleString()}</td>
+                                                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.total_amount).toLocaleString()}</td>
+                                                    </tr>
+                                                );
+                                            })}
+
+                                            {/* Total Row */}
+                                            <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "bold" }}>
+                                                <td
+                                                    colSpan="8"
+                                                    style={{ padding: "10px", border: "1px solid #ddd", textAlign: "right" }}
+                                                >
+                                                    TOTAL:
+                                                </td>
+                                                <td style={{ padding: "10px", border: "1px solid #ddd" }}>
+                                                    ₱
+                                                    {skuList
+                                                        .reduce((sum, item) => sum + Number(item.total_amount || 0), 0)
                                                         .toLocaleString()}
                                                 </td>
                                             </tr>
@@ -1302,84 +1376,6 @@ const handleExportPDF = async () => {
                                 </div>
                             </>
                         )}
-
-
-                       {data.source === "regular_pwp" && data.sku && skuList.length > 0 && (
-    <>
-        <SectionHeader title="SKU Information" />
-        <div style={{ overflowX: "auto", marginBottom: "30px" }}>
-            <table
-                style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    fontSize: "14px",
-                }}
-            >
-                <thead>
-                    <tr
-                        style={{
-                            backgroundColor: "#1976d2",
-                            color: "white",
-                            textAlign: "left",
-                        }}
-                    >
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>SKU Code</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Product Name</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Account Name</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>SRP</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Qty</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>UOM</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Billing Amount</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Discount</th>
-                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {skuList.map((item, idx) => {
-                        const productName = skuProductMap[String(item.sku_code)] || '-';
-                        
-                        return (
-                            <tr
-                                key={idx}
-                                style={{
-                                    backgroundColor: idx % 2 === 0 ? "#fafafa" : "#ffffff",
-                                }}
-                            >
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.sku_code}</td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd", fontWeight: "500" }}>
-                                    {productName}
-                                </td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.account_name}</td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.srp).toLocaleString()}</td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.qty}</td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>{item.uom}</td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.billing_amount).toLocaleString()}</td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.discount).toLocaleString()}</td>
-                                <td style={{ padding: "8px", border: "1px solid #ddd" }}>₱{Number(item.total_amount).toLocaleString()}</td>
-                            </tr>
-                        );
-                    })}
-
-                    {/* Total Row */}
-                    <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "bold" }}>
-                        <td
-                            colSpan="8"
-                            style={{ padding: "10px", border: "1px solid #ddd", textAlign: "right" }}
-                        >
-                            TOTAL:
-                        </td>
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                            ₱
-                            {skuList
-                                .reduce((sum, item) => sum + Number(item.total_amount || 0), 0)
-                                .toLocaleString()}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </>
-)}
 
                         {/* Footer */}
                         <div style={{
@@ -1409,10 +1405,10 @@ const handleExportPDF = async () => {
 
                     </div>
                 </div>
-            </div>
+            </div >
 
             {/* Print Styles */}
-            <style>{`
+            < style > {`
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
@@ -1445,7 +1441,7 @@ const handleExportPDF = async () => {
             size: A4;
           }
         }
-      `}</style>
+      `}</style >
         </>
     );
 }
