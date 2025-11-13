@@ -44,21 +44,11 @@ export default function AccountsListManager() {
         status: true
     });
 
-    const itemsPerPage = 7;
-    const exportMenuRef = useRef(null);
-    const importMenuRef = useRef(null);
-    const [totalCount, setTotalCount] = useState(0); // 👈 Add this line
-    const [duplicatesChecked, setDuplicatesChecked] = useState(false); // ✅ track if check has been done
-
 
     // 🔹 Handle file selection
 
     // 🔹 Delete a row in preview
-    const deleteImportRow = (index) => {
-        const newData = [...importData];
-        newData.splice(index, 1);
-        setImportData(newData);
-    };
+
     const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
     // 🔹 Check duplicates
     const checkExistingRecords = async () => {
@@ -559,6 +549,12 @@ export default function AccountsListManager() {
     const [fileName, setFileName] = useState("");
     const [importing, setImporting] = useState(false);
     const [checking, setChecking] = useState(false);
+    const itemsPerPage = 7;
+    const exportMenuRef = useRef(null);
+    const importMenuRef = useRef(null);
+    const [totalCount, setTotalCount] = useState(0); // 👈 Add this line
+    const [duplicatesChecked, setDuplicatesChecked] = useState(false); // ✅ track if check has been done
+
 
     // 🔹 Pagination
     const [currentPageExcel, setCurrentPageExcel] = useState(1);
@@ -582,7 +578,7 @@ export default function AccountsListManager() {
     const fetchAndCleanData = async (page = 1, search = "") => {
         try {
             setLoading(true);
-            const batchSize = 8; // show 8 rows at a time
+            const batchSize = itemsPerPage; // ✅ CHANGE: Use itemsPerPage instead of fixed 8
             const offset = (page - 1) * batchSize;
 
             let query = supabase
@@ -605,17 +601,8 @@ export default function AccountsListManager() {
             // 🧩 Clean duplicates
             const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
 
-            // 🧩 Update data
-            if (page === 1) {
-                setData(uniqueData);
-            } else {
-                setData((prev) => {
-                    const existingIds = new Set(prev.map((x) => x.id));
-                    const newRows = uniqueData.filter((x) => !existingIds.has(x.id));
-                    return [...prev, ...newRows];
-                });
-            }
-
+            // ✅ FIXED: Always replace data for current page, don't append
+            setData(uniqueData);
             setTotalCount(count || 0);
             setLoading(false);
         } catch (err) {
@@ -625,32 +612,25 @@ export default function AccountsListManager() {
         }
     };
 
-
+    // ✅ STEP 2: UPDATE useEffect for search - reset to page 1
     useEffect(() => {
         const delay = setTimeout(() => {
+            setCurrentPage(1); // ✅ ADD: Reset to page 1 when searching
             fetchAndCleanData(1, searchTerm);
-        }, 400); // wait 400ms after typing stops
+        }, 400);
 
         return () => clearTimeout(delay);
     }, [searchTerm]);
 
 
+
     // 🔍 Filter logic
-    const filteredData = data.filter((row) => {
-        if (!searchTerm.trim()) return true;
-        const search = searchTerm.toLowerCase();
-        return (
-            row.bp_name?.toLowerCase().includes(search) ||
-            row.mother_code?.toLowerCase().includes(search)
-        );
-    });
+
 
     // 🧮 Pagination (based on filtered data)
     const totalPages = Math.ceil(totalCount / itemsPerPage);
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
-
 
 
 
@@ -658,34 +638,34 @@ export default function AccountsListManager() {
         if (currentPage < totalPages) {
             const nextPage = currentPage + 1;
             setCurrentPage(nextPage);
-
-            // Fetch new data only if not loaded yet
-            const alreadyLoaded = data.length >= nextPage * itemsPerPage;
-            if (!alreadyLoaded) {
-                await fetchAndCleanData(nextPage);
-            }
+            await fetchAndCleanData(nextPage, searchTerm); // ✅ CHANGE: Always fetch
         }
     };
-    const handleFirstPage = () => {
-        if (currentPage !== 1) setCurrentPage(1);
+
+    // ✅ STEP 6: UPDATE handlePrevPage (ADD THIS if you don't have it)
+    const handlePrevPage = async () => {
+        if (currentPage > 1) {
+            const prevPage = currentPage - 1;
+            setCurrentPage(prevPage);
+            await fetchAndCleanData(prevPage, searchTerm);
+        }
     };
 
+    // ✅ STEP 7: UPDATE handleFirstPage
+    const handleFirstPage = async () => {
+        if (currentPage !== 1) {
+            setCurrentPage(1);
+            await fetchAndCleanData(1, searchTerm); // ✅ ADD: Fetch data
+        }
+    };
+
+    // ✅ STEP 8: ADD handleLastPage
     const handleLastPage = async () => {
         if (currentPage !== totalPages) {
             setCurrentPage(totalPages);
-
-            const alreadyLoaded = data.length >= totalPages * itemsPerPage;
-            if (!alreadyLoaded) {
-                await fetchAndCleanData(totalPages);
-            }
+            await fetchAndCleanData(totalPages, searchTerm);
         }
     };
-
-
-    const handlePrevPage = () => {
-        if (currentPage > 1) setCurrentPage((p) => p - 1);
-    };
-
 
     // ✅ Duplicate cleaner function (keeps first entry, deletes the rest)
     const autoRemoveDuplicatesOnLoad = async (data) => {
@@ -1074,96 +1054,7 @@ export default function AccountsListManager() {
     const [totalRows, setTotalRows] = useState(0);
     const [processedRows, setProcessedRows] = useState(0);
 
-    const handleImportClick = () => {
-        document.getElementById('excel-upload').click();
-    };
 
-    const handleImport = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        setUploading(true);
-        setCountdown(0);
-        setProgressPercent(0);
-        setProcessedRows(0);
-        setTotalRows(0);
-
-        try {
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const arr = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(arr, { type: 'array' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const sheetData = XLSX.utils.sheet_to_json(sheet);
-
-                if (!sheetData || sheetData.length === 0) {
-                    Swal.fire('Error', 'No data in Excel', 'error');
-                    setUploading(false);
-                    return;
-                }
-
-                setTotalRows(sheetData.length);
-
-                let addedCount = 0;
-                let updatedCount = 0;
-
-                for (let i = 0; i < sheetData.length; i++) {
-                    const row = sheetData[i];
-                    if (!row.distributor_code) continue;
-
-                    try {
-                        const { data: existing } = await supabase
-                            .from('Accounts_List')
-                            .select('id')
-                            .eq('distributor_code', row.distributor_code)
-                            .eq('mother_code', row.mother_code || null)
-                            .eq('bp_code', row.bp_code || null)
-                            .maybeSingle();
-
-                        if (existing) {
-                            await supabase
-                                .from('Accounts_List')
-                                .update({ ...row, updated_at: new Date().toISOString() })
-                                .eq('id', existing.id);
-                            updatedCount++;
-                        } else {
-                            await supabase
-                                .from('Accounts_List')
-                                .insert([{ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
-                            addedCount++;
-                        }
-
-                        const processed = i + 1;
-                        setProcessedRows(processed);
-                        setProgressPercent(Math.round((processed / sheetData.length) * 100));
-                    } catch (err) {
-                        console.error('Row error:', err);
-                    }
-                }
-
-                await fetchAndCleanData();
-
-                // Final 3-second countdown
-                let timer = 3;
-                const interval = setInterval(() => {
-                    setCountdown(timer);
-                    timer--;
-                    if (timer < 0) {
-                        clearInterval(interval);
-                        setUploading(false);
-                        Swal.fire('Complete', `Added: ${addedCount}, Updated: ${updatedCount}`, 'success');
-                    }
-                }, 1000);
-            };
-
-            reader.readAsArrayBuffer(file);
-        } catch (err) {
-            Swal.fire('Error', err.message, 'error');
-            setUploading(false);
-        } finally {
-            setShowImportMenu(false);
-        }
-    };
     // file: MasterdataBranch.jsx
     const readExcelFile = async (file) => {
         return new Promise((resolve, reject) => {
@@ -1180,37 +1071,11 @@ export default function AccountsListManager() {
         });
     };
 
-    const handleImportExcel = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const data = await readExcelFile(file); // parse using SheetJS or similar
-        // Save data as-is to your Accounts_List or process as needed
-    };
-
 
     const [showExcelModal, setShowExcelModal] = useState(false);
 
 
 
-    // Add this inside your component
-    const fetchAccountsList = async () => {
-        try {
-            const { data, error } = await supabase
-                .from('Accounts_List')
-                .select('*')
-                .order('id', { ascending: false });
-
-            if (error) {
-                console.error('Error fetching accounts:', error);
-                return;
-            }
-
-            setAccountsData(data || []); // store full table data
-        } catch (err) {
-            console.error(err);
-        }
-    };
 
     const [accountsData, setAccountsData] = useState([]); // full table data
 
@@ -2114,9 +1979,15 @@ export default function AccountsListManager() {
                             </tr>
                         )}
 
-                        {/* 🧭 Display Data (Filtered + Paginated) */}
-                        {(showAll ? filteredData : currentItems).length ? (
-                            (showAll ? filteredData : currentItems).map((row) => (
+                        {/* ✅ DISPLAY DATA - ISANG BESES LANG! */}
+                        {loading ? (
+                            <tr>
+                                <td colSpan={8} style={{ textAlign: 'center', padding: 20 }}>
+                                    Loading...
+                                </td>
+                            </tr>
+                        ) : data.length > 0 ? (
+                            data.map((row) => (
                                 <tr
                                     key={row.id}
                                     style={{
@@ -2125,9 +1996,7 @@ export default function AccountsListManager() {
                                         cursor: 'pointer',
                                     }}
                                     onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f7ff')}
-                                    onMouseLeave={(e) =>
-                                        (e.currentTarget.style.background = 'transparent')
-                                    }
+                                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                                 >
                                     <td style={{ padding: '10px 15px' }}>
                                         {distributorMap[row.distributor_code] || row.distributor_code}
@@ -2139,9 +2008,10 @@ export default function AccountsListManager() {
                                     <td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
                                     <td style={{ padding: '10px 15px' }}>
                                         {agentMap[row.agent_code] || row.agent_code}
-
                                     </td>
-                                    <td style={{ padding: '10px 15px' }}>{groupMap[row.group_code] || row.group_code}</td>
+                                    <td style={{ padding: '10px 15px' }}>
+                                        {groupMap[row.group_code] || row.group_code}
+                                    </td>
                                     <td
                                         style={{
                                             padding: '10px 15px',
@@ -2197,23 +2067,18 @@ export default function AccountsListManager() {
                 </table>
 
                 {/* 📄 Pagination Controls (NO Last button) */}
-                {!showAll && totalCount > 0 && (
-                    <div
-                        style={{
-                            marginTop: 15,
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            gap: 10,
-                        }}
-                    >
+                {/* 📄 Pagination Controls */}
+                {!showAll && data.length > 0 && (
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', padding: '20px' }}>
                         <button
                             onClick={handleFirstPage}
                             disabled={currentPage === 1}
                             style={{
-                                padding: '6px 12px',
-                                borderRadius: 4,
-                                border: '1px solid #ccc',
+                                padding: '8px 16px',
+                                backgroundColor: currentPage === 1 ? '#ccc' : '#007BFF',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '4px',
                                 cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                             }}
                         >
@@ -2224,36 +2089,53 @@ export default function AccountsListManager() {
                             onClick={handlePrevPage}
                             disabled={currentPage === 1}
                             style={{
-                                padding: '6px 12px',
-                                borderRadius: 4,
-                                border: '1px solid #ccc',
+                                padding: '8px 16px',
+                                backgroundColor: currentPage === 1 ? '#ccc' : '#007BFF',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '4px',
                                 cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                             }}
                         >
                             Previous
                         </button>
 
-                        <span>
-                            Page {currentPage} of {totalPages}
+                        <span style={{ padding: '8px 16px', display: 'flex', alignItems: 'center' }}>
+                            Page {currentPage} of {totalPages || 1}
                         </span>
 
                         <button
                             onClick={handleNextPage}
                             disabled={currentPage === totalPages}
                             style={{
-                                padding: '6px 12px',
-                                borderRadius: 4,
-                                border: '1px solid #ccc',
+                                padding: '8px 16px',
+                                backgroundColor: currentPage === totalPages ? '#ccc' : '#007BFF',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '4px',
                                 cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
                             }}
                         >
                             Next
                         </button>
+
+                        <button
+                            onClick={handleLastPage}
+                            disabled={currentPage === totalPages}
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: currentPage === totalPages ? '#ccc' : '#007BFF',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            Last
+                        </button>
                     </div>
                 )}
             </div>
-
-
 
 
             {showModal && (
