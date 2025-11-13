@@ -208,6 +208,7 @@ function RecordsPage() {
       if (searchQuery) {
         filteredData = filteredData.filter(item => {
           const searchFields = [
+
             item.code,
             item.cover_code,
             item.regularpwpcode,
@@ -270,6 +271,7 @@ function RecordsPage() {
         }));
 
         setColumns([
+          "id",
           "pwp_code",
           "distributor",
           "activity",
@@ -561,64 +563,64 @@ function RecordsPage() {
 
     return userName ? userName.toUpperCase() : String(userId); // return uppercase or fallback
   };
-  const formatCellValue = (value, colName) => {
-    if (!value && value !== 0) return '-';
+const formatCellValue = (value, colName) => {
+  if (!value && value !== 0) return '-';
 
-    if (colName === "distributor" || colName === "distributor_code") {
-      const strCode = String(value).trim();
-      const name = distributorMap[strCode];
-      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
-      return name || strCode;
-    }
-
-    // Convert UserID to name for createForm column
-    if (colName === "createForm") {
-      return getUserNameById(value);
-    }
-
-    // Format credit_budget with peso sign and comma separators
-    if (colName === 'credit_budget' || colName === 'amountbadget') {
-      const numValue = Number(value);
-      if (isNaN(numValue)) return '-';
-      // Only show decimals if they're not .00
-      if (numValue % 1 === 0) {
-        return `₱ ${numValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-      }
-      return `₱ ${numValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-
-    if (colName === 'created_at' && value) {
-      try {
-        return new Date(value).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric"
-        });
-      } catch {
-        return value;
-      }
-    }
-
-    // Format approved_date with better styling
-    if (colName === 'approved_date' && value) {
-      try {
-        return new Date(value).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric"
-        });
-      } catch {
-        return value;
-      }
-    }
-
-    // Don't truncate branchType - let it wrap naturally
-    if (colName === 'branchType') {
-      return String(value);
-    }
-
+  // Add this for ID column
+  if (colName === 'id') {
     return String(value);
-  };
+  }
+
+  // ... rest of your existing formatCellValue code
+  if (colName === "distributor" || colName === "distributor_code") {
+    const strCode = String(value).trim();
+    const name = distributorMap[strCode];
+    return name || strCode;
+  }
+
+  if (colName === "createForm") {
+    return getUserNameById(value);
+  }
+
+  if (colName === 'credit_budget' || colName === 'amountbadget') {
+    const numValue = Number(value);
+    if (isNaN(numValue)) return '-';
+    if (numValue % 1 === 0) {
+      return `₱ ${numValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    }
+    return `₱ ${numValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  if (colName === 'created_at' && value) {
+    try {
+      return new Date(value).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    } catch {
+      return value;
+    }
+  }
+
+  if (colName === 'approved_date' && value) {
+    try {
+      return new Date(value).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    } catch {
+      return value;
+    }
+  }
+
+  if (colName === 'branchType') {
+    return String(value);
+  }
+
+  return String(value);
+};
   // Define styles object
   const styles = {
     td: {
