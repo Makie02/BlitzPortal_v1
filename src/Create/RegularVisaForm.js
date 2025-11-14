@@ -90,157 +90,157 @@ const RegularVisaForm = () => {
 
   const [allRegularPwpCodes, setAllRegularPwpCodes] = useState([]);
   const [loadingRegularPwpCodes, setLoadingRegularPwpCodes] = useState(true);
-// ---------------- Generate code with database lock ----------------
-// ---------------- Generate PREVIEW code (for UI display) ----------------
+  // ---------------- Generate code with database lock ----------------
+  // ---------------- Generate PREVIEW code (for UI display) ----------------
 
 
-const generatePreviewCode = (existingCodes) => {
-  const year = new Date().getFullYear();
-  const prefix = `R${year}-`;
+  const generatePreviewCode = (existingCodes) => {
+    const year = new Date().getFullYear();
+    const prefix = `R${year}-`;
 
-  const codesForYear = existingCodes
-    .filter((code) => code?.startsWith(prefix))
-    .map((code) => parseInt(code.replace(prefix, ""), 10))
-    .filter((num) => !isNaN(num));
+    const codesForYear = existingCodes
+      .filter((code) => code?.startsWith(prefix))
+      .map((code) => parseInt(code.replace(prefix, ""), 10))
+      .filter((num) => !isNaN(num));
 
-  const nextNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
-  return `${prefix}${nextNumber}`;
-};
+    const nextNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
+    return `${prefix}${nextNumber}`;
+  };
 
-/**
- * ✅ Atomically generate and claim next available code
- * Uses database transaction to prevent race conditions
- */
-const generateAndClaimCode = async (supabase) => {
-  const year = new Date().getFullYear();
-  const prefix = `R${year}-`;
-  const maxRetries = 5;
+  /**
+   * ✅ Atomically generate and claim next available code
+   * Uses database transaction to prevent race conditions
+   */
+  const generateAndClaimCode = async (supabase) => {
+    const year = new Date().getFullYear();
+    const prefix = `R${year}-`;
+    const maxRetries = 5;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`🔄 Attempt ${attempt}/${maxRetries}: Generating code...`);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Attempt ${attempt}/${maxRetries}: Generating code...`);
 
-      // Add small random delay to reduce collision probability
-      if (attempt > 1) {
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 300 + 100));
-      }
-
-      // 1️⃣ Get fresh max number from database
-      const { data, error } = await supabase
-        .from("regular_pwp")
-        .select("regularpwpcode")
-        .ilike("regularpwpcode", `${prefix}%`)
-        .order("created_at", { ascending: false });
-
-      if (error && error.code !== "PGRST116") throw error;
-
-      let maxNumber = 0;
-      if (data && data.length > 0) {
-        const numbers = data
-          .map(row => {
-            const numStr = row.regularpwpcode.replace(prefix, "");
-            return parseInt(numStr, 10);
-          })
-          .filter(num => !isNaN(num));
-        
-        if (numbers.length > 0) {
-          maxNumber = Math.max(...numbers);
+        // Add small random delay to reduce collision probability
+        if (attempt > 1) {
+          await new Promise(resolve => setTimeout(resolve, Math.random() * 300 + 100));
         }
-      }
 
-      const newNumber = maxNumber + 1;
-      const generatedCode = `${prefix}${newNumber}`;
+        // 1️⃣ Get fresh max number from database
+        const { data, error } = await supabase
+          .from("regular_pwp")
+          .select("regularpwpcode")
+          .ilike("regularpwpcode", `${prefix}%`)
+          .order("created_at", { ascending: false });
 
-      console.log(`🎯 Attempting to claim code: ${generatedCode}`);
+        if (error && error.code !== "PGRST116") throw error;
 
-      // 2️⃣ Try to claim this code by inserting a minimal record
-      // This acts as a "reservation" - if it fails, code is taken
-      const { data: insertedData, error: insertError } = await supabase
-        .from("regular_pwp")
-        .insert([{
-          regularpwpcode: generatedCode,
-          pwptype: "Regular",
-          created_at: new Date().toISOString(),
-          // Placeholder values - will be updated later
-          credit_budget: 0,
-          remaining_balance: 0,
-        }])
-        .select()
-        .single();
+        let maxNumber = 0;
+        if (data && data.length > 0) {
+          const numbers = data
+            .map(row => {
+              const numStr = row.regularpwpcode.replace(prefix, "");
+              return parseInt(numStr, 10);
+            })
+            .filter(num => !isNaN(num));
 
-      if (insertError) {
-        // Check if it's a duplicate key error
-        if (insertError.message?.includes('duplicate') || 
+          if (numbers.length > 0) {
+            maxNumber = Math.max(...numbers);
+          }
+        }
+
+        const newNumber = maxNumber + 1;
+        const generatedCode = `${prefix}${newNumber}`;
+
+        console.log(`🎯 Attempting to claim code: ${generatedCode}`);
+
+        // 2️⃣ Try to claim this code by inserting a minimal record
+        // This acts as a "reservation" - if it fails, code is taken
+        const { data: insertedData, error: insertError } = await supabase
+          .from("regular_pwp")
+          .insert([{
+            regularpwpcode: generatedCode,
+            pwptype: "Regular",
+            created_at: new Date().toISOString(),
+            // Placeholder values - will be updated later
+            credit_budget: 0,
+            remaining_balance: 0,
+          }])
+          .select()
+          .single();
+
+        if (insertError) {
+          // Check if it's a duplicate key error
+          if (insertError.message?.includes('duplicate') ||
             insertError.message?.includes('regularpwpcode') ||
             insertError.code === '23505') {
-          console.warn(`⚠️ Code ${generatedCode} was taken, retrying...`);
-          continue; // Retry with next attempt
+            console.warn(`⚠️ Code ${generatedCode} was taken, retrying...`);
+            continue; // Retry with next attempt
+          }
+          throw insertError; // Other errors
         }
-        throw insertError; // Other errors
-      }
 
-      // ✅ Success! We claimed this code
-      console.log(`✅ Successfully claimed code: ${generatedCode}`);
-      return { code: generatedCode, recordId: insertedData.id };
+        // ✅ Success! We claimed this code
+        console.log(`✅ Successfully claimed code: ${generatedCode}`);
+        return { code: generatedCode, recordId: insertedData.id };
 
-    } catch (attemptError) {
-      console.error(`❌ Attempt ${attempt} failed:`, attemptError.message);
-      
-      if (attempt === maxRetries) {
-        throw new Error("Failed to generate unique code after maximum retries");
+      } catch (attemptError) {
+        console.error(`❌ Attempt ${attempt} failed:`, attemptError.message);
+
+        if (attempt === maxRetries) {
+          throw new Error("Failed to generate unique code after maximum retries");
+        }
       }
     }
-  }
 
-  throw new Error("Failed to generate unique code");
-};
-
-// ---------------- Real-time subscription ----------------
-useEffect(() => {
-  fetchRegularPwpCodes();
-
-  const subscription = supabase
-    .channel("public:regular_pwp")
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "regular_pwp" },
-      (payload) => {
-        console.log("🔔 New PWP code inserted:", payload.new.regularpwpcode);
-        
-        setAllRegularPwpCodes((prev) => {
-          const updated = [...prev, payload.new.regularpwpcode];
-          
-          // ✅ Update preview to next available
-          const newPreview = generatePreviewCode(updated);
-          setFormData((prevForm) => ({
-            ...prevForm,
-            regularpwpcode: newPreview,
-            isPreviewCode: true
-          }));
-          
-          console.log("📋 Updated preview:", newPreview);
-          return updated;
-        });
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(subscription);
+    throw new Error("Failed to generate unique code");
   };
-}, []);
 
-// ✅ Update preview when codes array changes
-useEffect(() => {
-  if (allRegularPwpCodes.length > 0) {
-    const previewCode = generatePreviewCode(allRegularPwpCodes);
-    setFormData((prev) => ({
-      ...prev,
-      regularpwpcode: previewCode,
-      isPreviewCode: true
-    }));
-  }
-}, [allRegularPwpCodes]);
+  // ---------------- Real-time subscription ----------------
+  useEffect(() => {
+    fetchRegularPwpCodes();
+
+    const subscription = supabase
+      .channel("public:regular_pwp")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "regular_pwp" },
+        (payload) => {
+          console.log("🔔 New PWP code inserted:", payload.new.regularpwpcode);
+
+          setAllRegularPwpCodes((prev) => {
+            const updated = [...prev, payload.new.regularpwpcode];
+
+            // ✅ Update preview to next available
+            const newPreview = generatePreviewCode(updated);
+            setFormData((prevForm) => ({
+              ...prevForm,
+              regularpwpcode: newPreview,
+              isPreviewCode: true
+            }));
+
+            console.log("📋 Updated preview:", newPreview);
+            return updated;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
+
+  // ✅ Update preview when codes array changes
+  useEffect(() => {
+    if (allRegularPwpCodes.length > 0) {
+      const previewCode = generatePreviewCode(allRegularPwpCodes);
+      setFormData((prev) => ({
+        ...prev,
+        regularpwpcode: previewCode,
+        isPreviewCode: true
+      }));
+    }
+  }, [allRegularPwpCodes]);
   // useEffect(() => {
   //   // This effect runs whenever `allRegularPwpCodes` changes
   //   if (!formData.regularpwpcode && allRegularPwpCodes.length > 0) {
@@ -2115,166 +2115,166 @@ useEffect(() => {
       cat.code.toLowerCase().includes(BadOrderSearch.toLowerCase())
   );
 
-const toNumber = (val) => {
-  if (val === null || val === undefined || val === "") return 0;
-  return Number(val) || 0;
-};
+  const toNumber = (val) => {
+    if (val === null || val === undefined || val === "") return 0;
+    return Number(val) || 0;
+  };
 
-const handleSku = async (generatedCode) => {
-  setLoading(true);
-  setMessage("");
+  const handleSku = async (generatedCode) => {
+    setLoading(true);
+    setMessage("");
 
-  try {
-    const allRows = Object.keys(accountSkuRows).flatMap((accountCode) =>
-      (accountSkuRows[accountCode] || []).map((row) => {
-        const account = accountTypes.find((acc) => acc.code === accountCode);
-        const srp = toNumber(row.SRP);
-        const qty = toNumber(row.QTY);
-        const discountValue = toNumber(row.DISCOUNT);
-        const billingAmount = srp * qty;
-        const totalAmount = billingAmount - discountValue;
+    try {
+      const allRows = Object.keys(accountSkuRows).flatMap((accountCode) =>
+        (accountSkuRows[accountCode] || []).map((row) => {
+          const account = accountTypes.find((acc) => acc.code === accountCode);
+          const srp = toNumber(row.SRP);
+          const qty = toNumber(row.QTY);
+          const discountValue = toNumber(row.DISCOUNT);
+          const billingAmount = srp * qty;
+          const totalAmount = billingAmount - discountValue;
 
-        return {
-          account_name: account?.name || accountCode,
-          sku_code: row.SKUITEM ?? null,
-          srp,
-          qty,
-          uom: row.UOM?.trim() ? row.UOM : "pc",
-          billing_amount: billingAmount,
-          discount: discountValue,
-          total_amount: totalAmount,
-          remaining_balance: 0,
-          regular_code: generatedCode,
-          created_at: new Date().toISOString(),
-        };
-      })
-    );
-
-    if (!allRows.length) {
-      setMessage("⚠️ No SKUs to submit.");
-      setLoading(false);
-      return;
-    }
-
-    const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
-    const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
-    const grandTotal = totalBilling - totalDiscount;
-
-    const selected = parseFloat(selectedBalance || 0);
-    const creditBudget = parseFloat(formData?.amountbadget || 0);
-    const remainingSkuBudget = selected - grandTotal - creditBudget;
-
-    const rowsWithTotals = allRows.map((r) => ({
-      ...r,
-      remaining_balance: remainingSkuBudget,
-    }));
-
-    const { error: insertError } = await supabase
-      .from("regular_sku")
-      .insert(rowsWithTotals);
-
-    if (insertError) throw insertError;
-
-    console.log("✅ SKUs inserted:", rowsWithTotals.length);
-
-    await upsertRegularPwp(supabase, generatedCode, remainingSkuBudget, grandTotal);
-
-    setMessage("✅ SKUs submitted successfully!");
-  } catch (err) {
-    console.error("❌ SKU submit error:", err.message);
-    setMessage(`❌ Error: ${err.message}`);
-  } finally {
-    setLoading(false);
-  }
-};
-
-async function upsertRegularPwp(supabase, regularpwpcode, remainingSkuBudget, totalAmount) {
-  try {
-    const { data: existingPwp, error: fetchError } = await supabase
-      .from("regular_pwp")
-      .select("id")
-      .eq("regularpwpcode", regularpwpcode)
-      .maybeSingle();
-
-    if (fetchError) throw fetchError;
-
-    if (existingPwp) {
-      const { error: updateError } = await supabase
-        .from("regular_pwp")
-        .update({
-          remaining_balance: remainingSkuBudget,
-          credit_budget: totalAmount,
+          return {
+            account_name: account?.name || accountCode,
+            sku_code: row.SKUITEM ?? null,
+            srp,
+            qty,
+            uom: row.UOM?.trim() ? row.UOM : "pc",
+            billing_amount: billingAmount,
+            discount: discountValue,
+            total_amount: totalAmount,
+            remaining_balance: 0,
+            regular_code: generatedCode,
+            created_at: new Date().toISOString(),
+          };
         })
-        .eq("id", existingPwp.id);
+      );
 
-      if (updateError) throw updateError;
-      console.log("🔁 Updated regular_pwp:", existingPwp.id);
-    } else {
+      if (!allRows.length) {
+        setMessage("⚠️ No SKUs to submit.");
+        setLoading(false);
+        return;
+      }
+
+      const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
+      const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
+      const grandTotal = totalBilling - totalDiscount;
+
+      const selected = parseFloat(selectedBalance || 0);
+      const creditBudget = parseFloat(formData?.amountbadget || 0);
+      const remainingSkuBudget = selected - grandTotal - creditBudget;
+
+      const rowsWithTotals = allRows.map((r) => ({
+        ...r,
+        remaining_balance: remainingSkuBudget,
+      }));
+
       const { error: insertError } = await supabase
-        .from("regular_pwp")
-        .insert([
-          {
-            regularpwpcode,
-            remaining_balance: remainingSkuBudget,
-            credit_budget: totalAmount,
-          },
-        ]);
+        .from("regular_sku")
+        .insert(rowsWithTotals);
 
       if (insertError) throw insertError;
-      console.log("🆕 Inserted new regular_pwp:", regularpwpcode);
+
+      console.log("✅ SKUs inserted:", rowsWithTotals.length);
+
+      await upsertRegularPwp(supabase, generatedCode, remainingSkuBudget, grandTotal);
+
+      setMessage("✅ SKUs submitted successfully!");
+    } catch (err) {
+      console.error("❌ SKU submit error:", err.message);
+      setMessage(`❌ Error: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error("❌ Upsert regular_pwp error:", err.message);
-    throw err;
+  };
+
+  async function upsertRegularPwp(supabase, regularpwpcode, remainingSkuBudget, totalAmount) {
+    try {
+      const { data: existingPwp, error: fetchError } = await supabase
+        .from("regular_pwp")
+        .select("id")
+        .eq("regularpwpcode", regularpwpcode)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (existingPwp) {
+        const { error: updateError } = await supabase
+          .from("regular_pwp")
+          .update({
+            remaining_balance: remainingSkuBudget,
+            credit_budget: totalAmount,
+          })
+          .eq("id", existingPwp.id);
+
+        if (updateError) throw updateError;
+        console.log("🔁 Updated regular_pwp:", existingPwp.id);
+      } else {
+        const { error: insertError } = await supabase
+          .from("regular_pwp")
+          .insert([
+            {
+              regularpwpcode,
+              remaining_balance: remainingSkuBudget,
+              credit_budget: totalAmount,
+            },
+          ]);
+
+        if (insertError) throw insertError;
+        console.log("🆕 Inserted new regular_pwp:", regularpwpcode);
+      }
+    } catch (err) {
+      console.error("❌ Upsert regular_pwp error:", err.message);
+      throw err;
+    }
   }
-}
 
-const postBadOrderCategories = async (generatedCode) => {
-  if (!generatedCode) {
-    alert("PWP Code is missing.");
-    return false;
-  }
+  const postBadOrderCategories = async (generatedCode) => {
+    if (!generatedCode) {
+      alert("PWP Code is missing.");
+      return false;
+    }
 
-  if (formData.rowsCategories.length === 0) {
-    alert("No bad order categories to submit.");
-    return false;
-  }
+    if (formData.rowsCategories.length === 0) {
+      alert("No bad order categories to submit.");
+      return false;
+    }
 
-  const totalAmount = formData.rowsCategories.reduce((sum, row) => {
-    return sum + (parseFloat(row.amount) || 0);
-  }, 0);
+    const totalAmount = formData.rowsCategories.reduce((sum, row) => {
+      return sum + (parseFloat(row.amount) || 0);
+    }, 0);
 
-  const safeSelectedBalance = isNaN(selectedBalance) ? 0 : selectedBalance;
-  const amountBadgetMinusTotal = safeSelectedBalance - totalAmount;
+    const safeSelectedBalance = isNaN(selectedBalance) ? 0 : selectedBalance;
+    const amountBadgetMinusTotal = safeSelectedBalance - totalAmount;
 
-  const rowsToInsert = formData.rowsCategories.map((row) => ({
-    code_pwp: generatedCode,
-    category: row.category,
-    amount: parseFloat(row.amount) || 0,
-    remarks: formData.remarks || "",
-    created_at: new Date().toISOString(),
-    total: totalAmount,
-    remaining_budget: amountBadgetMinusTotal,
-  }));
+    const rowsToInsert = formData.rowsCategories.map((row) => ({
+      code_pwp: generatedCode,
+      category: row.category,
+      amount: parseFloat(row.amount) || 0,
+      remarks: formData.remarks || "",
+      created_at: new Date().toISOString(),
+      total: totalAmount,
+      remaining_budget: amountBadgetMinusTotal,
+    }));
 
-  try {
-    const { data, error } = await supabase
-      .from("regular_badorder")
-      .insert(rowsToInsert);
+    try {
+      const { data, error } = await supabase
+        .from("regular_badorder")
+        .insert(rowsToInsert);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    console.log("✅ Bad order categories submitted");
+      console.log("✅ Bad order categories submitted");
 
-    await upsertRegularPwp(supabase, generatedCode, amountBadgetMinusTotal, totalAmount);
+      await upsertRegularPwp(supabase, generatedCode, amountBadgetMinusTotal, totalAmount);
 
-    return true;
-  } catch (error) {
-    console.error("❌ Error submitting bad order:", error.message);
-    alert(`Error: ${error.message}`);
-    return false;
-  }
-};
+      return true;
+    } catch (error) {
+      console.error("❌ Error submitting bad order:", error.message);
+      alert(`Error: ${error.message}`);
+      return false;
+    }
+  };
 
 
   // ✅ Function to insert/update into regular_pwp
@@ -2325,575 +2325,577 @@ const postBadOrderCategories = async (generatedCode) => {
     }
   }
 
-  
+
 
   // 🔹 Handle All Submissions (SKU + Form + Budgets)
 
 
-// ============================================================
-const submit_all = async (e) => {
-  e.preventDefault();
+  // ============================================================
+  const submit_all = async (e) => {
+    e.preventDefault();
 
-  // 🔒 LOCK to prevent multiple simultaneous submits from same user
-  if (window.isSubmitting) {
-    console.warn("⚠️ Already submitting, please wait...");
-    return;
-  }
-  window.isSubmitting = true;
+    // 🔒 LOCK to prevent multiple simultaneous submits from same user
+    if (window.isSubmitting) {
+      console.warn("⚠️ Already submitting, please wait...");
+      return;
+    }
+    window.isSubmitting = true;
 
-  let generatedCode = null;
-  let recordId = null;
+    let generatedCode = null;
+    let recordId = null;
 
-  try {
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-    const createdBy = parsedUser?.name || "Unknown";
+    try {
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const createdBy = parsedUser?.name || "Unknown";
 
-    // ✅ VALIDATION 1 - Branches budget check
-    if (rowsAccounts.length > 0 && selectedBalance != null) {
-      const totalFromBranches = rowsAccounts.reduce(
-        (sum, row) => sum + (parseFloat(row.budget) || 0),
-        0
-      );
-      const remainingBudgetBranches = selectedBalance - totalFromBranches;
+      // ✅ VALIDATION 1 - Branches budget check
+      if (rowsAccounts.length > 0 && selectedBalance != null) {
+        const totalFromBranches = rowsAccounts.reduce(
+          (sum, row) => sum + (parseFloat(row.budget) || 0),
+          0
+        );
+        const remainingBudgetBranches = selectedBalance - totalFromBranches;
 
-      if (remainingBudgetBranches < 0) {
-        await Swal.fire({
-          title: "⚠️ Invalid Budget (Branches)",
-          html: `
+        if (remainingBudgetBranches < 0) {
+          await Swal.fire({
+            title: "⚠️ Invalid Budget (Branches)",
+            html: `
             <p style="font-size: 16px;">Remaining Budget is <strong style="color:#dc2626;">negative (₱${remainingBudgetBranches.toLocaleString()})</strong></p>
             <p>Total from Branches: <strong>₱${totalFromBranches.toLocaleString()}</strong><br>
             Original Budget: <strong>₱${selectedBalance.toLocaleString()}</strong></p>
           `,
-          icon: "error",
-          confirmButtonText: "OK",
-          confirmButtonColor: "#dc2626",
-        });
-        window.isSubmitting = false;
-        return;
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc2626",
+          });
+          window.isSubmitting = false;
+          return;
+        }
       }
-    }
 
-    // ✅ VALIDATION 2 - Form budget check
-    if (formData.amountbadget && parseFloat(formData.amountbadget) > 0 && selectedBalance != null) {
-      const allocatedAmount = parseFloat(formData.amountbadget);
-      const remainingBudgetForm = selectedBalance - allocatedAmount;
+      // ✅ VALIDATION 2 - Form budget check
+      if (formData.amountbadget && parseFloat(formData.amountbadget) > 0 && selectedBalance != null) {
+        const allocatedAmount = parseFloat(formData.amountbadget);
+        const remainingBudgetForm = selectedBalance - allocatedAmount;
 
-      if (remainingBudgetForm < 0) {
-        await Swal.fire({
-          title: "⚠️ Invalid Budget (Form)",
-          html: `
+        if (remainingBudgetForm < 0) {
+          await Swal.fire({
+            title: "⚠️ Invalid Budget (Form)",
+            html: `
             <p style="font-size: 16px;">Remaining Budget is <strong style="color:#dc2626;">negative (₱${remainingBudgetForm.toLocaleString()})</strong></p>
             <p>Allocated (Form): ₱${allocatedAmount.toLocaleString()}<br>
             Original Budget: ₱${selectedBalance.toLocaleString()}</p>
           `,
-          icon: "error",
-          confirmButtonText: "OK",
-          confirmButtonColor: "#dc2626",
-        });
-        window.isSubmitting = false;
-        return;
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc2626",
+          });
+          window.isSubmitting = false;
+          return;
+        }
       }
-    }
 
-    // 🌀 Show loading modal
-    Swal.fire({
-      title: "⏳ Generating Code...",
-      html: `
+      // 🌀 Show loading modal
+      Swal.fire({
+        title: "⏳ Generating Code...",
+        html: `
         <div style="width:100%; background:#eee; border-radius:6px; height:10px; margin-top:10px;">
           <div style="width:30%; height:100%; background:linear-gradient(90deg, #4f46e5, #06b6d4); border-radius:6px; animation:pulse 1s infinite;"></div>
         </div>
         <p style="margin-top:8px; font-size:14px; color:#555;">Claiming unique PWP code...</p>
       `,
-      allowOutsideClick: false,
-      showConfirmButton: false,
-    });
+        allowOutsideClick: false,
+        showConfirmButton: false,
+      });
 
-    // 🔐 ATOMIC CODE GENERATION - This prevents duplicates!
-    const codeResult = await generateAndClaimCode(supabase);
-    generatedCode = codeResult.code;
-    recordId = codeResult.recordId;
+      // 🔐 ATOMIC CODE GENERATION - This prevents duplicates!
+      const codeResult = await generateAndClaimCode(supabase);
+      generatedCode = codeResult.code;
+      recordId = codeResult.recordId;
 
-    console.log(`🎯 Claimed code: ${generatedCode}, ID: ${recordId}`);
+      console.log(`🎯 Claimed code: ${generatedCode}, ID: ${recordId}`);
 
-    // Update loading message
-    Swal.update({
-      title: "⏳ Submitting Data...",
-      html: `
+      // Update loading message
+      Swal.update({
+        title: "⏳ Submitting Data...",
+        html: `
         <div id="progress-container" style="width:100%; background:#eee; border-radius:6px; height:10px; margin-top:10px;">
           <div id="progress-bar" style="width:0%; height:100%; background:linear-gradient(90deg, #4f46e5, #06b6d4); border-radius:6px; transition:width 0.3s;"></div>
         </div>
         <p style="margin-top:8px; font-size:14px; color:#555;">Please wait...</p>
         <p style="font-size:12px; color:#888; margin-top:4px;">PWP Code: <strong>${generatedCode}</strong></p>
       `,
-    });
+      });
 
-    const progressBar = Swal.getHtmlContainer().querySelector("#progress-bar");
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-      progress += 2;
-      if (progressBar) progressBar.style.width = `${Math.min(progress, 90)}%`;
-      if (progress >= 90) clearInterval(progressInterval);
-    }, 100);
+      const progressBar = Swal.getHtmlContainer().querySelector("#progress-bar");
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        progress += 2;
+        if (progressBar) progressBar.style.width = `${Math.min(progress, 90)}%`;
+        if (progress >= 90) clearInterval(progressInterval);
+      }, 100);
 
-    // Update formData with the claimed code
-    const updatedFormData = {
-      ...formData,
-      regularpwpcode: generatedCode,
-      isPreviewCode: false
-    };
+      // Update formData with the claimed code
+      const updatedFormData = {
+        ...formData,
+        regularpwpcode: generatedCode,
+        isPreviewCode: false
+      };
 
-    // 📝 Now update the placeholder record with full data
-    await updateRegularPwpRecord(recordId, updatedFormData, createdBy);
+      // 📝 Now update the placeholder record with full data
+      await updateRegularPwpRecord(recordId, updatedFormData, createdBy);
 
-    // 📝 Submit related data
-    await handleSku(generatedCode);
-    await saveRecentActivity();
+      // 📝 Submit related data
+      await handleSku(generatedCode);
+      await saveRecentActivity();
 
-    // 🔍 Submit BAD ORDER if applicable
-    if (updatedFormData.activityName === "BAD ORDER") {
-      const badorderSuccess = await postBadOrderCategories(generatedCode);
-      if (!badorderSuccess) {
-        throw new Error("Bad order submission failed");
+      // 🔍 Submit BAD ORDER if applicable
+      if (updatedFormData.activityName === "BAD ORDER") {
+        const badorderSuccess = await postBadOrderCategories(generatedCode);
+        if (!badorderSuccess) {
+          throw new Error("Bad order submission failed");
+        }
       }
-    }
 
-    // 💾 Save to regular_accountlis_badget
-    if (rowsAccounts.length > 0) {
-      console.log(`💾 Saving budget data...`);
+      // 💾 Save to regular_accountlis_badget
+      if (rowsAccounts.length > 0) {
+        console.log(`💾 Saving budget data...`);
 
-      const filteredRows =
-        (updatedFormData.branchType || []).length > 0
-          ? rowsAccounts.filter((row) =>
+        const filteredRows =
+          (updatedFormData.branchType || []).length > 0
+            ? rowsAccounts.filter((row) =>
               (updatedFormData.branchType || []).includes(row.account_name)
             )
-          : rowsAccounts;
+            : rowsAccounts;
 
-      const totalBudget = filteredRows
-        .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
-        .toFixed(2);
+        const totalBudget = filteredRows
+          .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+          .toFixed(2);
 
-      const budgetRowsToInsert = filteredRows.map((row) => ({
-        regularcode: generatedCode,
-        account_name: row.account_name,
-        budget: row.budget || 0,
-        created_at: row.created_at || new Date().toISOString(),
-        createform: createdBy,
-        total_budget: totalBudget,
-      }));
+        const budgetRowsToInsert = filteredRows.map((row) => ({
+          regularcode: generatedCode,
+          account_name: row.account_name,
+          budget: row.budget || 0,
+          created_at: row.created_at || new Date().toISOString(),
+          createform: createdBy,
+          total_budget: totalBudget,
+        }));
 
-      const { error: budgetError } = await supabase
-        .from("regular_accountlis_badget")
-        .insert(budgetRowsToInsert);
+        const { error: budgetError } = await supabase
+          .from("regular_accountlis_badget")
+          .insert(budgetRowsToInsert);
 
-      if (budgetError) throw budgetError;
+        if (budgetError) throw budgetError;
 
-      console.log(`✅ Budget data saved`);
-    }
+        console.log(`✅ Budget data saved`);
+      }
 
-    // Upload attachments
-    if (files.length > 0) {
-      await Promise.all(
-        files.map(async (file) => {
-          const base64String = await toBase64(file);
-          const attachmentPayload = {
-            regularpwpcode: generatedCode,
-            filename: file.name,
-            mimetype: file.type,
-            size: file.size,
-            file_data: base64String,
-          };
-          const { error: attachmentError } = await supabase
-            .from("regular_attachments")
-            .insert([attachmentPayload]);
-          if (attachmentError) {
-            throw new Error(`Attachment failed for ${file.name}: ${attachmentError.message}`);
-          }
-        })
-      );
-      console.log("✅ Attachments uploaded");
-    }
+      // Upload attachments
+      if (files.length > 0) {
+        await Promise.all(
+          files.map(async (file) => {
+            const base64String = await toBase64(file);
+            const attachmentPayload = {
+              regularpwpcode: generatedCode,
+              filename: file.name,
+              mimetype: file.type,
+              size: file.size,
+              file_data: base64String,
+            };
+            const { error: attachmentError } = await supabase
+              .from("regular_attachments")
+              .insert([attachmentPayload]);
+            if (attachmentError) {
+              throw new Error(`Attachment failed for ${file.name}: ${attachmentError.message}`);
+            }
+          })
+        );
+        console.log("✅ Attachments uploaded");
+      }
 
-    clearInterval(progressInterval);
-    if (progressBar) progressBar.style.width = "100%";
+      clearInterval(progressInterval);
+      if (progressBar) progressBar.style.width = "100%";
 
-    // ✅ Success modal
-    await Swal.fire({
-      title: "✅ Success!",
-      html: `
+      // ✅ Success modal
+      await Swal.fire({
+        title: "✅ Success!",
+        html: `
         <p>Your data has been successfully submitted!</p>
         <p style="margin-top:8px;"><strong>PWP Code:</strong> <span style="color:#16a34a;">${generatedCode}</span></p>
         <div style="height:6px; background:linear-gradient(90deg,#16a34a,#4ade80); width:100%; border-radius:4px;"></div>
       `,
-      icon: "success",
-      showConfirmButton: false,
-      timer: 2000,
-    });
+        icon: "success",
+        showConfirmButton: false,
+        timer: 2000,
+      });
 
-    window.location.reload();
+      window.location.reload();
 
-  } catch (error) {
-    console.error(`❌ Submit Error:`, error);
-    
-    // If we claimed a code but submission failed, delete the placeholder
-    if (recordId) {
-      try {
-        await supabase.from("regular_pwp").delete().eq("id", recordId);
-        console.log(`🗑️ Rolled back placeholder record ${recordId}`);
-      } catch (rollbackError) {
-        console.error("❌ Rollback failed:", rollbackError);
+    } catch (error) {
+      console.error(`❌ Submit Error:`, error);
+
+      // If we claimed a code but submission failed, delete the placeholder
+      if (recordId) {
+        try {
+          await supabase.from("regular_pwp").delete().eq("id", recordId);
+          console.log(`🗑️ Rolled back placeholder record ${recordId}`);
+        } catch (rollbackError) {
+          console.error("❌ Rollback failed:", rollbackError);
+        }
       }
+
+      Swal.fire({
+        title: "Error!",
+        text: `There was an issue submitting your data: ${error.message}`,
+        icon: "error",
+        confirmButtonText: "Try Again",
+      });
+    } finally {
+      window.isSubmitting = false;
     }
-
-    Swal.fire({
-      title: "Error!",
-      text: `There was an issue submitting your data: ${error.message}`,
-      icon: "error",
-      confirmButtonText: "Try Again",
-    });
-  } finally {
-    window.isSubmitting = false;
-  }
-};
-
-// ============================================================
-// 🔄 Helper: Update the placeholder record with full data
-// ============================================================
-
-const updateRegularPwpRecord = async (recordId, updatedFormData, createdBy) => {
-  try {
-    let distributorCode = updatedFormData.distributor?.trim() || null;
-    if (distributorCode) {
-      const { data: distributorsData, error: distributorError } = await supabase
-        .from("distributors")
-        .select("code")
-        .eq("code", distributorCode)
-        .single();
-      if (distributorError || !distributorsData) {
-        throw new Error(`Distributor code "${distributorCode}" is invalid.`);
-      }
-    }
-
-    const amountBudget = parseFloat(updatedFormData.amountbadget || 0);
-    const billingAmountSKU = rows.reduce((acc, row) => acc + (parseFloat(row.BILLING_AMOUNT) || 0), 0);
-    const totalAllocatedFromAccounts = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
-    const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
-    const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
-
-    let convertedAccountType = [];
-    if (Array.isArray(updatedFormData.accountType)) {
-      convertedAccountType = updatedFormData.accountType
-        .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
-        .filter(Boolean);
-    } else if (updatedFormData.accountType) {
-      const name = Object.values(subAccounts).flat().find((s) => s.id === updatedFormData.accountType)?.name;
-      convertedAccountType = name ? [name] : [];
-    }
-
-    let finalAccountType = convertedAccountType;
-    if (updatedFormData.MotherAccount2) {
-      finalAccountType = [updatedFormData.MotherAccount2];
-    } else if (updatedFormData.accountType2) {
-      finalAccountType = [updatedFormData.accountType2];
-    }
-
-    const updateData = {
-      accountType: finalAccountType,
-      VariousAccount: updatedFormData.accountType2,
-      branchType: updatedFormData.branchType || [],
-      activity: updatedFormData.activity,
-      pwptype: updatedFormData.pwptype || "Regular",
-      notification: updatedFormData.notification,
-      objective: updatedFormData.objective,
-      promoScheme: updatedFormData.promoScheme,
-      activityDurationFrom: updatedFormData.activityDurationFrom,
-      activityDurationTo: updatedFormData.activityDurationTo,
-      isPartOfCoverPwp: updatedFormData.isPartOfCoverPwp,
-      coverPwpCode: updatedFormData.coverPwpCode,
-      distributor: distributorCode,
-      amountbadget: updatedFormData.amountbadget,
-      categoryCode: updatedFormData.categoryCode || [],
-      categoryName: updatedFormData.categoryName || [],
-      sku: updatedFormData.sku,
-      accounts: updatedFormData.accounts,
-      amount_display: updatedFormData.amount_display,
-      remarks: updatedFormData.remarks || "",
-      createForm: createdBy,
-      credit_budget: creditBudget,
-      remaining_balance: remainingBalance,
-    };
-
-    const { error: updateError } = await supabase
-      .from("regular_pwp")
-      .update(updateData)
-      .eq("id", recordId);
-    
-    if (updateError) throw new Error(`Record update failed: ${updateError.message}`);
-
-    console.log("✅ Main record updated");
-
-  } catch (error) {
-    console.error("❌ Update record error:", error.message);
-    throw error;
-  }
-};
-
-// ============================================================
-// 📋 Real-time preview code updates (unchanged)
-// ============================================================
-
-const fetchRegularPwpCodes = async () => {
-  try {
-    setLoadingRegularPwpCodes(true);
-    const { data, error } = await supabase
-      .from("regular_pwp")
-      .select("regularpwpcode");
-
-    if (error) throw error;
-
-    const codes = data.map((row) => row.regularpwpcode).filter(Boolean);
-    setAllRegularPwpCodes(codes);
-
-    // ✅ Set initial preview code
-    const previewCode = generatePreviewCode(codes);
-    setFormData((prev) => ({ 
-      ...prev, 
-      regularpwpcode: previewCode,
-      isPreviewCode: true
-    }));
-    
-    console.log("📋 Preview code:", previewCode);
-  } catch (err) {
-    console.error("❌ Error fetching codes:", err);
-  } finally {
-    setLoadingRegularPwpCodes(false);
-  }
-};
-
-// Real-time subscription for preview updates
-useEffect(() => {
-  fetchRegularPwpCodes();
-
-  const subscription = supabase
-    .channel("public:regular_pwp")
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "regular_pwp" },
-      (payload) => {
-        console.log("🔔 New PWP code inserted:", payload.new.regularpwpcode);
-        
-        setAllRegularPwpCodes((prev) => {
-          const updated = [...prev, payload.new.regularpwpcode];
-          
-          // ✅ Update preview to next available
-          const newPreview = generatePreviewCode(updated);
-          setFormData((prevForm) => ({
-            ...prevForm,
-            regularpwpcode: newPreview,
-            isPreviewCode: true
-          }));
-          
-          console.log("📋 Updated preview:", newPreview);
-          return updated;
-        });
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(subscription);
   };
-}, []);
 
+  // ============================================================
+  // 🔄 Helper: Update the placeholder record with full data
+  // ============================================================
 
-
-
-const toBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-  });
-
-const handleSubmitFormAndAttachments = async (updatedFormData) => {
-  try {
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-    const createdBy = parsedUser?.UserID || "Unknown";
-
-    if (!updatedFormData.regularpwpcode?.trim()) {
-      throw new Error("Regular PWP Code is required.");
-    }
-
-    let distributorCode = updatedFormData.distributor?.trim() || null;
-    if (distributorCode) {
-      const { data: distributorsData, error: distributorError } = await supabase
-        .from("distributors")
-        .select("code")
-        .eq("code", distributorCode)
-        .single();
-      if (distributorError || !distributorsData) {
-        throw new Error(`Distributor code "${distributorCode}" is invalid.`);
+  const updateRegularPwpRecord = async (recordId, updatedFormData) => {
+    try {
+      let distributorCode = updatedFormData.distributor?.trim() || null;
+      if (distributorCode) {
+        const { data: distributorsData, error: distributorError } = await supabase
+          .from("distributors")
+          .select("code")
+          .eq("code", distributorCode)
+          .single();
+        if (distributorError || !distributorsData) {
+          throw new Error(`Distributor code "${distributorCode}" is invalid.`);
+        }
       }
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const createdBy = parsedUser?.UserID || "Unknown";
+      const amountBudget = parseFloat(updatedFormData.amountbadget || 0);
+      const billingAmountSKU = rows.reduce((acc, row) => acc + (parseFloat(row.BILLING_AMOUNT) || 0), 0);
+      const totalAllocatedFromAccounts = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+      const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
+      const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
+
+      let convertedAccountType = [];
+      if (Array.isArray(updatedFormData.accountType)) {
+        convertedAccountType = updatedFormData.accountType
+          .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
+          .filter(Boolean);
+      } else if (updatedFormData.accountType) {
+        const name = Object.values(subAccounts).flat().find((s) => s.id === updatedFormData.accountType)?.name;
+        convertedAccountType = name ? [name] : [];
+      }
+
+      let finalAccountType = convertedAccountType;
+      if (updatedFormData.MotherAccount2) {
+        finalAccountType = [updatedFormData.MotherAccount2];
+      } else if (updatedFormData.accountType2) {
+        finalAccountType = [updatedFormData.accountType2];
+      }
+
+      const updateData = {
+        accountType: finalAccountType,
+        VariousAccount: updatedFormData.accountType2,
+        branchType: updatedFormData.branchType || [],
+        activity: updatedFormData.activity,
+        pwptype: updatedFormData.pwptype || "Regular",
+        notification: updatedFormData.notification,
+        objective: updatedFormData.objective,
+        promoScheme: updatedFormData.promoScheme,
+        activityDurationFrom: updatedFormData.activityDurationFrom,
+        activityDurationTo: updatedFormData.activityDurationTo,
+        isPartOfCoverPwp: updatedFormData.isPartOfCoverPwp,
+        coverPwpCode: updatedFormData.coverPwpCode,
+        distributor: distributorCode,
+        amountbadget: updatedFormData.amountbadget,
+        categoryCode: updatedFormData.categoryCode || [],
+        categoryName: updatedFormData.categoryName || [],
+        sku: updatedFormData.sku,
+        accounts: updatedFormData.accounts,
+        amount_display: updatedFormData.amount_display,
+        remarks: updatedFormData.remarks || "",
+        createForm: createdBy,
+        credit_budget: creditBudget,
+        remaining_balance: remainingBalance,
+      };
+
+      const { error: updateError } = await supabase
+        .from("regular_pwp")
+        .update(updateData)
+        .eq("id", recordId);
+
+      if (updateError) throw new Error(`Record update failed: ${updateError.message}`);
+
+      console.log("✅ Main record updated");
+
+    } catch (error) {
+      console.error("❌ Update record error:", error.message);
+      throw error;
     }
+  };
 
-    const amountBudget = parseFloat(updatedFormData.amountbadget || 0);
-    const billingAmountSKU = rows.reduce((acc, row) => acc + (parseFloat(row.BILLING_AMOUNT) || 0), 0);
-    const totalAllocatedFromAccounts = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
-    const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
-    const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
+  // ============================================================
+  // 📋 Real-time preview code updates (unchanged)
+  // ============================================================
 
-    let convertedAccountType = [];
-    if (Array.isArray(updatedFormData.accountType)) {
-      convertedAccountType = updatedFormData.accountType
-        .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
-        .filter(Boolean);
-    } else if (updatedFormData.accountType) {
-      const name = Object.values(subAccounts).flat().find((s) => s.id === updatedFormData.accountType)?.name;
-      convertedAccountType = name ? [name] : [];
+  const fetchRegularPwpCodes = async () => {
+    try {
+      setLoadingRegularPwpCodes(true);
+      const { data, error } = await supabase
+        .from("regular_pwp")
+        .select("regularpwpcode");
+
+      if (error) throw error;
+
+      const codes = data.map((row) => row.regularpwpcode).filter(Boolean);
+      setAllRegularPwpCodes(codes);
+
+      // ✅ Set initial preview code
+      const previewCode = generatePreviewCode(codes);
+      setFormData((prev) => ({
+        ...prev,
+        regularpwpcode: previewCode,
+        isPreviewCode: true
+      }));
+
+      console.log("📋 Preview code:", previewCode);
+    } catch (err) {
+      console.error("❌ Error fetching codes:", err);
+    } finally {
+      setLoadingRegularPwpCodes(false);
     }
+  };
 
-    let finalAccountType = convertedAccountType;
-    if (updatedFormData.MotherAccount2) {
-      finalAccountType = [updatedFormData.MotherAccount2];
-    } else if (updatedFormData.accountType2) {
-      finalAccountType = [updatedFormData.accountType2];
-    }
+  // Real-time subscription for preview updates
+  useEffect(() => {
+    fetchRegularPwpCodes();
 
-    const submissionData = {
-      regularpwpcode: updatedFormData.regularpwpcode,
-      accountType: finalAccountType,
-      VariousAccount: updatedFormData.accountType2,
-      branchType: updatedFormData.branchType || [],
-      activity: updatedFormData.activity,
-      pwptype: updatedFormData.pwptype || "Regular",
-      notification: updatedFormData.notification,
-      objective: updatedFormData.objective,
-      promoScheme: updatedFormData.promoScheme,
-      activityDurationFrom: updatedFormData.activityDurationFrom,
-      activityDurationTo: updatedFormData.activityDurationTo,
-      isPartOfCoverPwp: updatedFormData.isPartOfCoverPwp,
-      coverPwpCode: updatedFormData.coverPwpCode,
-      distributor: distributorCode,
-      amountbadget: updatedFormData.amountbadget,
-      categoryCode: updatedFormData.categoryCode || [],
-      categoryName: updatedFormData.categoryName || [],
-      sku: updatedFormData.sku,
-      accounts: updatedFormData.accounts,
-      amount_display: updatedFormData.amount_display,
-      remarks: updatedFormData.remarks || "",
-      created_at: new Date().toISOString(),
-      createForm: createdBy,
-      credit_budget: creditBudget,
-      remaining_balance: remainingBalance,
+    const subscription = supabase
+      .channel("public:regular_pwp")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "regular_pwp" },
+        (payload) => {
+          console.log("🔔 New PWP code inserted:", payload.new.regularpwpcode);
+
+          setAllRegularPwpCodes((prev) => {
+            const updated = [...prev, payload.new.regularpwpcode];
+
+            // ✅ Update preview to next available
+            const newPreview = generatePreviewCode(updated);
+            setFormData((prevForm) => ({
+              ...prevForm,
+              regularpwpcode: newPreview,
+              isPreviewCode: true
+            }));
+
+            console.log("📋 Updated preview:", newPreview);
+            return updated;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
     };
+  }, []);
 
-    const { error: formInsertError } = await supabase
-      .from("regular_pwp")
-      .insert([submissionData])
-      .select();
-    
-    if (formInsertError) throw new Error(`Form Insert failed: ${formInsertError.message}`);
 
-    console.log("✅ Main form submitted");
 
-    if (files.length > 0) {
-      await Promise.all(
-        files.map(async (file) => {
-          const base64String = await toBase64(file);
-          const attachmentPayload = {
-            regularpwpcode: updatedFormData.regularpwpcode,
-            filename: file.name,
-            mimetype: file.type,
-            size: file.size,
-            file_data: base64String,
-          };
-          const { error: attachmentError } = await supabase
-            .from("regular_attachments")
-            .insert([attachmentPayload])
-            .select();
-          if (attachmentError) {
-            throw new Error(`Attachment failed for ${file.name}: ${attachmentError.message}`);
-          }
-        })
-      );
-      console.log("✅ Attachments uploaded");
-    }
 
-    // Reset state
-    setFiles([]);
-    setRows([]);
-    setRowsAccounts([]);
-    setFormData({
-      regularpwpcode: "",
-      accountType: [],
-      branchType: [],
-      activity: "",
-      pwptype: "Regular",
-      notification: false,
-      objective: "",
-      promoScheme: "",
-      activityDurationFrom: new Date().toISOString().split("T")[0],
-      activityDurationTo: new Date().toISOString().split("T")[0],
-      isPartOfCoverPwp: false,
-      coverPwpCode: "",
-      distributor: "",
-      amountbadget: "0",
-      categoryCode: [],
-      categoryName: [],
-      sku: null,
-      accounts: null,
-      amount_display: null,
-      remarks: "",
+  const toBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
     });
 
-  } catch (error) {
-    console.error("❌ Form submission error:", error.message);
-    throw error;
-  }
-};
+  const handleSubmitFormAndAttachments = async (updatedFormData) => {
+    try {
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const createdBy = parsedUser?.UserID || "Unknown";
 
-const saveRecentActivity = async () => {
-  try {
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-    const userId = parsedUser?.UserID || "Unknown";
+      if (!updatedFormData.regularpwpcode?.trim()) {
+        throw new Error("Regular PWP Code is required.");
+      }
 
-    const ipRes = await fetch("https://api.ipify.org?format=json");
-    const { ip } = await ipRes.json();
+      let distributorCode = updatedFormData.distributor?.trim() || null;
+      if (distributorCode) {
+        const { data: distributorsData, error: distributorError } = await supabase
+          .from("distributors")
+          .select("code")
+          .eq("code", distributorCode)
+          .single();
+        if (distributorError || !distributorsData) {
+          throw new Error(`Distributor code "${distributorCode}" is invalid.`);
+        }
+      }
 
-    const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
-    const geo = await geoRes.json();
+      const amountBudget = parseFloat(updatedFormData.amountbadget || 0);
+      const billingAmountSKU = rows.reduce((acc, row) => acc + (parseFloat(row.BILLING_AMOUNT) || 0), 0);
+      const totalAllocatedFromAccounts = rowsAccounts.reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0);
+      const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
+      const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
 
-    const activity = {
-      Device: navigator.userAgent || "Unknown Device",
-      Location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
-      IP: ip,
-      Time: new Date().toISOString(),
-      Action: "Create Form Regular PWP",
-    };
+      let convertedAccountType = [];
+      if (Array.isArray(updatedFormData.accountType)) {
+        convertedAccountType = updatedFormData.accountType
+          .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
+          .filter(Boolean);
+      } else if (updatedFormData.accountType) {
+        const name = Object.values(subAccounts).flat().find((s) => s.id === updatedFormData.accountType)?.name;
+        convertedAccountType = name ? [name] : [];
+      }
 
-    const { error } = await supabase.from("RecentActivity").insert([
-      {
-        userId: userId,
-        device: activity.Device,
-        location: activity.Location,
-        ip: activity.IP,
-        time: activity.Time,
-        action: activity.Action,
-      },
-    ]);
+      let finalAccountType = convertedAccountType;
+      if (updatedFormData.MotherAccount2) {
+        finalAccountType = [updatedFormData.MotherAccount2];
+      } else if (updatedFormData.accountType2) {
+        finalAccountType = [updatedFormData.accountType2];
+      }
 
-    if (error) {
-      console.error("❌ Activity log error:", error.message);
-    } else {
-      console.log("✅ Activity logged");
+      const submissionData = {
+        regularpwpcode: updatedFormData.regularpwpcode,
+        accountType: finalAccountType,
+        VariousAccount: updatedFormData.accountType2,
+        branchType: updatedFormData.branchType || [],
+        activity: updatedFormData.activity,
+        pwptype: updatedFormData.pwptype || "Regular",
+        notification: updatedFormData.notification,
+        objective: updatedFormData.objective,
+        promoScheme: updatedFormData.promoScheme,
+        activityDurationFrom: updatedFormData.activityDurationFrom,
+        activityDurationTo: updatedFormData.activityDurationTo,
+        isPartOfCoverPwp: updatedFormData.isPartOfCoverPwp,
+        coverPwpCode: updatedFormData.coverPwpCode,
+        distributor: distributorCode,
+        amountbadget: updatedFormData.amountbadget,
+        categoryCode: updatedFormData.categoryCode || [],
+        categoryName: updatedFormData.categoryName || [],
+        sku: updatedFormData.sku,
+        accounts: updatedFormData.accounts,
+        amount_display: updatedFormData.amount_display,
+        remarks: updatedFormData.remarks || "",
+        created_at: new Date().toISOString(),
+        createForm: createdBy,
+        credit_budget: creditBudget,
+        remaining_balance: remainingBalance,
+      };
+
+      const { error: formInsertError } = await supabase
+        .from("regular_pwp")
+        .insert([submissionData])
+        .select();
+
+      if (formInsertError) throw new Error(`Form Insert failed: ${formInsertError.message}`);
+
+      console.log("✅ Main form submitted");
+
+      if (files.length > 0) {
+        await Promise.all(
+          files.map(async (file) => {
+            const base64String = await toBase64(file);
+            const attachmentPayload = {
+              regularpwpcode: updatedFormData.regularpwpcode,
+              filename: file.name,
+              mimetype: file.type,
+              size: file.size,
+              file_data: base64String,
+            };
+            const { error: attachmentError } = await supabase
+              .from("regular_attachments")
+              .insert([attachmentPayload])
+              .select();
+            if (attachmentError) {
+              throw new Error(`Attachment failed for ${file.name}: ${attachmentError.message}`);
+            }
+          })
+        );
+        console.log("✅ Attachments uploaded");
+      }
+
+      // Reset state
+      setFiles([]);
+      setRows([]);
+      setRowsAccounts([]);
+      setFormData({
+        regularpwpcode: "",
+        accountType: [],
+        branchType: [],
+        activity: "",
+        pwptype: "Regular",
+        notification: false,
+        objective: "",
+        promoScheme: "",
+        activityDurationFrom: new Date().toISOString().split("T")[0],
+        activityDurationTo: new Date().toISOString().split("T")[0],
+        isPartOfCoverPwp: false,
+        coverPwpCode: "",
+        distributor: "",
+        amountbadget: "0",
+        categoryCode: [],
+        categoryName: [],
+        sku: null,
+        accounts: null,
+        amount_display: null,
+        remarks: "",
+      });
+
+    } catch (error) {
+      console.error("❌ Form submission error:", error.message);
+      throw error;
     }
-  } catch (err) {
-    console.error("❌ Failed to log activity:", err.message || err);
-  }
-};
+  };
+
+  const saveRecentActivity = async () => {
+    try {
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = parsedUser?.UserID || "Unknown";
+
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const { ip } = await ipRes.json();
+
+      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+      const geo = await geoRes.json();
+
+      const activity = {
+        Device: navigator.userAgent || "Unknown Device",
+        Location: `${geo.city || "Unknown"}, ${geo.region || "Unknown"}, ${geo.country_name || "Unknown"}`,
+        IP: ip,
+        Time: new Date().toISOString(),
+        Action: "Create Form Regular PWP",
+      };
+
+      const { error } = await supabase.from("RecentActivity").insert([
+        {
+          userId: userId,
+          device: activity.Device,
+          location: activity.Location,
+          ip: activity.IP,
+          time: activity.Time,
+          action: activity.Action,
+        },
+      ]);
+
+      if (error) {
+        console.error("❌ Activity log error:", error.message);
+      } else {
+        console.log("✅ Activity logged");
+      }
+    } catch (err) {
+      console.error("❌ Failed to log activity:", err.message || err);
+    }
+  };
 
   const [message, setMessage] = useState("");
 
