@@ -21,7 +21,7 @@ export default function CoverPWPBudgetTable() {
 
     // Get user info
     const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-    const currentUserId = currentUser?.name?.toLowerCase().trim() || "";
+    const currentUserId = currentUser?.UserID ? String(currentUser.UserID) : null;
     const role = currentUser?.role?.toLowerCase() || "";
     const storedUser = JSON.parse(localStorage.getItem('user'));
     const userName = storedUser?.name?.toLowerCase().trim();
@@ -142,10 +142,10 @@ export default function CoverPWPBudgetTable() {
         }
     };
 
-    // Filter rows based on user role & createForm
     const userFilteredRows = rows.filter((entry) => {
         if (role === "admin") return true;
-        return String(entry.createForm || "").toLowerCase().trim() === currentUserId;
+        const entryCreator = entry.createForm ? String(entry.createForm) : null;
+        return entryCreator === currentUserId;
     });
 
     // Filter userFilteredRows further based on search query
@@ -658,7 +658,7 @@ export default function CoverPWPBudgetTable() {
                     </div>
 
                     {/* Pagination Controls */}
-                  {filteredRows.length > 0 && (
+                    {filteredRows.length > 0 && (
                         <div style={{
                             display: 'flex',
                             justifyContent: 'space-between',
@@ -671,8 +671,8 @@ export default function CoverPWPBudgetTable() {
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ fontSize: '14px', color: '#555' }}>Rows per page:</span>
-                                <select 
-                                    value={itemsPerPage} 
+                                <select
+                                    value={itemsPerPage}
                                     onChange={handleItemsPerPageChange}
                                     style={{
                                         padding: '6px 10px',
@@ -692,7 +692,7 @@ export default function CoverPWPBudgetTable() {
                                     Showing {startIndex + 1} to {Math.min(endIndex, filteredRows.length)} of {filteredRows.length} entries
                                 </span>
                             </div>
-                            
+
                             <div style={{ display: 'flex', gap: '5px' }}>
                                 <button
                                     onClick={() => handlePageChange(1)}
@@ -724,7 +724,7 @@ export default function CoverPWPBudgetTable() {
                                 >
                                     Previous
                                 </button>
-                                
+
                                 {[...Array(totalPages)].map((_, index) => {
                                     const pageNumber = index + 1;
                                     if (
@@ -758,7 +758,7 @@ export default function CoverPWPBudgetTable() {
                                     }
                                     return null;
                                 })}
-                                
+
                                 <button
                                     onClick={() => handlePageChange(currentPage + 1)}
                                     disabled={currentPage === totalPages}
