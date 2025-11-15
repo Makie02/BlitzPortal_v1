@@ -493,7 +493,7 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
               </button>
 
               <button
-                onClick={() => setCurrentView('/')}
+                onClick={() => setCurrentView('TotalSupportPerAccount')}
                 style={{
                   background: '#f44336',
                   color: 'white',
