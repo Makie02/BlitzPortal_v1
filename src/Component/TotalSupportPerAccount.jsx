@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function TotalSupportPerAccount({setCurrentView}) {
+export default function TotalSupportPerAccount({ setCurrentView }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -61,7 +61,7 @@ export default function TotalSupportPerAccount({setCurrentView}) {
     sourceData.forEach(item => {
       const cleanName = cleanAccountName(item.account_name);
       const key = cleanName; // Only use account name as key
-      
+
       if (!grouped[key]) {
         grouped[key] = {
           pwp_code: item.pwp_code, // Store first PWP code for reference
@@ -69,7 +69,7 @@ export default function TotalSupportPerAccount({setCurrentView}) {
           activities: {}
         };
       }
-      
+
       if (item.activity_name) {
         if (!grouped[key].activities[item.activity_name]) {
           grouped[key].activities[item.activity_name] = 0;
@@ -83,16 +83,16 @@ export default function TotalSupportPerAccount({setCurrentView}) {
 
     const pivotArray = Object.values(grouped).map((item, idx) => {
       const grandTotal = Object.values(item.activities).reduce((sum, val) => sum + val, 0);
-      return { 
-        ...item, 
-        grandTotal, 
-        id: idx 
+      return {
+        ...item,
+        grandTotal,
+        id: idx
       };
     });
 
     // Sort by account name
     pivotArray.sort((a, b) => (a.account_name || '').localeCompare(b.account_name || ''));
-    
+
     setPivotData(pivotArray);
   };
 
@@ -135,22 +135,54 @@ export default function TotalSupportPerAccount({setCurrentView}) {
         activityMap[act.code] = act.name;
       });
 
+      // ✅ GET CURRENT USER
+      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+      const userId = currentUser?.UserID || null;
+      const userName = currentUser?.name || null;
+      const role = currentUser?.UserType || null;
+
+      console.log("=== USER INFO ===");
+      console.log("UserID:", userId);
+      console.log("UserName:", userName);
+      console.log("Role:", role);
+
       const { data: pwpData, error: pwpError } = await supabase
         .from('regular_pwp')
-        .select('regularpwpcode, activity, credit_budget, amount_display, branchType');
+        .select('regularpwpcode, activity, credit_budget, amount_display, branchType, createForm'); // ✅ Added createForm
       if (pwpError) throw pwpError;
+
+      console.log("\n=== ALL PWP DATA ===");
+      console.log("Total:", pwpData.length);
+      pwpData.forEach(pwp => {
+        console.log(`${pwp.regularpwpcode} | Creator: ${pwp.createForm}`);
+      });
+
+      // ✅ FILTER BY USER
+      let filteredPwpData = pwpData;
+      if (role !== 'admin' && role !== 'Admin') {
+        filteredPwpData = pwpData.filter(pwp =>
+          String(pwp.createForm) === String(userId) ||
+          String(pwp.createForm).toLowerCase() === userName?.toLowerCase()
+        );
+        console.log("\n=== FILTERED (User only) ===");
+        console.log("Count:", filteredPwpData.length);
+      } else {
+        console.log("\n=== ADMIN MODE (All data) ===");
+      }
 
       const pwpActivityMap = {};
       const pwpCreditBudgetMap = {};
       const pwpAmountDisplayMap = {};
       const pwpBranchTypeMap = {};
 
-      pwpData.forEach(pwp => {
+      filteredPwpData.forEach(pwp => {
         pwpActivityMap[pwp.regularpwpcode] = pwp.activity;
         pwpCreditBudgetMap[pwp.regularpwpcode] = parseFloat(pwp.credit_budget) || 0;
         pwpAmountDisplayMap[pwp.regularpwpcode] = pwp.amount_display === true;
         pwpBranchTypeMap[pwp.regularpwpcode] = pwp.branchType;
       });
+
+
 
       const { data: budgetData, error: budgetError } = await supabase
         .from('regular_accountlis_badget')
@@ -162,9 +194,27 @@ export default function TotalSupportPerAccount({setCurrentView}) {
         .select('regular_code, account_name, total_amount');
       if (skuError) throw skuError;
 
-      const approvedBudget = budgetData.filter(item => approvedPwpCodes.has(item.regularcode));
-      const approvedSku = skuData.filter(item => approvedPwpCodes.has(item.regular_code));
+      // ✅ FILTER APPROVED CODES: Only include PWP codes from filteredPwpData
+      const userPwpCodes = new Set(filteredPwpData.map(pwp => pwp.regularpwpcode));
 
+      console.log("\n=== USER'S PWP CODES ===");
+      console.log("Codes:", Array.from(userPwpCodes));
+
+      // ✅ Only show approved PWP codes that belong to this user (or all if admin)
+      const filteredApprovedCodes = new Set(
+        Array.from(approvedPwpCodes).filter(code => userPwpCodes.has(code))
+      );
+
+      console.log("\n=== FILTERED APPROVED CODES ===");
+      console.log("Count:", filteredApprovedCodes.size);
+      console.log("Codes:", Array.from(filteredApprovedCodes));
+
+      const approvedBudget = budgetData.filter(item => filteredApprovedCodes.has(item.regularcode));
+      const approvedSku = skuData.filter(item => filteredApprovedCodes.has(item.regular_code));
+
+      console.log("\n=== FINAL DATA ===");
+      console.log("Budget entries:", approvedBudget.length);
+      console.log("SKU entries:", approvedSku.length);
       // Split account names with commas and create separate entries
       const expandedBudget = [];
       approvedBudget.forEach(item => {
@@ -242,13 +292,13 @@ export default function TotalSupportPerAccount({setCurrentView}) {
       // Handle PWP data with amount_display and split branch types
       const existingKeys = new Set(transformedData.map(d => `${d.pwp_code}|${d.account_name}`));
       const newPwpRows = [];
-      
-      pwpData
-        .filter(item => item.amount_display === true && approvedPwpCodes.has(item.regularpwpcode))
+
+      filteredPwpData  // ✅ CHANGE THIS!
+        .filter(item => item.amount_display === true && filteredApprovedCodes.has(item.regularpwpcode))  // ✅ AND THIS!
         .forEach(item => {
           const branchType = item.branchType || 'Unknown';
           const branches = branchType.split(',').map(name => cleanAccountName(name.trim()));
-          
+
           branches.forEach(branch => {
             const key = `${item.regularpwpcode}|${branch}`;
             if (!existingKeys.has(key)) {
@@ -324,19 +374,19 @@ export default function TotalSupportPerAccount({setCurrentView}) {
     try {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF('l', 'mm', 'a4');
-      
+
       const selectedItems = filteredData.filter(item => selectedRows.has(item.id));
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      
+
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
       doc.text('Total Support Per Account - Selected Items', pageWidth / 2, 15, { align: 'center' });
-      
+
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.text(`Generated: ${new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}`, pageWidth / 2, 22, { align: 'center' });
-      
+
       const tableHeaders = [['Store', ...activityColumns, 'Grand Total']];
       const tableData = selectedItems.map(item => {
         return [
@@ -348,7 +398,7 @@ export default function TotalSupportPerAccount({setCurrentView}) {
           parseFloat(item.grandTotal).toFixed(2)
         ];
       });
-      
+
       doc.autoTable({
         head: tableHeaders,
         body: tableData,
@@ -362,30 +412,30 @@ export default function TotalSupportPerAccount({setCurrentView}) {
         styles: { overflow: 'linebreak', cellPadding: 1.5 },
         margin: { left: 8, right: 8 }
       });
-      
+
       const finalY = doc.lastAutoTable.finalY + 10;
       const { summaryActivities, totalGrandTotal, count } = getSelectedSummary();
-      
+
       if (finalY + 60 > pageHeight) {
         doc.addPage();
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.text('FOR THE MONTH - HIGHEST CLAIMED SUPPORT', 15, 20);
-        
+
         const summaryHeaders = [['Activity', 'Percentage', 'Amount']];
         const summaryData = Object.entries(summaryActivities)
           .sort((a, b) => b[1] - a[1])
           .map(([activity, amount]) => {
             const percentage = totalGrandTotal > 0 ? ((amount / totalGrandTotal) * 100).toFixed(1) : '0.0';
             return [
-              activity, 
-              `${percentage}%`, 
+              activity,
+              `${percentage}%`,
               parseFloat(amount).toFixed(2)
             ];
           });
-        
+
         summaryData.push(['GRAND TOTAL', '100%', parseFloat(totalGrandTotal).toFixed(2)]);
-        
+
         doc.autoTable({
           head: summaryHeaders,
           body: summaryData,
@@ -405,21 +455,21 @@ export default function TotalSupportPerAccount({setCurrentView}) {
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.text('FOR THE MONTH - HIGHEST CLAIMED SUPPORT', 15, finalY);
-        
+
         const summaryHeaders = [['Activity', 'Percentage', 'Amount']];
         const summaryData = Object.entries(summaryActivities)
           .sort((a, b) => b[1] - a[1])
           .map(([activity, amount]) => {
             const percentage = totalGrandTotal > 0 ? ((amount / totalGrandTotal) * 100).toFixed(1) : '0.0';
             return [
-              activity, 
-              `${percentage}%`, 
+              activity,
+              `${percentage}%`,
               parseFloat(amount).toFixed(2)
             ];
           });
-        
+
         summaryData.push(['GRAND TOTAL', '100%', parseFloat(totalGrandTotal).toFixed(2)]);
-        
+
         doc.autoTable({
           head: summaryHeaders,
           body: summaryData,
@@ -436,15 +486,15 @@ export default function TotalSupportPerAccount({setCurrentView}) {
           margin: { left: 15 }
         });
       }
-      
+
       doc.setFontSize(8);
       doc.setFont('helvetica', 'italic');
       const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
       doc.text(`Total Selected Accounts: ${count}`, 15, pageHeight - 10);
       doc.text(`Page ${currentPage}`, pageWidth - 20, pageHeight - 10);
-      
+
       doc.save(`selected_accounts_report_${new Date().toISOString().split('T')[0]}.pdf`);
-      
+
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Error generating PDF. Please make sure you have internet connection to load jsPDF library.');
@@ -452,7 +502,7 @@ export default function TotalSupportPerAccount({setCurrentView}) {
   };
 
   const exportToCSV = () => {
-    const dataToExport = selectedRows.size > 0 
+    const dataToExport = selectedRows.size > 0
       ? filteredData.filter(item => selectedRows.has(item.id))
       : filteredData;
 
@@ -474,10 +524,10 @@ export default function TotalSupportPerAccount({setCurrentView}) {
 
     rows.push(['', ...activityColumns.map(() => ''), '']);
 
-    const footerLabel = selectedRows.size > 0 
+    const footerLabel = selectedRows.size > 0
       ? `GRAND TOTAL (${selectedRows.size} selected)`
       : 'GRAND TOTAL';
-    
+
     rows.push([
       footerLabel,
       ...footerTotals,
@@ -587,29 +637,29 @@ export default function TotalSupportPerAccount({setCurrentView}) {
             <input type="text" placeholder={isMobile ? "Search..." : "Search by Store or PWP Code..."} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ flex: '1', width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '14px' }} />
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {selectedRows.size > 0 && (
-                <button 
+                <button
                   onClick={generatePDF}
-                  style={{ 
-                    flex: isMobile ? '1' : 'initial', 
-                    padding: '8px 16px', 
-                    background: '#FF5722', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '4px', 
-                    cursor: 'pointer', 
-                    fontSize: '14px', 
+                  style={{
+                    flex: isMobile ? '1' : 'initial',
+                    padding: '8px 16px',
+                    background: '#FF5722',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
                     fontWeight: '600',
-                    whiteSpace: 'nowrap' 
+                    whiteSpace: 'nowrap'
                   }}
                 >
                   📄 Generate PDF
                 </button>
               )}
-              <button 
-                onClick={() => setCurrentView('HighestClaimed')} 
+              <button
+                onClick={() => setCurrentView('HighestClaimed')}
                 style={{ flex: isMobile ? '1' : 'initial', padding: '8px 16px', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}
               >
-              Highest Support to Claim
+                Highest Support to Claim
               </button>
               <button onClick={() => setShowDateFilter(!showDateFilter)} style={{ flex: isMobile ? '1' : 'initial', padding: '8px 16px', background: showDateFilter ? '#2196F3' : 'white', color: showDateFilter ? 'white' : '#2196F3', border: '1px solid #2196F3', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>{showDateFilter ? 'Hide' : 'Dates'}</button>
               <button onClick={fetchData} style={{ flex: isMobile ? '1' : 'initial', padding: '8px 16px', background: 'white', color: '#2196F3', border: '1px solid #2196F3', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>Refresh</button>
@@ -647,8 +697,8 @@ export default function TotalSupportPerAccount({setCurrentView}) {
                 <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: '100%' }}>
                   <thead><tr style={{ background: '#2196F3' }}>
                     <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: 'white', minWidth: '60px', position: 'sticky', left: 0, background: '#2196F3', zIndex: 3 }}>
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={paginatedData.length > 0 && selectedRows.size === paginatedData.length}
                         onChange={handleSelectAll}
                         style={{ cursor: 'pointer', width: '16px', height: '16px' }}
@@ -662,8 +712,8 @@ export default function TotalSupportPerAccount({setCurrentView}) {
                     {paginatedData.map((item, index) => (
                       <tr key={index} style={{ borderBottom: '1px solid #e0e0e0', background: selectedRows.has(item.id) ? '#E3F2FD' : (index % 2 === 0 ? 'white' : '#fafafa') }}>
                         <td style={{ padding: '12px 16px', textAlign: 'center', position: 'sticky', left: 0, background: selectedRows.has(item.id) ? '#E3F2FD' : 'inherit', zIndex: 2 }}>
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             checked={selectedRows.has(item.id)}
                             onChange={() => handleCheckboxChange(item.id)}
                             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
@@ -702,8 +752,8 @@ export default function TotalSupportPerAccount({setCurrentView}) {
               paginatedData.map((item, index) => (
                 <div key={index} style={{ background: selectedRows.has(item.id) ? '#E3F2FD' : 'white', borderRadius: '4px', border: selectedRows.has(item.id) ? '2px solid #2196F3' : '1px solid #e0e0e0', padding: '16px', position: 'relative' }}>
                   <div style={{ position: 'absolute', top: '16px', right: '16px' }}>
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={selectedRows.has(item.id)}
                       onChange={() => handleCheckboxChange(item.id)}
                       style={{ cursor: 'pointer', width: '20px', height: '20px' }}
