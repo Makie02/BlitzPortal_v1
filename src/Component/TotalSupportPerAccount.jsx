@@ -60,11 +60,18 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
     const grouped = {};
     sourceData.forEach(item => {
       const cleanName = cleanAccountName(item.account_name);
+
+      // ✅ SKIP EMPTY OR BLANK ACCOUNT NAMES
+      if (!cleanName || cleanName.trim() === '' || cleanName === 'null' || cleanName === 'undefined') {
+        console.log(`⚠️ SKIPPED EMPTY ACCOUNT NAME:`, item);
+        return;
+      }
+
       const key = cleanName; // Only use account name as key
 
       if (!grouped[key]) {
         grouped[key] = {
-          pwp_code: item.pwp_code, // Store first PWP code for reference
+          pwp_code: item.pwp_code,
           account_name: cleanName,
           activities: {}
         };
@@ -81,17 +88,21 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
       }
     });
 
-    const pivotArray = Object.values(grouped).map((item, idx) => {
-      const grandTotal = Object.values(item.activities).reduce((sum, val) => sum + val, 0);
-      return {
-        ...item,
-        grandTotal,
-        id: idx
-      };
-    });
+    const pivotArray = Object.values(grouped)
+      .filter(item => item.account_name && item.account_name.trim() !== '') // ✅ EXTRA FILTER
+      .map((item, idx) => {
+        const grandTotal = Object.values(item.activities).reduce((sum, val) => sum + val, 0);
+        return {
+          ...item,
+          grandTotal,
+          id: idx
+        };
+      });
 
     // Sort by account name
     pivotArray.sort((a, b) => (a.account_name || '').localeCompare(b.account_name || ''));
+
+    console.log("\n✅ FINAL PIVOT DATA (after filtering blanks):", pivotArray.length, "stores");
 
     setPivotData(pivotArray);
   };
@@ -139,7 +150,7 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
       const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
       const userId = currentUser?.UserID || null;
       const userName = currentUser?.name || null;
-      const role = currentUser?.UserType || null;
+      const role = currentUser?.role || null;
 
       console.log("=== USER INFO ===");
       console.log("UserID:", userId);
@@ -258,9 +269,17 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
       ]);
 
       let transformedData = [];
+      // SA PART NA TO (around line 240-270)
       accountsSet.forEach(accountKey => {
         const [pwpCode, accountName] = accountKey.split('|');
         const cleanedAccountName = cleanAccountName(accountName);
+
+        // ✅ SKIP EMPTY ACCOUNT NAMES
+        if (!cleanedAccountName || cleanedAccountName.trim() === '') {
+          console.log(`⚠️ SKIPPED EMPTY ACCOUNT: ${accountKey}`);
+          return;
+        }
+
         const activityCode = pwpActivityMap[pwpCode];
         const activityName = activityMap[activityCode] || activityCode || 'Unknown';
         const budget = budgetMap[accountKey] || 0;
