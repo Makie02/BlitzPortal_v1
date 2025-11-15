@@ -11,15 +11,18 @@ const ApprovalList = () => {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 8;
-  const PAGINATION_THRESHOLD = 15; // Smart pagination threshold
+  const rowsPerPage = 10;
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const [accountUsers, setAccountUsers] = useState([]);
 
-  // Fetch Account Users
+  // Get current user info
+  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+  const currentUserId = currentUser?.UserID ? Number(currentUser.UserID) : null;
+  const role = currentUser?.role || "";
+
   useEffect(() => {
     const fetchAccountUsers = async () => {
       const { data, error } = await supabase
@@ -66,9 +69,35 @@ const ApprovalList = () => {
     fetchApprovals();
   }, []);
 
-  // Filter data based on search term and date range
+  // Filter data based on user role, search term and date range
   useEffect(() => {
-    let filtered = approvalData.filter((item) => {
+    let filtered = approvalData;
+
+    // 🔹 First, filter by user role (if not admin)
+    if (role !== "admin") {
+      filtered = filtered.filter(item => {
+        const createdForm = item.CreatedForm;
+        if (!createdForm) return false;
+
+        // Handle numeric CreatedForm (UserID)
+        if (typeof createdForm === 'number') {
+          return createdForm === currentUserId;
+        }
+
+        // Handle string CreatedForm
+        if (typeof createdForm === 'string') {
+          const createdFormNum = Number(createdForm);
+          if (!isNaN(createdFormNum)) {
+            return createdFormNum === currentUserId;
+          }
+        }
+
+        return false;
+      });
+    }
+
+    // 🔹 Then apply search filter
+    filtered = filtered.filter((item) => {
       const matchesSearch =
         item.ApproverId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.PwpCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -89,52 +118,21 @@ const ApprovalList = () => {
     });
 
     setFilteredData(filtered);
-    setCurrentPage(1);
-  }, [approvalData, searchTerm, dateFrom, dateTo]);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [approvalData, searchTerm, dateFrom, dateTo, currentUserId, role]);
 
-  // Get current user info
-  const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-  const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
-  const currentUserId = currentUser?.UserID ? Number(currentUser.UserID) : null;
-  const role = currentUser?.role || "";
-
-  // Filter data by user (admin sees all)
-  const filteredDataByUser = React.useMemo(() => {
-    if (role === "admin") return filteredData;
-
-    return filteredData.filter(row => {
-      const createdForm = row.CreatedForm;
-      if (!createdForm) return false;
-
-      if (typeof createdForm === 'string') {
-        const createdFormStr = createdForm.toLowerCase().trim();
-        if (createdFormStr === currentUserName) return true;
-        const createdFormNum = Number(createdFormStr);
-        if (!isNaN(createdFormNum) && createdFormNum === currentUserId) return true;
-        return false;
-      }
-
-      if (typeof createdForm === 'number') {
-        return createdForm === currentUserId;
-      }
-
-      return false;
-    });
-  }, [filteredData, currentUserName, currentUserId, role]);
-
-  // Smart pagination logic
-  const shouldPaginate = filteredDataByUser.length > PAGINATION_THRESHOLD;
-  const totalPages = Math.ceil(filteredDataByUser.length / rowsPerPage);
-  
-  const displayData = shouldPaginate 
-    ? filteredDataByUser.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
-    : filteredDataByUser;
+  // Paginate the already filtered data
+  const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
 
   // Export to Excel
   const handleExportToExcel = async () => {
     setExportLoading(true);
     try {
-      const exportData = filteredDataByUser.map(item => ({
+      const exportData = filteredData.map(item => ({
         ID: item.id,
         Approver: getUserNameById(item.ApproverId),
         'PWP Code': item.PwpCode,
@@ -253,7 +251,7 @@ const ApprovalList = () => {
             <h1>Approval History Report</h1>
             <div class="export-info">
               Generated on: ${new Date().toLocaleDateString()} | 
-              Total Records: ${filteredDataByUser.length}
+              Total Records: ${filteredData.length}
               ${dateFrom || dateTo ? ` | Date Range: ${dateFrom || 'Start'} to ${dateTo || 'End'}` : ''}
             </div>
           </div>
@@ -272,7 +270,7 @@ const ApprovalList = () => {
             <tbody>
       `;
 
-      filteredDataByUser.forEach(item => {
+      filteredData.forEach(item => {
         const isApproved = item.Response === 'Approved';
         htmlContent += `
           <tr ${isApproved ? 'class="approved"' : ''}>
@@ -333,8 +331,8 @@ const ApprovalList = () => {
         {/* Header */}
         <div style={{
           padding: '24px 30px',
-          backgroundColor: '#fafafaff',
-          color: 'black'
+          backgroundColor: '#f8f8f8ff',
+          color: 'white'
         }}>
           <h1 style={{
             margin: '0 0 8px',
@@ -348,11 +346,9 @@ const ApprovalList = () => {
             opacity: 0.9,
             fontSize: '14px'
           }}>
-            {role === 'admin' ? '👑 Admin View' : `👤 ${currentUser?.name || 'User'}`} • 
-            {shouldPaginate 
-              ? ` Showing ${displayData.length} of ${filteredDataByUser.length} records` 
-              : ` ${filteredDataByUser.length} record${filteredDataByUser.length !== 1 ? 's' : ''}`}
+            {filteredData.length} records found
             {(dateFrom || dateTo) && ` (filtered by date)`}
+            {role !== 'admin' && ` - Showing your records only`}
           </p>
         </div>
 
@@ -595,7 +591,7 @@ const ApprovalList = () => {
                 </tr>
               </thead>
               <tbody>
-                {displayData.length === 0 ? (
+                {paginatedData.length === 0 ? (
                   <tr>
                     <td
                       colSpan="7"
@@ -607,13 +603,11 @@ const ApprovalList = () => {
                         backgroundColor: '#fafafa'
                       }}
                     >
-                      {displayData.length === 0 && !loading
-                        ? 'No approval records found.'
-                        : 'Loading...'}
+                      No approval records found.
                     </td>
                   </tr>
                 ) : (
-                  displayData.map((item, index) => (
+                  paginatedData.map((item, index) => (
                     <tr
                       key={item.id}
                       style={{
@@ -699,98 +693,96 @@ const ApprovalList = () => {
           </div>
         )}
 
-        {/* Pagination Footer - Only show if pagination is needed */}
-        {shouldPaginate && (
-          <div style={{
-            padding: '20px 30px',
-            backgroundColor: '#fafafa',
-            borderTop: '1px solid #e0e0e0',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '15px'
-          }}>
-            {/* Records Info */}
-            <div style={{ fontSize: '14px', color: '#666' }}>
-              Showing {displayData.length > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0} to{' '}
-              {Math.min(currentPage * rowsPerPage, filteredDataByUser.length)} of {filteredDataByUser.length} records
-            </div>
-
-            {/* Pagination Controls */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button
-                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                disabled={currentPage === 1}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: currentPage === 1 ? '#f5f5f5' : '#2196f3',
-                  color: currentPage === 1 ? '#999' : 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                Previous
-              </button>
-
-              {/* Page Numbers */}
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: currentPage === pageNum ? '#1976d2' : 'white',
-                        color: currentPage === pageNum ? 'white' : '#333',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        minWidth: '40px',
-                        fontWeight: '500'
-                      }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#2196f3',
-                  color: currentPage === totalPages ? '#999' : 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                Next
-              </button>
-            </div>
+        {/* Pagination Footer */}
+        <div style={{
+          padding: '20px 30px',
+          backgroundColor: '#fafafa',
+          borderTop: '1px solid #e0e0e0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '15px'
+        }}>
+          {/* Records Info */}
+          <div style={{ fontSize: '14px', color: '#666' }}>
+            Showing {paginatedData.length > 0 ? ((currentPage - 1) * rowsPerPage) + 1 : 0} to{' '}
+            {Math.min(currentPage * rowsPerPage, filteredData.length)} of {filteredData.length} records
           </div>
-        )}
+
+          {/* Pagination Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: currentPage === 1 ? '#f5f5f5' : '#2196f3',
+                color: currentPage === 1 ? '#999' : 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                fontWeight: '500'
+              }}
+            >
+              Previous
+            </button>
+
+            {/* Page Numbers */}
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: currentPage === pageNum ? '#1976d2' : 'white',
+                      color: currentPage === pageNum ? 'white' : '#333',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      minWidth: '40px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#2196f3',
+                color: currentPage === totalPages ? '#999' : 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                fontWeight: '500'
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
       <style dangerouslySetInnerHTML={{
