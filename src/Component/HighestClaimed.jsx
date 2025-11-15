@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import * as XLSX from 'xlsx';
 
-export default function HighestClaimed({setCurrentView}) {
+export default function HighestClaimed({ setCurrentView }) {
   const [distributors, setDistributors] = useState([]);
   const [selectedDistributor, setSelectedDistributor] = useState('');
   const [distributorData, setDistributorData] = useState([]);
@@ -30,62 +30,73 @@ export default function HighestClaimed({setCurrentView}) {
     return name.replace(/[\[\]"]/g, '').trim();
   };
 
-const fetchDistributors = async () => {
-  try {
-    const { data: pwpData, error: pwpError } = await supabase
-      .from('regular_pwp')
-      .select('distributor, createForm');
+ const fetchDistributors = async () => {
+    try {
+      const { data: pwpData, error: pwpError } = await supabase
+        .from('regular_pwp')
+        .select('distributor, createForm');
 
-    if (pwpError) throw pwpError;
+      if (pwpError) throw pwpError;
 
-    console.log("PWP RAW DATA:", pwpData);
+      console.log("PWP RAW DATA:", pwpData);
 
-    // ===== USER INFO =====
-    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
-    const userId = currentUser?.UserID || null;
+      const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+      const userId = currentUser?.UserID || null;
+      const role = currentUser?.role || null;
 
-    console.log("=== USER INFO ===");
-    console.log("UserID:", userId);
+      console.log("=== USER INFO ===");
+      console.log("UserID:", userId);
+      console.log("Role:", role);
 
-    // ===== MATCH createForm to UserID =====
-    const matchedCreateForm = pwpData.filter(
-      item => String(item.createForm) === String(userId)
-    );
+      let matchedCreateForm;
 
-    console.log("=== MATCHED regular_pwp.createForm ===");
-    console.log(matchedCreateForm);
+      if (role?.toLowerCase() === 'admin') {
+        console.log("=== ADMIN MODE: Showing all distributors ===");
+        matchedCreateForm = pwpData;
+      } else {
+        matchedCreateForm = pwpData.filter(
+          item => String(item.createForm) === String(userId)
+        );
+        console.log("=== USER MODE: Filtered by createForm ===");
+      }
 
-    // Get unique distributor codes from MATCHED data only
-// Get unique distributor codes from MATCHED data only
-const uniqueCodes = [...new Set(
-  matchedCreateForm.map(item => item.distributor).filter(Boolean)
-)];
+      console.log("=== MATCHED DISTRIBUTORS COUNT ===", matchedCreateForm.length);
 
-    if (uniqueCodes.length === 0) {
-      setDistributors([]);
-      return;
+      const uniqueCodes = [...new Set(
+        matchedCreateForm.map(item => item.distributor).filter(Boolean)
+      )];
+
+      if (uniqueCodes.length === 0) {
+        setDistributors([]);
+        return;
+      }
+
+      const { data: distData, error: distError } = await supabase
+        .from('distributors')
+        .select('name, code')
+        .in('code', uniqueCodes)
+        .order('name', { ascending: true });
+
+      if (distError) throw distError;
+
+      setDistributors(distData || []);
+
+    } catch (error) {
+      console.error('Error fetching distributors:', error.message);
     }
-
-    const { data: distData, error: distError } = await supabase
-      .from('distributors')
-      .select('name, code')
-      .in('code', uniqueCodes)
-      .order('name', { ascending: true });
-
-    if (distError) throw distError;
-
-    setDistributors(distData || []);
-
-  } catch (error) {
-    console.error('Error fetching distributors:', error.message);
-  }
-};
+  };
 
 
 const fetchDistributorData = async (distributor, monthFilter = '') => {
   try {
     setLoading(true);
-    
+
+    console.log("\n========================================");
+    console.log("🚀 FETCHING DISTRIBUTOR DATA");
+    console.log("========================================");
+    console.log("Distributor Code:", distributor);
+    console.log("Month Filter:", monthFilter || "ALL TIME");
+
     const { data: approvalData, error: approvalError } = await supabase
       .from('Approval_History')
       .select('PwpCode, Response, DateResponded');
@@ -102,6 +113,8 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
       }
     });
 
+    console.log("\n✅ APPROVED PWP CODES:", approvedPwpCodes.size);
+
     const months = [...new Set(approvalData
       .filter(a => a.Response && a.Response.toLowerCase() === 'approved' && a.DateResponded)
       .map(a => {
@@ -110,6 +123,8 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
       })
     )].sort().reverse();
     setAvailableMonths(months);
+
+    console.log("📅 Available Months:", months);
 
     const { data: activities, error: actError } = await supabase
       .from('activity')
@@ -121,6 +136,8 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
       activityMap[act.code] = act.name;
     });
 
+    console.log("\n🎯 ACTIVITY MAP:", activityMap);
+
     const { data: pwpData, error: pwpError } = await supabase
       .from('regular_pwp')
       .select('regularpwpcode, distributor, activity, credit_budget, amount_display, branchType')
@@ -128,19 +145,15 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
 
     if (pwpError) throw pwpError;
 
+    console.log("\n📦 PWP DATA (filtered by distributor):", pwpData.length, "records");
+
     const filteredPwp = pwpData.filter(item => approvedPwpCodes.has(item.regularpwpcode));
 
-    const pwpActivityMap = {};
-    const pwpCreditBudgetMap = {};
-    const pwpAmountDisplayMap = {};
-    const pwpBranchTypeMap = {};
+    console.log("✅ APPROVED PWP DATA:", filteredPwp.length, "records");
 
-    // POPULATE THE MAPS
+    const pwpActivityMap = {};
     filteredPwp.forEach(pwp => {
       pwpActivityMap[pwp.regularpwpcode] = pwp.activity;
-      pwpCreditBudgetMap[pwp.regularpwpcode] = parseFloat(pwp.credit_budget) || 0;
-      pwpAmountDisplayMap[pwp.regularpwpcode] = pwp.amount_display === true;
-      pwpBranchTypeMap[pwp.regularpwpcode] = pwp.branchType;
     });
 
     const { data: budgetData, error: budgetError } = await supabase
@@ -150,146 +163,61 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
 
     if (budgetError) throw budgetError;
 
-    const { data: skuData, error: skuError } = await supabase
-      .from('regular_sku')
-      .select('regular_code, account_name, total_amount')
-      .in('regular_code', filteredPwp.map(p => p.regularpwpcode));
+    console.log("\n💰 BUDGET DATA:", budgetData.length, "records");
 
-    if (skuError) throw skuError;
-
-    // INITIALIZE storeMap
     const storeMap = {};
 
-    // PROCESS budgetData
+    console.log("\n🔍 PROCESSING BUDGET DATA ONLY:");
     budgetData.forEach(item => {
-      const storeName = cleanAccountName(item.account_name);
+      const accountNames = item.account_name ? item.account_name.split(',').map(n => n.trim()) : [''];
       const activityCode = pwpActivityMap[item.regularcode];
       const activityName = activityMap[activityCode] || activityCode || 'Unknown';
       const dateResponded = pwpDateMap[item.regularcode];
+      const totalAmount = parseFloat(item.budget) || 0;
+      const amountPerStore = accountNames.length > 0 ? totalAmount / accountNames.length : 0;
 
-      if (!storeMap[storeName]) {
-        storeMap[storeName] = {
-          store: storeName,
-          activities: {},
-          dates: {},
-          activitiesByMonth: {}
-        };
-      }
-      if (!storeMap[storeName].activities[activityName]) {
-        storeMap[storeName].activities[activityName] = 0;
-      }
-      const amount = parseFloat(item.budget) || 0;
-      storeMap[storeName].activities[activityName] += amount;
+      accountNames.forEach(accountName => {
+        const storeName = cleanAccountName(accountName);
+        if (!storeName || storeName === '') return;
 
-      if (dateResponded) {
-        const d = new Date(dateResponded);
-        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        
-        if (!storeMap[storeName].activitiesByMonth[monthKey]) {
-          storeMap[storeName].activitiesByMonth[monthKey] = {};
+        console.log(`💰 BUDGET: ${item.regularcode} | ${storeName} | ${activityName} | ${amountPerStore}`);
+
+        if (!storeMap[storeName]) {
+          storeMap[storeName] = {
+            store: storeName,
+            activities: {},
+            dates: {},
+            activitiesByMonth: {}
+          };
         }
-        if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
-          storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
+        if (!storeMap[storeName].activities[activityName]) {
+          storeMap[storeName].activities[activityName] = 0;
         }
-        storeMap[storeName].activitiesByMonth[monthKey][activityName] += amount;
+        storeMap[storeName].activities[activityName] += amountPerStore;
 
-        if (!storeMap[storeName].dates[activityName]) {
-          storeMap[storeName].dates[activityName] = [];
-        }
-        storeMap[storeName].dates[activityName].push(dateResponded);
-      }
-    });
+        if (dateResponded) {
+          const d = new Date(dateResponded);
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-    // PROCESS skuData
-    skuData.forEach(item => {
-      const storeName = cleanAccountName(item.account_name);
-      const activityCode = pwpActivityMap[item.regular_code];
-      const activityName = activityMap[activityCode] || activityCode || 'Unknown';
-      const dateResponded = pwpDateMap[item.regular_code];
-
-      if (!storeMap[storeName]) {
-        storeMap[storeName] = {
-          store: storeName,
-          activities: {},
-          dates: {},
-          activitiesByMonth: {}
-        };
-      }
-      if (!storeMap[storeName].activities[activityName]) {
-        storeMap[storeName].activities[activityName] = 0;
-      }
-      const amount = parseFloat(item.total_amount) || 0;
-      storeMap[storeName].activities[activityName] += amount;
-
-      if (dateResponded) {
-        const d = new Date(dateResponded);
-        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        
-        if (!storeMap[storeName].activitiesByMonth[monthKey]) {
-          storeMap[storeName].activitiesByMonth[monthKey] = {};
-        }
-        if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
-          storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
-        }
-        storeMap[storeName].activitiesByMonth[monthKey][activityName] += amount;
-
-        if (!storeMap[storeName].dates[activityName]) {
-          storeMap[storeName].dates[activityName] = [];
-        }
-        storeMap[storeName].dates[activityName].push(dateResponded);
-      }
-    });
-
-    // PROCESS filteredPwp with branchType splitting
-    filteredPwp.forEach(pwp => {
-      if (pwp.amount_display && pwp.branchType) {
-        // Split comma-separated branchType values
-        const branchTypes = pwp.branchType.split(',').map(b => cleanAccountName(b)).filter(Boolean);
-        const activityName = activityMap[pwp.activity] || pwp.activity || 'Unknown';
-        const dateResponded = pwpDateMap[pwp.regularpwpcode];
-        const amount = parseFloat(pwp.credit_budget) || 0;
-        
-        // Divide amount equally among branches
-        const amountPerBranch = branchTypes.length > 0 ? amount / branchTypes.length : 0;
-
-        branchTypes.forEach(storeName => {
-          if (!storeName || storeName.trim() === '') return; // Skip empty store names
-
-          if (!storeMap[storeName]) {
-            storeMap[storeName] = {
-              store: storeName,
-              activities: {},
-              dates: {},
-              activitiesByMonth: {}
-            };
+          if (!storeMap[storeName].activitiesByMonth[monthKey]) {
+            storeMap[storeName].activitiesByMonth[monthKey] = {};
           }
-          if (!storeMap[storeName].activities[activityName]) {
-            storeMap[storeName].activities[activityName] = 0;
+          if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
+            storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
           }
-          storeMap[storeName].activities[activityName] += amountPerBranch;
+          storeMap[storeName].activitiesByMonth[monthKey][activityName] += amountPerStore;
 
-          if (dateResponded) {
-            const d = new Date(dateResponded);
-            const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            
-            if (!storeMap[storeName].activitiesByMonth[monthKey]) {
-              storeMap[storeName].activitiesByMonth[monthKey] = {};
-            }
-            if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
-              storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
-            }
-            storeMap[storeName].activitiesByMonth[monthKey][activityName] += amountPerBranch;
-
-            if (!storeMap[storeName].dates[activityName]) {
-              storeMap[storeName].dates[activityName] = [];
-            }
-            storeMap[storeName].dates[activityName].push(dateResponded);
+          if (!storeMap[storeName].dates[activityName]) {
+            storeMap[storeName].dates[activityName] = [];
           }
-        });
-      }
+          storeMap[storeName].dates[activityName].push(dateResponded);
+        }
+      });
     });
 
     let allTimeData = Object.values(storeMap).sort((a, b) => a.store.localeCompare(b.store));
+
+    console.log("\n🏪 TOTAL STORES:", allTimeData.length);
 
     const calculateMonthData = (monthKey) => {
       const monthTotals = {};
@@ -338,10 +266,58 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
     });
     const sortedActivities = Array.from(allActivities).sort();
 
+    console.log("\n📋 ACTIVITIES FOUND:", sortedActivities);
+
+    console.log("\n========================================");
+    console.log("📊 STORE-LEVEL DATA TABLE");
+    console.log("========================================");
+
+    const tableData = displayData.map(store => {
+      const row = { Store: store.store };
+      sortedActivities.forEach(activity => {
+        row[activity] = store.activities[activity]
+          ? parseFloat(store.activities[activity]).toFixed(2)
+          : '-';
+      });
+      row['Grand Total'] = Object.values(store.activities)
+        .reduce((sum, val) => sum + val, 0)
+        .toFixed(2);
+      return row;
+    });
+
+    console.table(tableData);
+
+    console.log("\n========================================");
+    console.log("📈 ACTIVITY SUMMARY");
+    console.log("========================================");
+
+    const activityTotals = {};
+    displayData.forEach(store => {
+      Object.entries(store.activities).forEach(([activity, amount]) => {
+        activityTotals[activity] = (activityTotals[activity] || 0) + amount;
+      });
+    });
+
+    const grandTotal = Object.values(activityTotals).reduce((sum, val) => sum + val, 0);
+
+    const summaryTable = Object.entries(activityTotals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([activity, amount]) => ({
+        Activity: activity,
+        Amount: parseFloat(amount).toFixed(2),
+        Percentage: ((amount / grandTotal) * 100).toFixed(1) + '%'
+      }));
+
+    console.table(summaryTable);
+
+    console.log("\n💵 GRAND TOTAL:", parseFloat(grandTotal).toFixed(2));
+    console.log("========================================\n");
+
     setDistributorActivityColumns(sortedActivities);
     setDistributorData(displayData);
+
   } catch (error) {
-    console.error('Error fetching distributor data:', error);
+    console.error('❌ Error fetching distributor data:', error);
     alert('Error loading distributor data: ' + error.message);
   } finally {
     setLoading(false);
@@ -462,7 +438,7 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
         <div style={{ background: 'white', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
           <div style={{ padding: '24px', borderBottom: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', flexWrap: 'wrap', gap: '10px' }}>
             <h2 style={{ margin: 0, fontSize: isMobile ? '18px' : '24px', fontWeight: 'bold', color: '#333' }}>
-             Highest Support to Claim
+              Highest Support to Claim
             </h2>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -549,10 +525,20 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
                   value={selectedDistributor}
                   onChange={(e) => {
                     const newDistributorCode = e.target.value;
+                    console.log("\n========================================");
+                    console.log("🔵 DISTRIBUTOR SELECTED:", newDistributorCode);
+                    console.log("========================================");
+
                     setSelectedDistributor(newDistributorCode);
                     setDistributorMonthFilter('');
 
                     if (newDistributorCode) {
+                      // Find distributor name
+                      const distName = distributors.find(d => d.code === newDistributorCode)?.name;
+                      console.log("📌 Distributor Name:", distName);
+                      console.log("📌 Distributor Code:", newDistributorCode);
+                      console.log("⏳ Fetching data...\n");
+
                       fetchDistributorData(newDistributorCode, '');
                     } else {
                       setDistributorData([]);
@@ -685,11 +671,11 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
                           const dt = new Date(Number(yy), Number(mm) - 1);
                           return dt.toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase();
                         };
-                        const currentMonthName = distributorMonthFilter 
+                        const currentMonthName = distributorMonthFilter
                           ? (() => {
-                              const [year, m] = distributorMonthFilter.split('-');
-                              return new Date(year, parseInt(m) - 1).toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase();
-                            })()
+                            const [year, m] = distributorMonthFilter.split('-');
+                            return new Date(year, parseInt(m) - 1).toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase();
+                          })()
                           : 'ALL TIME';
                         const prevMonthName = prevMonthKey ? formatMonth(prevMonthKey) : 'PREVIOUS';
 
@@ -716,7 +702,7 @@ const fetchDistributorData = async (distributor, monthFilter = '') => {
                                 {sortedActivities.map(([activity, amount]) => {
                                   const currentPct = storeGrandTotal > 0 ? (amount / storeGrandTotal) * 100 : 0;
                                   const prevAmt = previousMonthData[activity
-                                    ] || 0;
+                                  ] || 0;
                                   const prevTotal = Object.values(previousMonthData).reduce((s, v) => s + v, 0);
                                   const prevPct = prevTotal > 0 ? (prevAmt / prevTotal) * 100 : 0;
 
