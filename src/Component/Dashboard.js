@@ -90,25 +90,14 @@ export default function Dashboard() {
     }
     return records || [];
   }
-  useEffect(() => {
+useEffect(() => {
     async function fetchVisaAndApprovalData() {
       try {
         const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-        const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
+        const currentUserId = currentUser?.UserID ? String(currentUser.UserID) : null;
         const role = currentUser?.role || "";
 
-        // Fetch visa records
-        const coverVisa = await fetchVisaData("cover_pwp");
-        const regularVisa = await fetchVisaData("regular_pwp");
-
-        // Combine visa records and filter by CreatedForm if not admin
-        let allVisaRecords = [...coverVisa, ...regularVisa];
-        if (role !== 'admin') {
-          allVisaRecords = allVisaRecords.filter(record =>
-            record.CreatedForm?.toLowerCase().trim() === currentUserName
-          );
-        }
-        const totalVisaCount = allVisaRecords.length;
+        console.log("[Dashboard] Current User:", currentUser?.name, "UserID:", currentUserId, "Role:", role);
 
         // Fetch approval history with Response and CreatedForm
         const { data: approvalRecords, error } = await supabase
@@ -120,15 +109,23 @@ export default function Dashboard() {
           return;
         }
 
-        // Filter approval records by CreatedForm if not admin
+        console.log("[Dashboard] Total approval records fetched:", approvalRecords?.length);
+
+        // Filter approval records by CreatedForm (UserID) if not admin
         const filteredApprovalRecords = role === 'admin'
           ? approvalRecords
-          : approvalRecords.filter(record => record.CreatedForm?.toLowerCase().trim() === currentUserName);
+          : approvalRecords.filter(record => {
+              const recordCreatorId = record.CreatedForm ? String(record.CreatedForm) : null;
+              return recordCreatorId === currentUserId;
+            });
+
+        console.log("[Dashboard] Filtered approval records:", filteredApprovalRecords.length);
 
         // Count status occurrences
         let approvedCount = 0;
         let disapprovedCount = 0;
         let cancelledCount = 0;
+        let forApprovalCount = 0;
 
         filteredApprovalRecords.forEach(record => {
           const response = record.Response;
@@ -138,13 +135,15 @@ export default function Dashboard() {
             disapprovedCount++;
           } else if (response === "Cancelled") {
             cancelledCount++;
+          } else {
+            forApprovalCount++;
           }
         });
 
-        const forApprovalCount = totalVisaCount - approvedCount - disapprovedCount - cancelledCount;
+        console.log("[Dashboard] Counts - Approved:", approvedCount, "Disapproved:", disapprovedCount, "Cancelled:", cancelledCount, "For Approval:", forApprovalCount);
 
         const statusCounts = {
-          "For Approval": forApprovalCount > 0 ? forApprovalCount : 0,
+          "For Approval": forApprovalCount,
           Approved: approvedCount,
           Disapproved: disapprovedCount,
           Cancelled: cancelledCount,
