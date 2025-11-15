@@ -48,16 +48,16 @@ export default function ApprovedHistoryBudgetTable() {
       });
 
       const filteredByUser = (records || []).filter(record => {
-        const createdForm = record.created_form;
-        const status = record.status;
-        
-        if (!createdForm || createdForm.toLowerCase() === 'n/a') {
-          return false;
-        }
+     const createdForm = String(record.created_form || "").toLowerCase();
+const status = String(record.status || "").toLowerCase();
 
-        if (!status || status.toLowerCase() === 'n/a') {
-          return false;
-        }
+if (createdForm === "" || createdForm === "n/a") {
+  return false;
+}
+if (status === "" || status === "n/a") {
+  return false;
+}
+
         
         return createdForm === String(userId) || 
                createdForm?.toLowerCase() === userName?.toLowerCase();
@@ -107,7 +107,7 @@ export default function ApprovedHistoryBudgetTable() {
   );
 
   const totalRemainingBalance = approvedData.reduce((sum, item) => 
-    sum + (parseFloat(item.remaining_balance) || 0), 0
+     (parseFloat(item.remaining_balance) || 0), 0
   );
 
   const getStatusColor = (status) => {
@@ -254,7 +254,7 @@ export default function ApprovedHistoryBudgetTable() {
                 WebkitTextFillColor: 'transparent',
                 marginBottom: 10
               }}>
-                💰 Approved History Budget
+                History Budget
               </h1>
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
