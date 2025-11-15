@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from "react";
 import "./ApprovalsPage.css";
 import Swal from "sweetalert2";
@@ -12,8 +11,24 @@ export default function ApprovalsPage() {
   const [openDropdownIndex, setOpenDropdownIndex] = useState(null);
   const dropdownRefs = useRef([]);
   const [userNames, setUserNames] = useState({});
-
   const [distributors, setDistributors] = useState([]);
+  
+  // ✅ Add online status monitoring
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // ✅ Monitor online/offline status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchDistributors = async () => {
@@ -38,9 +53,6 @@ export default function ApprovalsPage() {
     return distributor ? distributor.name : `Code: ${code}`;
   };
 
-
-
-  // Add this useEffect to fetch all user names and create a lookup map
   useEffect(() => {
     const fetchUserNames = async () => {
       const { data, error } = await supabase
@@ -52,7 +64,6 @@ export default function ApprovalsPage() {
         return;
       }
 
-      // Create a lookup object: { UserID: name }
       const nameMap = {};
       data.forEach(user => {
         nameMap[user.UserID] = user.name;
@@ -64,7 +75,6 @@ export default function ApprovalsPage() {
     fetchUserNames();
   }, []);
 
-  // Add this helper function
   const getUserNameById = (userId) => {
     return userNames[userId] || ` ${userId}`;
   };
@@ -82,9 +92,98 @@ export default function ApprovalsPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleRowClick = (entry) => {
-    console.log("Clicked row:", entry.code);
-    setModalVisaCode(entry.code);
+  // ✅ FIXED handleRowClick with loading screen and connection check
+  const handleRowClick = async (entry) => {
+    // Check internet connection first
+    if (!navigator.onLine) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'No Internet Connection',
+        text: 'Please check your internet connection and try again.',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3b82f6',
+      });
+      return;
+    }
+
+    // ✅ Show loading screen
+    Swal.fire({
+      title: 'Loading...',
+      html: `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
+          <div style="
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+          "></div>
+          <p style="color: #64748b; margin: 0;">Loading details for <strong>${entry.code}</strong></p>
+        </div>
+        <style>
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      `,
+      showConfirmButton: false,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+
+    try {
+      console.log("Opening modal for:", entry.code);
+      
+      // Optional: Verify connection with a quick ping
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      try {
+        await fetch('https://www.google.com/favicon.ico', {
+          method: 'HEAD',
+          mode: 'no-cors',
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        Swal.close();
+        // If ping fails, show error
+        await Swal.fire({
+          icon: 'error',
+          title: 'Connection Issue',
+          text: 'Unable to load data. Please check your internet connection.',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#3b82f6',
+        });
+        return;
+      }
+
+      // ✅ Set modal first, THEN close loading after a short delay
+      setModalVisaCode(entry.code);
+      
+      // ✅ Wait for modal to render then close loading
+      setTimeout(() => {
+        Swal.close();
+      }, 300);
+
+    } catch (error) {
+      console.error("Error opening modal:", error);
+      Swal.close();
+      
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to open details. Please try again.',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3b82f6',
+      });
+    }
   };
 
   const disableModal = () => {
@@ -96,7 +195,6 @@ export default function ApprovalsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  // Fetch approval history FIRST
   useEffect(() => {
     const fetchApprovalHistory = async () => {
       const { data, error } = await supabase
@@ -113,7 +211,6 @@ export default function ApprovalsPage() {
 
     fetchApprovalHistory();
   }, []);
-
 
   function getLatestResponseStatus(visaCode, approvalHistory) {
     const filtered = approvalHistory.filter((a) => a.PwpCode === visaCode);
@@ -281,9 +378,6 @@ export default function ApprovalsPage() {
     setCurrentPage(1);
   }, [visaTypeFilter, statusFilter, fromDate, toDate, searchTerm, todayOnly]);
 
-  // FIXED FILTERING LOGIC
-
-  // ✅ Now filteredData can safely use all of these
   const filteredData = approvals.filter((entry) => {
     const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
     const role = currentUser?.role?.toLowerCase() || "";
@@ -299,7 +393,6 @@ export default function ApprovalsPage() {
 
       if (type !== visaTypeFilter) return false;
     }
-
 
     if (searchTerm) {
       const searchValue = searchTerm.toLowerCase().trim();
@@ -337,7 +430,6 @@ export default function ApprovalsPage() {
       }
     }
 
-    // 4. DATE RANGE FILTER
     if (fromDate && toDate && entryDate) {
       const from = new Date(fromDate);
       from.setHours(0, 0, 0, 0);
@@ -347,7 +439,6 @@ export default function ApprovalsPage() {
       if (entryDate < from || entryDate > to) return false;
     }
 
-    // 5. TODAY ONLY FILTER
     if (todayOnly && entryDate) {
       const now = new Date();
       const isToday =
@@ -358,7 +449,6 @@ export default function ApprovalsPage() {
       if (!isToday) return false;
     }
 
-    // 6. USER PERMISSION FILTER
     const createdFormName = (entry.createForm || "").toLowerCase().trim();
     if (role !== "admin") {
       if (createdFormName !== currentUserName) return false;
@@ -373,7 +463,6 @@ export default function ApprovalsPage() {
 
   const paginatedData = [...filteredData]
     .sort((a, b) => {
-      // Sort by latest date/time first (newest first)
       return new Date(b.created_at) - new Date(a.created_at);
     })
     .slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -477,9 +566,6 @@ export default function ApprovalsPage() {
 
     fetchUserDetails();
   }, [approvalSetting, currentUser?.UserID]);
-
-
-
 
   const handleDeclineClick = async (entryCode) => {
     const entry = approvals.find((item) => item.code === entryCode);
@@ -636,6 +722,7 @@ export default function ApprovalsPage() {
       Swal.fire("Error", "Something went wrong while sending back the entry.", "error");
     }
   };
+
   const handleApproveClick = async (entryCode) => {
     const entry = approvals.find((item) => item.code === entryCode);
     if (!entry || !entry.code) return;
@@ -657,7 +744,6 @@ export default function ApprovalsPage() {
     let coverPwpCode = null;
 
     try {
-      // Insert approval history
       const { error: historyError } = await supabase
         .from("Approval_History")
         .insert({
@@ -697,7 +783,6 @@ export default function ApprovalsPage() {
           creditBudget = parseFloat(pwpData.credit_budget) || 0;
           coverPwpCode = pwpData.coverPwpCode || null;
 
-          // ✅ Continue even if cover code or budget is missing
           if (!isNaN(remainingBalance) && coverPwpCode) {
             const { error: updateError } = await supabase
               .from("amount_badget")
@@ -730,7 +815,6 @@ export default function ApprovalsPage() {
         }
       }
 
-      // Log into approved_history_budget (still logs even if values are null)
       const { error: historyBudgetError } = await supabase
         .from("approved_history_budget")
         .insert({
@@ -750,7 +834,6 @@ export default function ApprovalsPage() {
         console.warn("Warning: Failed to log approval+budget:", historyBudgetError.message);
       }
 
-      // Log user activity
       try {
         const ipRes = await fetch("https://api.ipify.org?format=json");
         const { ip } = await ipRes.json();
@@ -778,7 +861,6 @@ export default function ApprovalsPage() {
         console.warn("Activity logging failed:", logErr.message);
       }
 
-      // Update state and show success
       setApprovals((prev) =>
         prev.map((item) =>
           item.code === entryCode
@@ -795,7 +877,7 @@ export default function ApprovalsPage() {
       Swal.fire({
         icon: "success",
         title: "Approved!",
-        text: `Entry ${entry.code} was approved successfully (even without budget info).`,
+        text: `Entry ${entry.code} was approved successfully.`,
         confirmButtonText: "OK",
       }).then(() => {
         window.location.reload();
@@ -839,9 +921,28 @@ export default function ApprovalsPage() {
         }}
       >
         Approvals Management
-
       </h2>
 
+      {/* ✅ Connection Status Indicator */}
+      <div style={{
+        padding: '10px 15px',
+        marginBottom: '20px',
+        backgroundColor: isOnline ? '#dcfce7' : '#fee2e2',
+        color: isOnline ? '#166534' : '#991b1b',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        fontWeight: '500'
+      }}>
+        <span style={{
+          width: '10px',
+          height: '10px',
+          borderRadius: '50%',
+          backgroundColor: isOnline ? '#22c55e' : '#ef4444'
+        }}></span>
+        {isOnline ? 'Connected' : 'No Internet Connection'}
+      </div>
 
       <div
         style={{
@@ -878,7 +979,6 @@ export default function ApprovalsPage() {
               e.target.style.borderColor = "#d1d5db";
             }}
           />
-
         </div>
 
         <div className="filter-item" style={{ minWidth: "150px" }}>
@@ -896,7 +996,6 @@ export default function ApprovalsPage() {
             }}
           >
             <option value="REGULAR">REGULAR</option>
-
           </select>
         </div>
 
@@ -918,7 +1017,6 @@ export default function ApprovalsPage() {
             <option value="Approved">Approved</option>
             <option value="Sent back for revision">Disapproved</option>
             <option value="Pending">Pending</option>
-
           </select>
         </div>
 
@@ -1105,7 +1203,6 @@ export default function ApprovalsPage() {
                         </button>
                       </td>
 
-
                       <td style={{ padding: "12px 16px" }}>
                         {getDistributorName(entry.distributor)}
                       </td>
@@ -1184,12 +1281,12 @@ export default function ApprovalsPage() {
               </tr>
             )}
           </tbody>
-
-          {modalVisaCode && (
-            <ViewDataModal visaCode={modalVisaCode} onClose={() => setModalVisaCode(null)} />
-          )}
         </table>
       </div>
+
+      {modalVisaCode && (
+        <ViewDataModal visaCode={modalVisaCode} onClose={() => setModalVisaCode(null)} />
+      )}
 
       <div
         style={{
