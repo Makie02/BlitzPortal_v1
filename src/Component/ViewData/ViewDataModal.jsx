@@ -519,98 +519,138 @@ const handleApprove = async () => {
     const userId = currentUser?.UserID || "unknown";
     const userType = currentUser?.UserType || "admin";
 
+    // Vars used for logging
     let remainingBalance = null;
     let creditBudget = null;
     let coverPwpCode = null;
+    let isPartOfCover = false;
+    let isPartOfBudget = false;
+    let notPartOfBudget = null;
 
     try {
-        let updatePayload = {
+        const updatePayload = {
             Approved: true,
             createdate: dateTime,
         };
 
-        // ✅ REGULAR PWP
+        // ------------------------------------------------------------------
+        // 1️⃣ REGULAR PWP
+        // ------------------------------------------------------------------
         if (visaCode.startsWith("R")) {
+
             const { data: pwpData, error: pwpError } = await supabase
                 .from("regular_pwp")
-                .select("remaining_balance, coverPwpCode, credit_budget, isPartOfCoverPwp")
+                .select("remaining_balance, coverPwpCode, credit_budget, isPartOfCoverPwp, amountbadget")
                 .eq("regularpwpcode", visaCode)
                 .single();
 
             if (pwpError || !pwpData) {
-                Swal.fire("Error", "Failed to fetch Regular PWP data.", "error");
-                return;
+                return Swal.fire("Error", "Failed to fetch Regular PWP data.", "error");
             }
 
-            // ✅ Only validate budget if it's part of a cover PWP
-            if (pwpData.isPartOfCoverPwp === "Yes" || pwpData.isPartOfCoverPwp === true) {
-                remainingBalance = parseFloat(pwpData.remaining_balance);
+            isPartOfCover = pwpData.isPartOfCoverPwp === "Yes" || pwpData.isPartOfCoverPwp === true;
+
+            // ✅ CHECK: IS PART OF BUDGET?
+            if (isPartOfCover) {
+                isPartOfBudget = true;
                 creditBudget = parseFloat(pwpData.credit_budget);
+                remainingBalance = parseFloat(pwpData.remaining_balance);
                 coverPwpCode = pwpData.coverPwpCode;
 
-                if (!isNaN(creditBudget) && !isNaN(remainingBalance) && coverPwpCode) {
-                    // ✅ Fetch amount_badget for the cover PWP
-                    const { data: budgetData, error: budgetError } = await supabase
-                        .from("amount_badget")
-                        .select("amountbadget, remainingbalance")
-                        .eq("pwp_code", coverPwpCode)
-                        .single();
+                // Validate cover PWP budget
+                const { data: budgetData, error: budgetError } = await supabase
+                    .from("amount_badget")
+                    .select("amountbadget, remainingbalance")
+                    .eq("pwp_code", coverPwpCode)
+                    .single();
 
-                    if (budgetError || !budgetData) {
-                        Swal.fire("Error", "Failed to fetch budget record.", "error");
-                        return;
-                    }
+                if (budgetError || !budgetData) {
+                    return Swal.fire("Error", "Failed to fetch cover PWP budget.", "error");
+                }
 
-                    const currentRemaining = parseFloat(budgetData.remainingbalance);
+                const currentRemaining = parseFloat(budgetData.remainingbalance);
 
-                    // ✅ Check if kulang ang remaining balance
-                    if (currentRemaining < creditBudget) {
-                        await Swal.fire({
-                            icon: "error",
-                            title: "Denied!",
-                            html: `
-                                <b>${visaCode}</b> cannot be approved.<br/>
-                                Remaining Balance: <b>${currentRemaining.toLocaleString()}</b><br/>
-                                Required Budget: <b>${creditBudget.toLocaleString()}</b>
-                            `,
-                            confirmButtonColor: "#ef4444",
-                            confirmButtonText: "OK",
-                        });
-                        // ❌ Stop here — no database updates
-                        return;
-                    }
+                // ❌ Kulang ang budget
+                if (currentRemaining < creditBudget) {
+                    return Swal.fire({
+                        icon: "error",
+                        title: "Denied!",
+                        html: `
+                            <b>${visaCode}</b> cannot be approved.<br/>
+                            Remaining Balance: <b>${currentRemaining.toLocaleString()}</b><br/>
+                            Required Budget: <b>${creditBudget.toLocaleString()}</b>
+                        `,
+                        confirmButtonColor: "#ef4444",
+                        confirmButtonText: "OK",
+                    });
+                }
 
-                    // ✅ Update cover PWP remaining balance
-                    const newRemaining = currentRemaining - creditBudget;
+                // Deduct budget
+                const newRemaining = currentRemaining - creditBudget;
 
-                    const { error: updateError } = await supabase
-                        .from("amount_badget")
-                        .update({
-                            remainingbalance: newRemaining,
-                            ...updatePayload,
-                        })
-                        .eq("pwp_code", coverPwpCode);
+                const { error: updateError } = await supabase
+                    .from("amount_badget")
+                    .update({
+                        remainingbalance: newRemaining,
+                        ...updatePayload,
+                    })
+                    .eq("pwp_code", coverPwpCode);
 
-                    if (updateError) {
-                        Swal.fire("Error", "Failed to update cover PWP balance.", "error");
-                        return;
+                if (updateError) {
+                    return Swal.fire("Error", "Failed to update cover PWP balance.", "error");
+                }
+            } else {
+                // ✅ NOT PART OF BUDGET
+                isPartOfBudget = false;
+                
+                // Calculate amount from SKU or Accounts
+                let calculatedAmount = 0;
+
+                // Fetch SKU Listing
+                const { data: skuData, error: skuError } = await supabase
+                    .from('regular_sku')
+                    .select('total_amount')
+                    .eq('regular_code', visaCode);
+
+                if (!skuError && skuData && skuData.length > 0) {
+                    calculatedAmount = skuData
+                        .filter(row => row.total_amount != null)
+                        .reduce((acc, row) => acc + parseFloat(row.total_amount || 0), 0);
+                } else {
+                    // If no SKU, get from Accounts Budget
+                    const { data: accountsData, error: accountsError } = await supabase
+                        .from('regular_accountlis_badget')
+                        .select('budget')
+                        .eq('regularcode', visaCode);
+
+                    if (!accountsError && accountsData && accountsData.length > 0) {
+                        calculatedAmount = accountsData.reduce((acc, row) => acc + parseFloat(row.budget || 0), 0);
+                    } else {
+                        // Fallback to amountbadget field
+                        calculatedAmount = parseFloat(pwpData.amountbadget || 0);
                     }
                 }
+
+                notPartOfBudget = calculatedAmount.toString();
             }
+
+        // ------------------------------------------------------------------
+        // 2️⃣ COVER / CLAIMS PWP
+        // ------------------------------------------------------------------
         } else {
-            // ✅ For Cover or Claims PWP
             const { error: updateError } = await supabase
                 .from("amount_badget")
                 .update(updatePayload)
                 .eq("pwp_code", visaCode);
 
             if (updateError) {
-                Swal.fire("Error", "Failed to update amount_badget.", "error");
-                return;
+                return Swal.fire("Error", "Failed to update amount_badget.", "error");
             }
         }
 
-        // ✅ Log Approval History
+        // ------------------------------------------------------------------
+        // 3️⃣ APPROVAL HISTORY LOG
+        // ------------------------------------------------------------------
         const { error: historyError } = await supabase.from("Approval_History").insert({
             PwpCode: visaCode,
             ApproverId: userId,
@@ -622,11 +662,15 @@ const handleApprove = async () => {
         });
 
         if (historyError) {
-            Swal.fire("Error", "Failed to log approval. Please try again.", "error");
-            return;
+            return Swal.fire("Error", "Failed to log approval.", "error");
         }
 
-        // ✅ Log approved_history_budget (POST / insert)
+        // ------------------------------------------------------------------
+        // 4️⃣ BUDGET HISTORY LOG (WITH isPartOfBudget & notPartOfBudget)
+        // ------------------------------------------------------------------
+        const statusValue = isPartOfCover ? "Deduction Amount" : "No deduction";
+        const updatedAmount = isPartOfCover ? true : false;
+
         const { error: historyBudgetError } = await supabase
             .from("approved_history_budget")
             .insert({
@@ -639,16 +683,19 @@ const handleApprove = async () => {
                 remaining_balance: remainingBalance,
                 credit_budget: creditBudget,
                 cover_pwp_code: coverPwpCode,
-                status: "Deduction Amount",
-                updated_amount_badget: coverPwpCode ? true : false,
+                status: statusValue,
+                updated_amount_badget: updatedAmount,
+                isPartOfBudget: isPartOfBudget,
+                notPartOfBudget: notPartOfBudget,
             });
 
         if (historyBudgetError) {
-            Swal.fire("Error", "Failed to insert approval + budget.", "error");
-            return;
+            return Swal.fire("Error", "Failed to insert approval + budget.", "error");
         }
 
-        // ✅ Log activity
+        // ------------------------------------------------------------------
+        // 5️⃣ ACTIVITY LOG (Non-blocking)
+        // ------------------------------------------------------------------
         try {
             const ipRes = await fetch("https://api.ipify.org?format=json");
             const { ip } = await ipRes.json();
@@ -663,11 +710,13 @@ const handleApprove = async () => {
                 time: dateTime,
                 action: `Approved ${visaCode}`,
             });
-        } catch (logErr) {
-            console.warn("Activity logging failed:", logErr.message);
+        } catch (err) {
+            console.warn("Activity logging failed:", err.message);
         }
 
-        // ✅ Success Message
+        // ------------------------------------------------------------------
+        // 6️⃣ SUCCESS MESSAGE
+        // ------------------------------------------------------------------
         Swal.fire({
             icon: "success",
             title: "Approved!",
