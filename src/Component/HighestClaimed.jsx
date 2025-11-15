@@ -30,195 +30,230 @@ export default function HighestClaimed({setCurrentView}) {
     return name.replace(/[\[\]"]/g, '').trim();
   };
 
-  const fetchDistributors = async () => {
-    try {
-      const { data: pwpData, error: pwpError } = await supabase
-        .from('regular_pwp')
-        .select('distributor');
+const fetchDistributors = async () => {
+  try {
+    const { data: pwpData, error: pwpError } = await supabase
+      .from('regular_pwp')
+      .select('distributor, createForm');
 
-      if (pwpError) throw pwpError;
+    if (pwpError) throw pwpError;
 
-      const uniqueCodes = [...new Set(pwpData.map(item => item.distributor).filter(Boolean))];
+    console.log("PWP RAW DATA:", pwpData);
 
-      if (uniqueCodes.length === 0) {
-        setDistributors([]);
-        return;
-      }
+    // ===== USER INFO =====
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || null;
 
-      const { data: distData, error: distError } = await supabase
-        .from('distributors')
-        .select('name, code')
-        .in('code', uniqueCodes)
-        .order('name', { ascending: true });
+    console.log("=== USER INFO ===");
+    console.log("UserID:", userId);
 
-      if (distError) throw distError;
+    // ===== MATCH createForm to UserID =====
+    const matchedCreateForm = pwpData.filter(
+      item => String(item.createForm) === String(userId)
+    );
 
-      setDistributors(distData || []);
+    console.log("=== MATCHED regular_pwp.createForm ===");
+    console.log(matchedCreateForm);
 
-    } catch (error) {
-      console.error('Error fetching distributors:', error.message);
+    // Get unique distributor codes from MATCHED data only
+// Get unique distributor codes from MATCHED data only
+const uniqueCodes = [...new Set(
+  matchedCreateForm.map(item => item.distributor).filter(Boolean)
+)];
+
+    if (uniqueCodes.length === 0) {
+      setDistributors([]);
+      return;
     }
-  };
 
-  const fetchDistributorData = async (distributor, monthFilter = '') => {
-    try {
-      setLoading(true);
-      
-      const { data: approvalData, error: approvalError } = await supabase
-        .from('Approval_History')
-        .select('PwpCode, Response, DateResponded');
+    const { data: distData, error: distError } = await supabase
+      .from('distributors')
+      .select('name, code')
+      .in('code', uniqueCodes)
+      .order('name', { ascending: true });
 
-      if (approvalError) throw approvalError;
+    if (distError) throw distError;
 
-      const approvedPwpCodes = new Set();
-      const pwpDateMap = {};
+    setDistributors(distData || []);
 
-      approvalData.forEach(approval => {
-        if (approval.Response && approval.Response.toLowerCase() === 'approved') {
-          approvedPwpCodes.add(approval.PwpCode);
-          pwpDateMap[approval.PwpCode] = approval.DateResponded;
+  } catch (error) {
+    console.error('Error fetching distributors:', error.message);
+  }
+};
+
+
+const fetchDistributorData = async (distributor, monthFilter = '') => {
+  try {
+    setLoading(true);
+    
+    const { data: approvalData, error: approvalError } = await supabase
+      .from('Approval_History')
+      .select('PwpCode, Response, DateResponded');
+
+    if (approvalError) throw approvalError;
+
+    const approvedPwpCodes = new Set();
+    const pwpDateMap = {};
+
+    approvalData.forEach(approval => {
+      if (approval.Response && approval.Response.toLowerCase() === 'approved') {
+        approvedPwpCodes.add(approval.PwpCode);
+        pwpDateMap[approval.PwpCode] = approval.DateResponded;
+      }
+    });
+
+    const months = [...new Set(approvalData
+      .filter(a => a.Response && a.Response.toLowerCase() === 'approved' && a.DateResponded)
+      .map(a => {
+        const date = new Date(a.DateResponded);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      })
+    )].sort().reverse();
+    setAvailableMonths(months);
+
+    const { data: activities, error: actError } = await supabase
+      .from('activity')
+      .select('code, name');
+    if (actError) throw actError;
+
+    const activityMap = {};
+    activities.forEach(act => {
+      activityMap[act.code] = act.name;
+    });
+
+    const { data: pwpData, error: pwpError } = await supabase
+      .from('regular_pwp')
+      .select('regularpwpcode, distributor, activity, credit_budget, amount_display, branchType')
+      .eq('distributor', distributor);
+
+    if (pwpError) throw pwpError;
+
+    const filteredPwp = pwpData.filter(item => approvedPwpCodes.has(item.regularpwpcode));
+
+    const pwpActivityMap = {};
+    const pwpCreditBudgetMap = {};
+    const pwpAmountDisplayMap = {};
+    const pwpBranchTypeMap = {};
+
+    // POPULATE THE MAPS
+    filteredPwp.forEach(pwp => {
+      pwpActivityMap[pwp.regularpwpcode] = pwp.activity;
+      pwpCreditBudgetMap[pwp.regularpwpcode] = parseFloat(pwp.credit_budget) || 0;
+      pwpAmountDisplayMap[pwp.regularpwpcode] = pwp.amount_display === true;
+      pwpBranchTypeMap[pwp.regularpwpcode] = pwp.branchType;
+    });
+
+    const { data: budgetData, error: budgetError } = await supabase
+      .from('regular_accountlis_badget')
+      .select('regularcode, account_name, budget')
+      .in('regularcode', filteredPwp.map(p => p.regularpwpcode));
+
+    if (budgetError) throw budgetError;
+
+    const { data: skuData, error: skuError } = await supabase
+      .from('regular_sku')
+      .select('regular_code, account_name, total_amount')
+      .in('regular_code', filteredPwp.map(p => p.regularpwpcode));
+
+    if (skuError) throw skuError;
+
+    // INITIALIZE storeMap
+    const storeMap = {};
+
+    // PROCESS budgetData
+    budgetData.forEach(item => {
+      const storeName = cleanAccountName(item.account_name);
+      const activityCode = pwpActivityMap[item.regularcode];
+      const activityName = activityMap[activityCode] || activityCode || 'Unknown';
+      const dateResponded = pwpDateMap[item.regularcode];
+
+      if (!storeMap[storeName]) {
+        storeMap[storeName] = {
+          store: storeName,
+          activities: {},
+          dates: {},
+          activitiesByMonth: {}
+        };
+      }
+      if (!storeMap[storeName].activities[activityName]) {
+        storeMap[storeName].activities[activityName] = 0;
+      }
+      const amount = parseFloat(item.budget) || 0;
+      storeMap[storeName].activities[activityName] += amount;
+
+      if (dateResponded) {
+        const d = new Date(dateResponded);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (!storeMap[storeName].activitiesByMonth[monthKey]) {
+          storeMap[storeName].activitiesByMonth[monthKey] = {};
         }
-      });
-
-      const months = [...new Set(approvalData
-        .filter(a => a.Response && a.Response.toLowerCase() === 'approved' && a.DateResponded)
-        .map(a => {
-          const date = new Date(a.DateResponded);
-          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        })
-      )].sort().reverse();
-      setAvailableMonths(months);
-
-      const { data: activities, error: actError } = await supabase
-        .from('activity')
-        .select('code, name');
-      if (actError) throw actError;
-
-      const activityMap = {};
-      activities.forEach(act => {
-        activityMap[act.code] = act.name;
-      });
-
-      const { data: pwpData, error: pwpError } = await supabase
-        .from('regular_pwp')
-        .select('regularpwpcode, distributor, activity, credit_budget, amount_display, branchType')
-        .eq('distributor', distributor);
-
-      if (pwpError) throw pwpError;
-
-      const filteredPwp = pwpData.filter(item => approvedPwpCodes.has(item.regularpwpcode));
-
-      const pwpActivityMap = {};
-      const pwpCreditBudgetMap = {};
-      const pwpAmountDisplayMap = {};
-      const pwpBranchTypeMap = {};
-
-      filteredPwp.forEach(pwp => {
-        pwpActivityMap[pwp.regularpwpcode] = pwp.activity;
-        pwpCreditBudgetMap[pwp.regularpwpcode] = parseFloat(pwp.credit_budget) || 0;
-        pwpAmountDisplayMap[pwp.regularpwpcode] = pwp.amount_display === true;
-        pwpBranchTypeMap[pwp.regularpwpcode] = pwp.branchType;
-      });
-
-      const { data: budgetData, error: budgetError } = await supabase
-        .from('regular_accountlis_badget')
-        .select('regularcode, account_name, budget')
-        .in('regularcode', filteredPwp.map(p => p.regularpwpcode));
-
-      if (budgetError) throw budgetError;
-
-      const { data: skuData, error: skuError } = await supabase
-        .from('regular_sku')
-        .select('regular_code, account_name, total_amount')
-        .in('regular_code', filteredPwp.map(p => p.regularpwpcode));
-
-      if (skuError) throw skuError;
-
-      const storeMap = {};
-
-      budgetData.forEach(item => {
-        const storeName = cleanAccountName(item.account_name);
-        const activityCode = pwpActivityMap[item.regularcode];
-        const activityName = activityMap[activityCode] || activityCode || 'Unknown';
-        const dateResponded = pwpDateMap[item.regularcode];
-
-        if (!storeMap[storeName]) {
-          storeMap[storeName] = {
-            store: storeName,
-            activities: {},
-            dates: {},
-            activitiesByMonth: {}
-          };
+        if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
+          storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
         }
-        if (!storeMap[storeName].activities[activityName]) {
-          storeMap[storeName].activities[activityName] = 0;
+        storeMap[storeName].activitiesByMonth[monthKey][activityName] += amount;
+
+        if (!storeMap[storeName].dates[activityName]) {
+          storeMap[storeName].dates[activityName] = [];
         }
-        const amount = parseFloat(item.budget) || 0;
-        storeMap[storeName].activities[activityName] += amount;
+        storeMap[storeName].dates[activityName].push(dateResponded);
+      }
+    });
 
-        if (dateResponded) {
-          const d = new Date(dateResponded);
-          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          
-          if (!storeMap[storeName].activitiesByMonth[monthKey]) {
-            storeMap[storeName].activitiesByMonth[monthKey] = {};
-          }
-          if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
-            storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
-          }
-          storeMap[storeName].activitiesByMonth[monthKey][activityName] += amount;
+    // PROCESS skuData
+    skuData.forEach(item => {
+      const storeName = cleanAccountName(item.account_name);
+      const activityCode = pwpActivityMap[item.regular_code];
+      const activityName = activityMap[activityCode] || activityCode || 'Unknown';
+      const dateResponded = pwpDateMap[item.regular_code];
 
-          if (!storeMap[storeName].dates[activityName]) {
-            storeMap[storeName].dates[activityName] = [];
-          }
-          storeMap[storeName].dates[activityName].push(dateResponded);
+      if (!storeMap[storeName]) {
+        storeMap[storeName] = {
+          store: storeName,
+          activities: {},
+          dates: {},
+          activitiesByMonth: {}
+        };
+      }
+      if (!storeMap[storeName].activities[activityName]) {
+        storeMap[storeName].activities[activityName] = 0;
+      }
+      const amount = parseFloat(item.total_amount) || 0;
+      storeMap[storeName].activities[activityName] += amount;
+
+      if (dateResponded) {
+        const d = new Date(dateResponded);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (!storeMap[storeName].activitiesByMonth[monthKey]) {
+          storeMap[storeName].activitiesByMonth[monthKey] = {};
         }
-      });
-
-      skuData.forEach(item => {
-        const storeName = cleanAccountName(item.account_name);
-        const activityCode = pwpActivityMap[item.regular_code];
-        const activityName = activityMap[activityCode] || activityCode || 'Unknown';
-        const dateResponded = pwpDateMap[item.regular_code];
-
-        if (!storeMap[storeName]) {
-          storeMap[storeName] = {
-            store: storeName,
-            activities: {},
-            dates: {},
-            activitiesByMonth: {}
-          };
+        if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
+          storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
         }
-        if (!storeMap[storeName].activities[activityName]) {
-          storeMap[storeName].activities[activityName] = 0;
+        storeMap[storeName].activitiesByMonth[monthKey][activityName] += amount;
+
+        if (!storeMap[storeName].dates[activityName]) {
+          storeMap[storeName].dates[activityName] = [];
         }
-        const amount = parseFloat(item.total_amount) || 0;
-        storeMap[storeName].activities[activityName] += amount;
+        storeMap[storeName].dates[activityName].push(dateResponded);
+      }
+    });
 
-        if (dateResponded) {
-          const d = new Date(dateResponded);
-          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          
-          if (!storeMap[storeName].activitiesByMonth[monthKey]) {
-            storeMap[storeName].activitiesByMonth[monthKey] = {};
-          }
-          if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
-            storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
-          }
-          storeMap[storeName].activitiesByMonth[monthKey][activityName] += amount;
+    // PROCESS filteredPwp with branchType splitting
+    filteredPwp.forEach(pwp => {
+      if (pwp.amount_display && pwp.branchType) {
+        // Split comma-separated branchType values
+        const branchTypes = pwp.branchType.split(',').map(b => cleanAccountName(b)).filter(Boolean);
+        const activityName = activityMap[pwp.activity] || pwp.activity || 'Unknown';
+        const dateResponded = pwpDateMap[pwp.regularpwpcode];
+        const amount = parseFloat(pwp.credit_budget) || 0;
+        
+        // Divide amount equally among branches
+        const amountPerBranch = branchTypes.length > 0 ? amount / branchTypes.length : 0;
 
-          if (!storeMap[storeName].dates[activityName]) {
-            storeMap[storeName].dates[activityName] = [];
-          }
-          storeMap[storeName].dates[activityName].push(dateResponded);
-        }
-      });
-
-      filteredPwp.forEach(pwp => {
-        if (pwp.amount_display && pwp.branchType) {
-          const storeName = cleanAccountName(pwp.branchType);
-          const activityName = activityMap[pwp.activity] || pwp.activity || 'Unknown';
-          const dateResponded = pwpDateMap[pwp.regularpwpcode];
+        branchTypes.forEach(storeName => {
+          if (!storeName || storeName.trim() === '') return; // Skip empty store names
 
           if (!storeMap[storeName]) {
             storeMap[storeName] = {
@@ -231,8 +266,7 @@ export default function HighestClaimed({setCurrentView}) {
           if (!storeMap[storeName].activities[activityName]) {
             storeMap[storeName].activities[activityName] = 0;
           }
-          const amount = parseFloat(pwp.credit_budget) || 0;
-          storeMap[storeName].activities[activityName] += amount;
+          storeMap[storeName].activities[activityName] += amountPerBranch;
 
           if (dateResponded) {
             const d = new Date(dateResponded);
@@ -244,74 +278,75 @@ export default function HighestClaimed({setCurrentView}) {
             if (!storeMap[storeName].activitiesByMonth[monthKey][activityName]) {
               storeMap[storeName].activitiesByMonth[monthKey][activityName] = 0;
             }
-            storeMap[storeName].activitiesByMonth[monthKey][activityName] += amount;
+            storeMap[storeName].activitiesByMonth[monthKey][activityName] += amountPerBranch;
 
             if (!storeMap[storeName].dates[activityName]) {
               storeMap[storeName].dates[activityName] = [];
             }
             storeMap[storeName].dates[activityName].push(dateResponded);
           }
+        });
+      }
+    });
+
+    let allTimeData = Object.values(storeMap).sort((a, b) => a.store.localeCompare(b.store));
+
+    const calculateMonthData = (monthKey) => {
+      const monthTotals = {};
+      allTimeData.forEach(store => {
+        if (store.activitiesByMonth && store.activitiesByMonth[monthKey]) {
+          Object.entries(store.activitiesByMonth[monthKey]).forEach(([activity, amount]) => {
+            monthTotals[activity] = (monthTotals[activity] || 0) + amount;
+          });
         }
       });
+      return monthTotals;
+    };
 
-      let allTimeData = Object.values(storeMap).sort((a, b) => a.store.localeCompare(b.store));
-
-      const calculateMonthData = (monthKey) => {
-        const monthTotals = {};
-        allTimeData.forEach(store => {
-          if (store.activitiesByMonth && store.activitiesByMonth[monthKey]) {
-            Object.entries(store.activitiesByMonth[monthKey]).forEach(([activity, amount]) => {
-              monthTotals[activity] = (monthTotals[activity] || 0) + amount;
-            });
-          }
-        });
-        return monthTotals;
-      };
-
-      const currentMonthKey = monthFilter || (() => {
-        const allMonths = new Set();
-        allTimeData.forEach(r => {
-          if (r.activitiesByMonth) {
-            Object.keys(r.activitiesByMonth).forEach(k => allMonths.add(k));
-          }
-        });
-        return Array.from(allMonths).sort().reverse()[0] || null;
-      })();
-
-      const prevMonthKey = currentMonthKey ? (() => {
-        const [year, month] = currentMonthKey.split('-').map(Number);
-        const prev = new Date(year, month - 2);
-        return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
-      })() : null;
-
-      setCurrentMonthData(calculateMonthData(currentMonthKey));
-      setPreviousMonthData(calculateMonthData(prevMonthKey));
-
-      let displayData = allTimeData;
-      if (monthFilter) {
-        displayData = allTimeData.map(store => {
-          const filteredActivities = store.activitiesByMonth && store.activitiesByMonth[monthFilter]
-            ? { ...store.activitiesByMonth[monthFilter] }
-            : {};
-          return { ...store, activities: filteredActivities };
-        }).filter(store => Object.keys(store.activities).length > 0);
-      }
-
-      const allActivities = new Set();
-      displayData.forEach(store => {
-        Object.keys(store.activities).forEach(activity => allActivities.add(activity));
+    const currentMonthKey = monthFilter || (() => {
+      const allMonths = new Set();
+      allTimeData.forEach(r => {
+        if (r.activitiesByMonth) {
+          Object.keys(r.activitiesByMonth).forEach(k => allMonths.add(k));
+        }
       });
-      const sortedActivities = Array.from(allActivities).sort();
+      return Array.from(allMonths).sort().reverse()[0] || null;
+    })();
 
-      setDistributorActivityColumns(sortedActivities);
-      setDistributorData(displayData);
-    } catch (error) {
-      console.error('Error fetching distributor data:', error);
-      alert('Error loading distributor data: ' + error.message);
-    } finally {
-      setLoading(false);
+    const prevMonthKey = currentMonthKey ? (() => {
+      const [year, month] = currentMonthKey.split('-').map(Number);
+      const prev = new Date(year, month - 2);
+      return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    })() : null;
+
+    setCurrentMonthData(calculateMonthData(currentMonthKey));
+    setPreviousMonthData(calculateMonthData(prevMonthKey));
+
+    let displayData = allTimeData;
+    if (monthFilter) {
+      displayData = allTimeData.map(store => {
+        const filteredActivities = store.activitiesByMonth && store.activitiesByMonth[monthFilter]
+          ? { ...store.activitiesByMonth[monthFilter] }
+          : {};
+        return { ...store, activities: filteredActivities };
+      }).filter(store => Object.keys(store.activities).length > 0);
     }
-  };
+
+    const allActivities = new Set();
+    displayData.forEach(store => {
+      Object.keys(store.activities).forEach(activity => allActivities.add(activity));
+    });
+    const sortedActivities = Array.from(allActivities).sort();
+
+    setDistributorActivityColumns(sortedActivities);
+    setDistributorData(displayData);
+  } catch (error) {
+    console.error('Error fetching distributor data:', error);
+    alert('Error loading distributor data: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const formatCurrency = (value) => {
     if (!value) return '0.00';
