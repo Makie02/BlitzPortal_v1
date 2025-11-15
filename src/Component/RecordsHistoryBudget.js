@@ -48,26 +48,36 @@ export default function ApprovedHistoryBudgetTable() {
       });
 
       const filteredByUser = (records || []).filter(record => {
-     const createdForm = String(record.created_form || "").toLowerCase();
-const status = String(record.status || "").toLowerCase();
+        const createdForm = String(record.created_form || "").toLowerCase();
+        const status = String(record.status || "").toLowerCase();
 
-if (createdForm === "" || createdForm === "n/a") {
-  return false;
-}
-if (status === "" || status === "n/a") {
-  return false;
-}
+        if (createdForm === "" || createdForm === "n/a") {
+          return false;
+        }
+        if (status === "" || status === "n/a") {
+          return false;
+        }
 
-        
-        return createdForm === String(userId) || 
-               createdForm?.toLowerCase() === userName?.toLowerCase();
+
+        return createdForm === String(userId) ||
+          createdForm?.toLowerCase() === userName?.toLowerCase();
       });
 
+      // Sa enrichedData mapping mo:
       const enrichedData = filteredByUser.map(record => {
         const lookupCode = record.cover_pwp_code || record.pwp_code;
+
         return {
           ...record,
-          remaining_balance: budgetMap[lookupCode] || record.remaining_balance || 0
+          remaining_balance: budgetMap[lookupCode] || record.remaining_balance || 0,
+
+          // ❌ MALI TO - case sensitive ang Supabase!
+          // isPartOfBudget: record.is_part_of_budget_amount ?? null,
+          // notPartOfBudget: record.not_part_budget_amount ?? null
+
+          // ✅ DAPAT GANITO (based sa schema mo)
+          isPartOfBudget: record.isPartOfBudget ?? null,
+          notPartOfBudget: record.notPartOfBudget ?? null
         };
       });
 
@@ -79,7 +89,7 @@ if (status === "" || status === "n/a") {
   };
 
   const filteredData = data.filter(item => {
-    const matchesSearch = 
+    const matchesSearch =
       item.pwp_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.cover_pwp_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.approver_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -98,17 +108,25 @@ if (status === "" || status === "n/a") {
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
-  const approvedData = filteredData.filter(item => 
+  const approvedData = filteredData.filter(item =>
     item.response?.toLowerCase() === 'approved'
   );
 
-  const totalCreditBudget = approvedData.reduce((sum, item) => 
-    sum + (parseFloat(item.credit_budget) || 0), 0
-  );
+  // ✅ FIXED: Total Credit Budget - only isPartOfBudget = true
+  const totalCreditBudget = approvedData.reduce((sum, item) => {
+    if (item.isPartOfBudget === true) {
+      return sum + (parseFloat(item.credit_budget) || 0);
+    }
+    return sum;
+  }, 0);
 
-  const totalRemainingBalance = approvedData.reduce((sum, item) => 
-     (parseFloat(item.remaining_balance) || 0), 0
-  );
+  // ✅ FIXED: Total Remaining Balance - only isPartOfBudget = true
+  const totalRemainingBalance = approvedData.reduce((sum, item) => {
+    if (item.isPartOfBudget === true) {
+      return sum + (parseFloat(item.remaining_balance) || 0);
+    }
+    return sum;
+  }, 0);
 
   const getStatusColor = (status) => {
     const colors = {
@@ -158,7 +176,6 @@ if (status === "" || status === "n/a") {
         'Approver ID': item.approver_id || 'N/A',
         'Response': item.response || 'N/A',
         'Status': item.status || 'N/A',
-        'Type': item.type || 'admin',
         'Credit Budget': parseFloat(item.credit_budget || 0).toFixed(2),
         'Remaining Balance': parseFloat(item.remaining_balance || 0).toFixed(2),
         'Date Responded': formatDate(item.date_responded)
@@ -173,7 +190,7 @@ if (status === "" || status === "n/a") {
         'Approver ID': '',
         'Response': '',
         'Status': '⭐ GRAND TOTAL',
-        'Type': '',
+
         'Credit Budget': totalCreditBudget.toFixed(2),
         'Remaining Balance': totalRemainingBalance.toFixed(2),
         'Date Responded': `Total Records: ${filteredData.length}`
@@ -432,103 +449,184 @@ if (status === "" || status === "n/a") {
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
         }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ background: 'linear-gradient(135deg, #667eea 0%, #0040b8ff 100%)' }}>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>ID</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>PWP Code</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>Cover PWP</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>Created By</th>
-                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13 }}>Response</th>
-                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13 }}>Status</th>
-                  <th style={{ padding: 20, textAlign: 'center', color: 'white', fontWeight: 700, fontSize: 13 }}>Type</th>
-                  <th style={{ padding: 20, textAlign: 'right', color: 'white', fontWeight: 700, fontSize: 13 }}>Credit Budget</th>
-                  <th style={{ padding: 20, textAlign: 'right', color: 'white', fontWeight: 700, fontSize: 13 }}>Remaining</th>
-                  <th style={{ padding: 20, textAlign: 'left', color: 'white', fontWeight: 700, fontSize: 13 }}>Date</th>
+                <tr style={{ background: "#2563eb" }}>
+                  {[
+                    "ID",
+                    "PWP Code",
+                    "Cover PWP",
+                    "Created By",
+                    "Response",
+                    "Status",
+                    "IsPartOfBudget",
+
+                    "Credit Budget",
+                    "Remaining",
+                    "Date",
+                  ].map((text) => (
+                    <th
+                      key={text}
+                      style={{
+                        padding: "14px 18px",
+                        textAlign: text === "Credit Budget" || text === "Remaining" ? "right" : "left",
+                        color: "white",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {text}
+                    </th>
+                  ))}
                 </tr>
               </thead>
+
               <tbody>
                 {currentItems.map((item, index) => (
-                  <tr key={item.id} style={{
-                    background: index % 2 === 0 ? '#f9fafb' : 'white',
-                    borderBottom: '1px solid #e5e7eb'
-                  }}>
-                    <td style={{ padding: '16px 20px' }}>
-                      <span style={{
-                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        color: 'white',
-                        padding: '6px 14px',
-                        borderRadius: 20,
-                        fontSize: 13,
-                        fontWeight: 700
-                      }}>#{item.id}</span>
+                  <tr
+                    key={item.id}
+                    style={{
+                      background: index % 2 === 0 ? "#f8fafc" : "#ffffff",
+                      borderBottom: "1px solid #e5e7eb",
+                    }}
+                  >
+                    <td style={{ padding: "12px 18px" }}>
+                      <span
+                        style={{
+                          background: "#2563eb",
+                          color: "white",
+                          padding: "4px 12px",
+                          borderRadius: 12,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        #{item.id}
+                      </span>
                     </td>
-                    <td style={{ padding: '16px 20px', fontWeight: 700, color: '#1f2937' }}>{item.pwp_code}</td>
-                    <td style={{ padding: '16px 20px', color: '#6b7280' }}>{item.cover_pwp_code || 'N/A'}</td>
-                    <td style={{ padding: '16px 20px', color: '#374151' }}>{item.created_form || 'N/A'}</td>
+
+                    <td style={{ padding: "12px 18px", fontWeight: 700, color: "#1e293b" }}>
+                      {item.pwp_code}
+                    </td>
+
+                    <td style={{ padding: "12px 18px", color: "#475569" }}>
+                      {item.cover_pwp_code || "N/A"}
+                    </td>
+
+                    <td style={{ padding: "12px 18px", color: "#334155" }}>
+                      {item.created_form || "N/A"}
+                    </td>
+
+                    <td style={{ padding: "12px 18px", textAlign: "center" }}>
+                      <span
+                        style={{
+                          background: getResponseColor(item.response),
+                          color: "white",
+                          padding: "5px 14px",
+                          borderRadius: 14,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.response}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "12px 18px", textAlign: "center" }}>
+                      <span
+                        style={{
+                          color: getStatusColor(item.status),
+                          background: `${getStatusColor(item.status)}22`,
+                          padding: "5px 14px",
+                          borderRadius: 14,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          border: `1px solid ${getStatusColor(item.status)}`,
+                        }}
+                      >
+                        {item.status || "N/A"}
+                      </span>
+                    </td>
+
                     <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                       <span style={{
-                        background: getResponseColor(item.response),
-                        color: 'white',
-                        padding: '6px 16px',
-                        borderRadius: 20,
-                        fontSize: 12,
-                        fontWeight: 700
-                      }}>{item.response}</span>
-                    </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center' }}>
-                      <span style={{
-                        color: getStatusColor(item.status),
-                        background: `${getStatusColor(item.status)}20`,
-                        padding: '6px 16px',
-                        borderRadius: 20,
+                        background: item.isPartOfBudget === true ? '#10b98122' : '#ef444422',
+                        color: item.isPartOfBudget === true ? '#10b981' : '#ef4444',
+                        padding: '5px 14px',
+                        borderRadius: 14,
                         fontSize: 12,
                         fontWeight: 700,
-                        border: `2px solid ${getStatusColor(item.status)}`
-                      }}>{item.status || 'N/A'}</span>
+                        border: `1px solid ${item.isPartOfBudget === true ? '#10b981' : '#ef4444'}`
+                      }}>
+                        {item.isPartOfBudget === true ? 'Yes' : item.isPartOfBudget === false ? 'No' : 'N/A'}
+                      </span>
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center' }}>
-                      <span style={{
-                        background: '#f3f4f6',
-                        color: '#374151',
-                        padding: '6px 14px',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 600
-                      }}>{item.type || 'admin'}</span>
+
+
+                    <td style={{
+                      padding: "12px 18px",
+                      textAlign: "right",
+                      color: item.isPartOfBudget === true ? "#059669" : item.isPartOfBudget === false ? "#3b82f6" : "#6b7280",
+                      fontWeight: 800
+                    }}>
+                      {item.isPartOfBudget === true
+                        ? formatCurrency(item.credit_budget)
+                        : item.isPartOfBudget === false
+                          ? formatCurrency(item.notPartOfBudget)
+                          : '-'}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', color: '#059669', fontWeight: 800 }}>
-                      {formatCurrency(item.credit_budget)}
-                    </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', color: '#d97706', fontWeight: 800 }}>
+
+                    <td style={{ padding: "12px 18px", textAlign: "right", color: "#d97706", fontWeight: 800 }}>
                       {formatCurrency(item.remaining_balance)}
                     </td>
-                    <td style={{ padding: '16px 20px', color: '#6b7280', fontSize: 13 }}>
+
+                    <td style={{ padding: "12px 18px", color: "#475569", fontSize: 13 }}>
                       {formatDate(item.date_responded)}
                     </td>
                   </tr>
                 ))}
               </tbody>
+
               <tfoot>
-                <tr style={{ background: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)' }}>
-                  <td colSpan="7" style={{ padding: '24px 20px', textAlign: 'right', color: 'white', fontWeight: 800, fontSize: 18 }}>
+                <tr style={{ background: "#1e293b" }}>
+                  <td
+                    colSpan="7"
+                    style={{
+                      padding: "20px 18px",
+                      textAlign: "right",
+                      color: "white",
+                      fontWeight: 800,
+                      fontSize: 16,
+                    }}
+                  >
                     📊 GRAND TOTALS
                   </td>
-                  <td style={{ padding: '24px 20px', textAlign: 'right' }}>
-                    <div style={{ color: '#10b981', fontSize: 20, fontWeight: 800 }}>{formatCurrency(totalCreditBudget)}</div>
-                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4 }}>CREDIT BUDGET</div>
+
+                  <td style={{ padding: "20px 18px", textAlign: "right" }}>
+                    <div style={{ color: "#10b981", fontSize: 18, fontWeight: 800 }}>
+                      {formatCurrency(totalCreditBudget)}
+                    </div>
+                    <div style={{ color: "#cbd5e1", fontSize: 11 }}>CREDIT BUDGET</div>
                   </td>
-                  <td style={{ padding: '24px 20px', textAlign: 'right' }}>
-                    <div style={{ color: '#f59e0b', fontSize: 20, fontWeight: 800 }}>{formatCurrency(totalRemainingBalance)}</div>
-                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4 }}>REMAINING</div>
+
+                  <td style={{ padding: "20px 18px", textAlign: "right" }}>
+                    <div style={{ color: "#f59e0b", fontSize: 18, fontWeight: 800 }}>
+                      {formatCurrency(totalRemainingBalance)}
+                    </div>
+                    <div style={{ color: "#cbd5e1", fontSize: 11 }}>REMAINING</div>
                   </td>
-                  <td style={{ padding: '24px 20px', textAlign: 'center' }}>
-                    <div style={{ color: '#667eea', fontSize: 20, fontWeight: 800 }}>{filteredData.length}</div>
-                    <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4 }}>RECORDS</div>
+
+                  <td style={{ padding: "20px 18px", textAlign: "center" }}>
+                    <div style={{ color: "#60a5fa", fontSize: 18, fontWeight: 800 }}>
+                      {filteredData.length}
+                    </div>
+                    <div style={{ color: "#cbd5e1", fontSize: 11 }}>RECORDS</div>
                   </td>
                 </tr>
               </tfoot>
             </table>
+
           </div>
 
           {filteredData.length > 0 && (
@@ -560,7 +658,7 @@ if (status === "" || status === "n/a") {
                 >
                   ← Previous
                 </button>
-                
+
                 {[...Array(totalPages)].map((_, i) => {
                   const pageNum = i + 1;
                   if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
