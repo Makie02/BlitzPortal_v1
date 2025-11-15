@@ -21,6 +21,9 @@ export default function ApprovedHistoryBudgetTable() {
       const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
       const userId = currentUser?.UserID || null;
       const userName = currentUser?.name || null;
+      const role = currentUser?.UserType || null; // ✅ Get role
+
+      console.log("Role:", role); // ✅ Debug log
 
       if (!userId && !userName) {
         console.warn("⚠️ No logged-in user found");
@@ -47,37 +50,51 @@ export default function ApprovedHistoryBudgetTable() {
         budgetMap[item.pwp_code] = item.remainingbalance;
       });
 
-      const filteredByUser = (records || []).filter(record => {
-        const createdForm = String(record.created_form || "").toLowerCase();
-        const status = String(record.status || "").toLowerCase();
+      // ✅ ADMIN CHECK: If admin, show all records. Otherwise, filter by user
+      // ✅ ADMIN CHECK: If admin, show all records. Otherwise, filter by user
+      const filteredByUser = (role === 'admin' || role === 'Admin')
+        ? records // ✅ Admin sees ALL records, no filtering
+        : (records || []).filter(record => {
+          const createdForm = String(record.created_form || "").toLowerCase();
+          const status = String(record.status || "").toLowerCase();
 
-        if (createdForm === "" || createdForm === "n/a") {
-          return false;
-        }
-        if (status === "" || status === "n/a") {
-          return false;
-        }
+          if (createdForm === "" || createdForm === "n/a") {
+            return false;
+          }
+          if (status === "" || status === "n/a") {
+            return false;
+          }
 
+          return createdForm === String(userId) ||
+            createdForm?.toLowerCase() === userName?.toLowerCase();
+        });
 
-        return createdForm === String(userId) ||
-          createdForm?.toLowerCase() === userName?.toLowerCase();
-      });
+      console.log("Total records from DB:", records?.length);
+      console.log("Filtered records:", filteredByUser?.length);
+      console.log("Role is admin?", role === 'admin' || role === 'Admin');
 
-      // Sa enrichedData mapping mo:
       const enrichedData = filteredByUser.map(record => {
         const lookupCode = record.cover_pwp_code || record.pwp_code;
 
+        let remainingBalance = budgetMap[lookupCode] || record.remaining_balance || 0;
+
+        if (record["isPartOfBudget"] === false) {
+          remainingBalance = 0;
+        }
+
+        console.log('Record:', {
+          pwp_code: record.pwp_code,
+          isPartOfBudget: record["isPartOfBudget"],
+          credit_budget: record.credit_budget,
+          notPartOfBudget: record["notPartOfBudget"],
+          remaining_balance: remainingBalance
+        });
+
         return {
           ...record,
-          remaining_balance: budgetMap[lookupCode] || record.remaining_balance || 0,
-
-          // ❌ MALI TO - case sensitive ang Supabase!
-          // isPartOfBudget: record.is_part_of_budget_amount ?? null,
-          // notPartOfBudget: record.not_part_budget_amount ?? null
-
-          // ✅ DAPAT GANITO (based sa schema mo)
-          isPartOfBudget: record.isPartOfBudget ?? null,
-          notPartOfBudget: record.notPartOfBudget ?? null
+          remaining_balance: remainingBalance,
+          isPartOfBudget: record["isPartOfBudget"] ?? null,
+          notPartOfBudget: record["notPartOfBudget"] ?? null
         };
       });
 
@@ -121,12 +138,22 @@ export default function ApprovedHistoryBudgetTable() {
   }, 0);
 
   // ✅ FIXED: Total Remaining Balance - only isPartOfBudget = true
-  const totalRemainingBalance = approvedData.reduce((sum, item) => {
-    if (item.isPartOfBudget === true) {
-      return sum + (parseFloat(item.remaining_balance) || 0);
-    }
-    return sum;
-  }, 0);
+  // ✅ FIXED: Total Remaining Balance - Get UNIQUE remaining balance per cover PWP
+  const totalRemainingBalance = (() => {
+    const uniqueCoverPwps = new Map();
+
+    approvedData.forEach(item => {
+      if (item.isPartOfBudget === true && item.cover_pwp_code) {
+        // Store the remaining balance for each unique cover PWP
+        if (!uniqueCoverPwps.has(item.cover_pwp_code)) {
+          uniqueCoverPwps.set(item.cover_pwp_code, parseFloat(item.remaining_balance) || 0);
+        }
+      }
+    });
+
+    // Sum only the unique cover PWP remaining balances
+    return Array.from(uniqueCoverPwps.values()).reduce((sum, balance) => sum + balance, 0);
+  })();
 
   const getStatusColor = (status) => {
     const colors = {
