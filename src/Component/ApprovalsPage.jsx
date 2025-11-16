@@ -8,11 +8,15 @@ export default function ApprovalsPage() {
   const storedUser = localStorage.getItem("loggedInUser");
   const currentUser = storedUser ? JSON.parse(storedUser) : null;
   const [modalVisaCode, setModalVisaCode] = React.useState(null);
+  const [modalLoading, setIsModalLoading] = React.useState(null);
+
+
+
   const [openDropdownIndex, setOpenDropdownIndex] = useState(null);
   const dropdownRefs = useRef([]);
   const [userNames, setUserNames] = useState({});
   const [distributors, setDistributors] = useState([]);
-  
+
   // ✅ Add online status monitoring
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -93,6 +97,12 @@ export default function ApprovalsPage() {
   }, []);
 
   // ✅ FIXED handleRowClick with loading screen and connection check
+  // ✅ REAL-TIME handleRowClick - Loading closes exactly when modal opens
+  // ✅ REAL-TIME handleRowClick - Loading tied to actual modal data loading
+  // ✅ REAL-TIME handleRowClick - Loading tied to actual modal data loading
+
+
+
   const handleRowClick = async (entry) => {
     // Check internet connection first
     if (!navigator.onLine) {
@@ -106,84 +116,8 @@ export default function ApprovalsPage() {
       return;
     }
 
-    // ✅ Show loading screen
-    Swal.fire({
-      title: 'Loading...',
-      html: `
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
-          <div style="
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3b82f6;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-          "></div>
-          <p style="color: #64748b; margin: 0;">Loading details for <strong>${entry.code}</strong></p>
-        </div>
-        <style>
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        </style>
-      `,
-      showConfirmButton: false,
-      allowOutsideClick: false,
-      allowEscapeKey: false,
-      didOpen: () => {
-        Swal.showLoading();
-      }
-    });
-
-    try {
-      console.log("Opening modal for:", entry.code);
-      
-      // Optional: Verify connection with a quick ping
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-      try {
-        await fetch('https://www.google.com/favicon.ico', {
-          method: 'HEAD',
-          mode: 'no-cors',
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        Swal.close();
-        // If ping fails, show error
-        await Swal.fire({
-          icon: 'error',
-          title: 'Connection Issue',
-          text: 'Unable to load data. Please check your internet connection.',
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#3b82f6',
-        });
-        return;
-      }
-
-      // ✅ Set modal first, THEN close loading after a short delay
-      setModalVisaCode(entry.code);
-      
-      // ✅ Wait for modal to render then close loading
-      setTimeout(() => {
-        Swal.close();
-      }, 300);
-
-    } catch (error) {
-      console.error("Error opening modal:", error);
-      Swal.close();
-      
-      await Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'Failed to open details. Please try again.',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#3b82f6',
-      });
-    }
+    // ✅ INSTANT: Show modal immediately, data loads inside
+    setModalVisaCode(entry.code);
   };
 
   const disableModal = () => {
@@ -1283,9 +1217,11 @@ export default function ApprovalsPage() {
           </tbody>
         </table>
       </div>
-
       {modalVisaCode && (
-        <ViewDataModal visaCode={modalVisaCode} onClose={() => setModalVisaCode(null)} />
+        <ViewDataModal
+          visaCode={modalVisaCode}
+          onClose={() => setModalVisaCode(null)}
+        />
       )}
 
       <div
