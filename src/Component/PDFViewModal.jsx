@@ -513,6 +513,7 @@ function PDFViewModal({ record, onClose }) {
             }
 
             // ===== Account List =====
+            // ===== Account List =====
             if (accountList && accountList.length > 0) {
                 checkPageBreak(40);
                 doc.setFontSize(13);
@@ -523,19 +524,21 @@ function PDFViewModal({ record, onClose }) {
                 doc.text('ACCOUNTS BUDGET', margin + 5, yPos + 7);
                 yPos += 14;
 
+                // ✅ FIX: 2 columns lang - Account Name at Budget
                 const accountTableData = accountList.map(item => [
                     item.account_name || '-',
-                    formatCurrency(item.budget),
-                    formatCurrency(item.total_budget)
+                    formatCurrency(item.budget)  // ✅ Remove total_budget
                 ]);
 
+                // ✅ FIX: Calculate total from budget column
                 const totalBudget = accountList.reduce(
-                    (sum, item) => sum + Number(item.total_budget || 0),
+                    (sum, item) => sum + Number(item.budget || 0),  // ✅ Use 'budget' not 'total_budget'
                     0
                 );
-                accountTableData.push(['TOTAL', '', formatCurrency(totalBudget)]);
+                accountTableData.push(['TOTAL', formatCurrency(totalBudget)]);
 
-                drawTable(['Account Name', 'Budget', 'Total Budget'], accountTableData, [70, 55, 55]);
+                // ✅ FIX: 2 columns lang sa header at width
+                drawTable(['Account Name', 'Budget'], accountTableData, [120, 60]);  // ✅ 2 columns
             }
 
             // ===== SKU List =====
@@ -642,128 +645,153 @@ function PDFViewModal({ record, onClose }) {
         }
     };
     // NEW: Excel Export
-    const handleExportExcel = () => {
-        setIsGeneratingExcel(true);
+const handleExportExcel = () => {
+    setIsGeneratingExcel(true);
 
-        try {
-            const data = fullRecord || record;
-            const pwpCode = data.regularpwpcode || data.cover_code || data.code || 'N/A';
+    try {
+        const data = fullRecord || record;
+        const pwpCode = data.regularpwpcode || data.cover_code || data.code || 'N/A';
 
-            const workbook = XLSX.utils.book_new();
+        const workbook = XLSX.utils.book_new();
 
-            // Sheet 1: Basic Information
-            const basicData = [];
-            basicData.push(['PWP RECORD DETAILS']);
-            basicData.push(['PWP Code', pwpCode]);
-            basicData.push(['Type', data.source === 'cover_pwp' ? 'Cover PWP' : 'Regular PWP']);
-            basicData.push(['Status', data.approval_status || 'Pending']);
-            basicData.push([]);
+        // ✅ Sheet 1: Basic Information - TRUE HORIZONTAL FORMAT
+        const basicData = [];
+        
+        // Title row
+        basicData.push(['PWP RECORD DETAILS']);
+        basicData.push([]); // Empty row
 
-            if (data.source === 'regular_pwp') {
-                basicData.push(['BASIC INFORMATION']);
-                basicData.push(['PWP Type', data.pwptype || data.pwp_type || '-']);
-                basicData.push(['Branch Type', data.branchType || '-']);
-                basicData.push(['Distributor', distributorName || data.distributor || '-']);
-                basicData.push(['Account Type', formatArray(data.accountType)]);
-                basicData.push([]);
+        // ✅ PWP Details - ALL IN ONE ROW
+        basicData.push(['PWP Code', 'Type', 'Status']);
+        basicData.push([pwpCode, data.source === 'cover_pwp' ? 'Cover PWP' : 'Regular PWP', data.approval_status || 'Pending']);
+        basicData.push([]); // Empty row
 
-                basicData.push(['ACTIVITY DETAILS']);
-                basicData.push(['Activity', activityName || data.activity || '-']);
-                basicData.push(['Promo Scheme', data.promoScheme || '-']);
-                basicData.push(['Duration From', formatDate(data.activityDurationFrom)]);
-                basicData.push(['Duration To', formatDate(data.activityDurationTo)]);
-                basicData.push(['Objective', data.objective || '-']);
-                basicData.push([]);
+        if (data.source === 'regular_pwp') {
+            // ✅ BASIC INFORMATION - HORIZONTAL
+            basicData.push(['BASIC INFORMATION']);
+            basicData.push(['PWP Type', 'Branch Type', 'Distributor', 'Account Type']);
+            basicData.push([
+                data.pwptype || data.pwp_type || '-',
+                data.branchType || '-',
+                distributorName || data.distributor || '-',
+                formatArray(data.accountType)
+            ]);
+            basicData.push([]); // Empty row
 
-                basicData.push(['BUDGET INFORMATION']);
-                basicData.push(['Credit Budget', data.credit_budget || 0]);
-                basicData.push(['Remaining Balance', data.remaining_balance || 0]);
-                basicData.push([]);
+            // ✅ ACTIVITY DETAILS - HORIZONTAL
+            basicData.push(['ACTIVITY DETAILS']);
+            basicData.push(['Activity', 'Promo Scheme', 'Duration From', 'Duration To']);
+            basicData.push([
+                activityName || data.activity || '-',
+                data.promoScheme || '-',
+                formatDate(data.activityDurationFrom),
+                formatDate(data.activityDurationTo)
+            ]);
+            basicData.push(['Objective']);
+            basicData.push([data.objective || '-']);
+            basicData.push([]); // Empty row
 
-                basicData.push(['CATEGORY INFORMATION']);
-                basicData.push(['Category Code', data.categoryCode || '-']);
-                basicData.push(['Category Name', data.categoryName || '-']);
-            } else {
-                basicData.push(['COVER PWP INFORMATION']);
-                basicData.push(['Cover Code', data.cover_code || '-']);
-                basicData.push(['Distributor Code', data.distributor_code || '-']);
-                basicData.push(['PWP Type', data.pwp_type || '-']);
-                basicData.push(['Amount Budget', data.amount_badget || 0]);
-                basicData.push(['Notification', data.notification ? 'Enabled' : 'Disabled']);
-            }
+            // ✅ BUDGET INFORMATION - HORIZONTAL
+            basicData.push(['BUDGET INFORMATION']);
+            basicData.push(['Credit Budget', 'Remaining Balance']);
+            basicData.push([data.credit_budget || 0, data.remaining_balance || 0]);
+            basicData.push([]); // Empty row
 
-            basicData.push([]);
-            basicData.push(['SYSTEM INFORMATION']);
-            basicData.push(['Assigned By', creatorName || 'Unknown']);
-            basicData.push(['Created Date', formatDateTime(data.created_at)]);
-
-            const ws1 = XLSX.utils.aoa_to_sheet(basicData);
-            XLSX.utils.book_append_sheet(workbook, ws1, 'Basic Info');
-
-            // Sheet 2: Account List (if available)
-            if (data.source === 'regular_pwp' && data.accounts && accountList.length > 0) {
-                const accountData = [
-                    ['Account Name', 'Budget', 'Total Budget']
-                ];
-
-                accountList.forEach(item => {
-                    accountData.push([
-                        item.account_name,
-                        Number(item.budget),
-                        Number(item.total_budget)
-                    ]);
-                });
-
-                const totalBudget = accountList.reduce((sum, item) => sum + Number(item.total_budget || 0), 0);
-                accountData.push(['TOTAL', '', totalBudget]);
-
-                const ws2 = XLSX.utils.aoa_to_sheet(accountData);
-                XLSX.utils.book_append_sheet(workbook, ws2, 'Accounts');
-            }
-
-            // Sheet 3: SKU List (if available)
-            if (data.source === 'regular_pwp' && data.sku && skuList.length > 0) {
-                const skuData = [
-                    ['SKU Code', 'Account Name', 'SRP', 'Qty', 'UOM', 'Billing Amount', 'Discount', 'Total Amount']
-                ];
-
-                skuList.forEach(item => {
-                    skuData.push([
-                        item.sku_code,
-                        item.account_name,
-                        Number(item.srp),
-                        item.qty,
-                        item.uom,
-                        Number(item.billing_amount),
-                        Number(item.discount),
-                        Number(item.total_amount)
-                    ]);
-                });
-
-                const totalAmount = skuList.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
-                skuData.push(['', '', '', '', '', '', 'TOTAL', totalAmount]);
-
-                const ws3 = XLSX.utils.aoa_to_sheet(skuData);
-                XLSX.utils.book_append_sheet(workbook, ws3, 'SKU List');
-            }
-
-            // Save Excel file
-            XLSX.writeFile(workbook, `PWP_${pwpCode}_${new Date().toISOString().split('T')[0]}.xlsx`);
-        } catch (error) {
-            console.error('Error generating Excel:', error);
-            alert('Error generating Excel. Please try again.');
-        } finally {
-            setIsGeneratingExcel(false);
+            // ✅ CATEGORY INFORMATION - HORIZONTAL
+            basicData.push(['CATEGORY INFORMATION']);
+            basicData.push(['Category Code', 'Category Name']);
+            basicData.push([data.categoryCode || '-', data.categoryName || '-']);
+        } else {
+            // ✅ COVER PWP INFORMATION - HORIZONTAL
+            basicData.push(['COVER PWP INFORMATION']);
+            basicData.push(['Cover Code', 'Distributor Code', 'PWP Type', 'Amount Budget', 'Notification']);
+            basicData.push([
+                data.cover_code || '-',
+                data.distributor_code || '-',
+                data.pwp_type || '-',
+                data.amount_badget || 0,
+                data.notification ? 'Enabled' : 'Disabled'
+            ]);
         }
-    };
 
-    const handlePrintPDF = () => {
-        setIsGeneratingPDF(true);
-        setTimeout(() => {
-            window.print();
-            setIsGeneratingPDF(false);
-        }, 100);
-    };
+        basicData.push([]); // Empty row
+        
+        // ✅ SYSTEM INFORMATION - HORIZONTAL
+        basicData.push(['SYSTEM INFORMATION']);
+        basicData.push(['Assigned By', 'Created Date']);
+        basicData.push([creatorName || 'Unknown', formatDateTime(data.created_at)]);
+
+        const ws1 = XLSX.utils.aoa_to_sheet(basicData);
+        
+        // ✅ Set column widths
+        ws1['!cols'] = [
+            { wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 30 },
+            { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
+        ];
+
+        XLSX.utils.book_append_sheet(workbook, ws1, 'Basic Info');
+
+        // Sheet 2: Account List
+        if (data.source === 'regular_pwp' && data.accounts && accountList.length > 0) {
+            const accountData = [
+                ['Account Name', 'Budget']
+            ];
+
+            accountList.forEach(item => {
+                accountData.push([
+                    item.account_name,
+                    Number(item.budget)
+                ]);
+            });
+
+            const totalBudget = accountList.reduce((sum, item) => sum + Number(item.budget || 0), 0);
+            accountData.push(['TOTAL', totalBudget]);
+
+            const ws2 = XLSX.utils.aoa_to_sheet(accountData);
+            ws2['!cols'] = [{ wch: 40 }, { wch: 15 }];
+            XLSX.utils.book_append_sheet(workbook, ws2, 'Accounts');
+        }
+
+        // Sheet 3: SKU List
+        if (data.source === 'regular_pwp' && data.sku && skuList.length > 0) {
+            const skuData = [
+                ['SKU Code', 'Account Name', 'SRP', 'Qty', 'UOM', 'Billing Amount', 'Discount', 'Total Amount']
+            ];
+
+            skuList.forEach(item => {
+                skuData.push([
+                    item.sku_code,
+                    item.account_name,
+                    Number(item.srp),
+                    item.qty,
+                    item.uom,
+                    Number(item.billing_amount),
+                    Number(item.discount),
+                    Number(item.total_amount)
+                ]);
+            });
+
+            const totalAmount = skuList.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+            skuData.push(['', '', '', '', '', '', 'TOTAL', totalAmount]);
+
+            const ws3 = XLSX.utils.aoa_to_sheet(skuData);
+            ws3['!cols'] = [
+                { wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, 
+                { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 15 }
+            ];
+            XLSX.utils.book_append_sheet(workbook, ws3, 'SKU List');
+        }
+
+        XLSX.writeFile(workbook, `PWP_${pwpCode}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (error) {
+        console.error('Error generating Excel:', error);
+        alert('Error generating Excel. Please try again.');
+    } finally {
+        setIsGeneratingExcel(false);
+    }
+};
+
+
 
     if (!record) return null;
 
@@ -914,26 +942,7 @@ function PDFViewModal({ record, onClose }) {
                                 >
                                     📊 {isGeneratingExcel ? 'Generating...' : 'Export Excel'}
                                 </button>
-                                <button
-                                    onClick={handlePrintPDF}
-                                    disabled={isGeneratingPDF}
-                                    style={{
-                                        padding: '10px 20px',
-                                        backgroundColor: '#ff9800',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '8px',
-                                        cursor: isGeneratingPDF ? 'not-allowed' : 'pointer',
-                                        fontSize: '14px',
-                                        fontWeight: '600',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        opacity: isGeneratingPDF ? 0.6 : 1
-                                    }}
-                                >
-                                    🖨️ Print
-                                </button>
+                         
                                 <button
                                     onClick={onClose}
                                     style={{
