@@ -10,6 +10,7 @@ export default function ApprovedHistoryBudgetTable() {
   const [filterResponse, setFilterResponse] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [activeDistributor, setActiveDistributor] = useState('all'); // ✅ NEW
 
   useEffect(() => {
     fetchData();
@@ -21,9 +22,9 @@ export default function ApprovedHistoryBudgetTable() {
       const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
       const userId = currentUser?.UserID || null;
       const userName = currentUser?.name || null;
-      const role = currentUser?.UserType || null; // ✅ Get role
+      const role = currentUser?.UserType || null;
 
-      console.log("Role:", role); // ✅ Debug log
+      console.log("Role:", role);
 
       if (!userId && !userName) {
         console.warn("⚠️ No logged-in user found");
@@ -45,15 +46,39 @@ export default function ApprovedHistoryBudgetTable() {
 
       if (budgetError) throw budgetError;
 
+      // ✅ Fetch Regular PWP data with distributor codes
+      const { data: regularPwpData, error: regularPwpError } = await supabase
+        .from('regular_pwp')
+        .select('regularpwpcode, distributor');
+
+      if (regularPwpError) throw regularPwpError;
+
+      // ✅ Fetch Distributor names
+      const { data: distributorsData, error: distributorsError } = await supabase
+        .from('distributors')
+        .select('code, name');
+
+      if (distributorsError) throw distributorsError;
+
+      // ✅ Create mapping: PWP Code → Distributor Code
+      const pwpToDistributorMap = {};
+      (regularPwpData || []).forEach(item => {
+        pwpToDistributorMap[item.regularpwpcode] = item.distributor;
+      });
+
+      // ✅ Create mapping: Distributor Code → Distributor Name
+      const distributorNameMap = {};
+      (distributorsData || []).forEach(item => {
+        distributorNameMap[item.code] = item.name;
+      });
+
       const budgetMap = {};
       (budgetData || []).forEach(item => {
         budgetMap[item.pwp_code] = item.remainingbalance;
       });
 
-      // ✅ ADMIN CHECK: If admin, show all records. Otherwise, filter by user
-      // ✅ ADMIN CHECK: If admin, show all records. Otherwise, filter by user
       const filteredByUser = (role === 'admin' || role === 'Admin')
-        ? records // ✅ Admin sees ALL records, no filtering
+        ? records
         : (records || []).filter(record => {
           const createdForm = String(record.created_form || "").toLowerCase();
           const status = String(record.status || "").toLowerCase();
@@ -82,19 +107,18 @@ export default function ApprovedHistoryBudgetTable() {
           remainingBalance = 0;
         }
 
-        console.log('Record:', {
-          pwp_code: record.pwp_code,
-          isPartOfBudget: record["isPartOfBudget"],
-          credit_budget: record.credit_budget,
-          notPartOfBudget: record["notPartOfBudget"],
-          remaining_balance: remainingBalance
-        });
+        // ✅ GET DISTRIBUTOR NAME
+        const distributorCode = pwpToDistributorMap[record.pwp_code];
+        const distributorName = distributorCode
+          ? (distributorNameMap[String(distributorCode)] || `Code: ${distributorCode}`)
+          : 'N/A';
 
         return {
           ...record,
           remaining_balance: remainingBalance,
           isPartOfBudget: record["isPartOfBudget"] ?? null,
-          notPartOfBudget: record["notPartOfBudget"] ?? null
+          notPartOfBudget: record["notPartOfBudget"] ?? null,
+          distributor_name: distributorName
         };
       });
 
@@ -118,18 +142,33 @@ export default function ApprovedHistoryBudgetTable() {
     return matchesSearch && matchesStatus && matchesResponse;
   });
 
+  // ✅ Get unique distributors
+  const uniqueDistributors = ['all', ...new Set(
+    filteredData
+      .map(item => item.distributor_name)
+      .filter(name => name && name !== 'N/A')
+  )].sort((a, b) => {
+    if (a === 'all') return -1;
+    if (b === 'all') return 1;
+    return a.localeCompare(b);
+  });
+
+  // ✅ Filter by active distributor
+  const distributorFilteredData = activeDistributor === 'all'
+    ? filteredData
+    : filteredData.filter(item => item.distributor_name === activeDistributor);
+
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const currentItems = distributorFilteredData.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(distributorFilteredData.length / itemsPerPage);
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
-  const approvedData = filteredData.filter(item =>
+  const approvedData = distributorFilteredData.filter(item =>
     item.response?.toLowerCase() === 'approved'
   );
 
-  // ✅ FIXED: Total Credit Budget - only isPartOfBudget = true
   const totalCreditBudget = approvedData.reduce((sum, item) => {
     if (item.isPartOfBudget === true) {
       return sum + (parseFloat(item.credit_budget) || 0);
@@ -137,21 +176,17 @@ export default function ApprovedHistoryBudgetTable() {
     return sum;
   }, 0);
 
-  // ✅ FIXED: Total Remaining Balance - only isPartOfBudget = true
-  // ✅ FIXED: Total Remaining Balance - Get UNIQUE remaining balance per cover PWP
   const totalRemainingBalance = (() => {
     const uniqueCoverPwps = new Map();
 
     approvedData.forEach(item => {
       if (item.isPartOfBudget === true && item.cover_pwp_code) {
-        // Store the remaining balance for each unique cover PWP
         if (!uniqueCoverPwps.has(item.cover_pwp_code)) {
           uniqueCoverPwps.set(item.cover_pwp_code, parseFloat(item.remaining_balance) || 0);
         }
       }
     });
 
-    // Sum only the unique cover PWP remaining balances
     return Array.from(uniqueCoverPwps.values()).reduce((sum, balance) => sum + balance, 0);
   })();
 
@@ -191,14 +226,14 @@ export default function ApprovedHistoryBudgetTable() {
     return `₱${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // ========== EXPORT TO EXCEL FUNCTION - ETO NA KUPAL! ==========
   const exportToExcel = () => {
     try {
-      const exportData = filteredData.map((item, index) => ({
+      const exportData = distributorFilteredData.map((item, index) => ({
         'No.': index + 1,
         'ID': item.id,
         'PWP Code': item.pwp_code || 'N/A',
         'Cover PWP Code': item.cover_pwp_code || 'N/A',
+        'Distributor': item.distributor_name || 'N/A',
         'Created By': item.created_form || 'N/A',
         'Approver ID': item.approver_id || 'N/A',
         'Response': item.response || 'N/A',
@@ -213,18 +248,17 @@ export default function ApprovedHistoryBudgetTable() {
         'ID': '',
         'PWP Code': '',
         'Cover PWP Code': '',
+        'Distributor': '',
         'Created By': '',
         'Approver ID': '',
         'Response': '',
         'Status': '⭐ GRAND TOTAL',
-
         'Credit Budget': totalCreditBudget.toFixed(2),
         'Remaining Balance': totalRemainingBalance.toFixed(2),
-        'Date Responded': `Total Records: ${filteredData.length}`
+        'Date Responded': `Total Records: ${distributorFilteredData.length}`
       });
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
-
       worksheet['!cols'] = [
         { wch: 5 }, { wch: 8 }, { wch: 15 }, { wch: 15 },
         { wch: 20 }, { wch: 20 }, { wch: 12 }, { wch: 15 },
@@ -235,7 +269,7 @@ export default function ApprovedHistoryBudgetTable() {
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Approved History Budget');
 
       const currentDate = new Date().toISOString().split('T')[0];
-      const filename = `Approved_History_Budget_${currentDate}.xlsx`;
+      const filename = `Approved_History_Budget_${activeDistributor === 'all' ? 'All' : activeDistributor}_${currentDate}.xlsx`;
 
       XLSX.writeFile(workbook, filename);
 
@@ -432,7 +466,7 @@ export default function ApprovedHistoryBudgetTable() {
             <div style={{ position: 'absolute', top: -20, right: -20, fontSize: 120, opacity: 0.1 }}>📋</div>
             <div style={{ position: 'relative', zIndex: 1 }}>
               <p style={{ fontSize: 14, opacity: 0.9, marginBottom: 8 }}>Total Records</p>
-              <p style={{ fontSize: 48, fontWeight: 800, margin: 0 }}>{filteredData.length}</p>
+              <p style={{ fontSize: 48, fontWeight: 800, margin: 0 }}>{distributorFilteredData.length}</p>
             </div>
           </div>
 
@@ -475,6 +509,50 @@ export default function ApprovedHistoryBudgetTable() {
           overflow: 'hidden',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
         }}>
+          {/* ✅ DISTRIBUTOR TABS */}
+          <div style={{
+            display: 'flex',
+            gap: 12,
+            padding: '20px 20px 0',
+            overflowX: 'auto',
+            borderBottom: '2px solid #e5e7eb'
+          }}>
+            {uniqueDistributors.map(dist => (
+              <button
+                key={dist}
+                onClick={() => {
+                  setActiveDistributor(dist);
+                  setCurrentPage(1);
+                }}
+                style={{
+                  padding: '12px 24px',
+                  border: 'none',
+                  borderBottom: activeDistributor === dist ? '3px solid #2563eb' : '3px solid transparent',
+                  background: activeDistributor === dist ? '#eff6ff' : 'transparent',
+                  color: activeDistributor === dist ? '#2563eb' : '#6b7280',
+                  fontWeight: activeDistributor === dist ? 700 : 600,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap',
+                  borderRadius: '8px 8px 0 0'
+                }}
+                onMouseEnter={(e) => {
+                  if (activeDistributor !== dist) {
+                    e.currentTarget.style.background = '#f3f4f6';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeDistributor !== dist) {
+                    e.currentTarget.style.background = 'transparent';
+                  }
+                }}
+              >
+                {dist === 'all' ? '🌐 All Distributors' : `📦 ${dist}`}
+              </button>
+            ))}
+          </div>
+
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
@@ -482,12 +560,12 @@ export default function ApprovedHistoryBudgetTable() {
                   {[
                     "ID",
                     "PWP Code",
+                    "Distributor",
                     "Cover PWP",
                     "Created By",
                     "Response",
                     "Status",
                     "IsPartOfBudget",
-
                     "Credit Budget",
                     "Remaining",
                     "Date",
@@ -535,6 +613,10 @@ export default function ApprovedHistoryBudgetTable() {
 
                     <td style={{ padding: "12px 18px", fontWeight: 700, color: "#1e293b" }}>
                       {item.pwp_code}
+                    </td>
+
+                    <td style={{ padding: "12px 18px", color: "#334155", fontWeight: 600 }}>
+                      {item.distributor_name || "N/A"}
                     </td>
 
                     <td style={{ padding: "12px 18px", color: "#475569" }}>
@@ -590,7 +672,6 @@ export default function ApprovedHistoryBudgetTable() {
                       </span>
                     </td>
 
-
                     <td style={{
                       padding: "12px 18px",
                       textAlign: "right",
@@ -618,7 +699,7 @@ export default function ApprovedHistoryBudgetTable() {
               <tfoot>
                 <tr style={{ background: "#1e293b" }}>
                   <td
-                    colSpan="7"
+                    colSpan="8"
                     style={{
                       padding: "20px 18px",
                       textAlign: "right",
@@ -646,17 +727,16 @@ export default function ApprovedHistoryBudgetTable() {
 
                   <td style={{ padding: "20px 18px", textAlign: "center" }}>
                     <div style={{ color: "#60a5fa", fontSize: 18, fontWeight: 800 }}>
-                      {filteredData.length}
+                      {distributorFilteredData.length}
                     </div>
                     <div style={{ color: "#cbd5e1", fontSize: 11 }}>RECORDS</div>
                   </td>
                 </tr>
               </tfoot>
             </table>
-
           </div>
 
-          {filteredData.length > 0 && (
+          {distributorFilteredData.length > 0 && (
             <div style={{
               padding: '24px',
               display: 'flex',
@@ -667,10 +747,10 @@ export default function ApprovedHistoryBudgetTable() {
               gap: 16
             }}>
               <div style={{ color: '#6b7280', fontSize: 14, fontWeight: 600 }}>
-                Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredData.length)} of {filteredData.length} records
+                Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, distributorFilteredData.length)} of {distributorFilteredData.length} records
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button
+              <button
                   onClick={() => paginate(currentPage - 1)}
                   disabled={currentPage === 1}
                   style={{
@@ -733,7 +813,7 @@ export default function ApprovedHistoryBudgetTable() {
             </div>
           )}
 
-          {filteredData.length === 0 && (
+          {distributorFilteredData.length === 0 && (
             <div style={{
               textAlign: 'center',
               padding: '80px 20px',
