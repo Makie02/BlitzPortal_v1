@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import Swal from 'sweetalert2';
@@ -588,6 +589,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     }
 
                     // Deduct budget
+                    // Deduct budget
                     const newRemaining = currentRemaining - creditBudget;
 
                     const { error: updateError } = await supabase
@@ -600,6 +602,32 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
 
                     if (updateError) {
                         return Swal.fire("Error", "Failed to update cover PWP balance.", "error");
+                    }
+
+                    // ✅ FETCH LATEST COVER PWP REMAINING BALANCE
+                    const { data: latestCoverData, error: latestCoverError } = await supabase
+                        .from("amount_badget")
+                        .select("remainingbalance")
+                        .eq("pwp_code", coverPwpCode)
+                        .single();
+
+                    if (latestCoverError) {
+                        console.warn("Failed to fetch latest cover balance:", latestCoverError);
+                        remainingBalance = newRemaining; // Fallback to calculated value
+                    } else {
+                        remainingBalance = parseFloat(latestCoverData.remainingbalance);
+                    }
+
+                    // Update Regular PWP's remaining_balance
+                    const { error: updateRegularError } = await supabase
+                        .from("regular_pwp")
+                        .update({
+                            remaining_balance: remainingBalance  // Use latest value
+                        })
+                        .eq("regularpwpcode", visaCode);
+
+                    if (updateRegularError) {
+                        return Swal.fire("Error", "Failed to update Regular PWP remaining balance.", "error");
                     }
                 } else {
                     // ✅ NOT PART OF BUDGET
@@ -682,7 +710,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     response: "Approved",
                     type: userType,
                     created_form: data?.createForm || data?.CreatedForm || "unknown",
-                    remaining_balance: remainingBalance,
+                    remaining_balance: remainingBalance,  // ✅ ITO YUNG VARIABLE NA YAN!
                     credit_budget: creditBudget,
                     cover_pwp_code: coverPwpCode,
                     status: statusValue,
@@ -690,7 +718,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     isPartOfBudget: isPartOfBudget,
                     notPartOfBudget: notPartOfBudget,
                 });
-
             if (historyBudgetError) {
                 return Swal.fire("Error", "Failed to insert approval + budget.", "error");
             }
