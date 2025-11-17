@@ -858,26 +858,7 @@ export default function ApprovalsPage() {
       </h2>
 
       {/* ✅ Connection Status Indicator */}
-      <div style={{
-        padding: '10px 15px',
-        marginBottom: '20px',
-        backgroundColor: isOnline ? '#dcfce7' : '#fee2e2',
-        color: isOnline ? '#166534' : '#991b1b',
-        borderRadius: '8px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        fontWeight: '500'
-      }}>
-        <span style={{
-          width: '10px',
-          height: '10px',
-          borderRadius: '50%',
-          backgroundColor: isOnline ? '#22c55e' : '#ef4444'
-        }}></span>
-        {isOnline ? 'Connected' : 'No Internet Connection'}
-      </div>
-
+  
       <div
         style={{
           display: "flex",
