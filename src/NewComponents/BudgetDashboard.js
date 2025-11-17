@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import * as XLSX from "xlsx";
@@ -596,7 +597,6 @@ export default function CoverPWPBudgetTable() {
                                                                         <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>ID</th>
                                                                         <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>PWP Code</th>
                                                                         <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Response</th>
-                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Type</th>
                                                                         <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Remaining Balance</th>
                                                                         <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Credit Budget</th>
                                                                         <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Date Responded</th>
@@ -608,7 +608,6 @@ export default function CoverPWPBudgetTable() {
                                                                             <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.id}</td>
                                                                             <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.pwp_code}</td>
                                                                             <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.response}</td>
-                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.type}</td>
                                                                             <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
                                                                                 ₱
                                                                                 {detail.remaining_balance !== null
