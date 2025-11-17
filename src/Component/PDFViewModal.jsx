@@ -374,9 +374,17 @@ function PDFViewModal({ record, onClose }) {
             };
 
             // Helper to draw a simple table
+            // Helper to draw a simple table
             const drawTable = (headers, rows, colWidths) => {
                 const rowHeight = 10;
                 const headerHeight = 12;
+                const totalTableHeight = headerHeight + (rows.length * rowHeight);
+
+                // ✅ CHECK IF TABLE FITS ON CURRENT PAGE
+                if (yPos + totalTableHeight > pageHeight - 20) {
+                    doc.addPage();
+                    yPos = 20;
+                }
 
                 // Draw header with gradient effect
                 doc.setFillColor(25, 118, 210);
@@ -399,7 +407,7 @@ function PDFViewModal({ record, onClose }) {
                 doc.setFontSize(9);
 
                 rows.forEach((row, rowIndex) => {
-                    checkPageBreak(rowHeight + 2);
+                    // ✅ REMOVE checkPageBreak FROM HERE - table should stay together
 
                     // Alternating row colors
                     if (rowIndex % 2 === 0) {
@@ -514,8 +522,11 @@ function PDFViewModal({ record, onClose }) {
 
             // ===== Account List =====
             // ===== Account List =====
+            // ===== Account List =====
             if (accountList && accountList.length > 0) {
-                checkPageBreak(40);
+                const accountTableHeight = 14 + 12 + (accountList.length + 1) * 10; // ✅ Calculate total height
+                checkPageBreak(accountTableHeight + 10); // ✅ Check before drawing header
+
                 doc.setFontSize(13);
                 doc.setFillColor(25, 118, 210);
                 doc.setTextColor(255, 255, 255);
@@ -524,26 +535,25 @@ function PDFViewModal({ record, onClose }) {
                 doc.text('ACCOUNTS BUDGET', margin + 5, yPos + 7);
                 yPos += 14;
 
-                // ✅ FIX: 2 columns lang - Account Name at Budget
                 const accountTableData = accountList.map(item => [
                     item.account_name || '-',
-                    formatCurrency(item.budget)  // ✅ Remove total_budget
+                    formatCurrency(item.budget)
                 ]);
 
-                // ✅ FIX: Calculate total from budget column
                 const totalBudget = accountList.reduce(
-                    (sum, item) => sum + Number(item.budget || 0),  // ✅ Use 'budget' not 'total_budget'
+                    (sum, item) => sum + Number(item.budget || 0),
                     0
                 );
                 accountTableData.push(['TOTAL', formatCurrency(totalBudget)]);
 
-                // ✅ FIX: 2 columns lang sa header at width
-                drawTable(['Account Name', 'Budget'], accountTableData, [120, 60]);  // ✅ 2 columns
+                drawTable(['Account Name', 'Budget'], accountTableData, [120, 60]);
             }
 
             // ===== SKU List =====
             if (skuList && skuList.length > 0) {
-                checkPageBreak(40);
+                const skuTableHeight = 14 + 12 + (skuList.length + 1) * 10; // ✅ Calculate total height
+                checkPageBreak(skuTableHeight + 10); // ✅ Check before drawing header
+
                 doc.setFontSize(13);
                 doc.setFillColor(25, 118, 210);
                 doc.setTextColor(255, 255, 255);
@@ -556,7 +566,7 @@ function PDFViewModal({ record, onClose }) {
                     const productName = skuProductMap[String(item.sku_code)] || '-';
                     return [
                         item.sku_code || '-',
-                        productName,  // ✅ ADD PRODUCT NAME HERE
+                        productName,
                         item.account_name || '-',
                         formatCurrency(item.srp),
                         item.qty || '-',
@@ -576,11 +586,12 @@ function PDFViewModal({ record, onClose }) {
                 drawTable(
                     ['SKU', 'Product Name', 'Account', 'SRP', 'Qty', 'UOM', 'Billing', 'Disc', 'Total'],
                     skuTableData,
-                    [18, 35, 22, 18, 12, 12, 18, 18, 22]  // ✅ Adjusted column widths
+                    [18, 35, 22, 18, 12, 12, 18, 18, 22]
                 );
             }
+
             // ===== System Information =====
-            checkPageBreak(30);
+            checkPageBreak(50); // ✅ Check before system info section
             doc.setFontSize(13);
             doc.setFillColor(25, 118, 210);
             doc.setTextColor(255, 255, 255);
@@ -645,151 +656,151 @@ function PDFViewModal({ record, onClose }) {
         }
     };
     // NEW: Excel Export
-const handleExportExcel = () => {
-    setIsGeneratingExcel(true);
+    const handleExportExcel = () => {
+        setIsGeneratingExcel(true);
 
-    try {
-        const data = fullRecord || record;
-        const pwpCode = data.regularpwpcode || data.cover_code || data.code || 'N/A';
+        try {
+            const data = fullRecord || record;
+            const pwpCode = data.regularpwpcode || data.cover_code || data.code || 'N/A';
 
-        const workbook = XLSX.utils.book_new();
+            const workbook = XLSX.utils.book_new();
 
-        // ✅ Sheet 1: Basic Information - TRUE HORIZONTAL FORMAT
-        const basicData = [];
-        
-        // Title row
-        basicData.push(['PWP RECORD DETAILS']);
-        basicData.push([]); // Empty row
+            // ✅ Sheet 1: Basic Information - TRUE HORIZONTAL FORMAT
+            const basicData = [];
 
-        // ✅ PWP Details - ALL IN ONE ROW
-        basicData.push(['PWP Code', 'Type', 'Status']);
-        basicData.push([pwpCode, data.source === 'cover_pwp' ? 'Cover PWP' : 'Regular PWP', data.approval_status || 'Pending']);
-        basicData.push([]); // Empty row
-
-        if (data.source === 'regular_pwp') {
-            // ✅ BASIC INFORMATION - HORIZONTAL
-            basicData.push(['BASIC INFORMATION']);
-            basicData.push(['PWP Type', 'Branch Type', 'Distributor', 'Account Type']);
-            basicData.push([
-                data.pwptype || data.pwp_type || '-',
-                data.branchType || '-',
-                distributorName || data.distributor || '-',
-                formatArray(data.accountType)
-            ]);
+            // Title row
+            basicData.push(['PWP RECORD DETAILS']);
             basicData.push([]); // Empty row
 
-            // ✅ ACTIVITY DETAILS - HORIZONTAL
-            basicData.push(['ACTIVITY DETAILS']);
-            basicData.push(['Activity', 'Promo Scheme', 'Duration From', 'Duration To']);
-            basicData.push([
-                activityName || data.activity || '-',
-                data.promoScheme || '-',
-                formatDate(data.activityDurationFrom),
-                formatDate(data.activityDurationTo)
-            ]);
-            basicData.push(['Objective']);
-            basicData.push([data.objective || '-']);
+            // ✅ PWP Details - ALL IN ONE ROW
+            basicData.push(['PWP Code', 'Type', 'Status']);
+            basicData.push([pwpCode, data.source === 'cover_pwp' ? 'Cover PWP' : 'Regular PWP', data.approval_status || 'Pending']);
             basicData.push([]); // Empty row
 
-            // ✅ BUDGET INFORMATION - HORIZONTAL
-            basicData.push(['BUDGET INFORMATION']);
-            basicData.push(['Credit Budget', 'Remaining Balance']);
-            basicData.push([data.credit_budget || 0, data.remaining_balance || 0]);
-            basicData.push([]); // Empty row
-
-            // ✅ CATEGORY INFORMATION - HORIZONTAL
-            basicData.push(['CATEGORY INFORMATION']);
-            basicData.push(['Category Code', 'Category Name']);
-            basicData.push([data.categoryCode || '-', data.categoryName || '-']);
-        } else {
-            // ✅ COVER PWP INFORMATION - HORIZONTAL
-            basicData.push(['COVER PWP INFORMATION']);
-            basicData.push(['Cover Code', 'Distributor Code', 'PWP Type', 'Amount Budget', 'Notification']);
-            basicData.push([
-                data.cover_code || '-',
-                data.distributor_code || '-',
-                data.pwp_type || '-',
-                data.amount_badget || 0,
-                data.notification ? 'Enabled' : 'Disabled'
-            ]);
-        }
-
-        basicData.push([]); // Empty row
-        
-        // ✅ SYSTEM INFORMATION - HORIZONTAL
-        basicData.push(['SYSTEM INFORMATION']);
-        basicData.push(['Assigned By', 'Created Date']);
-        basicData.push([creatorName || 'Unknown', formatDateTime(data.created_at)]);
-
-        const ws1 = XLSX.utils.aoa_to_sheet(basicData);
-        
-        // ✅ Set column widths
-        ws1['!cols'] = [
-            { wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 30 },
-            { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
-        ];
-
-        XLSX.utils.book_append_sheet(workbook, ws1, 'Basic Info');
-
-        // Sheet 2: Account List
-        if (data.source === 'regular_pwp' && data.accounts && accountList.length > 0) {
-            const accountData = [
-                ['Account Name', 'Budget']
-            ];
-
-            accountList.forEach(item => {
-                accountData.push([
-                    item.account_name,
-                    Number(item.budget)
+            if (data.source === 'regular_pwp') {
+                // ✅ BASIC INFORMATION - HORIZONTAL
+                basicData.push(['BASIC INFORMATION']);
+                basicData.push(['PWP Type', 'Branch Type', 'Distributor', 'Account Type']);
+                basicData.push([
+                    data.pwptype || data.pwp_type || '-',
+                    data.branchType || '-',
+                    distributorName || data.distributor || '-',
+                    formatArray(data.accountType)
                 ]);
-            });
+                basicData.push([]); // Empty row
 
-            const totalBudget = accountList.reduce((sum, item) => sum + Number(item.budget || 0), 0);
-            accountData.push(['TOTAL', totalBudget]);
-
-            const ws2 = XLSX.utils.aoa_to_sheet(accountData);
-            ws2['!cols'] = [{ wch: 40 }, { wch: 15 }];
-            XLSX.utils.book_append_sheet(workbook, ws2, 'Accounts');
-        }
-
-        // Sheet 3: SKU List
-        if (data.source === 'regular_pwp' && data.sku && skuList.length > 0) {
-            const skuData = [
-                ['SKU Code', 'Account Name', 'SRP', 'Qty', 'UOM', 'Billing Amount', 'Discount', 'Total Amount']
-            ];
-
-            skuList.forEach(item => {
-                skuData.push([
-                    item.sku_code,
-                    item.account_name,
-                    Number(item.srp),
-                    item.qty,
-                    item.uom,
-                    Number(item.billing_amount),
-                    Number(item.discount),
-                    Number(item.total_amount)
+                // ✅ ACTIVITY DETAILS - HORIZONTAL
+                basicData.push(['ACTIVITY DETAILS']);
+                basicData.push(['Activity', 'Promo Scheme', 'Duration From', 'Duration To']);
+                basicData.push([
+                    activityName || data.activity || '-',
+                    data.promoScheme || '-',
+                    formatDate(data.activityDurationFrom),
+                    formatDate(data.activityDurationTo)
                 ]);
-            });
+                basicData.push(['Objective']);
+                basicData.push([data.objective || '-']);
+                basicData.push([]); // Empty row
 
-            const totalAmount = skuList.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
-            skuData.push(['', '', '', '', '', '', 'TOTAL', totalAmount]);
+                // ✅ BUDGET INFORMATION - HORIZONTAL
+                basicData.push(['BUDGET INFORMATION']);
+                basicData.push(['Credit Budget', 'Remaining Balance']);
+                basicData.push([data.credit_budget || 0, data.remaining_balance || 0]);
+                basicData.push([]); // Empty row
 
-            const ws3 = XLSX.utils.aoa_to_sheet(skuData);
-            ws3['!cols'] = [
-                { wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, 
-                { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 15 }
+                // ✅ CATEGORY INFORMATION - HORIZONTAL
+                basicData.push(['CATEGORY INFORMATION']);
+                basicData.push(['Category Code', 'Category Name']);
+                basicData.push([data.categoryCode || '-', data.categoryName || '-']);
+            } else {
+                // ✅ COVER PWP INFORMATION - HORIZONTAL
+                basicData.push(['COVER PWP INFORMATION']);
+                basicData.push(['Cover Code', 'Distributor Code', 'PWP Type', 'Amount Budget', 'Notification']);
+                basicData.push([
+                    data.cover_code || '-',
+                    data.distributor_code || '-',
+                    data.pwp_type || '-',
+                    data.amount_badget || 0,
+                    data.notification ? 'Enabled' : 'Disabled'
+                ]);
+            }
+
+            basicData.push([]); // Empty row
+
+            // ✅ SYSTEM INFORMATION - HORIZONTAL
+            basicData.push(['SYSTEM INFORMATION']);
+            basicData.push(['Assigned By', 'Created Date']);
+            basicData.push([creatorName || 'Unknown', formatDateTime(data.created_at)]);
+
+            const ws1 = XLSX.utils.aoa_to_sheet(basicData);
+
+            // ✅ Set column widths
+            ws1['!cols'] = [
+                { wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 30 },
+                { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
             ];
-            XLSX.utils.book_append_sheet(workbook, ws3, 'SKU List');
-        }
 
-        XLSX.writeFile(workbook, `PWP_${pwpCode}_${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (error) {
-        console.error('Error generating Excel:', error);
-        alert('Error generating Excel. Please try again.');
-    } finally {
-        setIsGeneratingExcel(false);
-    }
-};
+            XLSX.utils.book_append_sheet(workbook, ws1, 'Basic Info');
+
+            // Sheet 2: Account List
+            if (data.source === 'regular_pwp' && data.accounts && accountList.length > 0) {
+                const accountData = [
+                    ['Account Name', 'Budget']
+                ];
+
+                accountList.forEach(item => {
+                    accountData.push([
+                        item.account_name,
+                        Number(item.budget)
+                    ]);
+                });
+
+                const totalBudget = accountList.reduce((sum, item) => sum + Number(item.budget || 0), 0);
+                accountData.push(['TOTAL', totalBudget]);
+
+                const ws2 = XLSX.utils.aoa_to_sheet(accountData);
+                ws2['!cols'] = [{ wch: 40 }, { wch: 15 }];
+                XLSX.utils.book_append_sheet(workbook, ws2, 'Accounts');
+            }
+
+            // Sheet 3: SKU List
+            if (data.source === 'regular_pwp' && data.sku && skuList.length > 0) {
+                const skuData = [
+                    ['SKU Code', 'Account Name', 'SRP', 'Qty', 'UOM', 'Billing Amount', 'Discount', 'Total Amount']
+                ];
+
+                skuList.forEach(item => {
+                    skuData.push([
+                        item.sku_code,
+                        item.account_name,
+                        Number(item.srp),
+                        item.qty,
+                        item.uom,
+                        Number(item.billing_amount),
+                        Number(item.discount),
+                        Number(item.total_amount)
+                    ]);
+                });
+
+                const totalAmount = skuList.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+                skuData.push(['', '', '', '', '', '', 'TOTAL', totalAmount]);
+
+                const ws3 = XLSX.utils.aoa_to_sheet(skuData);
+                ws3['!cols'] = [
+                    { wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 8 },
+                    { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 15 }
+                ];
+                XLSX.utils.book_append_sheet(workbook, ws3, 'SKU List');
+            }
+
+            XLSX.writeFile(workbook, `PWP_${pwpCode}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        } catch (error) {
+            console.error('Error generating Excel:', error);
+            alert('Error generating Excel. Please try again.');
+        } finally {
+            setIsGeneratingExcel(false);
+        }
+    };
 
 
 
@@ -942,7 +953,7 @@ const handleExportExcel = () => {
                                 >
                                     📊 {isGeneratingExcel ? 'Generating...' : 'Export Excel'}
                                 </button>
-                         
+
                                 <button
                                     onClick={onClose}
                                     style={{
