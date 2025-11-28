@@ -29,7 +29,7 @@ import Sub_3rdmotherAccounts from '../NewComponents/Sub_3_mother_account.js';
 import UserList from '../NewComponents/UserList.jsx';
 import MasterDataBranch from '../NewComponents/MasterdataBranch.jsx';
 import Bp_Account from '../NewComponents/Bp_Account.jsx';
-
+import Year from '../NewComponents/Year.jsx';
 const References = ({ setCurrentView }) => {
   const [view, setView] = useState(null);
   const [user, setUser] = useState(null);
@@ -59,6 +59,10 @@ const References = ({ setCurrentView }) => {
     { id: 21, title: "USER-LIST", flag: 'userList', category: 'organization', requirePassword: false },
     { id: 22, title: "Bp Accounts", flag: 'Bp_Account', category: 'accounts', requirePassword: false },
     { id: 23, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch', category: 'accounts', requirePassword: false },
+    { id: 24, title: "Year", flag: 'Year', category: 'Year', requirePassword: false },
+
+
+    
   ];
 
   useEffect(() => {
@@ -240,6 +244,10 @@ const References = ({ setCurrentView }) => {
         {view === 'USER-LIST' && <UserList />}
         {view === 'LIST-BP_ACCOUNT' && <MasterDataBranch />}
         {view === 'Bp Accounts' && <Bp_Account />}
+
+        {view === 'Year' && <Year />}
+
+        
       </div>
     );
   }
