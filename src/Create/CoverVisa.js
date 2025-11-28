@@ -14,6 +14,7 @@ const CoverVisa = () => {
     PWPType: "COVER",
     createForm: "",
     Notification: false,
+    budgetYear: new Date().getFullYear()
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -27,163 +28,163 @@ const CoverVisa = () => {
   const [editingBudget, setEditingBudget] = useState(null);
   const [selectedDistributorUsername, setSelectedDistributorUsername] = useState("");
 
-  
-const handleFormChange = async (e) => {
-  const { name, value } = e.target;
 
-  setFormData((prev) => ({ ...prev, [name]: value }));
+  const handleFormChange = async (e) => {
+    const { name, value } = e.target;
 
-  // 🧩 Handle when selecting username (createForm)
-  if (name === "createForm") {
-    setSelectedUsername(value);
+    setFormData((prev) => ({ ...prev, [name]: value }));
 
-    if (value) {
-      console.log(`🧠 Selected username: ${value}`);
+    // 🧩 Handle when selecting username (createForm)
+    if (name === "createForm") {
+      setSelectedUsername(value);
 
-      // 🔍 Fetch UserID from Account_Users
-      const { data: userData, error: userError } = await supabase
-        .from("Account_Users")
-        .select("UserID")
-        .eq("name", value)
-        .single();
+      if (value) {
+        console.log(`🧠 Selected username: ${value}`);
 
-      if (userError) {
-        console.error("❌ Error fetching UserID:", userError);
-        setUserDistributorsForSelected([]);
-        setFilteredDistributors([]);
-      } else if (userData) {
-        const userId = userData.UserID;
-        console.log(`✅ Found UserID for "${value}":`, userId);
-
-        // 📦 Fetch distributors linked to this UserID
-        const { data: distData, error: distError } = await supabase
-          .from("distributors")
-          .select("id, name, code, agent_code")
-          .eq("agent_code", userId);
-
-        if (distError) {
-          console.error("❌ Error fetching distributors:", distError);
-          setUserDistributorsForSelected([]);
-          setFilteredDistributors([]);
-        } else {
-          console.log(`📋 Distributors fetched for UserID ${userId}:`, distData.length);
-          const distributorNames = distData.map((item) => item.name);
-          setUserDistributorsForSelected(distributorNames);
-          setFilteredDistributors(distData);
-        }
-      }
-    } else {
-      console.warn("⚠️ No username selected — clearing distributor data");
-      setUserDistributorsForSelected([]);
-      setFilteredDistributors([]);
-    }
-
-    setFormData((prev) => ({ ...prev, distributor: "" }));
-    setSelectedAgentName("");
-    return;
-  }
-
-  // 🏢 Handle when selecting distributor
-  if (name === "distributor") {
-    try {
-      const selectedDistributor = distributors.find((d) => d.code === Number(value));
-
-      if (!selectedDistributor) {
-        console.warn("⚠️ Distributor not found for code:", value);
-        setAccountTypes([]);
-        setSelectedAgentName("");
-        return;
-      }
-
-      console.log("🏢 Selected distributor:", selectedDistributor);
-
-      // 👤 Fetch agent name using agent_code
-      if (selectedDistributor.agent_code) {
-        console.log("🔗 Fetching agent name for agent_code:", selectedDistributor.agent_code);
-
-        const { data: agentData, error: agentError } = await supabase
+        // 🔍 Fetch UserID from Account_Users
+        const { data: userData, error: userError } = await supabase
           .from("Account_Users")
-          .select("name")
-          .eq("UserID", selectedDistributor.agent_code)
+          .select("UserID")
+          .eq("name", value)
           .single();
 
-        if (agentError) {
-          console.warn("⚠️ Agent not found:", selectedDistributor.agent_code);
-          setSelectedAgentName("No agent assigned");
-        } else {
-          console.log(`👤 Found agent name: ${agentData.name}`);
-          setSelectedAgentName(agentData.name);
+        if (userError) {
+          console.error("❌ Error fetching UserID:", userError);
+          setUserDistributorsForSelected([]);
+          setFilteredDistributors([]);
+        } else if (userData) {
+          const userId = userData.UserID;
+          console.log(`✅ Found UserID for "${value}":`, userId);
+
+          // 📦 Fetch distributors linked to this UserID
+          const { data: distData, error: distError } = await supabase
+            .from("distributors")
+            .select("id, name, code, agent_code")
+            .eq("agent_code", userId);
+
+          if (distError) {
+            console.error("❌ Error fetching distributors:", distError);
+            setUserDistributorsForSelected([]);
+            setFilteredDistributors([]);
+          } else {
+            console.log(`📋 Distributors fetched for UserID ${userId}:`, distData.length);
+            const distributorNames = distData.map((item) => item.name);
+            setUserDistributorsForSelected(distributorNames);
+            setFilteredDistributors(distData);
+          }
         }
       } else {
-        setSelectedAgentName("No agent assigned");
+        console.warn("⚠️ No username selected — clearing distributor data");
+        setUserDistributorsForSelected([]);
+        setFilteredDistributors([]);
       }
 
-      const isBadOrder = selectedDistributor.name === "BAD ORDER";
-
-      setFormData((prev) => ({
-        ...prev,
-        distributor: value,
-        distributorName: selectedDistributor.name || "",
-        categoryName: isBadOrder ? [] : prev.categoryName,
-        accountType: isBadOrder ? [] : prev.accountType,
-      }));
-
-      if (isBadOrder) {
-        console.log("⛔ BAD ORDER selected — skipping categories");
-        setAccountTypes([]);
-        return;
-      }
-
-      // 🧾 Fetch categorydetails in batches
-      const batchSize = 1000;
-      let allData = [];
-      let hasMore = true;
-      let offset = 0;
-
-      console.log(`📥 Fetching categories for distributor ID: ${selectedDistributor.id}`);
-
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from("categorydetails")
-          .select("code, name, description")
-          .eq("principal_id", selectedDistributor.id)
-          .order("name", { ascending: true })
-          .range(offset, offset + batchSize - 1);
-
-        if (error) throw error;
-
-        if (data?.length) {
-          allData = [...allData, ...data];
-          offset += batchSize;
-          hasMore = data.length === batchSize;
-        } else {
-          hasMore = false;
-        }
-      }
-
-      if (!allData.length) {
-        console.log("⚠️ No categories found for this distributor");
-        setAccountTypes([]);
-        return;
-      }
-
-      const formatted = allData.map((item) => ({
-        code: item.code,
-        name: item.name,
-        description: item.description,
-      }));
-
-      setAccountTypes(formatted);
-      setAccountSearchTerm("");
-      setFormData((prev) => ({ ...prev, accountType: [] }));
-
-      console.log(`✅ Loaded ${formatted.length} category records`);
-    } catch (error) {
-      console.error("❌ Failed to fetch category details:", error.message);
-      setAccountTypes([]);
+      setFormData((prev) => ({ ...prev, distributor: "" }));
+      setSelectedAgentName("");
+      return;
     }
-  }
-};
+
+    // 🏢 Handle when selecting distributor
+    if (name === "distributor") {
+      try {
+        const selectedDistributor = distributors.find((d) => d.code === Number(value));
+
+        if (!selectedDistributor) {
+          console.warn("⚠️ Distributor not found for code:", value);
+          setAccountTypes([]);
+          setSelectedAgentName("");
+          return;
+        }
+
+        console.log("🏢 Selected distributor:", selectedDistributor);
+
+        // 👤 Fetch agent name using agent_code
+        if (selectedDistributor.agent_code) {
+          console.log("🔗 Fetching agent name for agent_code:", selectedDistributor.agent_code);
+
+          const { data: agentData, error: agentError } = await supabase
+            .from("Account_Users")
+            .select("name")
+            .eq("UserID", selectedDistributor.agent_code)
+            .single();
+
+          if (agentError) {
+            console.warn("⚠️ Agent not found:", selectedDistributor.agent_code);
+            setSelectedAgentName("No agent assigned");
+          } else {
+            console.log(`👤 Found agent name: ${agentData.name}`);
+            setSelectedAgentName(agentData.name);
+          }
+        } else {
+          setSelectedAgentName("No agent assigned");
+        }
+
+        const isBadOrder = selectedDistributor.name === "BAD ORDER";
+
+        setFormData((prev) => ({
+          ...prev,
+          distributor: value,
+          distributorName: selectedDistributor.name || "",
+          categoryName: isBadOrder ? [] : prev.categoryName,
+          accountType: isBadOrder ? [] : prev.accountType,
+        }));
+
+        if (isBadOrder) {
+          console.log("⛔ BAD ORDER selected — skipping categories");
+          setAccountTypes([]);
+          return;
+        }
+
+        // 🧾 Fetch categorydetails in batches
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
+
+        console.log(`📥 Fetching categories for distributor ID: ${selectedDistributor.id}`);
+
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from("categorydetails")
+            .select("code, name, description")
+            .eq("principal_id", selectedDistributor.id)
+            .order("name", { ascending: true })
+            .range(offset, offset + batchSize - 1);
+
+          if (error) throw error;
+
+          if (data?.length) {
+            allData = [...allData, ...data];
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+          } else {
+            hasMore = false;
+          }
+        }
+
+        if (!allData.length) {
+          console.log("⚠️ No categories found for this distributor");
+          setAccountTypes([]);
+          return;
+        }
+
+        const formatted = allData.map((item) => ({
+          code: item.code,
+          name: item.name,
+          description: item.description,
+        }));
+
+        setAccountTypes(formatted);
+        setAccountSearchTerm("");
+        setFormData((prev) => ({ ...prev, accountType: [] }));
+
+        console.log(`✅ Loaded ${formatted.length} category records`);
+      } catch (error) {
+        console.error("❌ Failed to fetch category details:", error.message);
+        setAccountTypes([]);
+      }
+    }
+  };
 
   const prevStep = () => {
     if (currentStep > 1) setCurrentStep(currentStep - 1);
@@ -352,8 +353,8 @@ const handleFormChange = async (e) => {
   const [allCoverCodes, setAllCoverCodes] = useState([]);
   const [loadingCoverCode, setLoadingCoverCode] = useState(true);
 
-  const generateCoverCode = (existingCodes = []) => {
-    const year = new Date().getFullYear();
+  const generateCoverCode = (existingCodes = [], selectedYear = null) => {
+    const year = selectedYear || formData.budgetYear || new Date().getFullYear();
     const prefix = `C${year}-`;
 
     const codesForYear = existingCodes
@@ -371,7 +372,7 @@ const handleFormChange = async (e) => {
     return newCode;
   };
 
-const fetchCoverCodes = async () => {
+  const fetchCoverCodes = async () => {
     try {
       console.log("⏳ Fetching cover codes...");
       const { data, error } = await supabase
@@ -387,7 +388,7 @@ const fetchCoverCodes = async () => {
 
       // Only generate new code if we're NOT editing
       if (!editingBudget && (!formData.coverCode || codes.includes(formData.coverCode))) {
-        const newCode = generateCoverCode(codes);
+        const newCode = generateCoverCode(codes, formData.budgetYear); // ✅ ADD formData.budgetYear
         console.log("✏️ Updating formData with new cover code:", newCode);
         setFormData((prev) => ({ ...prev, coverCode: newCode }));
       }
@@ -414,7 +415,7 @@ const fetchCoverCodes = async () => {
       const newCode = generateCoverCode(allCoverCodes);
       setFormData((prev) => ({ ...prev, coverCode: newCode }));
     }
-  }, [allCoverCodes]);
+  }, [allCoverCodes, formData.budgetYear]);
 
   const [distributors, setDistributors] = useState([]);
 
@@ -446,236 +447,238 @@ const fetchCoverCodes = async () => {
       reader.onerror = reject;
     });
 
-const handleSubmits = async (e) => {
-  e.preventDefault();
+  const handleSubmits = async (e) => {
+    e.preventDefault();
 
-  if (
-    !formData.coverCode ||
-    !formData.distributor ||
-    !formData.amountbadget ||
-    !formData.createForm
-  ) {
-    await Swal.fire({
-      icon: "warning",
-      title: "Missing fields",
-      text: "Please fill in all required fields including Assign Name.",
-      confirmButtonText: "OK",
-    });
-    return;
-  }
-
-  try {
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-
-    if (!parsedUser) {
+    if (
+      !formData.coverCode ||
+      !formData.distributor ||
+      !formData.amountbadget ||
+      !formData.createForm
+    ) {
       await Swal.fire({
-        icon: "error",
-        title: "Login Required",
-        text: "You must be logged in to submit.",
+        icon: "warning",
+        title: "Missing fields",
+        text: "Please fill in all required fields including Assign Name.",
         confirmButtonText: "OK",
       });
       return;
     }
 
-    // ✅ Get UserID of the selected creator
-    const { data: selectedUserData, error: userError } = await supabase
-      .from("Account_Users")
-      .select("UserID")
-      .eq("name", formData.createForm)
-      .single();
+    try {
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
 
-    if (userError || !selectedUserData) {
-      await Swal.fire({
-        icon: "error",
-        title: "User Not Found",
-        text: "Could not find user ID for the selected name.",
-        confirmButtonText: "OK",
-      });
-      return;
-    }
-
-    const selectedUserId = selectedUserData.UserID;
-
-    // ---------------------------
-    // ✳️ UPDATE EXISTING BUDGET
-    // ---------------------------
-if (editingBudget) {
-  const { error: mainError } = await supabase
-    .from("cover_pwp")
-    .update({
-      distributor_code: formData.distributor,
-      amount_badget: parseFloat(formData.amountbadget),
-      remarks: formData.remarks,
-      createForm: selectedUserId,
-      updatedCreated: new Date().toISOString(),
-    })
-    .eq("cover_code", editingBudget.cover_code);
-
-  if (mainError) throw mainError;
-
-  const { error: budgetError } = await supabase
-    .from("amount_badget")
-    .update({
-      amountbadget: parseFloat(formData.amountbadget),
-      distributor: formData.distributor,
-      remainingbalance: parseFloat(formData.amountbadget),
-      createduser: selectedUserId,
-      Approved: true,
-      updatedCreated: new Date().toISOString(),
-    })
-    .eq("pwp_code", editingBudget.cover_code);
-
-  if (budgetError) throw budgetError;
-
-  // ✅ UPDATE existing Approval_History instead of inserting new
-  const { error: approvalError } = await supabase
-    .from("Approval_History")
-    .update({
-      ApproverId: selectedUserId.toString(),
-      DateResponded: new Date().toISOString(),
-      Response: "Approved",
-      Type: "COVER_PWP",
-      Notication: true,
-      CreatedForm: parsedUser.name,
-    })
-    .eq("PwpCode", editingBudget.cover_code);
-
-  if (approvalError) throw approvalError;
-
-      // ✅ Handle file attachments
-      if (files.length > 0) {
-        const attachmentInserts = [];
-        for (const file of files) {
-          const base64Data = await toBase64(file);
-          attachmentInserts.push({
-            cover_code: editingBudget.cover_code,
-            file_name: file.name,
-            file_type: file.type || null,
-            file_size: file.size || null,
-            file_data: base64Data,
-          });
-        }
-
-        const { error: attachmentError } = await supabase
-          .from("cover_attachments")
-          .insert(attachmentInserts);
-
-        if (attachmentError) throw attachmentError;
+      if (!parsedUser) {
+        await Swal.fire({
+          icon: "error",
+          title: "Login Required",
+          text: "You must be logged in to submit.",
+          confirmButtonText: "OK",
+        });
+        return;
       }
 
-      await Swal.fire({
-        icon: "success",
-        title: "Updated!",
-        text: "Budget updated successfully and automatically approved!",
-        confirmButtonText: "Great",
-      });
-    }
+      // ✅ Get UserID of the selected creator
+      const { data: selectedUserData, error: userError } = await supabase
+        .from("Account_Users")
+        .select("UserID")
+        .eq("name", formData.createForm)
+        .single();
 
-    // ---------------------------
-    // ✳️ CREATE NEW BUDGET
-    // ---------------------------
-    else {
-      const dataToInsert = {
-        cover_code: formData.coverCode,
-        distributor_code: formData.distributor,
-        amount_badget: parseFloat(formData.amountbadget),
-        pwp_type: formData.coverType || "COVER_PWP",
-        remarks: formData.remarks,
-        notification: false,
-        createForm: selectedUserId,
-      };
+      if (userError || !selectedUserData) {
+        await Swal.fire({
+          icon: "error",
+          title: "User Not Found",
+          text: "Could not find user ID for the selected name.",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
 
-      const { error: mainError } = await supabase
-        .from("cover_pwp")
-        .insert([dataToInsert]);
-      if (mainError) throw mainError;
+      const selectedUserId = selectedUserData.UserID;
 
-      const { error: budgetError } = await supabase.from("amount_badget").insert([
-        {
-          pwp_code: formData.coverCode,
-          amountbadget: parseFloat(formData.amountbadget),
-          createduser: selectedUserId,
-          distributor: formData.distributor,
-          remainingbalance: parseFloat(formData.amountbadget),
-          Approved: true,
-        },
-      ]);
-      if (budgetError) throw budgetError;
+      // ---------------------------
+      // ✳️ UPDATE EXISTING BUDGET
+      // ---------------------------
+      if (editingBudget) {
+        const { error: mainError } = await supabase
+          .from("cover_pwp")
+          .update({
+            distributor_code: formData.distributor,
+            amount_badget: parseFloat(formData.amountbadget),
+            remarks: formData.remarks,
+            createForm: selectedUserId,
+            updatedCreated: new Date().toISOString(),
+          })
+          .eq("cover_code", editingBudget.cover_code);
 
-      // ✅ Insert into Approval_History (automatic Approved)
-      const { error: approvalError } = await supabase
-        .from("Approval_History")
-        .insert([
-          {
-            PwpCode: formData.coverCode,
-            ApproverId:parsedUser.name ,
+        if (mainError) throw mainError;
+
+        const { error: budgetError } = await supabase
+          .from("amount_badget")
+          .update({
+            amountbadget: parseFloat(formData.amountbadget),
+            distributor: formData.distributor,
+            remainingbalance: parseFloat(formData.amountbadget),
+            createduser: selectedUserId,
+            Approved: true,
+            updatedCreated: new Date().toISOString(),
+          })
+          .eq("pwp_code", editingBudget.cover_code);
+
+        if (budgetError) throw budgetError;
+
+        // ✅ UPDATE existing Approval_History instead of inserting new
+        const { error: approvalError } = await supabase
+          .from("Approval_History")
+          .update({
+            ApproverId: selectedUserId.toString(),
             DateResponded: new Date().toISOString(),
             Response: "Approved",
-            Type: "Allowed",
+            Type: "COVER_PWP",
             Notication: true,
-            CreatedForm: selectedUserId.toString(),
-          },
-        ]);
-      if (approvalError) throw approvalError;
+            CreatedForm: parsedUser.name,
+          })
+          .eq("PwpCode", editingBudget.cover_code);
 
-      // ✅ Handle file attachments
-      if (files.length > 0) {
-        const attachmentInserts = [];
-        for (const file of files) {
-          const base64Data = await toBase64(file);
-          attachmentInserts.push({
-            cover_code: formData.coverCode,
-            file_name: file.name,
-            file_type: file.type || null,
-            file_size: file.size || null,
-            file_data: base64Data,
-          });
+        if (approvalError) throw approvalError;
+
+        // ✅ Handle file attachments
+        if (files.length > 0) {
+          const attachmentInserts = [];
+          for (const file of files) {
+            const base64Data = await toBase64(file);
+            attachmentInserts.push({
+              cover_code: editingBudget.cover_code,
+              file_name: file.name,
+              file_type: file.type || null,
+              file_size: file.size || null,
+              file_data: base64Data,
+            });
+          }
+
+          const { error: attachmentError } = await supabase
+            .from("cover_attachments")
+            .insert(attachmentInserts);
+
+          if (attachmentError) throw attachmentError;
         }
 
-        const { error: attachmentError } = await supabase
-          .from("cover_attachments")
-          .insert(attachmentInserts);
-
-        if (attachmentError) throw attachmentError;
+        await Swal.fire({
+          icon: "success",
+          title: "Updated!",
+          text: "Budget updated successfully and automatically approved!",
+          confirmButtonText: "Great",
+        });
       }
 
+      // ---------------------------
+      // ✳️ CREATE NEW BUDGET
+      // ---------------------------
+      else {
+        const dataToInsert = {
+          cover_code: formData.coverCode,
+          distributor_code: formData.distributor,
+          amount_badget: parseFloat(formData.amountbadget),
+          pwp_type: formData.coverType || "COVER_PWP",
+          remarks: formData.remarks,
+          notification: false,
+          createForm: selectedUserId,
+          budget_year: formData.budgetYear,
+        };
+
+        const { error: mainError } = await supabase
+          .from("cover_pwp")
+          .insert([dataToInsert]);
+        if (mainError) throw mainError;
+
+        const { error: budgetError } = await supabase.from("amount_badget").insert([
+          {
+            pwp_code: formData.coverCode,
+            amountbadget: parseFloat(formData.amountbadget),
+            createduser: selectedUserId,
+            distributor: formData.distributor,
+            remainingbalance: parseFloat(formData.amountbadget),
+            Approved: true,
+          },
+        ]);
+        if (budgetError) throw budgetError;
+
+        // ✅ Insert into Approval_History (automatic Approved)
+        const { error: approvalError } = await supabase
+          .from("Approval_History")
+          .insert([
+            {
+              PwpCode: formData.coverCode,
+              ApproverId: parsedUser.name,
+              DateResponded: new Date().toISOString(),
+              Response: "Approved",
+              Type: "Allowed",
+              Notication: true,
+              CreatedForm: selectedUserId.toString(),
+            },
+          ]);
+        if (approvalError) throw approvalError;
+
+        // ✅ Handle file attachments
+        if (files.length > 0) {
+          const attachmentInserts = [];
+          for (const file of files) {
+            const base64Data = await toBase64(file);
+            attachmentInserts.push({
+              cover_code: formData.coverCode,
+              file_name: file.name,
+              file_type: file.type || null,
+              file_size: file.size || null,
+              file_data: base64Data,
+            });
+          }
+
+          const { error: attachmentError } = await supabase
+            .from("cover_attachments")
+            .insert(attachmentInserts);
+
+          if (attachmentError) throw attachmentError;
+        }
+
+        await Swal.fire({
+          icon: "success",
+          title: "Success!",
+          text: "Budget submitted and automatically approved!",
+          confirmButtonText: "Great",
+        });
+      }
+
+      // ✅ Reset form after success
+      setFormData({
+        visaCode: "",
+        coverCode: "",
+        distributor: "",
+        principal: "",
+        accountType: "",
+        amountbadget: "",
+        PWPType: "COVER",
+        createForm: "",
+        Notification: false,
+        budgetYear: new Date().getFullYear(),
+      });
+      setFiles([]);
+      setEditingBudget(null);
+      setCurrentStep(1);
+      setSearchTerm("");
+      setSelectedUsername("");
+      setUserDistributorsForSelected([]);
+    } catch (err) {
+      console.error("Unexpected error during submit:", err);
       await Swal.fire({
-        icon: "success",
-        title: "Success!",
-        text: "Budget submitted and automatically approved!",
-        confirmButtonText: "Great",
+        icon: "error",
+        title: "Unexpected Error",
+        text: "Something went wrong. See console for details.",
+        confirmButtonText: "OK",
       });
     }
-
-    // ✅ Reset form after success
-    setFormData({
-      visaCode: "",
-      coverCode: "",
-      distributor: "",
-      principal: "",
-      accountType: "",
-      amountbadget: "",
-      PWPType: "COVER",
-      createForm: "",
-      Notification: false,
-    });
-    setFiles([]);
-    setEditingBudget(null);
-    setCurrentStep(1);
-    setSearchTerm("");
-    setSelectedUsername("");
-    setUserDistributorsForSelected([]);
-  } catch (err) {
-    console.error("Unexpected error during submit:", err);
-    await Swal.fire({
-      icon: "error",
-      title: "Unexpected Error",
-      text: "Something went wrong. See console for details.",
-      confirmButtonText: "OK",
-    });
-  }
-};
+  };
 
 
 
@@ -731,113 +734,114 @@ if (editingBudget) {
     }
   };
 
-const handleEditBudget = async (budget) => {
-  console.log("🔧 Editing budget:", budget);
-  setEditingBudget(budget);
+  const handleEditBudget = async (budget) => {
+    console.log("🔧 Editing budget:", budget);
+    setEditingBudget(budget);
 
-  // 1️⃣ Get user info from createForm (UserID)
-  const { data: userData, error: userError } = await supabase
-    .from("Account_Users")
-    .select("name, UserID")
-    .eq("UserID", budget.createForm)
-    .single();
+    // 1️⃣ Get user info from createForm (UserID)
+    const { data: userData, error: userError } = await supabase
+      .from("Account_Users")
+      .select("name, UserID")
+      .eq("UserID", budget.createForm)
+      .single();
 
-  const username = userData ? userData.name : "";
-  const userId = userData ? userData.UserID : null;
+    const username = userData ? userData.name : "";
+    const userId = userData ? userData.UserID : null;
 
-  console.log(`👤 Found user: ${username} (ID: ${userId})`);
+    console.log(`👤 Found user: ${username} (ID: ${userId})`);
 
-  // 2️⃣ Fetch ALL distributors from database
-  const { data: allDistributorsData, error: allDistError } = await supabase
-    .from('distributors')
-    .select('id, name, code, agent_code');
+    // 2️⃣ Fetch ALL distributors from database
+    const { data: allDistributorsData, error: allDistError } = await supabase
+      .from('distributors')
+      .select('id, name, code, agent_code');
 
-  if (allDistError) {
-    console.error("❌ Error fetching all distributors:", allDistError);
-  }
+    if (allDistError) {
+      console.error("❌ Error fetching all distributors:", allDistError);
+    }
 
-  // 3️⃣ Filter distributors that match this user's agent_code
-  let userDistributors = [];
-  
-  if (userId && allDistributorsData) {
-    const userIdString = String(userId);
-    
-    userDistributors = allDistributorsData.filter((dist) => {
-      if (!dist.agent_code) return false;
+    // 3️⃣ Filter distributors that match this user's agent_code
+    let userDistributors = [];
 
-      // Handle both array and comma-separated string
-      const agentCodes = Array.isArray(dist.agent_code)
-        ? dist.agent_code.map(String)
-        : String(dist.agent_code).split(',').map((c) => c.trim());
+    if (userId && allDistributorsData) {
+      const userIdString = String(userId);
 
-      return agentCodes.includes(userIdString);
+      userDistributors = allDistributorsData.filter((dist) => {
+        if (!dist.agent_code) return false;
+
+        // Handle both array and comma-separated string
+        const agentCodes = Array.isArray(dist.agent_code)
+          ? dist.agent_code.map(String)
+          : String(dist.agent_code).split(',').map((c) => c.trim());
+
+        return agentCodes.includes(userIdString);
+      });
+
+      console.log(`📦 Found ${userDistributors.length} distributors for user ${username}`);
+
+      // ✅ Update states
+      const distributorNames = userDistributors.map(item => item.name);
+      setUserDistributorsForSelected(distributorNames);
+      setFilteredDistributors(userDistributors);
+    }
+
+    // 4️⃣ Find the selected distributor from the budget
+    const selectedDist = allDistributorsData?.find(
+      (d) => d.code === parseInt(budget.distributor_code)
+    );
+
+    console.log(`🏢 Selected distributor code: ${budget.distributor_code}`);
+    console.log(`🏢 Found distributor:`, selectedDist);
+
+    // 5️⃣ Get agent name for the selected distributor (for display purposes)
+    if (selectedDist && selectedDist.agent_code) {
+      const { data: agentData } = await supabase
+        .from("Account_Users")
+        .select("name")
+        .eq("UserID", selectedDist.agent_code)
+        .single();
+
+      if (agentData) {
+        console.log(`👤 Agent for distributor: ${agentData.name}`);
+        setSelectedAgentName(agentData.name);
+      }
+    }
+
+    // 6️⃣ Set form data with ALL values
+    setFormData({
+      visaCode: "",
+      coverCode: budget.cover_code,
+      distributor: parseInt(budget.distributor_code), // ✅ Ensure it's a number
+      principal: "",
+      accountType: "",
+      amountbadget: budget.amount_badget?.toString() || "",
+      PWPType: "COVER",
+      createForm: username,
+      Notification: false,
+      remarks: budget.remarks || "",
+      budgetYear: budget.budget_year || new Date().getFullYear(),
     });
 
-    console.log(`📦 Found ${userDistributors.length} distributors for user ${username}`);
-    
-    // ✅ Update states
-    const distributorNames = userDistributors.map(item => item.name);
-    setUserDistributorsForSelected(distributorNames);
-    setFilteredDistributors(userDistributors);
-  }
+    // 7️⃣ Update UI states
+    setSearchTerm(username);
+    setSelectedUsername(username);
 
-  // 4️⃣ Find the selected distributor from the budget
-  const selectedDist = allDistributorsData?.find(
-    (d) => d.code === parseInt(budget.distributor_code)
-  );
-  
-  console.log(`🏢 Selected distributor code: ${budget.distributor_code}`);
-  console.log(`🏢 Found distributor:`, selectedDist);
+    // 8️⃣ Fetch attachments
+    const { data: attachments, error: attachError } = await supabase
+      .from("cover_attachments")
+      .select("*")
+      .eq("cover_code", budget.cover_code);
 
-  // 5️⃣ Get agent name for the selected distributor (for display purposes)
-  if (selectedDist && selectedDist.agent_code) {
-    const { data: agentData } = await supabase
-      .from("Account_Users")
-      .select("name")
-      .eq("UserID", selectedDist.agent_code)
-      .single();
-    
-    if (agentData) {
-      console.log(`👤 Agent for distributor: ${agentData.name}`);
-      setSelectedAgentName(agentData.name);
+    if (!attachError && attachments) {
+      console.log(`📎 Found ${attachments.length} attachments`);
     }
-  }
 
-  // 6️⃣ Set form data with ALL values
-  setFormData({
-    visaCode: "",
-    coverCode: budget.cover_code,
-    distributor: parseInt(budget.distributor_code), // ✅ Ensure it's a number
-    principal: "",
-    accountType: "",
-    amountbadget: budget.amount_badget?.toString() || "",
-    PWPType: "COVER",
-    createForm: username,
-    Notification: false,
-    remarks: budget.remarks || "",
-  });
+    // 9️⃣ Go back to form
+    setCurrentStep(1);
 
-  // 7️⃣ Update UI states
-  setSearchTerm(username);
-  setSelectedUsername(username);
-
-  // 8️⃣ Fetch attachments
-  const { data: attachments, error: attachError } = await supabase
-    .from("cover_attachments")
-    .select("*")
-    .eq("cover_code", budget.cover_code);
-
-  if (!attachError && attachments) {
-    console.log(`📎 Found ${attachments.length} attachments`);
-  }
-
-  // 9️⃣ Go back to form
-  setCurrentStep(1);
-  
-  console.log("✅ Edit mode activated!");
-  console.log("✅ Distributor code set to:", parseInt(budget.distributor_code));
-  console.log("✅ Available distributors:", userDistributors.length);
-};
+    console.log("✅ Edit mode activated!");
+    console.log("✅ Distributor code set to:", parseInt(budget.distributor_code));
+    console.log("✅ Available distributors:", userDistributors.length);
+  };
 
 
   const storedUser = localStorage.getItem("loggedInUser");
@@ -886,7 +890,7 @@ const handleEditBudget = async (budget) => {
     const fetchDistributors = async () => {
       try {
         console.log("🔍 Fetching ALL distributors...");
-        
+
         let allDistributors = [];
         let hasMore = true;
         let offset = 0;
@@ -954,46 +958,46 @@ const handleEditBudget = async (budget) => {
     fetchApprovalData();
   }, []);
 
-useEffect(() => {
-  const fetchUsernames = async () => {
-    // ✅ Fetch from Account_Users instead of user_distributors
-    const { data, error } = await supabase
-      .from('Account_Users')
-      .select('name')
-      .order('name', { ascending: true });
+  useEffect(() => {
+    const fetchUsernames = async () => {
+      // ✅ Fetch from Account_Users instead of user_distributors
+      const { data, error } = await supabase
+        .from('Account_Users')
+        .select('name')
+        .order('name', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching usernames:', error);
-    } else {
-      const uniqueUsernames = [...new Set(data.map(item => item.name))];
-      setUsernames(uniqueUsernames);
-      console.log('✅ Loaded usernames from Account_Users:', uniqueUsernames);
-    }
-  };
-
-  fetchUsernames();
-  
-  // ✅ Set up realtime subscription for Account_Users changes
-   const subscription = supabase
-    .channel('account_users_changes')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'Account_Users',
-      },
-      (payload) => {
-        console.log('Account_Users changed:', payload);
-        fetchUsernames(); // Refresh usernames when table changes
+      if (error) {
+        console.error('Error fetching usernames:', error);
+      } else {
+        const uniqueUsernames = [...new Set(data.map(item => item.name))];
+        setUsernames(uniqueUsernames);
+        console.log('✅ Loaded usernames from Account_Users:', uniqueUsernames);
       }
-    )
-    .subscribe();
+    };
 
-  return () => {
-    supabase.removeChannel(subscription);
-  };
-}, []);
+    fetchUsernames();
+
+    // ✅ Set up realtime subscription for Account_Users changes
+    const subscription = supabase
+      .channel('account_users_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'Account_Users',
+        },
+        (payload) => {
+          console.log('Account_Users changed:', payload);
+          fetchUsernames(); // Refresh usernames when table changes
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
 
 
   useEffect(() => {
@@ -1010,171 +1014,171 @@ useEffect(() => {
   const filteredUsernames = usernames.filter(username =>
     username.toLowerCase().includes(searchTerm.toLowerCase())
   );
-const handleSelectUsername = async (username) => {
-  try {
-    setSelectedUsername(username);
-    setFormData({ ...formData, createForm: username });
-    setSearchTerm(username);
-    setIsOpen(false);
-
-    console.log(`👤 Selected username: ${username}`);
-
-    // 1️⃣ Get the agent_code (UserID) for this username
-    const { data: userData, error: userError } = await supabase
-      .from('Account_Users')
-      .select('UserID, name')
-      .eq('name', username)
-      .single();
-
-    if (userError || !userData) {
-      console.error('❌ Error fetching user info or no match:', userError);
-      setUserDistributorsForSelected([]);
-      setFilteredDistributors([]);
-      return;
-    }
-
-    const userAgentCode = String(userData.UserID); // make sure it's a string
-    console.log(`🆔 Found UserID (agent_code): ${userAgentCode} for ${username}`);
-
-    // 2️⃣ Fetch all distributors
-    const { data: distributorsData, error: distError } = await supabase
-      .from('distributors')
-      .select('*');
-
-    if (distError) {
-      console.error('❌ Error fetching distributors:', distError);
-      setUserDistributorsForSelected([]);
-      setFilteredDistributors([]);
-      return;
-    }
-
-    // 3️⃣ Filter distributors whose agent_code contains the userAgentCode
-    const matchingDistributors = distributorsData.filter((dist) => {
-      if (!dist.agent_code) return false;
-
-      // Handle both arrays and comma-separated strings
-      const agentCodes = Array.isArray(dist.agent_code)
-        ? dist.agent_code.map(String)
-        : dist.agent_code.split(',').map((c) => c.trim());
-
-      return agentCodes.includes(userAgentCode);
-    });
-
-    // 4️⃣ Extract distributor names and update UI
-    const distributorNames = matchingDistributors.map((d) => d.name);
-    setUserDistributorsForSelected(distributorNames);
-    setFilteredDistributors(matchingDistributors);
-
-    console.log(
-      `✅ Found ${matchingDistributors.length} distributor(s) for agent_code ${userAgentCode}:`,
-      distributorNames
-    );
-
-    // 5️⃣ Reset distributor selection in form
-    setFormData((prev) => ({ ...prev, distributor: '' }));
-  } catch (err) {
-    console.error('💥 Unexpected error in handleSelectUsername:', err);
-    setUserDistributorsForSelected([]);
-    setFilteredDistributors([]);
-  }
-};
-
-
-useEffect(() => {
-  const fetchSubmittedBudgets = async () => {
+  const handleSelectUsername = async (username) => {
     try {
-      // Fetch ALL cover_pwp records (no user filter)
-      const { data: coverData, error: coverError } = await supabase
-        .from("cover_pwp")
-        .select("*")
-        .order("created_at", { ascending: false });
+      setSelectedUsername(username);
+      setFormData({ ...formData, createForm: username });
+      setSearchTerm(username);
+      setIsOpen(false);
 
-      if (coverError) {
-        console.error("Error fetching cover_pwp:", coverError);
+      console.log(`👤 Selected username: ${username}`);
+
+      // 1️⃣ Get the agent_code (UserID) for this username
+      const { data: userData, error: userError } = await supabase
+        .from('Account_Users')
+        .select('UserID, name')
+        .eq('name', username)
+        .single();
+
+      if (userError || !userData) {
+        console.error('❌ Error fetching user info or no match:', userError);
+        setUserDistributorsForSelected([]);
+        setFilteredDistributors([]);
         return;
       }
 
-      console.log("Fetched ALL cover_pwp data:", coverData);
+      const userAgentCode = String(userData.UserID); // make sure it's a string
+      console.log(`🆔 Found UserID (agent_code): ${userAgentCode} for ${username}`);
 
-      // Fetch corresponding amount_badget data
-      if (coverData && coverData.length > 0) {
-        const coverCodes = coverData.map(item => item.cover_code);
-        
-        const { data: budgetData, error: budgetError } = await supabase
-          .from("amount_badget")
-          .select("pwp_code, remainingbalance, amountbadget")
-          .in("pwp_code", coverCodes);
+      // 2️⃣ Fetch all distributors
+      const { data: distributorsData, error: distError } = await supabase
+        .from('distributors')
+        .select('*');
 
-        if (budgetError) {
-          console.error("Error fetching amount_badget:", budgetError);
-        }
-
-        console.log("Fetched amount_badget data:", budgetData);
-
-        // Merge the data
-        const mergedData = coverData.map(cover => {
-          const budget = budgetData?.find(b => b.pwp_code === cover.cover_code);
-          return {
-            ...cover,
-            remainingbalance: budget?.remainingbalance || 0,
-            amountbadget_table: budget?.amountbadget || 0
-          };
-        });
-
-        console.log("Merged data:", mergedData);
-        setSubmittedBudgets(mergedData);
-      } else {
-        setSubmittedBudgets([]);
+      if (distError) {
+        console.error('❌ Error fetching distributors:', distError);
+        setUserDistributorsForSelected([]);
+        setFilteredDistributors([]);
+        return;
       }
+
+      // 3️⃣ Filter distributors whose agent_code contains the userAgentCode
+      const matchingDistributors = distributorsData.filter((dist) => {
+        if (!dist.agent_code) return false;
+
+        // Handle both arrays and comma-separated strings
+        const agentCodes = Array.isArray(dist.agent_code)
+          ? dist.agent_code.map(String)
+          : dist.agent_code.split(',').map((c) => c.trim());
+
+        return agentCodes.includes(userAgentCode);
+      });
+
+      // 4️⃣ Extract distributor names and update UI
+      const distributorNames = matchingDistributors.map((d) => d.name);
+      setUserDistributorsForSelected(distributorNames);
+      setFilteredDistributors(matchingDistributors);
+
+      console.log(
+        `✅ Found ${matchingDistributors.length} distributor(s) for agent_code ${userAgentCode}:`,
+        distributorNames
+      );
+
+      // 5️⃣ Reset distributor selection in form
+      setFormData((prev) => ({ ...prev, distributor: '' }));
     } catch (err) {
-      console.error("Unexpected error:", err);
-      setSubmittedBudgets([]);
+      console.error('💥 Unexpected error in handleSelectUsername:', err);
+      setUserDistributorsForSelected([]);
+      setFilteredDistributors([]);
     }
   };
 
-  // ✅ Initial fetch
-  fetchSubmittedBudgets();
 
-  // ✅ Real-time subscription to cover_pwp changes
-  const coverSubscription = supabase
-    .channel("cover_pwp_realtime")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "cover_pwp",
-      },
-      (payload) => {
-        console.log("Cover PWP changed:", payload);
-        fetchSubmittedBudgets();
+  useEffect(() => {
+    const fetchSubmittedBudgets = async () => {
+      try {
+        // Fetch ALL cover_pwp records (no user filter)
+        const { data: coverData, error: coverError } = await supabase
+          .from("cover_pwp")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (coverError) {
+          console.error("Error fetching cover_pwp:", coverError);
+          return;
+        }
+
+        console.log("Fetched ALL cover_pwp data:", coverData);
+
+        // Fetch corresponding amount_badget data
+        if (coverData && coverData.length > 0) {
+          const coverCodes = coverData.map(item => item.cover_code);
+
+          const { data: budgetData, error: budgetError } = await supabase
+            .from("amount_badget")
+            .select("pwp_code, remainingbalance, amountbadget")
+            .in("pwp_code", coverCodes);
+
+          if (budgetError) {
+            console.error("Error fetching amount_badget:", budgetError);
+          }
+
+          console.log("Fetched amount_badget data:", budgetData);
+
+          // Merge the data
+          const mergedData = coverData.map(cover => {
+            const budget = budgetData?.find(b => b.pwp_code === cover.cover_code);
+            return {
+              ...cover,
+              remainingbalance: budget?.remainingbalance || 0,
+              amountbadget_table: budget?.amountbadget || 0
+            };
+          });
+
+          console.log("Merged data:", mergedData);
+          setSubmittedBudgets(mergedData);
+        } else {
+          setSubmittedBudgets([]);
+        }
+      } catch (err) {
+        console.error("Unexpected error:", err);
+        setSubmittedBudgets([]);
       }
-    )
-    .subscribe();
+    };
 
-  // ✅ Real-time subscription to amount_badget changes
-  const budgetSubscription = supabase
-    .channel("amount_badget_realtime")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "amount_badget",
-      },
-      (payload) => {
-        console.log("Amount Budget changed:", payload);
-        fetchSubmittedBudgets();
-      }
-    )
-    .subscribe();
+    // ✅ Initial fetch
+    fetchSubmittedBudgets();
 
-  // ✅ Cleanup subscriptions
-  return () => {
-    supabase.removeChannel(coverSubscription);
-    supabase.removeChannel(budgetSubscription);
-  };
-}, []); // Empty dependency array - runs once on mount
+    // ✅ Real-time subscription to cover_pwp changes
+    const coverSubscription = supabase
+      .channel("cover_pwp_realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cover_pwp",
+        },
+        (payload) => {
+          console.log("Cover PWP changed:", payload);
+          fetchSubmittedBudgets();
+        }
+      )
+      .subscribe();
+
+    // ✅ Real-time subscription to amount_badget changes
+    const budgetSubscription = supabase
+      .channel("amount_badget_realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "amount_badget",
+        },
+        (payload) => {
+          console.log("Amount Budget changed:", payload);
+          fetchSubmittedBudgets();
+        }
+      )
+      .subscribe();
+
+    // ✅ Cleanup subscriptions
+    return () => {
+      supabase.removeChannel(coverSubscription);
+      supabase.removeChannel(budgetSubscription);
+    };
+  }, []); // Empty dependency array - runs once on mount
 
 
 
@@ -1189,9 +1193,55 @@ useEffect(() => {
 
 
   const [currentPage, setCurrentPage] = useState(1);
-const itemsPerPage = 10; // Change this number to adjust rows per page
+  const itemsPerPage = 10; // Change this number to adjust rows per page
+// Add this at the top of your component
+const [availableYears, setAvailableYears] = useState([]);
+const [loadingYears, setLoadingYears] = useState(true);
 
-const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
+// Add this function
+const fetchAvailableYears = async () => {
+  try {
+    setLoadingYears(true);
+    const { data, error } = await supabase
+      .from("budget_years")
+      .select("year, is_active")
+      .eq("is_active", true)
+      .order("year", { ascending: false });
+
+    if (error) throw error;
+
+    const years = data.map(item => item.year);
+    setAvailableYears(years);
+
+    // Auto-select first year if available
+    if (years.length > 0 && !formData.budgetYear) {
+      setFormData(prev => ({ ...prev, budgetYear: years[0] }));
+    }
+  } catch (err) {
+    console.error("Error fetching years:", err);
+    const currentYear = new Date().getFullYear();
+    setAvailableYears([currentYear]);
+  } finally {
+    setLoadingYears(false);
+  }
+};
+
+// Add to useEffect
+useEffect(() => {
+  fetchAvailableYears();
+  
+  const subscription = supabase
+    .channel("budget_years_realtime")
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "budget_years",
+    }, () => fetchAvailableYears())
+    .subscribe();
+
+  return () => supabase.removeChannel(subscription);
+}, []);
+  const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
 
   return (
     <div style={{ padding: "30px", height: "90vh" }} className="containers">
@@ -1447,6 +1497,58 @@ const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
               )}
             </div>
 
+            {/* Budget Year Selector */}
+            <div className="col-md-3" style={{ position: "relative" }}>
+              <label className="form-label">
+                Budget Year <span style={{ color: "red" }}>*</span>
+              </label>
+              <select
+                name="budgetYear"
+                className="form-control"
+                value={formData.budgetYear}
+                onChange={(e) => {
+                  const newYear = parseInt(e.target.value);
+                  setFormData(prev => ({
+                    ...prev,
+                    budgetYear: newYear,
+                    coverCode: "" // Reset cover code to regenerate
+                  }));
+                }}
+                style={{
+                  paddingRight: "30px",
+                  borderColor: formData.budgetYear ? "green" : "",
+                  transition: "border-color 0.3s",
+                }}
+              >
+                {availableYears.length === 0 ? (
+                  <option value={new Date().getFullYear()}>
+                    {new Date().getFullYear()}
+                  </option>
+                ) : (
+                  availableYears.map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))
+                )}
+              </select>
+
+              {formData.budgetYear && (
+                <span
+                  style={{
+                    position: "absolute",
+                    right: "20px",
+                    top: "50%",
+                    transform: "translateY(-20%)",
+                    color: "green",
+                    fontWeight: "bold",
+                    fontSize: "25px",
+                    pointerEvents: "none",
+                    userSelect: "none",
+                  }}
+                >
+                  ✓
+                </span>
+              )}
+            </div>
             <div className="col-md-3" style={{ position: "relative" }}>
               <label className="form-label">
                 Amount Budget <span style={{ color: "red" }}>*</span>
@@ -1524,162 +1626,178 @@ const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
             </div>
           </div>
 
-         NEW CODE:
-<div className="mt-4 d-flex justify-content-between gap-3">
-  <button
-    type="button"
-    className="btn btn-outline-secondary"
-    onClick={() => setCurrentStep(2)}
-  >
-    View Submitted Budgets
-  </button>
-  <button type="submit" className="btn btn-success">
-    {editingBudget ? "Update Budget" : "Submit Budget"}
-  </button>
-</div>
+          NEW CODE:
+          <div className="mt-4 d-flex justify-content-between gap-3">
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => setCurrentStep(2)}
+            >
+              View Submitted Budgets
+            </button>
+            <button type="submit" className="btn btn-success">
+              {editingBudget ? "Update Budget" : "Submit Budget"}
+            </button>
+          </div>
         </form>
       )}
 
-{currentStep === 2 && (
-  <>
-    <div className="mb-4">
-      <h4 className="mb-3">Submitted Budgets</h4>
-
-      {submittedBudgets.length === 0 ? (
-        <div className="alert alert-info">No budgets submitted yet.</div>
-      ) : (
+      {currentStep === 2 && (
         <>
-          <div className="table-responsive">
-            <table className="table table-bordered table-striped table-hover">
-          <thead className="table-primary">
-  <tr>
-    <th>Cover Code</th>
-    <th>Distributor</th>
-    <th>Amount Budget</th>
-    <th>Remaining Balance</th>
-    <th>PWP Type</th>
-    <th>Date Created</th>
-    <th>Last Updated</th>
-    <th>Actions</th>
-  </tr>
-</thead>
+          <div className="mb-4">
+            <h4 className="mb-3">Submitted Budgets</h4>
 
-              <tbody>
-                {submittedBudgets
-                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                  .map((budget) => {
-                    const dist = distributors.find(
-                      (d) =>
-                        String(d.code).trim() ===
-                        String(budget.distributor_code).trim()
-                    );
-
-                    return (
-                      <tr key={budget.id}>
-                        <td>{budget.cover_code}</td>
-
-                        {/* ✅ Distributor Name Conversion */}
-                        <td>
-                          {dist
-                            ? dist.name
-                            : `Code: ${budget.distributor_code || "N/A"}`}
-                        </td>
-
-                        <td className="text-end">
-                          ₱{formatCurrency(budget.amount_badget?.toString() || "0")}
-                        </td>
-
-                        <td className="text-end">
-                          ₱{formatCurrency(
-                            budget.remainingbalance?.toString() || "0"
-                          )}
-                        </td>
-
-                        <td>{budget.pwp_type || "COVER_PWP"}</td>
-
-                        <td>
-                          {budget.created_at
-                            ? new Date(budget.created_at).toLocaleDateString()
-                            : "-"}
-                        </td>
-<td>
-  {budget.updatedCreated
-    ? new Date(budget.updatedCreated).toLocaleDateString()
-    : "-"}
-</td>
-
-                        <td>
-                          <button
-                            className="btn btn-sm btn-warning me-2"
-                            onClick={() => handleEditBudget(budget)}
-                            title="Edit Budget"
-                          >
-                            <i className="bi bi-pencil"></i> Edit
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={() => handleDeleteBudget(budget.cover_code)}
-                            title="Delete Budget"
-                          >
-                            <i className="bi bi-trash"></i> Delete
-                          </button>
-                        </td>
+            {submittedBudgets.length === 0 ? (
+              <div className="alert alert-info">No budgets submitted yet.</div>
+            ) : (
+              <>
+                <div className="table-responsive">
+                  <table className="table table-bordered table-striped table-hover">
+                    <thead className="table-primary">
+                      <tr>
+                        <th>Cover Code</th>
+                        <th>Distributor</th>
+                        <th>Amount Budget</th>
+                        <th>Remaining Balance</th>
+                        <th>Budget Year</th>
+                        <th>PWP Type</th>
+                        <th>Date Created</th>
+                        <th>Last Updated</th>
+                        <th>Actions</th>
                       </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
+                    </thead>
+
+                    <tbody>
+                      {submittedBudgets
+                        .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                        .map((budget) => {
+                          const dist = distributors.find(
+                            (d) =>
+                              String(d.code).trim() ===
+                              String(budget.distributor_code).trim()
+                          );
+
+                          return (
+                            <tr key={budget.id}>
+                              <td>{budget.cover_code}</td>
+
+                              {/* ✅ Distributor Name Conversion */}
+                              <td>
+                                {dist
+                                  ? dist.name
+                                  : `Code: ${budget.distributor_code || "N/A"}`}
+                              </td>
+
+                              <td className="text-end">
+                                ₱{formatCurrency(budget.amount_badget?.toString() || "0")}
+                              </td>
+                              <td className="text-center">
+                                <span
+                                  style={{
+                                    backgroundColor: budget.budget_year === 2026 ? "#ffc107" : "#28a745",
+                                    color: "white",
+                                    padding: "4px 12px",
+                                    borderRadius: "12px",
+                                    fontWeight: "bold",
+                                    fontSize: "13px"
+                                  }}
+                                >
+                                  {budget.budget_year || new Date().getFullYear()}
+                                </span>
+                              </td>
+
+                              <td>{budget.pwp_type || "COVER_PWP"}</td>
+                              <td className="text-end">
+                                ₱{formatCurrency(
+                                  budget.remainingbalance?.toString() || "0"
+                                )}
+                              </td>
+
+                              <td>{budget.pwp_type || "COVER_PWP"}</td>
+
+                              <td>
+                                {budget.created_at
+                                  ? new Date(budget.created_at).toLocaleDateString()
+                                  : "-"}
+                              </td>
+                              <td>
+                                {budget.updatedCreated
+                                  ? new Date(budget.updatedCreated).toLocaleDateString()
+                                  : "-"}
+                              </td>
+
+                              <td>
+                                <button
+                                  className="btn btn-sm btn-warning me-2"
+                                  onClick={() => handleEditBudget(budget)}
+                                  title="Edit Budget"
+                                >
+                                  <i className="bi bi-pencil"></i> Edit
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-danger"
+                                  onClick={() => handleDeleteBudget(budget.cover_code)}
+                                  title="Delete Budget"
+                                >
+                                  <i className="bi bi-trash"></i> Delete
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* ✅ Pagination Controls */}
+                <div className="d-flex justify-content-between align-items-center mt-3">
+                  <div>
+                    Page {currentPage} of {totalPages}
+                  </div>
+
+                  <div>
+                    <button
+                      className="btn btn-secondary btn-sm me-2"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                    >
+                      « First
+                    </button>
+
+                    <button
+                      className="btn btn-secondary btn-sm me-2"
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      ‹ Prev
+                    </button>
+
+                    <button
+                      className="btn btn-secondary btn-sm me-2"
+                      onClick={() =>
+                        setCurrentPage((prev) =>
+                          Math.min(prev + 1, totalPages)
+                        )
+                      }
+                      disabled={currentPage === totalPages}
+                    >
+                      Next ›
+                    </button>
+
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                    >
+                      Last »
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* ✅ Pagination Controls */}
-          <div className="d-flex justify-content-between align-items-center mt-3">
-            <div>
-              Page {currentPage} of {totalPages}
-            </div>
-
-            <div>
-              <button
-                className="btn btn-secondary btn-sm me-2"
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
-              >
-                « First
-              </button>
-
-              <button
-                className="btn btn-secondary btn-sm me-2"
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-              >
-                ‹ Prev
-              </button>
-
-              <button
-                className="btn btn-secondary btn-sm me-2"
-                onClick={() =>
-                  setCurrentPage((prev) =>
-                    Math.min(prev + 1, totalPages)
-                  )
-                }
-                disabled={currentPage === totalPages}
-              >
-                Next ›
-              </button>
-
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage === totalPages}
-              >
-                Last »
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-
-       <div className="mt-4">
+          <div className="mt-4">
             <button
               className="btn btn-primary"
               onClick={() => {
@@ -1706,8 +1824,8 @@ const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
               + Create New Budget
             </button>
           </div>
-  </>
-)}
+        </>
+      )}
 
       {currentStep === 3 && <></>}
     </div>
