@@ -26,7 +26,8 @@ const PERMISSION_COLUMNS = [
   'userList',
   'masterDataBranch',
   'Bp_Account',
-  'MotherAccount2'
+  'MotherAccount2',
+  'Year'
 ];
 
 const PermissionsManager = () => {
