@@ -687,42 +687,107 @@ const handleImportMother = async (e) => {
         fetchGroupMap();
     }, []);
 
-    const fetchAndCleanData = async (page = 1, search = "") => {
-        try {
-            setLoading(true);
-            const batchSize = itemsPerPage; // ✅ CHANGE: Use itemsPerPage instead of fixed 8
-            const offset = (page - 1) * batchSize;
+   const fetchAndCleanData = async (page = 1, search = "") => {
+    try {
+        setLoading(true);
+        const batchSize = itemsPerPage;
+        const offset = (page - 1) * batchSize;
 
-            let query = supabase
-                .from("Accounts_List")
-                .select("*", { count: "exact" })
-                .order("id", { ascending: true })
-                .range(offset, offset + batchSize - 1);
+        let query = supabase
+            .from("Accounts_List")
+            .select("*", { count: "exact" })
+            .order("id", { ascending: true })
+            .range(offset, offset + batchSize - 1);
 
-            // 🔍 Apply search filter only if there's a search term
-            if (search.trim()) {
-                query = query.or(
-                    `bp_name.ilike.%${search}%,mother_code.ilike.%${search}%`
-                );
+        // 🔍 Apply comprehensive search filter across ALL fields including names
+        if (search.trim()) {
+            const searchTerm = search.trim().toLowerCase();
+            
+            // Fetch lookup data for name searching
+            const [distData, motherData, agentData, groupData] = await Promise.all([
+                supabase.from('distributors').select('code, name'),
+                supabase.from('sub_mother_account').select('dscode, name'),
+                supabase.from('Account_Users').select('UserID, name'),
+                supabase.from('mother_account').select('code, name')
+            ]);
+
+            // Create reverse maps: name -> code
+            const distCodes = new Set();
+            distData.data?.forEach(d => {
+                if (d.name && d.name.toLowerCase().includes(searchTerm)) {
+                    distCodes.add(d.code);
+                }
+            });
+
+            const motherCodes = new Set();
+            motherData.data?.forEach(m => {
+                if (m.name && m.name.toLowerCase().includes(searchTerm)) {
+                    motherCodes.add(m.dscode);
+                }
+            });
+
+            const agentCodes = new Set();
+            agentData.data?.forEach(a => {
+                if (a.name && a.name.toLowerCase().includes(searchTerm)) {
+                    agentCodes.add(a.UserID); // Keep as number
+                }
+            });
+
+            const groupCodes = new Set();
+            groupData.data?.forEach(g => {
+                if (g.name && g.name.toLowerCase().includes(searchTerm)) {
+                    groupCodes.add(g.code);
+                }
+            });
+
+            // Build OR conditions for direct field matches + name matches
+            const conditions = [
+                `distributor_code.ilike.%${search}%`,
+                `mother_code.ilike.%${search}%`,
+                `bp_code.ilike.%${search}%`,
+                `bp_name.ilike.%${search}%`,
+                `group_code.ilike.%${search}%`
+            ];
+
+            // Add matched codes from names
+            if (distCodes.size > 0) {
+                conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
+            }
+            if (motherCodes.size > 0) {
+                conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
+            }
+            if (agentCodes.size > 0) {
+                conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`); // No quotes for numbers
+            }
+            if (groupCodes.size > 0) {
+                conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
             }
 
-            const { data: pageData, error, count } = await query;
+            // Handle agent_code as number if search term is numeric
+            if (!isNaN(search)) {
+                conditions.push(`agent_code.eq.${search}`);
+            }
 
-            if (error) throw error;
-
-            // 🧩 Clean duplicates
-            const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
-
-            // ✅ FIXED: Always replace data for current page, don't append
-            setData(uniqueData);
-            setTotalCount(count || 0);
-            setLoading(false);
-        } catch (err) {
-            console.error("Error:", err);
-            Swal.fire("Error", err.message, "error");
-            setLoading(false);
+            query = query.or(conditions.join(','));
         }
-    };
+
+        const { data: pageData, error, count } = await query;
+
+        if (error) throw error;
+
+        // 🧩 Clean duplicates
+        const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
+
+        // ✅ Always replace data for current page
+        setData(uniqueData);
+        setTotalCount(count || 0);
+        setLoading(false);
+    } catch (err) {
+        console.error("Error:", err);
+        Swal.fire("Error", err.message, "error");
+        setLoading(false);
+    }
+};
 
     // ✅ STEP 2: UPDATE useEffect for search - reset to page 1
     useEffect(() => {
