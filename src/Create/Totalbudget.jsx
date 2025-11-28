@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
-import Swal from "sweetalert2"; // <---- import sweetalert2
+import Swal from "sweetalert2";
 import { supabase } from "../supabaseClient";
 
 const Total = () => {
@@ -20,12 +20,71 @@ const Total = () => {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [displayedRemainingBudget, setDisplayedRemainingBudget] = useState(null);
+  const [budgetYears, setBudgetYears] = useState([]);
+  const [loadingBudgetYear, setLoadingBudgetYear] = useState(false);
+  const [selectedDistributorName, setSelectedDistributorName] = useState("");
 
-  // Auto-generate Visa Code on mount
+  const fetchBudgetYear = async (distributorCode) => {
+    try {
+      setLoadingBudgetYear(true);
+      console.log("📅 Fetching ALL budget years for distributor:", distributorCode);
+
+      const { data: coverData, error: coverError } = await supabase
+        .from("cover_pwp")
+        .select("budget_year, cover_code, amount_badget, created_at")
+        .eq("distributor_code", distributorCode.toString())
+        .order("budget_year", { ascending: false });
+
+      if (coverError) {
+        console.error("❌ Error fetching budget years:", coverError);
+        throw coverError;
+      }
+
+      if (coverData && coverData.length > 0) {
+        const yearMap = {};
+        let grandTotal = 0;
+
+        coverData.forEach(item => {
+          const year = item.budget_year || new Date().getFullYear();
+          const amount = parseFloat(item.amount_badget || 0);
+
+          if (!yearMap[year]) {
+            yearMap[year] = {
+              year: year,
+              totalBudget: 0,
+              count: 0
+            };
+          }
+          yearMap[year].totalBudget += amount;
+          yearMap[year].count += 1;
+          grandTotal += amount;
+        });
+
+        const years = Object.values(yearMap);
+        console.log("✅ Found budget years:", years);
+        console.log("💰 Grand Total from all years:", grandTotal);
+        setBudgetYears(years);
+
+        // Update the displayed remaining budget with grand total
+        setDisplayedRemainingBudget(grandTotal);
+        setRemainingBudget(grandTotal);
+      } else {
+        console.log("⚠️ No cover_pwp data found for this distributor");
+        setBudgetYears([]);
+        setDisplayedRemainingBudget(null);
+      }
+    } catch (err) {
+      console.error("❌ Error fetching budget years:", err);
+      setBudgetYears([]);
+      setDisplayedRemainingBudget(null);
+    } finally {
+      setLoadingBudgetYear(false);
+    }
+  };
+
   const handleFormChange = async (e) => {
     const { name, value } = e.target;
 
-    // Update formData with the new field value
     setFormData((prev) => {
       const updatedFormData = { ...prev, [name]: value };
       return updatedFormData;
@@ -43,16 +102,20 @@ const Total = () => {
         if (!selectedDistributor) {
           console.warn("⚠️ Distributor not found for code:", value);
           console.log("Available distributors:", distributors);
+          setSelectedDistributorName("");
+          setBudgetYears([]);
           return;
         }
 
         console.log("📦 Selected distributor:", selectedDistributor);
+        setSelectedDistributorName(selectedDistributor.name);
 
-        // Fetch budget info using distributor CODE (stored as text in DB)
+        await fetchBudgetYear(value);
+
         const { data: budgetData, error: budgetError } = await supabase
           .from("amount_badget")
           .select("amountbadget, remainingbalance, createduser, distributor")
-          .eq("distributor", value.toString()) // Use distributor CODE as string
+          .eq("distributor", value.toString())
           .order("id", { ascending: false })
           .limit(1);
 
@@ -67,7 +130,6 @@ const Total = () => {
           const budget = budgetData[0];
           console.log("💰 Budget data found:", budget);
 
-          // Auto-populate the amount budget and remaining budget
           const budgetAmount = budget.amountbadget || "";
           const remainingBalance = parseFloat(budget.remainingbalance) || 0;
 
@@ -81,13 +143,16 @@ const Total = () => {
 
           await Swal.fire({
             icon: "success",
-            title: "Budget Loaded",
+            title: "Budget Loaded! 🎉",
             html: `
-              <strong>Distributor:</strong> ${selectedDistributor.name}<br/>
-              <strong>Amount Budget:</strong> ₱${parseFloat(budgetAmount || 0).toLocaleString()}<br/>
-              <strong>Remaining Balance:</strong> ₱${remainingBalance.toLocaleString()}
+              <div style="text-align: left; padding: 10px;">
+                <p><strong>📦 Distributor:</strong> ${selectedDistributor.name}</p>
+                <p><strong>📅 Budget Years:</strong> ${budgetYears.map(y => y.year).join(', ') || 'N/A'}</p>
+                <p><strong>💰 Amount Budget:</strong> ₱${parseFloat(budgetAmount || 0).toLocaleString()}</p>
+                <p><strong>💵 Remaining Balance:</strong> ₱${remainingBalance.toLocaleString()}</p>
+              </div>
             `,
-            timer: 2500,
+            timer: 3000,
             showConfirmButton: false,
           });
         } else {
@@ -114,11 +179,10 @@ const Total = () => {
     }
   };
 
-
-
   const [accountTypes, setAccountTypes] = useState([]);
   const [approvedExpenses, setApprovedExpenses] = useState(0);
   const [remainingBudget, setRemainingBudget] = useState(0);
+
   useEffect(() => {
     const amountBudget = parseFloat(formData.amountbadget) || 0;
     const remaining = amountBudget - approvedExpenses;
@@ -130,7 +194,7 @@ const Total = () => {
     const number = parseFloat(value);
     if (isNaN(number)) return value;
     return number.toLocaleString("en-US", {
-      maximumFractionDigits: 0, // No decimal places
+      maximumFractionDigits: 0,
     });
   };
 
@@ -158,15 +222,13 @@ const Total = () => {
     checkUserPermissions();
   }, []);
 
-  //albert
   useEffect(() => {
     const fetchApprovedExpenses = async () => {
       if (!formData.visaCode) return;
 
       try {
-        // Fetch approved regular PWP budget expenses
         const { data, error } = await supabase
-          .from("approved_pwp_expenses") // Replace with your actual table name
+          .from("approved_pwp_expenses")
           .select("amount")
           .eq("visa_code", formData.visaCode)
           .eq("status", "approved");
@@ -176,7 +238,6 @@ const Total = () => {
           return;
         }
 
-        // Calculate total approved expenses
         const totalExpenses = data.reduce(
           (sum, expense) => sum + (parseFloat(expense.amount) || 0),
           0
@@ -189,6 +250,7 @@ const Total = () => {
 
     fetchApprovedExpenses();
   }, [formData.visaCode]);
+
   const [singleApprovals, setSingleApprovals] = useState([]);
   const [userApprovers, setUserApprovers] = useState([]);
   const [users, setUsers] = useState([]);
@@ -198,20 +260,17 @@ const Total = () => {
     const fetchData = async () => {
       setLoading(true);
 
-      // Fetch singleapprovals
       const { data: approvalsData, error: approvalsError } = await supabase
         .from("singleapprovals")
         .select("*")
         .order("created_at", { ascending: false });
 
-      // Fetch user approvers
       const { data: userApproversData, error: userApproversError } =
         await supabase
           .from("User_Approvers")
           .select("*")
           .order("created_at", { ascending: false });
 
-      // Fetch users for name lookup
       const { data: usersData, error: usersError } = await supabase
         .from("Account_Users")
         .select("UserID, name");
@@ -230,6 +289,7 @@ const Total = () => {
 
     fetchData();
   }, []);
+
   const [totalRemaining, setTotalRemaining] = React.useState(null);
 
   const fetchRemainingBalance = React.useCallback(async () => {
@@ -240,7 +300,7 @@ const Total = () => {
       .from("amount_badget")
       .select("remainingbalance")
       .eq("createduser", storedUser.name)
-      .or("Approved.is.null,Approved.eq.true"); // ✅ Only include Approved = true or null
+      .or("Approved.is.null,Approved.eq.true");
 
     if (error) {
       console.error("Error fetching remaining balance:", error);
@@ -253,6 +313,7 @@ const Total = () => {
     );
     setTotalRemaining(total);
   }, []);
+
   React.useEffect(() => {
     const storedUser = JSON.parse(localStorage.getItem("user"));
     if (!storedUser || !storedUser.name) return;
@@ -270,7 +331,7 @@ const Total = () => {
           filter: `createduser=eq.${storedUser.name}`,
         },
         (payload) => {
-          fetchRemainingBalance(); // ✅ will re-filter automatically
+          fetchRemainingBalance();
         }
       )
       .subscribe();
@@ -280,11 +341,6 @@ const Total = () => {
     };
   }, [fetchRemainingBalance]);
 
-  // Helper: get name from user_id
-
-
-
-  // fetch account types
   useEffect(() => {
     const fetchAccounts = async () => {
       const { data, error } = await supabase
@@ -300,10 +356,6 @@ const Total = () => {
     fetchAccounts();
   }, []);
 
-
-
-
-  // compute selected names
   const selectedNames = accountTypes
     .filter(
       (opt) => formData.accountType && formData.accountType.includes(opt.id)
@@ -328,7 +380,6 @@ const Total = () => {
 
         setAllCoverCodes(codes);
 
-        // Generate cover code if not already set
         if (!formData.coverCode) {
           const newCode = generateCoverCode(codes);
           setFormData((prev) => ({ ...prev, coverCode: newCode }));
@@ -378,6 +429,7 @@ const Total = () => {
 
     fetchDistributors();
   }, []);
+
   const selectedDistributor = distributors.find(
     (d) => d.code === formData.distributor
   );
@@ -401,17 +453,15 @@ const Total = () => {
     }
 
     try {
-      // ✅ Get the logged-in user from localStorage
       const storedUser = localStorage.getItem("loggedInUser");
       const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-      const createdBy = parsedUser?.name || "Unknown"; // You could use parsedUser.UserID too
+      const createdBy = parsedUser?.name || "Unknown";
 
-      // ✅ Convert selected accountType IDs into codes
-      const accountCodes = formData.accountType; // array of codes
+      const accountCodes = formData.accountType;
       const dataToInsert = {
         cover_code: formData.coverCode,
         distributor_code: formData.distributor,
-        account_type: accountCodes.join(","), // <-- join codes with comma
+        account_type: accountCodes.join(","),
         amount_badget: parseFloat(formData.amountbadget),
         pwp_type: formData.coverType || "COVER_PWP",
         objective: formData.objective,
@@ -436,8 +486,9 @@ const Total = () => {
         });
         return;
       }
+
       console.log("Main form insert data result:", mainData);
-      // ✅ Insert to amount_badget table
+
       const { data: budgetInsert, error: budgetError } = await supabase
         .from("amount_badget")
         .insert([
@@ -445,8 +496,8 @@ const Total = () => {
             pwp_code: formData.coverCode,
             amountbadget: parseFloat(formData.amountbadget),
             createduser: createdBy,
-            remainingbalance: parseFloat(formData.amountbadget), // initially same as amount
-            Approved: false, // or null if not yet reviewed
+            remainingbalance: parseFloat(formData.amountbadget),
+            Approved: false,
           },
         ]);
 
@@ -462,9 +513,6 @@ const Total = () => {
       }
 
       console.log("Amount budget inserted:", budgetInsert);
-
-      // ✅ Handle file attachments
-
 
       setCurrentStep(2);
     } catch (err) {
@@ -485,28 +533,6 @@ const Total = () => {
   const [userDistributors, setUserDistributors] = useState([]);
   const [filteredDistributors, setFilteredDistributors] = useState([]);
   const loggedInUserId = parsedUser?.id || parsedUser?.user_id || null;
-  console.log("[DEBUG] Logged in user ID:", loggedInUserId);
-  // useEffect(() => {
-  //   const fetchUserDistributors = async () => {
-  //     const { data, error } = await supabase
-  //       .from("user_distributors")
-  //       .select("distributor_name")
-  //       .eq("username", loggedInUsername);
-
-  //     if (error) {
-  //       console.error("[ERROR] Fetching user_distributors:", error);
-  //     } else {
-  //       const names = data.map((d) => d.distributor_name);
-  //       console.log("[DEBUG] Distributors assigned to user:", names);
-  //       setUserDistributors(names);
-  //     }
-  //   };
-
-  //   if (loggedInUsername !== "Unknown") {
-  //     fetchUserDistributors();
-  //   }
-  // }, [loggedInUsername]);
-
 
   useEffect(() => {
     const fetchUserDistributors = async () => {
@@ -520,7 +546,6 @@ const Total = () => {
       try {
         setLoading(true);
 
-        // 1️⃣ Fetch all distributors
         const { data: distributorsData, error: distributorsError } = await supabase
           .from("distributors")
           .select("*")
@@ -535,7 +560,6 @@ const Total = () => {
 
         console.log(`📦 Total distributors fetched: ${distributorsData.length}`);
 
-        // 2️⃣ Filter only those where loggedInUserId is inside agent_code list
         const filtered = distributorsData.filter((d) => {
           const agentCodes = (d.agent_code || "")
             .split(",")
@@ -546,20 +570,17 @@ const Total = () => {
 
         console.log(`✅ Distributors assigned to agent ${loggedInUserId}:`, filtered);
 
-        // 3️⃣ Fetch Account_Users for name lookup
         const { data: usersData, error: usersError } = await supabase
           .from("Account_Users")
           .select("UserID, name");
 
         if (usersError) throw usersError;
 
-        // 4️⃣ Create a map for UserID → name
         const userMap = {};
         usersData.forEach((u) => {
           userMap[String(u.UserID)] = u.name;
         });
 
-        // 5️⃣ Add readable agent names for display
         const distributorsWithAgentNames = filtered.map((dist) => {
           const agentCodes = (dist.agent_code || "")
             .split(",")
@@ -573,7 +594,6 @@ const Total = () => {
 
         console.log("📋 Distributors with agent names:", distributorsWithAgentNames);
 
-        // 6️⃣ Update state
         setDistributors(distributorsWithAgentNames);
         setFilteredDistributors(distributorsWithAgentNames);
       } catch (err) {
@@ -600,7 +620,6 @@ const Total = () => {
         console.log("[DEBUG] All distributors from DB:", data);
         setDistributors(data);
 
-        // Filter distributors based on user allowed list
         const allowed = data.filter((dist) =>
           userDistributors.includes(dist.name)
         );
@@ -612,218 +631,261 @@ const Total = () => {
     if (userDistributors.length > 0) {
       fetchDistributors();
     } else {
-      // If no distributors assigned, clear filtered list
       setFilteredDistributors([]);
     }
   }, [userDistributors]);
 
   return (
-    <div style={{ padding: "30px", height: "90vh" }} className="containers">
-      <div className="row align-items-center mb-4">
-        <div className="col-12 col-md-6">
-          <div
-            className="card p-4 animate-fade-slide-up shadow-sm"
-            style={{
-              background: "linear-gradient(135deg, #a8d0ff, #d9edf7)", // gentle blue gradient
-              borderRadius: "12px",
-              border: "1px solid #99cfff",
-              color: "#1a3e72",
-              boxShadow: "0 4px 8px rgba(26, 62, 114, 0.15)",
-            }}
-          >
-            <h3
-              className="mb-0"
+    <div style={{ padding: "30px", minHeight: "100vh", background: "#f8f9fa" }} className="containers">
+      {/* Header Section */}
+      <div className="container-fluid mb-4">
+        <div className="row g-3 align-items-start">
+          {/* Title Card */}
+          <div className="col-12 col-lg-5">
+            <div
+              className="card shadow-sm"
               style={{
-                fontWeight: "700",
-                letterSpacing: "2px",
-                textTransform: "uppercase",
-                fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-                textShadow: "1px 1px 2px rgba(26, 62, 114, 0.3)",
+                background: "linear-gradient(135deg, #7BB0FF 0%, #A8D0FF 40%, #D9EDF7 100%)",
+                borderRadius: "16px",
+                border: "none",
+                padding: "24px",
+             
               }}
             >
-              DISTRIBUTOR BUDGET
-            </h3>
-          </div>
-        </div>
-        {/* Remaining Budget */}
-        <div
-          className="col-md-4 d-flex justify-content-end align-items-center"
-          style={{ position: "absolute", top: "40px", right: "20px" }} // ⬅ added margin-top effect
-        >
-          <span
-            style={{
-              fontSize: "18px", // ⬅ mas malaki label
-              fontWeight: "600",
-              marginRight: "12px",
-              color: "#444",
-            }}
-          >
-            Remaining Budget:
-          </span>
-          <span
-            style={{
-              fontSize: "24px", // ⬅ mas malaki value
-              fontWeight: "bold",
-              color: "#000",
-              background: "#ffffff",
-              padding: "8px 20px", // ⬅ mas spacious
-              borderRadius: "10px",
-              boxShadow: "0 3px 8px rgba(0,0,0,0.2)",
-            }}
-          >
-            {displayedRemainingBudget !== null
-              ? `₱${displayedRemainingBudget.toLocaleString()}`
-              : totalRemaining !== null
-                ? `₱${totalRemaining.toLocaleString()}`
-                : "Loading..."}
-          </span>
-        </div>
+              <h3
+                className="mb-0 text-white"
+                style={{
+                  fontWeight: "700",
+                  letterSpacing: "1.5px",
+                  textTransform: "uppercase",
+                  fontSize: "1.5rem",
+                               color: "rgba(78, 78, 78, 0.95)",
 
-        <div className="col-12 col-md-6 text-md-end pt-3 pt-md-0"></div>
+                }}
+              >
+                💼 DISTRIBUTOR BUDGET
+              </h3>
+            </div>
+          </div>
+
+
+
+          {/* Remaining Budget Card */}
+
+        </div>
       </div>
 
+      {/* Form Section */}
       {currentStep === 1 && (
-        <form style={{ marginTop: "50px" }} onSubmit={handleSubmits}>
-          <h2
-            className="fw-bold mb-0"
+        <div className="container-fluid">
+          <div className="card shadow-sm" style={{ borderRadius: "16px", border: "none" }}>
+            <div className="card-body p-4">
+              <form onSubmit={handleSubmits}>
+                <div className="row g-4">
+                  {/* Distributor Dropdown */}
+                  <div className="col-12 col-md-6">
+                    <label className="form-label fw-semibold">
+                      Distributor <span className="text-danger">*</span>
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <select
+                        name="distributor"
+                        className="form-select form-select-lg"
+                        value={formData.distributor}
+                        onChange={handleFormChange}
+                        style={{
+                          paddingRight: "45px",
+                          borderColor: formData.distributor ? "#28a745" : "#dee2e6",
+                          borderWidth: "2px",
+                          transition: "all 0.3s ease",
+                          borderRadius: "12px",
+                        }}
+                      >
+                        <option value="">Select Distributor</option>
+                        {filteredDistributors.map((dist) => (
+                          <option key={dist.id} value={dist.code}>
+                            {dist.name}
+                          </option>
+                        ))}
+                      </select>
+                      {formData.distributor && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            right: "15px",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            color: "#28a745",
+                            fontWeight: "bold",
+                            fontSize: "24px",
+                            pointerEvents: "none",
+                          }}
+                        >
+                          ✓
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Add more form fields here as needed */}
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Budget Years Card */}
+      {formData.distributor && budgetYears.length > 0 && (
+        <div className="col-12 d-flex justify-content-center mt-3">
+          <div
+            className="card shadow-lg"
             style={{
-              letterSpacing: "1px",
-              fontSize: "24px",
-              marginBottom: "50px",
-              textAlign: "right",
+              background: "linear-gradient(135deg, #7BB0FF 0%, #A8D0FF 40%, #D9EDF7 100%)",
+              borderRadius: "20px",
+              border: "none",
+              padding: "35px",
+              width: "95%",
+              maxWidth: "800px",
+              minHeight: "480px",
+              backdropFilter: "blur(20px)",
+              boxShadow: "0 8px 20px rgba(0,0,0,0.15)",
             }}
           >
 
-          </h2>
-          <div className="row g-3">
+            {/* TITLE */}
             <div
-              className="col-md-3"
-              style={{ position: "relative", width: "550px" }}
+              style={{
+                fontSize: "16px",
+                color: "rgba(78, 78, 78, 0.95)",
+                fontWeight: "700",
+                marginBottom: "15px",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+                textAlign: "center",
+                textShadow: "0 0 6px rgba(255,255,255,0.5)",
+              }}
             >
-              <label className="form-label">
-                Distributor <span style={{ color: "red" }}>*</span>
-              </label>
+              📅 Budget Years Overview
+            </div>
 
-              <select
-                name="distributor"
-                className="form-control"
-                value={formData.distributor}
-                onChange={handleFormChange}
-                style={{
-                  paddingRight: "30px",
-                  borderColor: formData.distributor ? "green" : "",
-                  transition: "border-color 0.3s",
-                }}
-                onMouseEnter={(e) => {
-                  if (formData.distributor)
-                    e.currentTarget.style.borderColor = "green";
-                }}
-                onMouseLeave={(e) => {
-                  if (formData.distributor)
-                    e.currentTarget.style.borderColor = "green";
-                  else e.currentTarget.style.borderColor = "";
-                }}
-              >
-                <option value="">Select Distributor</option>
-                {filteredDistributors.map((dist) => (
-                  <option key={dist.id} value={dist.code}>
-                    {dist.name}
-                  </option>
+            {loadingBudgetYear ? (
+              <div className="text-center text-white py-3">
+                <div className="spinner-border spinner-border-sm" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+                <span className="ms-2">Loading...</span>
+              </div>
+            ) : (
+              <div style={{ maxHeight: "540px", overflowY: "auto", overflowX: "hidden", paddingRight: "6px" }}>
+
+                {budgetYears.map((yearData, index) => (
+                  <div
+                    key={index}
+                    className="mb-2"
+                    style={{
+                      background: "rgba(255,255,255,0.20)",
+                      padding: "14px 16px",
+                      borderRadius: "14px",
+                      backdropFilter: "blur(10px)",
+                      border: "1px solid rgba(255,255,255,0.35)",
+                      boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
+                    }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center">
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "26px",
+                            fontWeight: "800",
+                            color: "#000000ff",
+                            lineHeight: "1",
+                          }}
+                        >
+                          {yearData.year}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "rgba(12, 12, 12, 0.9)",
+                            marginTop: "4px",
+                          }}
+                        >
+                          {yearData.count} budget{yearData.count > 1 ? "s" : ""}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: "900",
+                          color: "#1d1d1dff",
+                          textAlign: "right",
+                        }}
+                      >
+                        ₱{yearData.totalBudget.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </select>
-              <span
+
+                {/* GRAND TOTAL */}
+                {budgetYears.length > 1 && (
+                  <div
+                    className="mt-3"
+                    style={{
+                      background: "rgba(255,255,255,0.30)",
+                      padding: "14px 16px",
+                      borderRadius: "14px",
+                      backdropFilter: "blur(12px)",
+                      border: "2px solid rgba(255,255,255,0.4)",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center">
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "700",
+                          color: "#000000ff",
+                          letterSpacing: "1px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Total
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "20px",
+                          fontWeight: "900",
+                          color: "#000000ff",
+                        }}
+                      >
+                        ₱{budgetYears.reduce((s, y) => s + y.totalBudget, 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SELECTED DISTRIBUTOR NAME */}
+            {selectedDistributorName && (
+              <div
+                className="mt-3 pt-2 text-center"
                 style={{
-                  position: "absolute",
-                  top: "75%",
-                  right: "20px",
-                  transform: "translateY(-50%)",
-                  pointerEvents: "none",
-                  fontSize: "0.8rem",
-                  color: "#666",
+                  borderTop: "1px solid rgba(255,255,255,0.35)",
+                  fontSize: "13px",
+                  color: "rgba(0, 0, 0, 0.9)",
+                  fontStyle: "italic",
                 }}
               >
-                ▼
-              </span>
-              {formData.principal !== "" && (
-                <span
-                  style={{
-                    position: "absolute",
-                    right: "40px",
-                    top: "55%",
-                    transform: "translateY(-20%)",
-                    color: "green",
-                    fontWeight: "bold",
-                    fontSize: "25px",
-                    pointerEvents: "none",
-                    userSelect: "none",
-                  }}
-                >
-                  ✓
-                </span>
-              )}
-            </div>
-
-            <div className="col-md-3" style={{ position: "relative" }}>
-              <label className="form-label">
-                Amount Budget <span style={{ color: "red" }}>*</span>
-              </label>
-              <input
-                type="text"
-                name="amountbadget"
-                className="form-control"
-                value={formatCurrency(formData.amountbadget)}
-                onChange={(e) => {
-                  const rawValue = e.target.value.replace(/,/g, "");
-                  if (/^[0-9]*\.?[0-9]*$/.test(rawValue)) {
-                    handleFormChange({
-                      target: { name: "amountbadget", value: rawValue },
-                    });
-                  }
-                }}
-                style={{ paddingRight: "30px" }}
-              />
-            </div>
-            {/* <div className="col-md-3" style={{ position: "relative" }}>
-              <label className="form-label" style={{ color: "#888" }}>
-                Marketing Type
-              </label>
-              <select
-                name="coverType"
-                className="form-control"
-                value={formData.coverType}
-                onChange={handleFormChange}
-                style={{
-                  paddingRight: "30px",
-                  textTransform: "uppercase",
-                  backgroundColor: "#f5f5f5",
-                  cursor: "not-allowed",
-                }}
-                disabled
-              >
-                <option value="COVER_PWP">COVER_PWP</option>
-              </select>
-
-              {formData.coverType !== "" && (
-                <span
-                  style={{
-                    position: "absolute",
-                    right: "20px",
-                    top: "50%",
-                    transform: "translateY(-20%)",
-                    color: "green",
-                    fontWeight: "bold",
-                    fontSize: "25px",
-                    pointerEvents: "none",
-                    userSelect: "none",
-                  }}
-                >
-                  ✓
-                </span>
-              )}
-            </div> */}
+                {selectedDistributorName}
+              </div>
+            )}
           </div>
-        </form>
+        </div>
       )}
+
     </div>
   );
 };
