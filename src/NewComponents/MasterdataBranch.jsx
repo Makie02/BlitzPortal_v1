@@ -48,498 +48,610 @@ export default function AccountsListManager() {
     // 🔹 Handle file selection
 
     // 🔹 Delete a row in preview
+const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
 
-    const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
-    // 🔹 Check duplicates
-    const checkExistingRecords = async () => {
-        if (!importData.length) return;
-        setChecking(true);
-        setLoadingProgress({ current: 0, total: 0 });
+// 🔹 Check duplicates with UPDATE detection
+const checkExistingRecords = async () => {
+    if (!importData.length) return;
+    setChecking(true);
+    setLoadingProgress({ current: 0, total: 0 });
 
-        try {
-            // First, get the total count
-            const { count: totalCount, error: countError } = await supabase
+    try {
+        console.log("🔍 Starting duplicate check...");
+        console.log(`📊 Total rows to check: ${importData.length}`);
+        
+        // First, get the total count
+        const { count: totalCount, error: countError } = await supabase
+            .from("Accounts_List")
+            .select("bp_code", { count: 'exact', head: true });
+
+        if (countError) {
+            console.error("❌ Count Error:", countError);
+            Swal.fire("Error", `Failed to count records: ${countError.message}`, "error");
+            setChecking(false);
+            return;
+        }
+
+        console.log(`📈 Total existing records in DB: ${totalCount || 0}`);
+        setLoadingProgress({ current: 0, total: totalCount || 0 });
+
+        let allExistingRecords = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
+
+        // Fetch all records with ALL fields to compare
+        while (hasMore) {
+            const { data, error } = await supabase
                 .from("Accounts_List")
-                .select("bp_code", { count: 'exact', head: true });
+                .select("bp_code, distributor_code, mother_code, agent_code, group_code, bp_name")
+                .range(from, from + batchSize - 1);
 
-            if (countError) {
-                Swal.fire("Error", "Failed to check duplicates", "error");
+            if (error) {
+                console.error("❌ Fetch Error:", error);
+                Swal.fire("Error", `Failed to fetch records: ${error.message}`, "error");
                 setChecking(false);
                 return;
             }
 
-            setLoadingProgress({ current: 0, total: totalCount || 0 });
+            if (data && data.length > 0) {
+                allExistingRecords = [...allExistingRecords, ...data];
+                from += batchSize;
 
-            let allExistingRecords = [];
-            let from = 0;
-            const batchSize = 1000;
-            let hasMore = true;
-
-            // Fetch all records in batches
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from("Accounts_List")
-                    .select("bp_code")
-                    .range(from, from + batchSize - 1);
-
-                if (error) {
-                    Swal.fire("Error", "Failed to check duplicates", "error");
-                    setChecking(false);
-                    return;
-                }
-
-                if (data && data.length > 0) {
-                    allExistingRecords = [...allExistingRecords, ...data];
-                    from += batchSize;
-
-                    // Update progress
-                    setLoadingProgress({
-                        current: allExistingRecords.length,
-                        total: totalCount || 0
-                    });
-                }
-
-                hasMore = data && data.length === batchSize;
+                setLoadingProgress({
+                    current: allExistingRecords.length,
+                    total: totalCount || 0
+                });
             }
 
-            console.log(`✅ Total records loaded: ${allExistingRecords.length}`);
+            hasMore = data && data.length === batchSize;
+        }
 
-            // Create a Set of existing BP codes
-            const existingBpCodes = new Set(
-                allExistingRecords.map(row => row.bp_code.trim().toUpperCase())
-            );
+        console.log(`✅ Total records loaded from DB: ${allExistingRecords.length}`);
 
-            setExistingRows(existingBpCodes);
-            setDuplicatesChecked(true);
+        // Create lookup map: bp_code -> full record
+        const existingMap = {};
+        allExistingRecords.forEach(row => {
+            if (row.bp_code) {
+                existingMap[row.bp_code.trim().toUpperCase()] = row;
+            }
+        });
+        
+        console.log(`🔑 Unique BP codes in DB: ${Object.keys(existingMap).length}`);
+        console.log("Sample existing codes:", Object.keys(existingMap).slice(0, 5));
 
-            // Count duplicates
-            const duplicateCount = importData.filter(row =>
-                existingBpCodes.has(row.bp_code.trim().toUpperCase())
-            ).length;
+        setExistingRows(new Set(Object.keys(existingMap)));
+        setDuplicatesChecked(true);
 
-            // Reset loading progress
-            setLoadingProgress({ current: 0, total: 0 });
+        // 🔍 DETAILED DUPLICATE ANALYSIS WITH UPDATE DETECTION
+        console.log("\n📋 UPLOAD DATA ANALYSIS:");
+        console.table(importData.slice(0, 10).map((row, idx) => ({
+            Row: idx + 2,
+            BP_Code: row.bp_code || "❌ NULL",
+            Distributor: row.distributor_code || "N/A",
+            Mother: row.mother_code || "N/A",
+            Agent: row.agent_code || "N/A"
+        })));
 
-            // Sort importData: duplicates first, then new records
-            // IMPORTANT: Create NEW array using [...importData] then sort
-            const sortedImportData = [...importData].sort((a, b) => {
-                const aIsDuplicate = existingBpCodes.has(a.bp_code.trim().toUpperCase());
-                const bIsDuplicate = existingBpCodes.has(b.bp_code.trim().toUpperCase());
+        const exactDuplicates = [];
+        const needsUpdate = [];
+        const newRecords = [];
+        const nullBpCodes = [];
 
-                // Duplicates come first (return -1 if a is duplicate and b is not)
-                if (aIsDuplicate && !bIsDuplicate) return -1;
-                if (!aIsDuplicate && bIsDuplicate) return 1;
-                return 0;
-            });
-
-            // Update the importData state with sorted data
-            setImportData(sortedImportData);
-
-            // Reset to page 1 to show duplicates first
-            setCurrentPageExcel(1);
-
-            // Show alert
-            if (duplicateCount > 0) {
-                Swal.fire({
-                    icon: "warning",
-                    title: "Duplicates Found!",
-                    text: `Found ${duplicateCount} duplicate record(s) out of ${importData.length}. Checked against ${allExistingRecords.length} existing records. Duplicates are now shown first.`,
+        const updatedImportData = importData.map((row, idx) => {
+            const rowNum = idx + 2;
+            
+            if (!row.bp_code || row.bp_code.trim() === "") {
+                nullBpCodes.push({
+                    Row: rowNum,
+                    BP_Code: "❌ NULL/EMPTY",
+                    BP_Name: row.bp_name || "N/A",
+                    Distributor: row.distributor_code || "N/A"
                 });
+                return { ...row, _updateFlag: 'null' };
+            }
+
+            const normalizedCode = row.bp_code.trim().toUpperCase();
+            const existingRecord = existingMap[normalizedCode];
+
+            if (!existingRecord) {
+                // NEW RECORD
+                newRecords.push({
+                    Row: rowNum,
+                    BP_Code: row.bp_code,
+                    BP_Name: row.bp_name || "N/A",
+                    Distributor: row.distributor_code || "N/A",
+                    Mother: row.mother_code || "N/A",
+                    Agent: row.agent_code || "N/A",
+                    Status: "✅ NEW"
+                });
+                return { ...row, _updateFlag: 'new' };
+            }
+
+            // EXISTS - Check if any field is different
+            const hasChanges = 
+                (row.distributor_code && existingRecord.distributor_code !== row.distributor_code) ||
+                (row.mother_code && existingRecord.mother_code !== row.mother_code) ||
+                (row.agent_code && String(existingRecord.agent_code) !== String(row.agent_code)) ||
+                (row.group_code && existingRecord.group_code !== row.group_code) ||
+                (row.bp_name && existingRecord.bp_name !== row.bp_name);
+
+            if (hasChanges) {
+                // NEEDS UPDATE
+                needsUpdate.push({
+                    Row: rowNum,
+                    BP_Code: row.bp_code,
+                    Old_Distributor: existingRecord.distributor_code || "N/A",
+                    New_Distributor: row.distributor_code || "N/A",
+                    Old_Mother: existingRecord.mother_code || "N/A",
+                    New_Mother: row.mother_code || "N/A",
+                    Old_Agent: existingRecord.agent_code || "N/A",
+                    New_Agent: row.agent_code || "N/A",
+                    Status: "🟠 NEEDS UPDATE"
+                });
+                return { ...row, _updateFlag: 'update', _oldData: existingRecord };
             } else {
-                Swal.fire({
-                    icon: "success",
-                    title: "No Duplicates",
-                    text: `All ${importData.length} records are new! Checked against ${allExistingRecords.length} existing records.`,
+                // EXACT DUPLICATE
+                exactDuplicates.push({
+                    Row: rowNum,
+                    BP_Code: row.bp_code,
+                    BP_Name: row.bp_name || "N/A",
+                    Distributor: row.distributor_code || "N/A",
+                    Mother: row.mother_code || "N/A",
+                    Status: "🔴 EXACT DUPLICATE"
                 });
+                return { ...row, _updateFlag: 'duplicate' };
             }
-
-        } catch (err) {
-            console.error("Error checking duplicates:", err);
-            Swal.fire("Error", "Something went wrong while checking", "error");
-            setLoadingProgress({ current: 0, total: 0 });
-        } finally {
-            setChecking(false);
-        }
-    };
-    // 🔹 Import data into DB
-    const importDataToDB = async () => {
-        if (!importData.length) return;
-
-        setUploading(true);  // ✅ Start uploading indicator
-        setImporting(true);
-
-        let successCount = 0;
-        let failedRows = [];
-        let skippedRows = [];
-
-        try {
-            // ✅ Fetch reference tables
-            const [
-                { data: motherAccounts },
-                { data: agentAccounts },
-                { data: bpAccounts },
-                { data: distributorAccounts },
-                { data: groupData }
-            ] = await Promise.all([
-                supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
-                supabase.from('Account_Users').select('UserID, name'),
-                supabase.from('Bp_Accounts').select('bp_code, bp_name'),
-                supabase.from('distributors').select('code, name'),
-                supabase.from('mother_account').select('code, name')
-            ]);
-
-            const groupNameToCodeMap = {};
-            motherAccounts?.forEach(m => {
-                if (m.group_name && m.group_code) {
-                    const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
-                    groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
-                }
-            });
-
-            const motherLookup = {};
-            motherAccounts?.forEach(m => {
-                const groupCode = m.group_code?.toString().trim();
-                const exactName = m.name?.toString().trim().toLowerCase();
-                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-                if (!groupCode || !m.name) return;
-                if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
-                motherLookup[groupCode][exactName] = m.dscode;
-                motherLookup[groupCode][normalizedName] = m.dscode;
-            });
-
-            const findMotherCode = (rawMotherName, resolvedGroupCode) => {
-                const groupCode = resolvedGroupCode?.toString().trim();
-                if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
-
-                const exactName = rawMotherName.toString().trim().toLowerCase();
-                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-                const availableNames = motherLookup[groupCode];
-
-                if (availableNames[exactName]) return availableNames[exactName];
-                if (availableNames[normalizedName]) return availableNames[normalizedName];
-                const fuzzyMatch = Object.keys(availableNames).find(dbName =>
-                    dbName.includes(normalizedName) || normalizedName.includes(dbName)
-                );
-                if (fuzzyMatch) return availableNames[fuzzyMatch];
-                return Object.values(availableNames)[0];
-            };
-
-            const createMap = (arr, key1, key2) => {
-                const map = {};
-                arr?.forEach(item => {
-                    if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
-                    if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
-                });
-                return map;
-            };
-
-            const agentMap = createMap(agentAccounts, 'name', 'UserID');
-            const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
-            const distributorMap = createMap(distributorAccounts, 'name', 'code');
-            const bpNameMap = {};
-            bpAccounts?.forEach(b => {
-                if (b.bp_code && b.bp_name)
-                    bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
-            });
-
-            const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
-
-            const BATCH_SIZE = 500;
-            const chunks = [];
-            for (let i = 0; i < importData.length; i += BATCH_SIZE) {
-                chunks.push(importData.slice(i, i + BATCH_SIZE));
-            }
-
-            for (let i = 0; i < chunks.length; i++) {
-                const chunk = chunks[i];
-
-                const records = chunk.map((row, idx) => {
-                    const actualRowNumber = i * BATCH_SIZE + idx + 2;
-
-                    // ✅ Support both NAME and CODE columns
-                    const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
-                    const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
-                    const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
-                    const rawBp = row.bp_code?.toString().trim() || '';
-                    const rawDist = row.distributor_code?.toString().trim() || row.distributor_name?.toString().trim() || '';
-
-                    let groupCode = rawGroup;
-                    if (!isCode(rawGroup)) {
-                        groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
-                    }
-
-                    let motherCode = rawMother;
-                    if (!isCode(rawMother)) {
-                        motherCode = findMotherCode(rawMother, groupCode);
-                    }
-
-                    const agentCode = isCode(rawAgent)
-                        ? rawAgent
-                        : (agentMap[rawAgent.toLowerCase()] || rawAgent);
-
-                    const bpCode = isCode(rawBp)
-                        ? rawBp
-                        : (bpMap[rawBp.toLowerCase()] || rawBp);
-
-                    const bpName =
-                        bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
-                        row.bp_name ||
-                        null;
-
-                    const distributorCode = isCode(rawDist)
-                        ? rawDist
-                        : (distributorMap[rawDist.toLowerCase()] || rawDist);
-
-                    return {
-                        distributor_code: distributorCode || null,
-                        mother_code: motherCode || null,
-                        bp_code: bpCode || null,
-                        bp_name: bpName || null,
-                        agent_code: agentCode ? parseInt(agentCode) : null,  // ✅ Convert to int
-                        group_code: groupCode || null,
-                        status: true,  // ✅ Add status
-                        _rowNumber: actualRowNumber
-                    };
-                });
-
-                // ✅ Check existing in Accounts_List before insert
-                const bpCodes = records.map(r => r.bp_code).filter(Boolean);
-                const { data: existingRows, error: checkError } = await supabase
-                    .from('Accounts_List')
-                    .select('bp_code')
-                    .in('bp_code', bpCodes);
-
-                if (checkError) {
-                    console.error('❌ Error checking existing:', checkError);
-                }
-
-                const existingCodes = new Set(existingRows?.map(r => r.bp_code.toLowerCase()) || []);
-
-                const newRecords = records.filter(r => !existingCodes.has(r.bp_code?.toLowerCase()));
-                const skipped = records.filter(r => existingCodes.has(r.bp_code?.toLowerCase()));
-                skippedRows.push(...skipped.map(r => r._rowNumber));
-
-                const recordsToInsert = newRecords.map(r => {
-                    const { _rowNumber, ...record } = r;
-                    return record;
-                });
-
-                if (recordsToInsert.length > 0) {
-                    const { data: insertedData, error } = await supabase
-                        .from('Accounts_List')
-                        .insert(recordsToInsert)
-                        .select();
-
-                    if (error) {
-                        console.error('❌ Insert error:', error);
-                        newRecords.forEach((r) => {
-                            failedRows.push({
-                                row: r._rowNumber,
-                                error: error.message,
-                                ...r,
-                            });
-                        });
-                    } else {
-                        successCount += insertedData?.length || recordsToInsert.length;
-                    }
-                }
-
-                const processed = Math.min((i + 1) * BATCH_SIZE, importData.length);
-                setProcessedRows(processed);
-                setProgressPercent(Math.round((processed / importData.length) * 100));
-                await new Promise(res => setTimeout(res, 50));
-            }
-
-            // ✅ Summary
-            const failedCount = failedRows.length;
-            const skippedCount = skippedRows.length;
-            const totalProcessed = importData.length;
-
-            Swal.fire({
-                icon: 'success',
-                title: 'Import Finished!',
-                html: `
-                <div style="text-align:left;">
-                  <p><strong>✅ Imported:</strong> ${successCount}</p>
-                  <p><strong>⏭️ Skipped (Duplicates):</strong> ${skippedCount}</p>
-                  <p><strong>❌ Failed:</strong> ${failedCount}</p>
-                  <p><strong>📊 Total:</strong> ${totalProcessed}</p>
-                </div>
-            `,
-                confirmButtonText: 'OK',
-                willClose: () => {
-                    fetchAndCleanData();
-                    setShowExcelModal(false);
-                    setImportData([]);
-                    setExistingRows([]);
-                }
-            });
-
-        } catch (error) {
-            console.error('❌ Import Error:', error);
-            Swal.fire('Error', error.message || 'Import failed', 'error');
-        } finally {
-            setUploading(false);
-            setImporting(false);
-        }
-    };
-    const handleImportMother = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const rawData = await readExcelFile(file);
-        if (!rawData.length) return;
-
-        if (rawData.length > 40000) {
-            Swal.fire({
-                icon: 'error',
-                title: 'Too Many Rows!',
-                text: `Excel contains ${rawData.length.toLocaleString()} rows. Maximum allowed is 40,000 rows.`,
-                confirmButtonText: 'OK'
-            });
-            return;
-        }
-
-        // ✅ Show loading indicator
-        Swal.fire({
-            title: 'Processing Excel...',
-            text: 'Converting names to codes...',
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
         });
 
-        try {
-            // ✅ Fetch reference tables FIRST
-            const [
-                { data: motherAccounts },
-                { data: agentAccounts },
-                { data: bpAccounts },
-                { data: distributorAccounts }
-            ] = await Promise.all([
-                supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
-                supabase.from('Account_Users').select('UserID, name'),
-                supabase.from('Bp_Accounts').select('bp_code, bp_name'),
-                supabase.from('distributors').select('code, name')
-            ]);
-
-            const groupNameToCodeMap = {};
-            motherAccounts?.forEach(m => {
-                if (m.group_name && m.group_code) {
-                    const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
-                    groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
-                }
-            });
-
-            const motherLookup = {};
-            motherAccounts?.forEach(m => {
-                const groupCode = m.group_code?.toString().trim();
-                const exactName = m.name?.toString().trim().toLowerCase();
-                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-                if (!groupCode || !m.name) return;
-                if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
-                motherLookup[groupCode][exactName] = m.dscode;
-                motherLookup[groupCode][normalizedName] = m.dscode;
-            });
-
-            const findMotherCode = (rawMotherName, resolvedGroupCode) => {
-                const groupCode = resolvedGroupCode?.toString().trim();
-                if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
-
-                const exactName = rawMotherName.toString().trim().toLowerCase();
-                const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-                const availableNames = motherLookup[groupCode];
-
-                if (availableNames[exactName]) return availableNames[exactName];
-                if (availableNames[normalizedName]) return availableNames[normalizedName];
-                const fuzzyMatch = Object.keys(availableNames).find(dbName =>
-                    dbName.includes(normalizedName) || normalizedName.includes(dbName)
-                );
-                if (fuzzyMatch) return availableNames[fuzzyMatch];
-                return Object.values(availableNames)[0] || rawMotherName;
-            };
-
-            const createMap = (arr, key1, key2) => {
-                const map = {};
-                arr?.forEach(item => {
-                    if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
-                    if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
-                });
-                return map;
-            };
-
-            const agentMap = createMap(agentAccounts, 'name', 'UserID');
-            const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
-            const distributorMap = createMap(distributorAccounts, 'name', 'code');
-            const bpNameMap = {};
-            bpAccounts?.forEach(b => {
-                if (b.bp_code && b.bp_name)
-                    bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
-            });
-
-            const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
-
-            // ✅ Convert all rows from NAMES to CODES
-            const processedData = rawData.map((row) => {
-                const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
-                const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
-                const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
-                const rawBp = row.bp_code?.toString().trim() || '';
-                const rawDist = row.distributor_code?.toString().trim() || row.distributor_name?.toString().trim() || '';
-
-                let groupCode = rawGroup;
-                if (!isCode(rawGroup)) {
-                    groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
-                }
-
-                let motherCode = rawMother;
-                if (!isCode(rawMother)) {
-                    motherCode = findMotherCode(rawMother, groupCode);
-                }
-
-                const agentCode = isCode(rawAgent)
-                    ? rawAgent
-                    : (agentMap[rawAgent.toLowerCase()] || rawAgent);
-
-                const bpCode = isCode(rawBp)
-                    ? rawBp
-                    : (bpMap[rawBp.toLowerCase()] || rawBp);
-
-                const bpName =
-                    bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
-                    row.bp_name ||
-                    null;
-
-                const distributorCode = isCode(rawDist)
-                    ? rawDist
-                    : (distributorMap[rawDist.toLowerCase()] || rawDist);
-
-                return {
-                    distributor_code: distributorCode || '',
-                    mother_code: motherCode || '',
-                    bp_code: bpCode || '',
-                    bp_name: bpName || '',
-                    agent_code: agentCode || '',
-                    group_code: groupCode || '',
-                    status: 'status'
-                };
-            });
-
-            // ✅ Close loading and display processed data
-            Swal.close();
-
-            setFileName(file.name);
-            setImportData(processedData);  // ✅ Use processed data with codes
-            setCurrentPageExcel(1);
-            setTotalRows(processedData.length);
-            setProcessedRows(0);
-            setProgressPercent(0);
-            setDuplicatesChecked(false);
-
-        } catch (error) {
-            console.error('❌ Error processing Excel:', error);
-            Swal.fire('Error', 'Failed to process Excel file', 'error');
+        // Console logs with tables
+        console.log("\n🟠 RECORDS THAT NEED UPDATE:");
+        if (needsUpdate.length > 0) {
+            console.table(needsUpdate);
+        } else {
+            console.log("✅ No records need updating!");
         }
-    };
+
+        console.log("\n🔴 EXACT DUPLICATE RECORDS (will be skipped):");
+        if (exactDuplicates.length > 0) {
+            console.table(exactDuplicates);
+        } else {
+            console.log("✅ No exact duplicates!");
+        }
+
+        console.log("\n⚠️ NULL/EMPTY BP_CODE RECORDS:");
+        if (nullBpCodes.length > 0) {
+            console.table(nullBpCodes);
+        } else {
+            console.log("✅ All records have BP codes!");
+        }
+
+        console.log("\n✅ NEW RECORDS (Sample):");
+        console.table(newRecords.slice(0, 10));
+
+        console.log("\n📊 SUMMARY:");
+        console.log(`Total Upload Rows: ${importData.length}`);
+        console.log(`🟠 Needs Update: ${needsUpdate.length}`);
+        console.log(`🔴 Exact Duplicates: ${exactDuplicates.length}`);
+        console.log(`⚠️ Null BP Codes: ${nullBpCodes.length}`);
+        console.log(`✅ New Records: ${newRecords.length}`);
+
+        setLoadingProgress({ current: 0, total: 0 });
+
+        // Sort: needs update first, then exact duplicates, then new
+        const sortedImportData = [...updatedImportData].sort((a, b) => {
+            const order = { update: 0, duplicate: 1, new: 2, null: 3 };
+            return order[a._updateFlag] - order[b._updateFlag];
+        });
+
+        setImportData(sortedImportData);
+        setCurrentPageExcel(1);
+
+        // Show detailed alert
+        if (needsUpdate.length > 0 || exactDuplicates.length > 0 || nullBpCodes.length > 0) {
+            Swal.fire({
+                icon: "warning",
+                title: "⚠️ Analysis Complete!",
+                html: `
+                    <div style="text-align:left; font-family: monospace;">
+                        <h4>📊 Summary:</h4>
+                        <p><strong>Total Upload Rows:</strong> ${importData.length}</p>
+                        <p style="color: orange;"><strong>🟠 Needs Update:</strong> ${needsUpdate.length}</p>
+                        <p style="color: red;"><strong>🔴 Exact Duplicates (will skip):</strong> ${exactDuplicates.length}</p>
+                        <p><strong>⚠️ Null BP Codes:</strong> ${nullBpCodes.length}</p>
+                        <p style="color: green;"><strong>✅ New Records:</strong> ${newRecords.length}</p>
+                        <hr>
+                        <p><strong>Checked against:</strong> ${allExistingRecords.length} existing records</p>
+                        <p><em>Orange rows = will be updated during import</em></p>
+                        <p><em>Red rows = will be skipped (no changes)</em></p>
+                        <p><em>Check console (F12) for detailed breakdown.</em></p>
+                    </div>
+                `,
+                width: 650
+            });
+        } else {
+            Swal.fire({
+                icon: "success",
+                title: "✅ All Clear!",
+                html: `
+                    <div style="text-align:left; font-family: monospace;">
+                        <p><strong>Total Upload Rows:</strong> ${importData.length}</p>
+                        <p><strong>✅ All records are new!</strong></p>
+                        <hr>
+                        <p>Checked against: ${allExistingRecords.length} existing records</p>
+                    </div>
+                `,
+                width: 500
+            });
+        }
+
+    } catch (err) {
+        console.error("💥 ERROR CHECKING DUPLICATES:", err);
+        console.error("Error details:", err.message);
+        console.error("Stack trace:", err.stack);
+        
+        Swal.fire({
+            icon: "error",
+            title: "Error!",
+            html: `
+                <div style="text-align:left;">
+                    <p><strong>Something went wrong:</strong></p>
+                    <p style="color: red; font-family: monospace;">${err.message}</p>
+                    <p><em>Check console (F12) for details.</em></p>
+                </div>
+            `,
+            width: 600
+        });
+        
+        setLoadingProgress({ current: 0, total: 0 });
+    } finally {
+        setChecking(false);
+    }
+};
+
+// 🔹 Import data into DB with UPDATE support
+const importDataToDB = async () => {
+    if (!importData.length) return;
+
+    console.log("\n🚀 STARTING IMPORT TO DATABASE");
+    console.log(`Total rows to import: ${importData.length}`);
+
+    setUploading(true);
+    setImporting(true);
+
+    let successCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let failedRows = [];
+
+    try {
+        const BATCH_SIZE = 500;
+        const chunks = [];
+        for (let i = 0; i < importData.length; i += BATCH_SIZE) {
+            chunks.push(importData.slice(i, i + BATCH_SIZE));
+        }
+
+        console.log(`\n📦 Processing ${chunks.length} batches of ${BATCH_SIZE} rows each...`);
+
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            console.log(`\n⚙️ Processing batch ${i + 1}/${chunks.length}...`);
+
+            const recordsToInsert = [];
+            const recordsToUpdate = [];
+
+            chunk.forEach((row, idx) => {
+                const actualRowNumber = i * BATCH_SIZE + idx + 2;
+
+                if (!row.bp_code) return; // Skip null BP codes
+
+                const record = {
+                    distributor_code: row.distributor_code || null,
+                    mother_code: row.mother_code || null,
+                    bp_code: row.bp_code || null,
+                    bp_name: row.bp_name || null,
+                    agent_code: row.agent_code ? parseInt(row.agent_code) : null,
+                    group_code: row.group_code || null,
+                    status: true,
+                    _rowNumber: actualRowNumber
+                };
+
+                if (row._updateFlag === 'new') {
+                    recordsToInsert.push(record);
+                } else if (row._updateFlag === 'update') {
+                    recordsToUpdate.push({ ...record, _oldData: row._oldData });
+                } else if (row._updateFlag === 'duplicate') {
+                    skippedCount++;
+                }
+            });
+
+            console.log(`  ✅ To Insert: ${recordsToInsert.length}`);
+            console.log(`  🔄 To Update: ${recordsToUpdate.length}`);
+            console.log(`  ⏭️ Skipped: ${chunk.filter(r => r._updateFlag === 'duplicate').length}`);
+
+            // INSERT new records
+            if (recordsToInsert.length > 0) {
+                const cleanInserts = recordsToInsert.map(({ _rowNumber, ...r }) => r);
+
+                const { data: insertedData, error } = await supabase
+                    .from('Accounts_List')
+                    .insert(cleanInserts)
+                    .select();
+
+                if (error) {
+                    console.error(`❌ Insert error in batch ${i + 1}:`, error);
+                    recordsToInsert.forEach((r) => {
+                        failedRows.push({
+                            row: r._rowNumber,
+                            error: error.message,
+                            bp_code: r.bp_code,
+                            action: 'INSERT'
+                        });
+                    });
+                } else {
+                    const insertCount = insertedData?.length || cleanInserts.length;
+                    successCount += insertCount;
+                    console.log(`  ✅ Inserted ${insertCount} records`);
+                }
+            }
+
+            // UPDATE existing records
+            if (recordsToUpdate.length > 0) {
+                console.log(`\n🔄 UPDATING ${recordsToUpdate.length} RECORDS:`);
+                console.table(recordsToUpdate.map(r => ({
+                    Row: r._rowNumber,
+                    BP_Code: r.bp_code,
+                    Old_Dist: r._oldData.distributor_code,
+                    New_Dist: r.distributor_code,
+                    Old_Mother: r._oldData.mother_code,
+                    New_Mother: r.mother_code
+                })));
+
+                for (const record of recordsToUpdate) {
+                    const { _rowNumber, _oldData, ...updateData } = record;
+
+                    const { error: updateError } = await supabase
+                        .from('Accounts_List')
+                        .update(updateData)
+                        .eq('bp_code', record.bp_code);
+
+                    if (updateError) {
+                        console.error(`❌ Update error for ${record.bp_code}:`, updateError);
+                        failedRows.push({
+                            row: _rowNumber,
+                            error: updateError.message,
+                            bp_code: record.bp_code,
+                            action: 'UPDATE'
+                        });
+                    } else {
+                        updatedCount++;
+                        console.log(`  🔄 Updated ${record.bp_code}`);
+                    }
+                }
+            }
+
+            const processed = Math.min((i + 1) * BATCH_SIZE, importData.length);
+            setProcessedRows(processed);
+            setProgressPercent(Math.round((processed / importData.length) * 100));
+            await new Promise(res => setTimeout(res, 50));
+        }
+
+        const failedCount = failedRows.length;
+        const totalProcessed = importData.length;
+
+        console.log("\n📊 IMPORT COMPLETE!");
+        console.log(`✅ Successfully imported: ${successCount}`);
+        console.log(`🔄 Updated: ${updatedCount}`);
+        console.log(`⏭️ Skipped: ${skippedCount}`);
+        console.log(`❌ Failed: ${failedCount}`);
+
+        if (failedRows.length > 0) {
+            console.log("\n❌ FAILED ROWS:");
+            console.table(failedRows);
+        }
+
+        Swal.fire({
+            icon: failedCount > 0 ? 'warning' : 'success',
+            title: 'Import Finished!',
+            html: `
+            <div style="text-align:left; font-family: monospace;">
+              <p><strong>✅ Imported (New):</strong> ${successCount}</p>
+              <p style="color: orange;"><strong>🔄 Updated:</strong> ${updatedCount}</p>
+              <p><strong>⏭️ Skipped (No Changes):</strong> ${skippedCount}</p>
+              <p style="color: red;"><strong>❌ Failed:</strong> ${failedCount}</p>
+              <hr>
+              <p><strong>📊 Total Processed:</strong> ${totalProcessed}</p>
+              ${failedCount > 0 ? '<hr><p style="color: red;"><em>Check console (F12) for failed rows details.</em></p>' : ''}
+              ${updatedCount > 0 ? '<p style="color: orange;"><em>Check console (F12) for updated rows details.</em></p>' : ''}
+            </div>
+        `,
+            confirmButtonText: 'OK',
+            width: 600,
+            willClose: () => {
+                fetchAndCleanData();
+                setShowExcelModal(false);
+                setImportData([]);
+                setExistingRows(new Set());
+            }
+        });
+
+    } catch (error) {
+        console.error('💥 IMPORT ERROR:', error);
+        console.error('Error message:', error.message);
+        console.error('Stack trace:', error.stack);
+        
+        Swal.fire({
+            icon: 'error',
+            title: 'Import Failed',
+            html: `
+                <div style="text-align:left;">
+                    <p><strong>Error:</strong></p>
+                    <p style="color: red; font-family: monospace;">${error.message}</p>
+                    <p><em>Check console (F12) for full details.</em></p>
+                </div>
+            `,
+            width: 600
+        });
+    } finally {
+        setUploading(false);
+        setImporting(false);
+    }
+};
+
+// 🔹 Handle Excel Import (no changes needed, just included for completeness)
+const handleImportMother = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const rawData = await readExcelFile(file);
+    if (!rawData.length) return;
+
+    if (rawData.length > 40000) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Too Many Rows!',
+            text: `Excel contains ${rawData.length.toLocaleString()} rows. Maximum allowed is 40,000 rows.`,
+            confirmButtonText: 'OK'
+        });
+        return;
+    }
+
+    Swal.fire({
+        title: 'Processing Excel...',
+        text: 'Converting names to codes...',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+
+    try {
+        const [
+            { data: motherAccounts },
+            { data: agentAccounts },
+            { data: bpAccounts },
+            { data: distributorAccounts }
+        ] = await Promise.all([
+            supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
+            supabase.from('Account_Users').select('UserID, name'),
+            supabase.from('Bp_Accounts').select('bp_code, bp_name'),
+            supabase.from('distributors').select('code, name')
+        ]);
+
+        const groupNameToCodeMap = {};
+        motherAccounts?.forEach(m => {
+            if (m.group_name && m.group_code) {
+                const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
+                groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
+            }
+        });
+
+        const motherLookup = {};
+        motherAccounts?.forEach(m => {
+            const groupCode = m.group_code?.toString().trim();
+            const exactName = m.name?.toString().trim().toLowerCase();
+            const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+            if (!groupCode || !m.name) return;
+            if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
+            motherLookup[groupCode][exactName] = m.dscode;
+            motherLookup[groupCode][normalizedName] = m.dscode;
+        });
+
+        const findMotherCode = (rawMotherName, resolvedGroupCode) => {
+            const groupCode = resolvedGroupCode?.toString().trim();
+            if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
+
+            const exactName = rawMotherName.toString().trim().toLowerCase();
+            const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+            const availableNames = motherLookup[groupCode];
+
+            if (availableNames[exactName]) return availableNames[exactName];
+            if (availableNames[normalizedName]) return availableNames[normalizedName];
+            const fuzzyMatch = Object.keys(availableNames).find(dbName =>
+                dbName.includes(normalizedName) || normalizedName.includes(dbName)
+            );
+            if (fuzzyMatch) return availableNames[fuzzyMatch];
+            return Object.values(availableNames)[0] || rawMotherName;
+        };
+
+        const createMap = (arr, key1, key2) => {
+            const map = {};
+            arr?.forEach(item => {
+                if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
+                if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
+            });
+            return map;
+        };
+
+        const agentMap = createMap(agentAccounts, 'name', 'UserID');
+        const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
+        const distributorMap = createMap(distributorAccounts, 'name', 'code');
+        const bpNameMap = {};
+        bpAccounts?.forEach(b => {
+            if (b.bp_code && b.bp_name)
+                bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
+        });
+
+        const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
+
+        const processedData = rawData.map((row) => {
+            const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
+            const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
+            const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
+            const rawBp = row.bp_code?.toString().trim() || '';
+            const rawDist = row.distributor_code?.toString().trim() || row.distributor_name?.toString().trim() || '';
+
+            let groupCode = rawGroup;
+            if (!isCode(rawGroup)) {
+                groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
+            }
+
+            let motherCode = rawMother;
+            if (!isCode(rawMother)) {
+                motherCode = findMotherCode(rawMother, groupCode);
+            }
+
+            const agentCode = isCode(rawAgent)
+                ? rawAgent
+                : (agentMap[rawAgent.toLowerCase()] || rawAgent);
+
+            const bpCode = isCode(rawBp)
+                ? rawBp
+                : (bpMap[rawBp.toLowerCase()] || rawBp);
+
+            const bpName =
+                bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
+                row.bp_name ||
+                null;
+
+            const distributorCode = isCode(rawDist)
+                ? rawDist
+                : (distributorMap[rawDist.toLowerCase()] || rawDist);
+
+            return {
+                distributor_code: distributorCode || '',
+                mother_code: motherCode || '',
+                bp_code: bpCode || '',
+                bp_name: bpName || '',
+                agent_code: agentCode || '',
+                group_code: groupCode || '',
+                status: 'status'
+            };
+        });
+
+        Swal.close();
+
+        setFileName(file.name);
+        setImportData(processedData);
+        setCurrentPageExcel(1);
+        setTotalRows(processedData.length);
+        setProcessedRows(0);
+        setProgressPercent(0);
+        setDuplicatesChecked(false);
+
+    } catch (error) {
+        console.error('❌ Error processing Excel:', error);
+        Swal.fire('Error', 'Failed to process Excel file', 'error');
+    }
+};
 
     // 🔹 Modal visibility
 
@@ -1696,51 +1808,107 @@ export default function AccountsListManager() {
                                                     <th style={{ ...thStyle, minWidth: "100px" }}>Actions</th>
                                                 </tr>
                                             </thead>
-                                            <tbody>
+                                        <tbody>
                                                 {currentRowsExcel.map((row, idx) => {
-                                                    // Check if BP code exists in the Set
-                                                    const isDuplicate = existingRows instanceof Set
-                                                        ? existingRows.has(row.bp_code.trim().toUpperCase())
-                                                        : false;
+                                                    const updateFlag = row._updateFlag;
+                                                    const oldData = row._oldData;
+                                                    
+                                                    // Determine row background and status
+                                                    let rowBg = "white";
+                                                    let statusText = "New";
+                                                    let statusIcon = "✅";
+                                                    
+                                                    if (updateFlag === 'update') {
+                                                        rowBg = "#fff3cd"; // Light orange/yellow
+                                                        statusText = "Update";
+                                                        statusIcon = "🟠";
+                                                    } else if (updateFlag === 'duplicate') {
+                                                        rowBg = "#ffcccc"; // Light red
+                                                        statusText = "Duplicate";
+                                                        statusIcon = "🔴";
+                                                    } else if (updateFlag === 'null') {
+                                                        rowBg = "#f8d7da"; // Light red
+                                                        statusText = "Null BP";
+                                                        statusIcon = "⚠️";
+                                                    }
+                                                    
+                                                    // Helper function to check if field changed
+                                                    const hasChanged = (field) => {
+                                                        if (updateFlag !== 'update' || !oldData) return false;
+                                                        return oldData[field] !== row[field];
+                                                    };
+                                                    
+                                                    // Style for changed cells
+                                                    const changedCellStyle = {
+                                                        ...tdStyle,
+                                                        backgroundColor: "#ffc107",
+                                                        fontWeight: 600,
+                                                        border: "2px solid #ff9800"
+                                                    };
 
                                                     return (
-                                                        <tr
-                                                            key={idx}
-                                                            style={{
-                                                                backgroundColor: isDuplicate ? "#ffcccc" : "white",
-                                                                color: isDuplicate ? "#b30000" : "black",
-                                                                fontWeight: isDuplicate ? 600 : "normal",
-                                                            }}
-                                                        >
-                                                            <td style={tdStyle}>{row.distributor_code}</td>
-                                                            <td style={tdStyle}>{row.mother_code}</td>
+                                                        <tr key={idx} style={{ backgroundColor: rowBg }}>
+                                                            <td style={hasChanged('distributor_code') ? changedCellStyle : tdStyle}>
+                                                                {row.distributor_code}
+                                                                {hasChanged('distributor_code') && oldData && (
+                                                                    <div style={{ fontSize: "0.75em", color: "#666", marginTop: "2px" }}>
+                                                                        Old: {oldData.distributor_code || 'N/A'}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td style={hasChanged('mother_code') ? changedCellStyle : tdStyle}>
+                                                                {row.mother_code}
+                                                                {hasChanged('mother_code') && oldData && (
+                                                                    <div style={{ fontSize: "0.75em", color: "#666", marginTop: "2px" }}>
+                                                                        Old: {oldData.mother_code || 'N/A'}
+                                                                    </div>
+                                                                )}
+                                                            </td>
                                                             <td style={tdStyle}>{row.bp_code}</td>
-                                                            <td style={tdStyle}>{row.bp_name}</td>
-                                                            <td style={tdStyle}>{row.agent_code}</td>
-                                                            <td style={tdStyle}>{row.group_code}</td>
-                                                            <td style={tdStyle}>{isDuplicate ? "Duplicate" : "New"}</td>
+                                                            <td style={hasChanged('bp_name') ? changedCellStyle : tdStyle}>
+                                                                {row.bp_name}
+                                                                {hasChanged('bp_name') && oldData && (
+                                                                    <div style={{ fontSize: "0.75em", color: "#666", marginTop: "2px" }}>
+                                                                        Old: {oldData.bp_name || 'N/A'}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td style={hasChanged('agent_code') ? changedCellStyle : tdStyle}>
+                                                                {row.agent_code}
+                                                                {hasChanged('agent_code') && oldData && (
+                                                                    <div style={{ fontSize: "0.75em", color: "#666", marginTop: "2px" }}>
+                                                                        Old: {oldData.agent_code || 'N/A'}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td style={hasChanged('group_code') ? changedCellStyle : tdStyle}>
+                                                                {row.group_code}
+                                                                {hasChanged('group_code') && oldData && (
+                                                                    <div style={{ fontSize: "0.75em", color: "#666", marginTop: "2px" }}>
+                                                                        Old: {oldData.group_code || 'N/A'}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td style={{ ...tdStyle, fontWeight: 600 }}>
+                                                                {statusIcon} {statusText}
+                                                            </td>
                                                             <td style={{ textAlign: "center" }}>
                                                                 <Button
-                                                                    variant={isDuplicate ? "danger" : "secondary"}
+                                                                    variant={updateFlag === 'duplicate' ? "danger" : updateFlag === 'update' ? "warning" : "secondary"}
                                                                     size="sm"
                                                                     onClick={() => {
                                                                         const actualIndex = indexOfFirstRowExcel + idx;
                                                                         const updatedData = importData.filter((_, i) => i !== actualIndex);
                                                                         setImportData(updatedData);
 
-                                                                        // Don't need to update existingRows - it stays as Set
-                                                                        // Just check if there are still duplicates
-                                                                        const stillHasDuplicates = updatedData.some(r =>
-                                                                            existingRows instanceof Set && existingRows.has(r.bp_code.trim().toUpperCase())
-                                                                        );
-
+                                                                        const stillHasDuplicates = updatedData.some(r => r._updateFlag === 'duplicate' || r._updateFlag === 'update');
                                                                         if (!stillHasDuplicates) {
                                                                             setDuplicatesChecked(false);
                                                                         }
                                                                     }}
                                                                     style={{ padding: "6px 12px", fontSize: "14px" }}
                                                                 >
-                                                                    {isDuplicate ? "🗑️ Delete" : "🗑️ Remove"}
+                                                                    🗑️ Remove
                                                                 </Button>
                                                             </td>
                                                         </tr>
