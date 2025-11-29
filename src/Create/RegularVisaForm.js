@@ -6,21 +6,11 @@
   import { FaExclamationTriangle } from "react-icons/fa";
   import { Table, Form, Card, Spinner } from "react-bootstrap";
   import * as XLSX from "xlsx";
-  import {
-    FaFileExcel,
-    FaCloudUploadAlt,
-    FaDownload,
-    FaSave,
-    FaSearch,
-  } from "react-icons/fa";
-  import { saveAs } from "file-saver";
-  import { motion } from "framer-motion";
+  import {FaFileExcel,FaCloudUploadAlt,FaDownload,FaSave,FaSearch} from "react-icons/fa";
   import { FiChevronRight } from "react-icons/fi"; // or FaArrowRight
-  import Papa from "papaparse"; // make sure you have this installed
-  import MotherAccount2 from "../NewComponents/MotherAccount2";
+
 
   const RegularVisaForm = () => {
-    const [userApprovers, setUserApprovers] = useState([]);
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     // 👉 Add these states at the top of your component
@@ -57,7 +47,6 @@
     const [motherAccount2List, setMotherAccount2List] = useState([]);
 
     const [accountSkuRows, setAccountSkuRows] = useState({}); // Object to store SKU rows per account
-    const [selectedAccountForSku, setSelectedAccountForSku] =
       useState("ALL_ACCOUNTS");
     // Step 0: Form data
     const [formData, setFormData] = useState({
@@ -107,10 +96,6 @@
       return `${prefix}${nextNumber}`;
     };
 
-    /**
-     * ✅ Atomically generate and claim next available code
-     * Uses database transaction to prevent race conditions
-     */
     const generateAndClaimCode = async (supabase) => {
       const year = new Date().getFullYear();
       const prefix = `R${year}-`;
@@ -241,13 +226,6 @@
         }));
       }
     }, [allRegularPwpCodes]);
-    // useEffect(() => {
-    //   // This effect runs whenever `allRegularPwpCodes` changes
-    //   if (!formData.regularpwpcode && allRegularPwpCodes.length > 0) {
-    //     const newCode = generateRegularCode(allRegularPwpCodes); // Generate the new cover code
-    //     setFormData((prev) => ({ ...prev, regularpwpcode: newCode })); // Update formData with the new coverCode
-    //   }
-    // }, [allRegularPwpCodes]); // Dependencies are the fetched codes
 
 
     useEffect(() => {
@@ -1114,255 +1092,298 @@
       return groupCodes;
     };
     // ✅ 2. fetchSubAccounts - Fixed version with agent_code matching
-    const fetchSubAccounts = async (mother) => {
-      try {
-        setSelectedMother(mother);
+   const fetchSubAccounts = async (mother) => {
+  try {
+    setSelectedMother(mother);
 
-        // Prevent duplicate fetch
-        if (subAccounts[mother.id]) {
-          console.log("✅ Using cached sub-accounts");
-          return;
-        }
+    // Prevent duplicate fetch
+    if (subAccounts[mother.id]) {
+      console.log("✅ Using cached sub-accounts");
+      return;
+    }
 
-        console.log("🟡 Fetching sub-accounts for mother:", mother);
+    console.log("🟡 Fetching sub-accounts for mother:", mother);
 
-        const distributorCode = selectedDistributor?.code;
-        if (!distributorCode) {
-          console.error("❌ No distributor selected!");
-          return;
-        }
+    const distributorCode = selectedDistributor?.code;
+    if (!distributorCode) {
+      console.error("❌ No distributor selected!");
+      return;
+    }
 
-        // ✅ Use cached data
-        const cachedData = accountsListCache[distributorCode];
-        if (!cachedData?.length) {
-          console.warn("⚠️ No cached Accounts_List found.");
-          console.log("Available cache keys:", Object.keys(accountsListCache));
-          return;
-        }
+    // ✅ Get logged-in user's ID
+    const storedUser = localStorage.getItem("loggedInUser");
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    const loggedInUserId = String(parsedUser?.UserID || parsedUser?.id || "");
 
-        console.log(`⚡ Using cached data: ${cachedData.length} records`);
+    console.log(`👤 Logged in UserID: ${loggedInUserId}`);
 
-        // 🔍 DEBUG: Check what group_codes exist
-        const allGroupCodes = [...new Set(cachedData.map(item => item.group_code))];
-        console.log(`📊 Available group_codes (${allGroupCodes.length}):`, allGroupCodes.slice(0, 20));
-        console.log(`🎯 Looking for group_code: "${mother.code}"`);
+    // ✅ Use cached data
+    const cachedData = accountsListCache[distributorCode];
+    if (!cachedData?.length) {
+      console.warn("⚠️ No cached Accounts_List found.");
+      console.log("Available cache keys:", Object.keys(accountsListCache));
+      return;
+    }
 
-        // --- clean + normalize strings safely ---
-        const safeLower = (val) =>
-          typeof val === "string"
-            ? val.trim().toLowerCase()
-            : String(val ?? "").toLowerCase();
+    console.log(`⚡ Using cached data: ${cachedData.length} records`);
 
-        const selectedDistributorCode = safeLower(distributorCode);
-        const selectedGroupCode = safeLower(mother.code);
+    // --- clean + normalize strings safely ---
+    const safeLower = (val) =>
+      typeof val === "string"
+        ? val.trim().toLowerCase()
+        : String(val ?? "").toLowerCase();
 
-        console.log("🔑 [DEBUG] Matching criteria:");
-        console.log("  - Distributor Code:", selectedDistributorCode);
-        console.log("  - Group Code:", selectedGroupCode);
+    const selectedDistributorCode = safeLower(distributorCode);
+    const selectedGroupCode = safeLower(mother.code);
 
-        // ✅ Filter by BOTH distributor_code AND group_code
-        const filteredData = cachedData.filter((item) => {
-          const itemDistributorCode = safeLower(item.distributor_code);
-          const itemGroupCode = safeLower(item.group_code);
+    console.log("🔑 [DEBUG] Matching criteria:");
+    console.log("  - Distributor Code:", selectedDistributorCode);
+    console.log("  - Group Code:", selectedGroupCode);
+    console.log("  - Agent Code:", loggedInUserId);
 
-          const distributorMatch = itemDistributorCode === selectedDistributorCode;
-          const groupMatch = itemGroupCode === selectedGroupCode;
+    // ✅ Filter by distributor_code AND group_code AND agent_code
+    const filteredData = cachedData.filter((item) => {
+      const itemDistributorCode = safeLower(item.distributor_code);
+      const itemGroupCode = safeLower(item.group_code);
+      const itemAgentCode = String(item.agent_code || "").trim();
 
-          return distributorMatch && groupMatch; // ✅ BOTH must match
-        });
+      const distributorMatch = itemDistributorCode === selectedDistributorCode;
+      const groupMatch = itemGroupCode === selectedGroupCode;
+      const agentMatch = itemAgentCode === loggedInUserId; // 🔥 NEW: Agent filter
 
-        console.log(`🔍 After filtering: ${filteredData.length} records for group_code "${mother.code}"`);
+      return distributorMatch && groupMatch && agentMatch; // ✅ All three must match
+    });
 
-        if (filteredData.length === 0) {
-          console.warn(`⚠️ No records found for group_code "${mother.code}"`);
-          Swal.fire({
-            icon: 'warning',
-            title: 'No Sub-Accounts Found',
-            text: `No records found for "${mother.name}"`,
-            timer: 2000
-          });
-          return;
-        }
+    console.log(`🔍 After filtering: ${filteredData.length} records for group_code "${mother.code}" and agent "${loggedInUserId}"`);
 
-        // 🔍 DEBUG: Show sample data
-        console.log("📝 Sample filtered records (first 3):");
-        filteredData.slice(0, 3).forEach((item, idx) => {
-          console.log(`  [${idx}] group_code: "${item.group_code}", mother_code: "${item.mother_code}"`);
-        });
+    if (filteredData.length === 0) {
+      console.warn(`⚠️ No records found for group_code "${mother.code}" and agent "${loggedInUserId}"`);
+      Swal.fire({
+        icon: 'info',
+        title: 'No Sub-Accounts Found',
+        text: `No branches assigned to you under "${mother.name}"`,
+        timer: 2000
+      });
+      
+      // ✅ Set empty array instead of leaving undefined
+      setSubAccounts((prev) => ({ ...prev, [mother.id]: [] }));
+      return;
+    }
 
-        // ✅ Remove duplicates (unique mother_code)
-        const uniqueData = Array.from(
-          new Map(
-            filteredData.map((item) => {
-              const cleanCode = (item.mother_code || "").trim();
-              return [cleanCode.toLowerCase(), { ...item, mother_code: cleanCode }];
-            })
-          ).values()
-        );
+    // ✅ Remove duplicates (unique mother_code)
+    const uniqueData = Array.from(
+      new Map(
+        filteredData.map((item) => {
+          const cleanCode = (item.mother_code || "").trim();
+          return [cleanCode.toLowerCase(), { ...item, mother_code: cleanCode }];
+        })
+      ).values()
+    );
 
-        console.log(`✨ After dedup: ${uniqueData.length} unique records`);
-        console.log("🔍 Mother codes:", uniqueData.map((d) => d.mother_code));
+    console.log(`✨ After dedup: ${uniqueData.length} unique records`);
+    console.log("🔍 Mother codes:", uniqueData.map((d) => d.mother_code));
 
-        // ✅ Format for display
-        const formattedData = uniqueData
-          .map((item) => {
-            const cleanCode = item.mother_code;
-            const displayName = motherAccountNamesMap[cleanCode] ||
-              motherAccountNamesMap[cleanCode.toLowerCase()] ||
-              cleanCode;
+    // ✅ Format for display
+    const formattedData = uniqueData
+      .map((item) => {
+        const cleanCode = item.mother_code;
+        const displayName = motherAccountNamesMap[cleanCode] ||
+          motherAccountNamesMap[cleanCode.toLowerCase()] ||
+          cleanCode;
 
-            console.log(`🏷️ ${cleanCode} -> ${displayName}`);
+        console.log(`🏷️ ${cleanCode} -> ${displayName}`);
 
-            return {
-              id: item.id,
-              name: displayName,
-              code: cleanCode,
-              bp_code: item.bp_code ?? "",
-              agent_code: item.agent_code ?? "",
-              agent_name: agentNamesMap[item.agent_code] || item.agent_code,
-              group_code: item.group_code, // ✅ Keep group_code for reference
-              rawName: displayName.toUpperCase(),
-            };
-          })
-          .sort((a, b) => {
-            const isANonChain = a.rawName.includes("NON CHAIN");
-            const isBNonChain = b.rawName.includes("NON CHAIN");
-            if (isANonChain && !isBNonChain) return 1;
-            if (!isANonChain && isBNonChain) return -1;
-            return a.rawName.localeCompare(b.rawName);
-          })
-          .map(({ rawName, ...rest }) => rest);
+        return {
+          id: item.id,
+          name: displayName,
+          code: cleanCode,
+          bp_code: item.bp_code ?? "",
+          agent_code: item.agent_code ?? "",
+          agent_name: agentNamesMap[item.agent_code] || item.agent_code,
+          group_code: item.group_code,
+          rawName: displayName.toUpperCase(),
+        };
+      })
+      .sort((a, b) => {
+        const isANonChain = a.rawName.includes("NON CHAIN");
+        const isBNonChain = b.rawName.includes("NON CHAIN");
+        if (isANonChain && !isBNonChain) return 1;
+        if (!isANonChain && isBNonChain) return -1;
+        return a.rawName.localeCompare(b.rawName);
+      })
+      .map(({ rawName, ...rest }) => rest);
 
-        console.log(`[✅ FINAL] Displaying ${formattedData.length} mother account(s) for group_code "${mother.code}"`);
-        console.table(formattedData);
+    console.log(`[✅ FINAL] Displaying ${formattedData.length} sub-account(s) for group_code "${mother.code}" and agent "${loggedInUserId}"`);
+    console.table(formattedData);
 
-        setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
+    setSubAccounts((prev) => ({ ...prev, [mother.id]: formattedData }));
 
-        if (formattedData.length === 0) {
-          Swal.fire({
-            icon: 'info',
-            title: 'No Results',
-            text: 'No sub-accounts to display',
-            timer: 2000
-          });
-        }
-      } catch (err) {
-        console.error("❌ Unexpected error fetching sub-accounts:", err);
-        Swal.fire("Error", err.message, "error");
-      }
-    };
+    if (formattedData.length === 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'No Results',
+        text: 'No sub-accounts assigned to you',
+        timer: 2000
+      });
+    }
+  } catch (err) {
+    console.error("❌ Unexpected error fetching sub-accounts:", err);
+    Swal.fire("Error", err.message, "error");
+  }
+};
     const fetchBranches = async (motherAccountCode, groupCode) => {
-      try {
-        console.log(`🔍 Fetching branches for Mother Account Code: ${motherAccountCode}, Group Code: ${groupCode}`);
+  try {
+    console.log(`🔍 Fetching branches for Mother: ${motherAccountCode}, Group: ${groupCode}`);
 
-        const distributorCode = selectedDistributor?.code;
-        if (!distributorCode) {
-          console.error("❌ No distributor selected!");
-          return;
-        }
+    const distributorCode = selectedDistributor?.code;
+    if (!distributorCode) {
+      console.error("❌ No distributor selected!");
+      return;
+    }
 
-        // ✅ Use cached Accounts_List
-        const cachedData = accountsListCache[distributorCode];
-        if (!cachedData || cachedData.length === 0) {
-          console.warn("⚠️ No cached Accounts_List found.");
-          return;
-        }
+    // ✅ Get logged-in user's ID
+    const storedUser = localStorage.getItem("loggedInUser");
+    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+    const loggedInUserId = String(parsedUser?.UserID || parsedUser?.id || "");
 
-        // --- clean + normalize strings safely ---
-        const safeLower = (val) =>
-          typeof val === "string"
-            ? val.trim().toLowerCase()
-            : String(val ?? "").toLowerCase();
+    console.log(`👤 Logged in UserID: ${loggedInUserId}`);
 
-        const selectedGroupCode = safeLower(groupCode);
+    const cachedData = accountsListCache[distributorCode];
+    if (!cachedData || cachedData.length === 0) {
+      console.warn("⚠️ No cached Accounts_List found.");
+      return;
+    }
 
-        // ✅ Filter by mother_code AND group_code AND bp_code exists
-        const filteredData = cachedData.filter((item) => {
-          const motherMatch = (item.mother_code || "").trim() === motherAccountCode.trim();
-          const groupMatch = safeLower(item.group_code) === selectedGroupCode;
-          const hasBpCode = item.bp_code && item.bp_code.trim() !== "";
+    const safeLower = (val) =>
+      typeof val === "string"
+        ? val.trim().toLowerCase()
+        : String(val ?? "").toLowerCase();
 
-          return motherMatch && groupMatch && hasBpCode;  // ✅ All three conditions
-        });
+    const selectedGroupCode = safeLower(groupCode);
 
-        console.log(`🔍 Filtered ${filteredData.length} branches for mother_code "${motherAccountCode}" and group_code "${groupCode}"`);
+    // ✅ Filter by: mother_code + group_code + bp_code + agent_code
+    const filteredData = cachedData.filter((item) => {
+      const motherMatch = (item.mother_code || "").trim() === motherAccountCode.trim();
+      const groupMatch = safeLower(item.group_code) === selectedGroupCode;
+      const hasBpCode = item.bp_code && item.bp_code.trim() !== "";
+      
+      // 🔥 NEW: Only show branches where agent_code matches logged-in user
+      const agentMatch = String(item.agent_code || "").trim() === loggedInUserId;
 
-        if (filteredData.length === 0) {
-          console.warn("⚠️ No branches found for this mother account and group code.");
-          setBranchTypes([]);
-          return;
-        }
+      return motherMatch && groupMatch && hasBpCode && agentMatch;
+    });
 
+    console.log(`🔍 Filtered ${filteredData.length} branches for agent ${loggedInUserId}`);
+
+    if (filteredData.length === 0) {
+      console.warn("⚠️ No branches found for this agent.");
+      Swal.fire({
+        icon: 'info',
+        title: 'No Branches Assigned',
+        text: 'You do not have access to any branches under this mother account.',
+        timer: 2000
+      });
+      setBranchTypes([]);
+      return;
+    }
         // 🔥 Get all unique BP codes from filtered data
         const allBpCodes = [...new Set(filteredData.map(row => (row.bp_code || "").trim()).filter(Boolean))];
         console.log(`📊 Total unique BP codes to fetch: ${allBpCodes.length}`);
-
-        // 🔥 Fetch ALL BP names in batches (Supabase limit is 1000 per query)
         let allBpData = [];
         const batchSize = 1000;
+        // 🔥 Fetch ALL BP names in batches (Supabase limit is 1000 per query)
+       for (let i = 0; i < allBpCodes.length; i += batchSize) {
+      const batch = allBpCodes.slice(i, i + batchSize);
+      const { data: bpData, error: bpError } = await supabase
+        .from("Bp_Accounts")
+        .select("bp_code, bp_name")
+        .in("bp_code", batch);
 
-        for (let i = 0; i < allBpCodes.length; i += batchSize) {
-          const batch = allBpCodes.slice(i, i + batchSize);
-          const { data: bpData, error: bpError } = await supabase
-            .from("Bp_Accounts")
-            .select("bp_code, bp_name")
-            .in("bp_code", batch);
-
-          if (bpError) {
-            console.error("❌ Failed to fetch Bp_Accounts batch:", bpError);
-            continue;
-          }
-
-          allBpData = [...allBpData, ...bpData];
-        }
-
-        console.log(`✅ Fetched ${allBpData.length} BP records`);
-
-        // Create mapping
-        const bpMap = {};
-        allBpData.forEach((bp) => {
-          if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
-        });
-
-        // Update global map
-        setBpNamesMap(prev => ({ ...prev, ...bpMap }));
-
-        // Map branches to names
-        let uniqueBranches = filteredData
-          .map((row) => {
-            const bpCode = (row.bp_code || "").trim();
-            if (!bpCode) return null;
-
-            const branchName = bpMap[bpCode];
-
-            return {
-              id: row.id,
-              name: branchName || bpCode,
-              code: bpCode,
-              bp_name: branchName || bpCode,
-              status: row.status,
-              distributor_code: row.distributor_code,
-              agent_code: row.agent_code,
-              group_code: row.group_code, // ✅ Keep for reference
-              mother_code: row.mother_code, // ✅ Keep for reference
-              agent_name: agentNamesMap[row.agent_code] || row.agent_code,
-            };
-          })
-          .filter(Boolean);
-
-        // Sort alphabetically
-        uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
-
-        setBranchTypes(uniqueBranches);
-        console.log(`✨ Unique branches for group_code ${groupCode}: ${uniqueBranches.length}`);
-        console.log(`🔍 Unmapped branches: ${uniqueBranches.filter(b => b.name === b.code).length}`);
-        console.table(uniqueBranches.slice(0, 10)); // Show first 10 only
-      } catch (err) {
-        console.error("❌ Error fetching branches:", err.message);
-        Swal.fire("Error", err.message, "error");
+      if (bpError) {
+        console.error("❌ Failed to fetch Bp_Accounts batch:", bpError);
+        continue;
       }
-    };
+      allBpData = [...allBpData, ...bpData];
+    }
 
+    const bpMap = {};
+    allBpData.forEach((bp) => {
+      if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
+    });
+
+    setBpNamesMap(prev => ({ ...prev, ...bpMap }));
+
+    let uniqueBranches = filteredData
+      .map((row) => {
+        const bpCode = (row.bp_code || "").trim();
+        if (!bpCode) return null;
+
+        const branchName = bpMap[bpCode];
+
+        return {
+          id: row.id,
+          name: branchName || bpCode,
+          code: bpCode,
+          bp_name: branchName || bpCode,
+          status: row.status,
+          distributor_code: row.distributor_code,
+          agent_code: row.agent_code,
+          group_code: row.group_code,
+          mother_code: row.mother_code,
+          agent_name: agentNamesMap[row.agent_code] || row.agent_code,
+        };
+      })
+      .filter(Boolean);
+
+    uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
+
+    setBranchTypes(uniqueBranches);
+    console.log(`✨ ${uniqueBranches.length} branches accessible by this agent`);
+    console.table(uniqueBranches.slice(0, 10));
+
+  } catch (err) {
+    console.error("❌ Error fetching branches:", err.message);
+    Swal.fire("Error", err.message, "error");
+  }
+};
+// ✅ NEW: Filter mother accounts based on agent access
+const getAvailableMotherAccounts = () => {
+  const distributorCode = selectedDistributor?.code;
+  if (!distributorCode) return [];
+
+  const cachedData = accountsListCache[distributorCode];
+  if (!cachedData?.length) return [];
+
+  // Get logged-in user's ID
+  const storedUser = localStorage.getItem("loggedInUser");
+  const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+  const loggedInUserId = String(parsedUser?.UserID || parsedUser?.id || "");
+
+  // Get unique group_codes where agent has access
+  const accessibleGroupCodes = new Set(
+    cachedData
+      .filter(item => String(item.agent_code || "").trim() === loggedInUserId)
+      .map(item => item.group_code?.toString().trim())
+      .filter(Boolean)
+  );
+
+  console.log(`📊 Agent ${loggedInUserId} has access to group_codes:`, Array.from(accessibleGroupCodes));
+
+  // Filter mother accounts to only show those with accessible group_codes
+  const filteredMotherAccounts = accountTypes.filter(opt => {
+    const hasAccess = accessibleGroupCodes.has(opt.code?.toString().trim());
+    
+    if (!hasAccess) {
+      console.log(`🚫 Hiding "${opt.name}" (${opt.code}) - no branches assigned to this agent`);
+    }
+    
+    return hasAccess;
+  });
+
+  console.log(`✅ Showing ${filteredMotherAccounts.length} out of ${accountTypes.length} mother accounts`);
+  
+  return filteredMotherAccounts;
+};
     const getFilteredBranchesWithExtras = () => {
       let filtered = branchTypes
         .filter((opt) =>
@@ -4162,206 +4183,225 @@
                   </Modal.Footer>
                 </Modal>
 
-                {/* Modal Mother Account1 */}
-                <Modal
-                  show={showModal_Account}
-                  onHide={() => setShowModal_Account(false)}
-                  centered
-                  size="lg"
-                >
-                  <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
-                    <Modal.Title style={{ width: "100%", textAlign: "center" }}>
-                      {selectedMother ? `Sub Accounts of ${selectedMother.name}` : "Select Mother Account Type"}
-                    </Modal.Title>
-                  </Modal.Header>
+              {/* Modal Mother Account1 */}
+<Modal
+  show={showModal_Account}
+  onHide={() => setShowModal_Account(false)}
+  centered
+  size="lg"
+>
+  <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
+    <Modal.Title style={{ width: "100%", textAlign: "center" }}>
+      {selectedMother ? `Sub Accounts of ${selectedMother.name}` : "Select Mother Account Type"}
+    </Modal.Title>
+  </Modal.Header>
 
-                  <Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
-                    {!selectedMother && (
-                      <>
-                        <input
-                          type="text"
-                          className="form-control mb-3"
-                          placeholder="Search mother accounts..."
-                          value={accountSearchTerm}
-                          onChange={(e) => setAccountSearchTerm(e.target.value)}
-                          style={{ borderColor: "#007bff" }}
-                        />
+  <Modal.Body style={{ maxHeight: "500px", overflowY: "auto", padding: "1rem" }}>
+    {!selectedMother && (
+      <>
+        <input
+          type="text"
+          className="form-control mb-3"
+          placeholder="Search mother accounts..."
+          value={accountSearchTerm}
+          onChange={(e) => setAccountSearchTerm(e.target.value)}
+          style={{ borderColor: "#007bff" }}
+        />
 
-                        {(() => {
-                          const availableGroupCodes = getAvailableGroupCodes();
+        {(() => {
+          // ✅ Use filtered list instead of all accountTypes
+          const availableMotherAccounts = getAvailableMotherAccounts();
 
-                          // Filter by search term AND available group codes
-                          const filteredAccounts = accountTypes.filter((opt) => {
-                            const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase());
-                            const hasGroupCode = availableGroupCodes.has(opt.code?.toString().trim());
+          // Filter by search term
+          const filteredAccounts = availableMotherAccounts.filter((opt) => {
+            const matchesSearch = opt.name.toLowerCase().includes(accountSearchTerm.toLowerCase());
+            return matchesSearch;
+          });
 
-                            if (!hasGroupCode) {
-                              console.log(`🚫 Hiding "${opt.name}" (${opt.code}) - no data available`);
-                            }
+          console.log(`📋 Showing ${filteredAccounts.length} mother accounts after search filter`);
 
-                            return matchesSearch && hasGroupCode;
-                          });
+          if (filteredAccounts.length === 0) {
+            return (
+              <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+                {availableMotherAccounts.length === 0 
+                  ? "No mother accounts with assigned branches for this agent"
+                  : "No mother accounts found matching your search"
+                }
+              </div>
+            );
+          }
 
-                          console.log(`📋 Showing ${filteredAccounts.length} out of ${accountTypes.length} mother accounts`);
+          return filteredAccounts.map((opt) => (
+            <div
+              key={opt.id}
+              style={{
+                padding: "8px 10px",
+                borderBottom: "1px solid #eee",
+                cursor: "pointer",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+              onClick={() => {
+                console.log('🔍 Selected Mother Account:', opt);
 
-                          if (filteredAccounts.length === 0) {
-                            return (
-                              <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
-                                No mother accounts available for this distributor
-                              </div>
-                            );
-                          }
+                if (isVariousAccountMode) {
+                  setSelectedVariousAccount(opt);
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountType2: "VARIOUS"
+                  }));
+                  setShowModal_Account(false);
+                  setIsVariousAccountMode(false);
+                } else {
+                  setSelectedMother(opt);
+                  fetchSubAccounts(opt);
 
-                          return filteredAccounts.map((opt) => (
-                            <div
-                              key={opt.id}
-                              style={{
-                                padding: "8px 10px",
-                                borderBottom: "1px solid #eee",
-                                cursor: "pointer",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                              }}
-                              // Sa onClick ng mother account selection
-                              onClick={() => {
-                                console.log('🔍 Selected Mother Account:', opt);
+                  if (opt.name === "NON-CHAIN") {
+                    setShowBranchInput(false);
+                    setFormData((prev) => ({
+                      ...prev,
+                      accountType: [],
+                      branchType: []
+                    }));
+                  } else {
+                    setShowBranchInput(true);
+                    setFormData((prev) => ({
+                      ...prev,
+                      branchType: []
+                    }));
+                  }
+                }
+              }}
+            >
+              <span>{opt.name}</span>
+              <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
+              <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
+            </div>
+          ));
+        })()}
+      </>
+    )}
 
-                                if (isVariousAccountMode) {
-                                  // Mother Account 2 - Auto set to mother account ID and show "VARIOUS"
-                                  setSelectedVariousAccount(opt);
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    accountType2: "VARIOUS"
-                                  }));
-                                  setShowModal_Account(false);
-                                  setIsVariousAccountMode(false);
-                                } else {
-                                  // Mother Account 1 - Normal flow (goes to sub-accounts then branch)
-                                  setSelectedMother(opt);
-                                  fetchSubAccounts(opt);
+ {selectedMother && (
+  <>
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => setSelectedMother(null)}
+      style={{ marginBottom: "10px" }}
+    >
+      ← Back to Mother Accounts
+    </Button>
+    <input
+      type="text"
+      className="form-control mb-2"
+      placeholder="Search sub accounts..."
+      value={subSearchTerm}
+      onChange={(e) => setSubSearchTerm(e.target.value)}
+      style={{ borderColor: "#007bff" }}
+    />
+    
+    {(() => {
+      const subAccountsList = subAccounts[selectedMother.id] || [];
+      
+      // ✅ Check if empty
+      if (subAccountsList.length === 0) {
+        return (
+          <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+            <p>No sub-accounts assigned to you under this mother account.</p>
+          </div>
+        );
+      }
+      
+      // ✅ Filter by search term
+      const filteredSubs = subAccountsList.filter((s) =>
+        s.name.toLowerCase().includes(subSearchTerm.toLowerCase())
+      );
+      
+      if (filteredSubs.length === 0) {
+        return (
+          <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+            <p>No sub-accounts found matching "{subSearchTerm}"</p>
+          </div>
+        );
+      }
+      
+      // ✅ Sort and render
+      return filteredSubs
+        .sort((a, b) => {
+          const isANonChain = a.name === "NON CHAIN ACCT" || a.name === "NON CHAIN ACCT.";
+          const isBNonChain = b.name === "NON CHAIN ACCT" || b.name === "NON CHAIN ACCT.";
 
-                                  if (opt.name === "NON-CHAIN") {
-                                    setShowBranchInput(false);
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      accountType: [],
-                                      branchType: []
-                                    }));
-                                  } else {
-                                    setShowBranchInput(true);
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      branchType: []
-                                    }));
-                                  }
-                                }
-                              }}
-                            >
-                              <span>{opt.name}</span>
-                              <strong style={{ color: '#ffffffff' }}>({opt.code})</strong>
-                              <FiChevronRight style={{ color: "#888", fontSize: "16px" }} />
-                            </div>
-                          ));
-                        })()}
-                      </>
-                    )}
+          if (isANonChain && !isBNonChain) return 1;
+          if (!isANonChain && isBNonChain) return -1;
+          return 0;
+        })
+        .map((s) => (
+          <div
+            key={s.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              padding: "4px 0"
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={
+                selectedMother.name === "NON-CHAIN"
+                  ? (formData.accountType || []).includes(s.id)
+                  : formData.accountType === s.id
+              }
+              onChange={() => {
+                if (selectedMother.name === "NON-CHAIN") {
+                  let updated = [...(formData.accountType || [])];
+                  if (updated.includes(s.id)) {
+                    updated = updated.filter((x) => x !== s.id);
+                  } else {
+                    updated.push(s.id);
+                  }
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountType: updated,
+                    branchType: []
+                  }));
+                  setShowBranchInput(false);
+                } else {
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountType: s.id,
+                    branchType: []
+                  }));
+                  setShowBranchInput(true);
+                  fetchBranches(s.code, s.group_code);
+                }
+              }}
+              id={`sub_${s.id}`}
+              style={{ width: "18px", height: "18px", cursor: "pointer" }}
+            />
+            <label
+              htmlFor={`sub_${s.id}`}
+              style={{ marginLeft: "6px", cursor: "pointer" }}
+            >
+              {s.name}{" "}
+              <span style={{ color: "#ffffffff", fontSize: "12px" }}>
+                ({s.code})
+              </span>
+            </label>
+          </div>
+        ));
+    })()}
+  </>
+)}
+  </Modal.Body>
 
-                    {selectedMother && (
-                      <>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setSelectedMother(null)}
-                          style={{ marginBottom: "10px" }}
-                        >
-                          ← Back to Mother Accounts
-                        </Button>
-                        <input
-                          type="text"
-                          className="form-control mb-2"
-                          placeholder="Search sub accounts..."
-                          value={subSearchTerm}
-                          onChange={(e) => setSubSearchTerm(e.target.value)}
-                          style={{ borderColor: "#007bff" }}
-                        />
-                        {subAccounts[selectedMother.id]
-                          ?.filter((s) =>
-                            s.name.toLowerCase().includes(subSearchTerm.toLowerCase())
-                          )
-                          .sort((a, b) => {
-                            // Put NON CHAIN ACCT variations at the bottom
-                            const isANonChain = a.name === "NON CHAIN ACCT" || a.name === "NON CHAIN ACCT.";
-                            const isBNonChain = b.name === "NON CHAIN ACCT" || b.name === "NON CHAIN ACCT.";
-
-                            if (isANonChain && !isBNonChain) return 1;
-                            if (!isANonChain && isBNonChain) return -1;
-                            return 0;
-                          })
-                          .map((s) => (
-                            <div
-                              key={s.id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                padding: "4px 0"
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={
-                                  selectedMother.name === "NON-CHAIN"
-                                    ? (formData.accountType || []).includes(s.id)
-                                    : formData.accountType === s.id
-                                }
-                                onChange={() => {
-                                  if (selectedMother.name === "NON-CHAIN") {
-                                    let updated = [...(formData.accountType || [])];
-                                    if (updated.includes(s.id)) {
-                                      updated = updated.filter((x) => x !== s.id);
-                                    } else {
-                                      updated.push(s.id);
-                                    }
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      accountType: updated,
-                                      branchType: [] // ✅ Clear branches
-                                    }));
-                                    setShowBranchInput(false);
-                                  } else {
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      accountType: s.id,
-                                      branchType: [] // ✅ Clear branches
-                                    }));
-                                    setShowBranchInput(true);
-                                    fetchBranches(s.code, s.group_code);
-                                  }
-                                }}
-                                id={`sub_${s.id}`}
-                                style={{ width: "18px", height: "18px", cursor: "pointer" }}
-                              />
-                              <label
-                                htmlFor={`sub_${s.id}`}
-                                style={{ marginLeft: "6px", cursor: "pointer" }}
-                              >
-                                {s.name}{" "}
-                                <span style={{ color: "#ffffffff", fontSize: "12px" }}>
-                                  ({s.code})
-                                </span>
-                              </label>
-                            </div>
-                          ))}
-                      </>
-                    )}
-                  </Modal.Body>
-
-                  <Modal.Footer>
-                    <Button variant="light" onClick={() => setShowModal_Account(false)}>
-                      Close
-                    </Button>
-                  </Modal.Footer>
-                </Modal>
+  <Modal.Footer>
+    <Button variant="light" onClick={() => setShowModal_Account(false)}>
+      Close
+    </Button>
+  </Modal.Footer>
+</Modal>
                 {/* Modal Mother Account2 */}
                 <Modal
                   show={showModal_Account2}
