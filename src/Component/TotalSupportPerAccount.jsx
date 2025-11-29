@@ -808,3 +808,4 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
     </div>
   );
 }
+
