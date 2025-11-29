@@ -49,64 +49,60 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
 
   const cleanAccountName = (name) => {
     if (!name) return name;
-    return name.replace(/[\[\]"]/g, '').trim();
+    // ✅ SIGURADUHIN NA STRING
+    const nameStr = typeof name === 'string' ? name : String(name || '');
+    return nameStr.replace(/[\[\]"]/g, '').trim();
   };
 
-  const transformToPivot = (sourceData) => {
-    const activities = Array.from(new Set(sourceData.map(item => item.activity_name))).filter(Boolean).sort();
-    setActivityColumns(activities);
+const transformToPivot = (sourceData) => {
+  const activities = Array.from(new Set(sourceData.map(item => item.activity_name))).filter(Boolean).sort();
+  setActivityColumns(activities);
 
-    // Group by account name ONLY (merge same stores from different PWP codes)
-    const grouped = {};
-    sourceData.forEach(item => {
-      const cleanName = cleanAccountName(item.account_name);
+  // Group by account name ONLY (merge same stores from different PWP codes)
+  const grouped = {};
+  sourceData.forEach(item => {
+    const cleanName = cleanAccountName(item.account_name);
+    
+    // ✅ DAGDAG CHECK: Kung blank pa rin, gawin "VARIOUS"
+    const finalName = (!cleanName || cleanName.trim() === '' || cleanName === '[]' || cleanName === 'null') 
+      ? 'VARIOUS' 
+      : cleanName;
+    
+    const key = finalName; // Only use account name as key
 
-      // ✅ SKIP EMPTY OR BLANK ACCOUNT NAMES
-      if (!cleanName || cleanName.trim() === '' || cleanName === 'null' || cleanName === 'undefined') {
-        console.log(`⚠️ SKIPPED EMPTY ACCOUNT NAME:`, item);
-        return;
+    if (!grouped[key]) {
+      grouped[key] = {
+        pwp_code: item.pwp_code, // Store first PWP code for reference
+        account_name: finalName, // ✅ USE finalName na
+        activities: {}
+      };
+    }
+
+    if (item.activity_name) {
+      if (!grouped[key].activities[item.activity_name]) {
+        grouped[key].activities[item.activity_name] = 0;
       }
+      const budget = parseFloat(item.budget) || 0;
+      const skuTotal = parseFloat(item.sku_total_amount) || 0;
+      const creditBudget = parseFloat(item.credit_budget) || 0;
+      grouped[key].activities[item.activity_name] += (budget + skuTotal + creditBudget);
+    }
+  });
 
-      const key = cleanName; // Only use account name as key
+  const pivotArray = Object.values(grouped).map((item, idx) => {
+    const grandTotal = Object.values(item.activities).reduce((sum, val) => sum + val, 0);
+    return {
+      ...item,
+      grandTotal,
+      id: idx
+    };
+  });
 
-      if (!grouped[key]) {
-        grouped[key] = {
-          pwp_code: item.pwp_code,
-          account_name: cleanName,
-          activities: {}
-        };
-      }
+  // Sort by account name
+  pivotArray.sort((a, b) => (a.account_name || '').localeCompare(b.account_name || ''));
 
-      if (item.activity_name) {
-        if (!grouped[key].activities[item.activity_name]) {
-          grouped[key].activities[item.activity_name] = 0;
-        }
-        const budget = parseFloat(item.budget) || 0;
-        const skuTotal = parseFloat(item.sku_total_amount) || 0;
-        const creditBudget = parseFloat(item.credit_budget) || 0;
-        grouped[key].activities[item.activity_name] += (budget + skuTotal + creditBudget);
-      }
-    });
-
-    const pivotArray = Object.values(grouped)
-      .filter(item => item.account_name && item.account_name.trim() !== '') // ✅ EXTRA FILTER
-      .map((item, idx) => {
-        const grandTotal = Object.values(item.activities).reduce((sum, val) => sum + val, 0);
-        return {
-          ...item,
-          grandTotal,
-          id: idx
-        };
-      });
-
-    // Sort by account name
-    pivotArray.sort((a, b) => (a.account_name || '').localeCompare(b.account_name || ''));
-
-    console.log("\n✅ FINAL PIVOT DATA (after filtering blanks):", pivotArray.length, "stores");
-
-    setPivotData(pivotArray);
-  };
-
+  setPivotData(pivotArray);
+};
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -159,7 +155,7 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
 
       const { data: pwpData, error: pwpError } = await supabase
         .from('regular_pwp')
-        .select('regularpwpcode, activity, credit_budget, amount_display, branchType, createForm'); // ✅ Added createForm
+        .select('regularpwpcode, activity, credit_budget, amount_display, branchType, createForm, accountType');
       if (pwpError) throw pwpError;
 
       console.log("\n=== ALL PWP DATA ===");
@@ -168,6 +164,7 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
         console.log(`${pwp.regularpwpcode} | Creator: ${pwp.createForm}`);
       });
 
+      // ✅ FILTER BY USER
       // ✅ FILTER BY USER
       let filteredPwpData = pwpData;
       if (role !== 'admin' && role !== 'Admin') {
@@ -185,12 +182,14 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
       const pwpCreditBudgetMap = {};
       const pwpAmountDisplayMap = {};
       const pwpBranchTypeMap = {};
+      const pwpAccountTypeMap = {}; // ✅ DAGDAG TO
 
       filteredPwpData.forEach(pwp => {
         pwpActivityMap[pwp.regularpwpcode] = pwp.activity;
         pwpCreditBudgetMap[pwp.regularpwpcode] = parseFloat(pwp.credit_budget) || 0;
         pwpAmountDisplayMap[pwp.regularpwpcode] = pwp.amount_display === true;
         pwpBranchTypeMap[pwp.regularpwpcode] = pwp.branchType;
+        pwpAccountTypeMap[pwp.regularpwpcode] = pwp.accountType; // ✅ DAGDAG TO
       });
 
 
@@ -262,24 +261,15 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
         if (!skuMap[key]) skuMap[key] = 0;
         skuMap[key] += parseFloat(item.total_amount) || 0;
       });
-
       const accountsSet = new Set([
         ...expandedBudget.map(item => `${item.regularcode}|${item.account_name}`),
         ...expandedSku.map(item => `${item.regular_code}|${item.account_name}`)
       ]);
 
       let transformedData = [];
-      // SA PART NA TO (around line 240-270)
       accountsSet.forEach(accountKey => {
         const [pwpCode, accountName] = accountKey.split('|');
         const cleanedAccountName = cleanAccountName(accountName);
-
-        // ✅ SKIP EMPTY ACCOUNT NAMES
-        if (!cleanedAccountName || cleanedAccountName.trim() === '') {
-          console.log(`⚠️ SKIPPED EMPTY ACCOUNT: ${accountKey}`);
-          return;
-        }
-
         const activityCode = pwpActivityMap[pwpCode];
         const activityName = activityMap[activityCode] || activityCode || 'Unknown';
         const budget = budgetMap[accountKey] || 0;
@@ -294,9 +284,16 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
           finalAmount += creditBudget;
         }
 
+        // ✅ IMPROVED FALLBACK: accountType > accountName > 'Unknown'
+        // ✅ IMPROVED FALLBACK: accountType > accountName > 'VARIOUS'
+        let finalAccountName = cleanedAccountName;
+        if (!finalAccountName || finalAccountName.trim() === '' || finalAccountName === '[]' || finalAccountName === 'null') {
+          finalAccountName = pwpAccountTypeMap[pwpCode] || 'VARIOUS';
+        }
+
         transformedData.push({
           pwp_code: pwpCode,
-          account_name: cleanedAccountName,
+          account_name: finalAccountName,
           activity_name: activityName,
           budget,
           sku_total_amount: skuTotal,
@@ -315,7 +312,9 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
       filteredPwpData  // ✅ CHANGE THIS!
         .filter(item => item.amount_display === true && filteredApprovedCodes.has(item.regularpwpcode))  // ✅ AND THIS!
         .forEach(item => {
-          const branchType = item.branchType || 'Unknown';
+          const branchType = item.branchType && item.branchType.trim() !== ''
+            ? item.branchType
+            : item.accountType || 'Unknown';
           const branches = branchType.split(',').map(name => cleanAccountName(name.trim()));
 
           branches.forEach(branch => {
@@ -323,7 +322,7 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
             if (!existingKeys.has(key)) {
               newPwpRows.push({
                 pwp_code: item.regularpwpcode,
-                account_name: branch,
+                account_name: branch || item.accountType || 'VARIOUS', // ✅ DAGDAG FALLBACK
                 activity_name: activityMap[item.activity] || item.activity || 'N/A',
                 budget: 0,
                 sku_total_amount: 0,
@@ -370,20 +369,27 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
   };
 
   const getSelectedSummary = () => {
-    const selectedItems = filteredData.filter(item => selectedRows.has(item.id));
+    // ✅ If no selection, show ALL items
+    const itemsToSum = selectedRows.size === 0
+      ? filteredData
+      : filteredData.filter(item => selectedRows.has(item.id));
+
     const summaryActivities = {};
     let totalGrandTotal = 0;
 
-    selectedItems.forEach(item => {
-      Object.entries(item.activities).forEach(([activity, amount]) => {
-        summaryActivities[activity] = (summaryActivities[activity] || 0) + amount;
-      });
-      totalGrandTotal += item.grandTotal;
+    itemsToSum.forEach(item => {
+      // ✅ FIX: Check if activities exists before using Object.entries
+      if (item.activities && typeof item.activities === 'object') {
+        Object.entries(item.activities).forEach(([activity, amount]) => {
+          summaryActivities[activity] = (summaryActivities[activity] || 0) + amount;
+        });
+      }
+      // ✅ FIX: Safely add grandTotal
+      totalGrandTotal += (item.grandTotal || 0);
     });
 
-    return { summaryActivities, totalGrandTotal, count: selectedItems.length };
+    return { summaryActivities, totalGrandTotal, count: itemsToSum.length };
   };
-
   const generatePDF = async () => {
     if (selectedRows.size === 0) {
       alert('Please select at least one account to generate PDF');
@@ -807,5 +813,4 @@ export default function TotalSupportPerAccount({ setCurrentView }) {
       </div>
     </div>
   );
-}
-
+} 
