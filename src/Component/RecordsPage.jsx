@@ -14,6 +14,7 @@ function RecordsPage() {
   const [filter, setFilter] = useState("regular"); // all | cover | regular
   const [statusFilter, setStatusFilter] = useState("all"); // all | approved | declined | sent_back | cancelled
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchField, setSearchField] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -203,27 +204,56 @@ function RecordsPage() {
         approval_created: approvalStatusMap[item.pwp_code]?.approval_created,
       }));
 
-      // --- SEARCH FILTER ---
-      let filteredData = dataWithApprovalStatus;
-      if (searchQuery) {
-        filteredData = filteredData.filter(item => {
-          const searchFields = [
-
-            item.code,
-            item.cover_code,
-            item.regularpwpcode,
-            item.id,
-            item.activity_name, // now searchable by name too
-            item.distributor,
-
-          ];
-          return searchFields.some(
-            field =>
-              field &&
-              field.toString().toLowerCase().includes(searchQuery.toLowerCase())
-          );
-        });
-      }
+     
+// --- SEARCH FILTER ---
+let filteredData = dataWithApprovalStatus;
+if (searchQuery) {
+  filteredData = filteredData.filter(item => {
+    const query = searchQuery.toLowerCase();
+    
+    // Get distributor name from code
+    const distributorName = distributorMap[item.distributor] || item.distributor || "";
+    
+    // If "all" is selected, search across all fields
+    if (searchField === "all") {
+      const searchFields = [
+        item.code,
+        item.cover_code,
+        item.regularpwpcode,
+        item.id?.toString(),
+        item.activity_name,
+        distributorName, // Search distributor NAME not code
+        item.branchType
+      ];
+      return searchFields.some(
+        field =>
+          field &&
+          field.toString().toLowerCase().includes(query)
+      );
+    }
+    
+    // Search specific field based on selection
+    let fieldValue = "";
+    switch (searchField) {
+      case "pwp_code":
+        fieldValue = item.code || item.cover_code || item.regularpwpcode || "";
+        break;
+      case "distributor":
+        fieldValue = distributorName; // Search distributor NAME not code
+        break;
+      case "activity":
+        fieldValue = item.activity_name || "";
+        break;
+      case "branchType":
+        fieldValue = item.branchType || "";
+        break;
+      default:
+        return false;
+    }
+    
+    return fieldValue.toString().toLowerCase().includes(query);
+  });
+}
 
       // --- STATUS FILTER ---
       if (statusFilter !== "all") {
@@ -708,26 +738,55 @@ const formatCellValue = (value, colName) => {
                 alignItems: 'center',
               }}
             >
-              {/* Search */}
-              <div className="filter-item">
-                <input
-                  type="text"
-                  placeholder="🔍 Search Customer...."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #e1e8ed',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    transition: 'border-color 0.3s ease',
-                    outline: 'none'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#2575fc'}
-                  onBlur={(e) => e.target.style.borderColor = '#e1e8ed'}
-                />
-              </div>
+             {/* Search Field Selector */}
+<div className="filter-item">
+  <select
+    value={searchField}
+    onChange={(e) => setSearchField(e.target.value)}
+    style={{
+      padding: '12px 16px',
+      border: '2px solid #e1e8ed',
+      borderRadius: '8px 0 0 8px',
+      fontSize: '14px',
+      cursor: 'pointer',
+      outline: 'none',
+      backgroundColor: '#f8f9fa',
+      minWidth: '140px'
+    }}
+  >
+    <option value="all">All Fields</option>
+    <option value="pwp_code">PWP Code</option>
+    <option value="distributor">Distributor</option>
+    <option value="activity">Activity</option>
+    <option value="branchType">Branch Type</option>
+  </select>
+</div>
+
+{/* Search Input */}
+<div className="filter-item">
+  <input
+    type="text"
+    placeholder={
+      searchField === "all" 
+        ? "🔍 Search all fields..." 
+        : `🔍 Search ${searchField.replace('_', ' ')}...`
+    }
+    value={searchQuery}
+    onChange={(e) => setSearchQuery(e.target.value)}
+    style={{
+      width: '100%',
+      minWidth: '250px',
+      padding: '12px 16px',
+      border: '2px solid #e1e8ed',
+      borderRadius: '8px',
+      fontSize: '14px',
+      transition: 'border-color 0.3s ease',
+      outline: 'none'
+    }}
+    onFocus={(e) => e.target.style.borderColor = '#2575fc'}
+    onBlur={(e) => e.target.style.borderColor = '#e1e8ed'}
+  />
+</div>
 
               <div className="filter-item">
                 <select
