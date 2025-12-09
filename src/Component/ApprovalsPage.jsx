@@ -128,23 +128,30 @@ export default function ApprovalsPage() {
   const [approvalHistory, setApprovalHistory] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+const fetchApprovalHistory = async () => {
+  const { data, error } = await supabase
+    .from("Approval_History")
+    .select("*")
+    .order('DateResponded', { ascending: false });
 
-  useEffect(() => {
-    const fetchApprovalHistory = async () => {
-      const { data, error } = await supabase
-        .from("Approval_History")
-        .select("*");
+  if (error) {
+    console.error("Error fetching approval history:", error);
+    setApprovalHistory([]);
+  } else {
+    setApprovalHistory(data || []);
+  }
+};
 
-      if (error) {
-        console.error("Error fetching approval history:", error);
-        setApprovalHistory([]);
-      } else {
-        setApprovalHistory(data || []);
-      }
-    };
+useEffect(() => {
+  fetchApprovalHistory();
+}, []);
 
+// ✅ Refresh approval history after any approval action
+useEffect(() => {
+  if (approvals.length > 0) {
     fetchApprovalHistory();
-  }, []);
+  }
+}, [approvals]);
 
   function getLatestResponseStatus(visaCode, approvalHistory) {
     const filtered = approvalHistory.filter((a) => a.PwpCode === visaCode);
