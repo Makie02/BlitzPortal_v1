@@ -1589,6 +1589,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
             </div >
         </div >
     );
-};
+}; 
 
 export default ViewDataModal;
