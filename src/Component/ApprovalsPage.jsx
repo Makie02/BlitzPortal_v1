@@ -128,23 +128,52 @@ export default function ApprovalsPage() {
   const [approvalHistory, setApprovalHistory] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+// ✅ FIXED: Fetch ALL approval history without limit, ONE TIME ONLY
 const fetchApprovalHistory = async () => {
-  const { data, error } = await supabase
-    .from("Approval_History")
-    .select("*")
-    .order('DateResponded', { ascending: false });
+  try {
+    let allData = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
 
-  if (error) {
-    console.error("Error fetching approval history:", error);
+    // Fetch ALL records in batches
+    while (hasMore) {
+      const { data, error, count } = await supabase
+        .from("Approval_History")
+        .select("*", { count: 'exact' })
+        .order('DateResponded', { ascending: false })
+        .range(from, from + batchSize - 1);
+
+      if (error) {
+        console.error("Error fetching approval history:", error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        from += batchSize;
+        
+        // Stop if we got less than batchSize (means no more data)
+        if (data.length < batchSize) {
+          hasMore = false;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`✅ Loaded ${allData.length} approval history records`);
+    setApprovalHistory(allData);
+  } catch (err) {
+    console.error("Unexpected error fetching approval history:", err);
     setApprovalHistory([]);
-  } else {
-    setApprovalHistory(data || []);
   }
 };
 
+// ✅ ONE-TIME FETCH ONLY on component mount
 useEffect(() => {
   fetchApprovalHistory();
-}, []);
+}, []); // Empty dependency = run once only
 
 // ✅ Refresh approval history after any approval action
 useEffect(() => {
