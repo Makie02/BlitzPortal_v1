@@ -10,6 +10,8 @@ export default function ApprovalsPage() {
   const [modalVisaCode, setModalVisaCode] = React.useState(null);
   const [modalLoading, setIsModalLoading] = React.useState(null);
 
+
+
   const [openDropdownIndex, setOpenDropdownIndex] = useState(null);
   const dropdownRefs = useRef([]);
   const [userNames, setUserNames] = useState({});
@@ -20,14 +22,8 @@ export default function ApprovalsPage() {
 
   // ✅ Monitor online/offline status
   useEffect(() => {
-    const handleOnline = () => {
-      console.log("🟢 Internet connection restored");
-      setIsOnline(true);
-    };
-    const handleOffline = () => {
-      console.log("🔴 Internet connection lost");
-      setIsOnline(false);
-    };
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -40,15 +36,13 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     const fetchDistributors = async () => {
-      console.log("📦 Fetching distributors from database...");
       const { data, error } = await supabase
         .from("distributors")
         .select("code, name");
 
       if (error) {
-        console.error("❌ Error fetching distributors:", error);
+        console.error("Error fetching distributors:", error);
       } else {
-        console.log(`✅ Successfully fetched ${data.length} distributors`);
         setDistributors(data);
       }
     };
@@ -65,13 +59,12 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     const fetchUserNames = async () => {
-      console.log("👥 Fetching user names from database...");
       const { data, error } = await supabase
         .from("Account_Users")
         .select("UserID, name");
 
       if (error) {
-        console.error("❌ Error fetching user names:", error);
+        console.error("Error fetching user names:", error);
         return;
       }
 
@@ -80,7 +73,6 @@ export default function ApprovalsPage() {
         nameMap[user.UserID] = user.name;
       });
 
-      console.log(`✅ Successfully fetched ${data.length} user names`);
       setUserNames(nameMap);
     };
 
@@ -104,23 +96,16 @@ export default function ApprovalsPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ✅ IMPROVED handleRowClick with detailed logging
-  const handleRowClick = async (entry) => {
-    console.log("═══════════════════════════════════════════════");
-    console.log("🔵 VIEW DETAILS BUTTON CLICKED");
-    console.log("═══════════════════════════════════════════════");
-    console.log("📋 Entry Details:", {
-      code: entry.code,
-      distributor: entry.distributor,
-      createdBy: entry.createForm,
-      status: entry.status,
-      sourceTable: entry.sourceTable,
-      created_at: entry.created_at
-    });
+  // ✅ FIXED handleRowClick with loading screen and connection check
+  // ✅ REAL-TIME handleRowClick - Loading closes exactly when modal opens
+  // ✅ REAL-TIME handleRowClick - Loading tied to actual modal data loading
+  // ✅ REAL-TIME handleRowClick - Loading tied to actual modal data loading
 
+
+
+  const handleRowClick = async (entry) => {
     // Check internet connection first
     if (!navigator.onLine) {
-      console.warn("⚠️ No internet connection detected");
       await Swal.fire({
         icon: 'error',
         title: 'No Internet Connection',
@@ -131,18 +116,11 @@ export default function ApprovalsPage() {
       return;
     }
 
-    console.log("🌐 Internet connection: OK");
-    console.log(`🔍 Opening modal for code: ${entry.code}`);
-    
-    // ✅ Show modal immediately - NO automatic approval history posting
+    // ✅ INSTANT: Show modal immediately, data loads inside
     setModalVisaCode(entry.code);
-    
-    console.log("✅ Modal opened successfully");
-    console.log("═══════════════════════════════════════════════");
   };
 
   const disableModal = () => {
-    console.log("🔴 Closing modal");
     setModalVisaCode(false);
   };
 
@@ -153,16 +131,14 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     const fetchApprovalHistory = async () => {
-      console.log("📜 Fetching approval history from database...");
       const { data, error } = await supabase
         .from("Approval_History")
         .select("*");
 
       if (error) {
-        console.error("❌ Error fetching approval history:", error);
+        console.error("Error fetching approval history:", error);
         setApprovalHistory([]);
       } else {
-        console.log(`✅ Successfully fetched ${data.length} approval history records`);
         setApprovalHistory(data || []);
       }
     };
@@ -200,34 +176,22 @@ export default function ApprovalsPage() {
     if (!currentUser?.UserID || hasFetched) return;
 
     const fetchData = async () => {
-      console.log("🔄 Starting data fetch...");
-      console.log("👤 Current User:", {
-        UserID: currentUser.UserID,
-        name: currentUser.name,
-        role: currentUser.role
-      });
-
       try {
         const myName = currentUser.name?.toLowerCase().trim();
         const userId = currentUser.UserID;
         const isAdmin = currentUser.role?.toLowerCase() === "admin";
-
-        console.log(`🔑 User Role: ${isAdmin ? 'ADMIN' : 'REGULAR USER'}`);
 
         const visaTables = ["cover_pwp", "regular_pwp", "Claims_pwp"];
         let combinedData = [];
         let allowedNames = [];
 
         for (const table of visaTables) {
-          console.log(`📊 Fetching from table: ${table}...`);
           const { data, error } = await supabase.from(table).select("*");
 
           if (error) {
-            console.error(`❌ Error fetching from ${table}:`, error.message);
+            console.error(`Error fetching from ${table}:`, error.message);
             continue;
           }
-
-          console.log(`✅ Fetched ${data.length} records from ${table}`);
 
           const normalizedAllowedNames = allowedNames.map((n) =>
             n.toLowerCase().trim()
@@ -244,8 +208,6 @@ export default function ApprovalsPage() {
                 if (createdBy === myName) return true;
                 return normalizedAllowedNames.includes(createdBy);
               });
-
-          console.log(`🔍 Filtered ${filteredData.length} records for current user`);
 
           const formatted = filteredData
             .map((item) => {
@@ -312,13 +274,12 @@ export default function ApprovalsPage() {
         }
 
         if (isMounted) {
-          console.log(`✅ Total combined data: ${combinedData.length} records`);
           setAllowedApproverNames(allowedNames);
           setApprovals(combinedData);
           setHasFetched(true);
         }
       } catch (error) {
-        console.error("❌ Unexpected fetch error:", error);
+        console.error("Unexpected fetch error:", error);
         if (isMounted) setHasFetched(true);
       }
     };
@@ -342,14 +303,12 @@ export default function ApprovalsPage() {
   const pageSize = 10;
 
   const handlePageChange = (newPage) => {
-    console.log(`📄 Page changed from ${currentPage} to ${newPage}`);
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
     }
   };
 
   useEffect(() => {
-    console.log("🔄 Filters changed - resetting to page 1");
     setCurrentPage(1);
   }, [visaTypeFilter, statusFilter, fromDate, toDate, searchTerm, todayOnly]);
 
@@ -433,9 +392,7 @@ export default function ApprovalsPage() {
   });
 
   useEffect(() => {
-    const newTotalPages = Math.ceil(filteredData.length / pageSize);
-    console.log(`📊 Filtered data: ${filteredData.length} records, Total pages: ${newTotalPages}`);
-    setTotalPages(newTotalPages);
+    setTotalPages(Math.ceil(filteredData.length / pageSize));
   }, [filteredData]);
 
   const paginatedData = [...filteredData]
@@ -449,7 +406,6 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     async function fetchSettings() {
-      console.log("⚙️ Fetching approval settings...");
       const { data, error } = await supabase
         .from("approval_settings")
         .select("single_approval, multiple_approval")
@@ -457,11 +413,10 @@ export default function ApprovalsPage() {
         .single();
 
       if (error) {
-        console.error("❌ Error fetching approval settings:", error);
+        console.error("Error fetching approval settings:", error);
         return;
       }
 
-      console.log("✅ Approval settings:", data);
       setApprovalSetting(data);
     }
 
@@ -472,7 +427,6 @@ export default function ApprovalsPage() {
     if (!approvalSetting || !currentUser?.UserID) return;
 
     async function fetchUserDetails() {
-      console.log("👤 Fetching user approval details...");
       try {
         const { data: accountData, error: accountError } = await supabase
           .from("Account_Users")
@@ -481,7 +435,7 @@ export default function ApprovalsPage() {
           .single();
 
         if (accountError) {
-          console.error("❌ Error fetching name from Account_Users:", accountError);
+          console.error("Error fetching name from Account_Users:", accountError);
           setUserType(null);
           return;
         }
@@ -491,10 +445,8 @@ export default function ApprovalsPage() {
         }
 
         const userName = accountData.name;
-        console.log(`👤 User name: ${userName}`);
 
         if (approvalSetting.single_approval) {
-          console.log("🔍 Checking Single_Approval table...");
           const username = userName?.toLowerCase().trim();
 
           const { data: singleApprovalData, error: singleApprovalError } =
@@ -505,25 +457,23 @@ export default function ApprovalsPage() {
               .maybeSingle();
 
           if (singleApprovalError) {
-            console.error("❌ Error fetching from Single_Approval:", singleApprovalError);
+            console.error("Error fetching from Single_Approval:", singleApprovalError);
             setUserType(null);
             return;
           }
 
           if (!singleApprovalData) {
-            console.log("⚠️ User not found in Single_Approval");
             setUserType(null);
             return;
           }
 
-          const userType = singleApprovalData.allowed_to_approve ? "Allowed" : "Not Allowed";
-          console.log(`✅ User type: ${userType}`);
-          setUserType(userType);
+          setUserType(
+            singleApprovalData.allowed_to_approve ? "Allowed" : "Not Allowed"
+          );
           return;
         }
 
         if (approvalSetting.multiple_approval) {
-          console.log("🔍 Checking User_Approvers table...");
           const { data: approverData, error: approverError } = await supabase
             .from("User_Approvers")
             .select("Type, UserID, Approver_Name")
@@ -531,27 +481,352 @@ export default function ApprovalsPage() {
             .single();
 
           if (approverError) {
-            console.error("❌ Error fetching from User_Approvers:", approverError);
+            console.error("Error fetching from User_Approvers:", approverError);
             setUserType(null);
             return;
           }
           if (!approverData) {
-            console.log("⚠️ User not found in User_Approvers");
             setUserType(null);
             return;
           }
 
-          console.log(`✅ User type: ${approverData.Type ?? "Not Allowed"}`);
           setUserType(approverData.Type ?? "Not Allowed");
         }
       } catch (err) {
-        console.error("❌ Unexpected error in fetchUserDetails:", err);
+        console.error("Unexpected error in fetchUserDetails:", err);
         setUserType(null);
       }
     }
 
     fetchUserDetails();
   }, [approvalSetting, currentUser?.UserID]);
+
+  const handleDeclineClick = async (entryCode) => {
+    const entry = approvals.find((item) => item.code === entryCode);
+    if (!entry?.code) return;
+
+    const dateTime = new Date().toISOString();
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
+    const createdForm = entry.createForm || "unknown";
+
+    try {
+      const { error: supabaseError } = await supabase
+        .from("Approval_History")
+        .insert({
+          PwpCode: entry.code,
+          ApproverId: userId,
+          DateResponded: dateTime,
+          Response: "Declined",
+          Type: userType || null,
+          Notication: false,
+          CreatedForm: createdForm,
+        });
+
+      if (supabaseError) {
+        console.error("Supabase insert error:", supabaseError.message);
+        Swal.fire("Error", "Failed to log the decline action.", "error");
+        return;
+      }
+
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activity = {
+          userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip,
+          time: dateTime,
+          action: `Declined the ${entry.code}`,
+          createdForm,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activity);
+
+        if (activityError) {
+          console.error("RecentActivity log error:", activityError.message);
+        }
+      } catch (logErr) {
+        console.warn("Activity logging failed:", logErr.message);
+      }
+
+      setApprovals((prevApprovals) =>
+        prevApprovals.map((item) =>
+          item.code === entryCode
+            ? { ...item, status: "Declined", responseDate: dateTime }
+            : item
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: "Declined",
+        text: `${entry.code} has been declined successfully.`,
+        confirmButtonText: "OK",
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error(`Failed to decline ${entry.code}:`, error.message || error);
+      Swal.fire("Error", "Something went wrong while declining the entry.", "error");
+    }
+  };
+
+  const handleSendBackClick = async (entryCode) => {
+    const entry = approvals.find((item) => item.code === entryCode);
+    if (!entry?.code) return;
+
+    const dateTime = new Date().toISOString();
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
+    const createdForm = entry.createForm || "unknown";
+
+    try {
+      const { error: supError } = await supabase
+        .from("Approval_History")
+        .insert({
+          PwpCode: entry.code,
+          ApproverId: userId,
+          DateResponded: dateTime,
+          Response: "Sent back for revision",
+          Type: userType || null,
+          Notication: false,
+          CreatedForm: createdForm,
+        });
+
+      if (supError) {
+        console.error("Supabase insert error:", supError.message);
+        Swal.fire("Error", "Failed to log the send-back action.", "error");
+        return;
+      }
+
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activityEntry = {
+          userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip: ip,
+          time: dateTime,
+          action: `Sent back ${entry.code} for revision`,
+          createdForm,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activityEntry);
+
+        if (activityError) {
+          console.error("RecentActivity log error:", activityError.message);
+        }
+      } catch (logErr) {
+        console.warn("Activity logging failed:", logErr.message);
+      }
+
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode
+            ? { ...item, status: "Revision", responseDate: dateTime }
+            : item
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: "Success",
+        text: `${entry.code} has been sent back for revision.`,
+        confirmButtonText: "OK",
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error(`Failed to send back ${entry.code}:`, error.message || error);
+      Swal.fire("Error", "Something went wrong while sending back the entry.", "error");
+    }
+  };
+
+  const handleApproveClick = async (entryCode) => {
+    const entry = approvals.find((item) => item.code === entryCode);
+    if (!entry || !entry.code) return;
+
+    const dateTime = new Date().toISOString();
+    const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+    const userId = currentUser?.UserID || "unknown";
+
+    if (entry.isSubmitting) return;
+
+    setApprovals((prev) =>
+      prev.map((item) =>
+        item.code === entryCode ? { ...item, isSubmitting: true } : item
+      )
+    );
+
+    let remainingBalance = null;
+    let creditBudget = null;
+    let coverPwpCode = null;
+
+    try {
+      const { error: historyError } = await supabase
+        .from("Approval_History")
+        .insert({
+          PwpCode: entry.code,
+          ApproverId: userId,
+          DateResponded: dateTime,
+          Response: "Approved",
+          Type: userType || "admin",
+          Notication: false,
+          CreatedForm: entry.createForm || "unknown",
+        });
+
+      if (historyError) {
+        console.error("Supabase insert error:", historyError.message);
+        Swal.fire("Error", "Failed to log approval. Please try again.", "error");
+        return;
+      }
+
+      const updatePayload = {
+        Approved: true,
+        createdate: dateTime,
+      };
+
+      if (entry.code.startsWith("R")) {
+        const { data: pwpData, error: pwpError } = await supabase
+          .from("regular_pwp")
+          .select("remaining_balance, coverPwpCode, credit_budget")
+          .eq("regularpwpcode", entry.code)
+          .single();
+
+        if (pwpError) {
+          console.warn("Missing regular_pwp data:", pwpError.message);
+        }
+
+        if (pwpData) {
+          remainingBalance = parseFloat(pwpData.remaining_balance) || 0;
+          creditBudget = parseFloat(pwpData.credit_budget) || 0;
+          coverPwpCode = pwpData.coverPwpCode || null;
+
+          if (!isNaN(remainingBalance) && coverPwpCode) {
+            const { error: updateError } = await supabase
+              .from("amount_badget")
+              .update({
+                remainingbalance: remainingBalance,
+                ...updatePayload,
+              })
+              .eq("pwp_code", coverPwpCode);
+
+            if (updateError) {
+              console.warn(
+                "Warning: Failed to update amount_badget:",
+                updateError.message
+              );
+            }
+          } else {
+            console.warn(
+              `Skipped budget update for ${entry.code}: Missing or invalid budget data`
+            );
+          }
+        }
+      } else {
+        const { error: updateError } = await supabase
+          .from("amount_badget")
+          .update(updatePayload)
+          .eq("pwp_code", entry.code);
+
+        if (updateError) {
+          console.warn("Warning: Failed to update budget approval:", updateError.message);
+        }
+      }
+
+      const { error: historyBudgetError } = await supabase
+        .from("approved_history_budget")
+        .insert({
+          pwp_code: entry.code,
+          approver_id: userId,
+          date_responded: dateTime,
+          response: "Approved",
+          type: userType || "admin",
+          created_form: entry.createForm || "unknown",
+          remaining_balance: remainingBalance,
+          credit_budget: creditBudget,
+          cover_pwp_code: coverPwpCode,
+          updated_amount_badget: true,
+        });
+
+      if (historyBudgetError) {
+        console.warn("Warning: Failed to log approval+budget:", historyBudgetError.message);
+      }
+
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const { ip } = await ipRes.json();
+
+        const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const geo = await geoRes.json();
+
+        const activity = {
+          userId,
+          device: navigator.userAgent || "Unknown Device",
+          location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
+          ip,
+          time: dateTime,
+          action: `Approved the ${entry.code}`,
+        };
+
+        const { error: activityError } = await supabase
+          .from("RecentActivity")
+          .insert(activity);
+
+        if (activityError) {
+          console.warn("Activity log failed:", activityError.message);
+        }
+      } catch (logErr) {
+        console.warn("Activity logging failed:", logErr.message);
+      }
+
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode
+            ? {
+              ...item,
+              status: "Approved",
+              responseDate: dateTime,
+              isSubmitting: false,
+            }
+            : item
+        )
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: "Approved!",
+        text: `Entry ${entry.code} was approved successfully.`,
+        confirmButtonText: "OK",
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (error) {
+      console.error(`Failed to approve ${entry.code}:`, error.message || error);
+      Swal.fire("Error", "Something went wrong during approval.", "error");
+
+      setApprovals((prev) =>
+        prev.map((item) =>
+          item.code === entryCode ? { ...item, isSubmitting: false } : item
+        )
+      );
+    }
+  };
 
   return (
     <div
@@ -582,6 +857,8 @@ export default function ApprovalsPage() {
         Approvals Management
       </h2>
 
+      {/* ✅ Connection Status Indicator */}
+  
       <div
         style={{
           display: "flex",
@@ -600,10 +877,7 @@ export default function ApprovalsPage() {
             type="text"
             placeholder="Search Code, Created By..."
             value={searchTerm}
-            onChange={(e) => {
-              console.log(`🔍 Search term changed: "${e.target.value}"`);
-              setSearchTerm(e.target.value);
-            }}
+            onChange={(e) => setSearchTerm(e.target.value)}
             style={{
               width: "100%",
               padding: "10px 14px",
@@ -625,10 +899,7 @@ export default function ApprovalsPage() {
         <div className="filter-item" style={{ minWidth: "150px" }}>
           <select
             value={visaTypeFilter}
-            onChange={(e) => {
-              console.log(`🏷️ Visa type filter changed: ${e.target.value}`);
-              setVisaTypeFilter(e.target.value);
-            }}
+            onChange={(e) => setVisaTypeFilter(e.target.value)}
             style={{
               padding: "10px 14px",
               borderRadius: "6px",
@@ -646,10 +917,7 @@ export default function ApprovalsPage() {
         <div className="filter-item" style={{ minWidth: "150px" }}>
           <select
             value={statusFilter}
-            onChange={(e) => {
-              console.log(`📊 Status filter changed: ${e.target.value}`);
-              setStatusFilter(e.target.value);
-            }}
+            onChange={(e) => setStatusFilter(e.target.value)}
             style={{
               padding: "10px 14px",
               borderRadius: "6px",
@@ -684,10 +952,7 @@ export default function ApprovalsPage() {
           <input
             type="date"
             value={fromDate}
-            onChange={(e) => {
-              console.log(`📅 From date changed: ${e.target.value}`);
-              setFromDate(e.target.value);
-            }}
+            onChange={(e) => setFromDate(e.target.value)}
             style={{
               padding: "6px 8px",
               border: "1px solid #d1d5db",
@@ -700,10 +965,7 @@ export default function ApprovalsPage() {
           <input
             type="date"
             value={toDate}
-            onChange={(e) => {
-              console.log(`📅 To date changed: ${e.target.value}`);
-              setToDate(e.target.value);
-            }}
+            onChange={(e) => setToDate(e.target.value)}
             style={{
               padding: "6px 8px",
               border: "1px solid #d1d5db",
@@ -715,10 +977,7 @@ export default function ApprovalsPage() {
         </div>
 
         <button
-          onClick={() => {
-            console.log(`📆 Today filter toggled: ${!todayOnly}`);
-            setTodayOnly((prev) => !prev);
-          }}
+          onClick={() => setTodayOnly((prev) => !prev)}
           style={{
             padding: "10px 16px",
             backgroundColor: todayOnly ? "#3b82f6" : "#f3f4f6",
@@ -853,9 +1112,7 @@ export default function ApprovalsPage() {
                             e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
                             e.currentTarget.style.opacity = "1";
                           }}
-                          onClick={() => {
-                            console.log(`🔵 Code button clicked: ${entry.code}`);
-                          }}
+                          onClick={() => console.log(`Clicked: ${entry.code}`)}
                         >
                           {entry.code}
                         </button>
@@ -884,7 +1141,6 @@ export default function ApprovalsPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            console.log(`🖱️ View Details button clicked for: ${entry.code}`);
                             handleRowClick(entry);
                           }}
                           style={{
@@ -945,10 +1201,7 @@ export default function ApprovalsPage() {
       {modalVisaCode && (
         <ViewDataModal
           visaCode={modalVisaCode}
-          onClose={() => {
-            console.log("🔴 Modal closed from ViewDataModal");
-            setModalVisaCode(null);
-          }}
+          onClose={() => setModalVisaCode(null)}
         />
       )}
 
