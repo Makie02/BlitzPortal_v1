@@ -129,6 +129,7 @@ export default function ApprovalsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 // ✅ FIXED: Fetch ALL approval history without limit, ONE TIME ONLY
+// ✅ FIXED: Fetch ALL approval history - truly fetch everything
 const fetchApprovalHistory = async () => {
   try {
     let allData = [];
@@ -136,11 +137,11 @@ const fetchApprovalHistory = async () => {
     const batchSize = 1000;
     let hasMore = true;
 
-    // Fetch ALL records in batches
+    // Fetch ALL records in batches until we get everything
     while (hasMore) {
-      const { data, error, count } = await supabase
+      const { data, error } = await supabase
         .from("Approval_History")
-        .select("*", { count: 'exact' })
+        .select("*")
         .order('DateResponded', { ascending: false })
         .range(from, from + batchSize - 1);
 
@@ -162,13 +163,18 @@ const fetchApprovalHistory = async () => {
       }
     }
 
-    console.log(`✅ Loaded ${allData.length} approval history records`);
+    console.log(`✅ Loaded ${allData.length} total approval history records`);
     setApprovalHistory(allData);
   } catch (err) {
     console.error("Unexpected error fetching approval history:", err);
     setApprovalHistory([]);
   }
 };
+
+// ✅ ONE-TIME FETCH on component mount
+useEffect(() => {
+  fetchApprovalHistory();
+}, []);
 
 // ✅ ONE-TIME FETCH ONLY on component mount
 useEffect(() => {
@@ -206,126 +212,146 @@ useEffect(() => {
 
   const [hasFetched, setHasFetched] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
+useEffect(() => {
+  let isMounted = true;
 
-    if (!currentUser?.UserID || hasFetched) return;
+  if (!currentUser?.UserID || hasFetched) return;
 
-    const fetchData = async () => {
-      try {
-        const myName = currentUser.name?.toLowerCase().trim();
-        const userId = currentUser.UserID;
-        const isAdmin = currentUser.role?.toLowerCase() === "admin";
+  const fetchData = async () => {
+    try {
+      const myName = currentUser.name?.toLowerCase().trim();
+      const userId = currentUser.UserID;
+      const isAdmin = currentUser.role?.toLowerCase() === "admin";
 
-        const visaTables = ["cover_pwp", "regular_pwp", "Claims_pwp"];
-        let combinedData = [];
-        let allowedNames = [];
+      const visaTables = ["regular_pwp", "Claims_pwp"];
+      let combinedData = [];
 
-        for (const table of visaTables) {
-          const { data, error } = await supabase.from(table).select("*");
+      // ✅ Fetch ALL data from all tables without any filtering first
+      for (const table of visaTables) {
+        let tableData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
+
+        // Fetch ALL records from this table in batches
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from(table)
+            .select("*")
+            .range(from, from + batchSize - 1);
 
           if (error) {
             console.error(`Error fetching from ${table}:`, error.message);
-            continue;
+            break;
           }
 
-          const normalizedAllowedNames = allowedNames.map((n) =>
-            n.toLowerCase().trim()
-          );
-
-          const filteredData = isAdmin
-            ? data
-            : normalizedAllowedNames.length === 0
-              ? data
-              : data.filter((item) => {
-                const createdBy = (item.CreatedForm || item.createForm || "")
-                  .toLowerCase()
-                  .trim();
-                if (createdBy === myName) return true;
-                return normalizedAllowedNames.includes(createdBy);
-              });
-
-          const formatted = filteredData
-            .map((item) => {
-              if (table === "cover_pwp") {
-                return {
-                  code: item.cover_code || "",
-                  title: item.pwp_type || "N/A",
-                  type: item.account_type || "N/A",
-                  distributor: item.distributor_code || "N/A",
-                  principal: item.objective || "N/A",
-                  brand: item.promo_scheme || "N/A",
-                  approver: item.approver || "N/A",
-                  createForm: item.CreatedForm || item.createForm || "N/A",
-                  status: item.notification === true ? "Approved" : "Pending",
-                  responseDate: "",
-                  sourceTable: table,
-                  created_at: item.created_at || "N/A",
-                };
-              } else if (table === "regular_pwp") {
-                return {
-                  code: item.regularpwpcode || "",
-                  title: item.pwptype || "N/A",
-                  type: item.accountType ? item.accountType.join(", ") : "N/A",
-                  distributor: item.distributor || "N/A",
-                  principal: item.objective || "N/A",
-                  brand: item.promoScheme || "N/A",
-                  approver: item.approver || "N/A",
-                  createForm: item.CreatedForm || item.createForm || "N/A",
-                  status: item.notification === true ? "Approved" : "Pending",
-                  responseDate: "",
-                  sourceTable: table,
-                  created_at: item.created_at || "N/A",
-                };
-              } else if (table === "Claims_pwp") {
-                return {
-                  code: item.code_pwp || "",
-                  title: item.activity || "N/A",
-                  type:
-                    Array.isArray(item.account_types) &&
-                      item.account_types.length > 0
-                      ? item.account_types.join(", ")
-                      : "N/A",
-                  distributor: item.distributor || "N/A",
-                  principal: "",
-                  brand:
-                    Array.isArray(item.category_names) &&
-                      item.category_names.length > 0
-                      ? item.category_names.join(", ")
-                      : "N/A",
-                  approver: "",
-                  createForm: item.createForm || "N/A",
-                  status: item.notification === true ? "Approved" : "Pending",
-                  responseDate: "",
-                  sourceTable: table,
-                  created_at: item.created_at || "N/A",
-                };
-              }
-
-              return null;
-            })
-            .filter((x) => x !== null);
-
-          combinedData = [...combinedData, ...formatted];
+          if (data && data.length > 0) {
+            tableData = [...tableData, ...data];
+            from += batchSize;
+            
+            if (data.length < batchSize) {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
         }
 
-        if (isMounted) {
-          setAllowedApproverNames(allowedNames);
-          setApprovals(combinedData);
-          setHasFetched(true);
-        }
-      } catch (error) {
-        console.error("Unexpected fetch error:", error);
-        if (isMounted) setHasFetched(true);
+        console.log(`✅ Fetched ${tableData.length} records from ${table}`);
+
+        // Format the data based on table type
+        const formatted = tableData
+          .map((item) => {
+            if (table === "cover_pwp") {
+              return {
+                code: item.cover_code || "",
+                title: item.pwp_type || "N/A",
+                type: item.account_type || "N/A",
+                distributor: item.distributor_code || "N/A",
+                principal: item.objective || "N/A",
+                brand: item.promo_scheme || "N/A",
+                approver: item.approver || "N/A",
+                createForm: item.CreatedForm || item.createForm || "N/A",
+                status: item.notification === true ? "Approved" : "Pending",
+                responseDate: "",
+                sourceTable: table,
+                created_at: item.created_at || "N/A",
+              };
+            } else if (table === "regular_pwp") {
+              return {
+                code: item.regularpwpcode || "",
+                title: item.pwptype || "N/A",
+                type: item.accountType ? item.accountType.join(", ") : "N/A",
+                distributor: item.distributor || "N/A",
+                principal: item.objective || "N/A",
+                brand: item.promoScheme || "N/A",
+                approver: item.approver || "N/A",
+                createForm: item.CreatedForm || item.createForm || "N/A",
+                status: item.notification === true ? "Approved" : "Pending",
+                responseDate: "",
+                sourceTable: table,
+                created_at: item.created_at || "N/A",
+              };
+            } else if (table === "Claims_pwp") {
+              return {
+                code: item.code_pwp || "",
+                title: item.activity || "N/A",
+                type:
+                  Array.isArray(item.account_types) &&
+                    item.account_types.length > 0
+                    ? item.account_types.join(", ")
+                    : "N/A",
+                distributor: item.distributor || "N/A",
+                principal: "",
+                brand:
+                  Array.isArray(item.category_names) &&
+                    item.category_names.length > 0
+                    ? item.category_names.join(", ")
+                    : "N/A",
+                approver: "",
+                createForm: item.createForm || "N/A",
+                status: item.notification === true ? "Approved" : "Pending",
+                responseDate: "",
+                sourceTable: table,
+                created_at: item.created_at || "N/A",
+              };
+            }
+
+            return null;
+          })
+          .filter((x) => x !== null);
+
+        combinedData = [...combinedData, ...formatted];
       }
-    };
 
-    fetchData();
+      console.log(`✅ Total combined approvals: ${combinedData.length}`);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser?.UserID, hasFetched]);
+      // ✅ Apply filtering ONLY if not admin
+      let finalData = combinedData;
+      if (!isAdmin) {
+        finalData = combinedData.filter((item) => {
+          const createdBy = (item.createForm || "").toLowerCase().trim();
+          return createdBy === myName;
+        });
+        console.log(`✅ Filtered to ${finalData.length} records for user: ${myName}`);
+      }
+
+      if (isMounted) {
+        setApprovals(finalData);
+        setHasFetched(true);
+      }
+    } catch (error) {
+      console.error("Unexpected fetch error:", error);
+      if (isMounted) setHasFetched(true);
+    }
+  };
+
+  fetchData();
+
+  return () => {
+    isMounted = false;
+  };
+}, [currentUser?.UserID, hasFetched]);
 
   const [allowedApproverNames, setAllowedApproverNames] = useState([]);
   const myName = currentUser?.name?.toLowerCase().trim();
@@ -419,10 +445,10 @@ useEffect(() => {
       if (!isToday) return false;
     }
 
-    const createdFormName = (entry.createForm || "").toLowerCase().trim();
-    if (role !== "admin") {
-      if (createdFormName !== currentUserName) return false;
-    }
+const createdFormName = (entry.createForm || "").toLowerCase().trim();
+if (role !== "admin") {
+  if (createdFormName !== currentUserName) return false;
+}
 
     return true;
   });
