@@ -42,30 +42,48 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
       const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
       const role = currentUser?.role || "";
 
-      let query = supabase
-        .from('Approval_History')
-        .select('Notication, CreatedForm')
-        .eq('Notication', false);
+      // ✅ BATCH FETCHING
+      let allData = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
 
-      const { data, error } = await query;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('Approval_History')
+          .select('Notication, CreatedForm')
+          .eq('Notication', false)
+          .range(from, from + batchSize - 1);
 
-      if (error) {
-        console.error('Error fetching approval notifications:', error);
-        return;
+        if (error) {
+          console.error('Error fetching approval notifications:', error);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += batchSize;
+          
+          if (data.length < batchSize) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
       }
 
-      if (!data) {
+      if (!allData || allData.length === 0) {
         setApprovalUnreadCount(0);
         return;
       }
 
       if (role === 'admin') {
-        setApprovalUnreadCount(data.length);
+        setApprovalUnreadCount(allData.length);
         return;
       }
 
       // Filter for CreatedForm === currentUserName (case insensitive)
-      const filtered = data.filter(row =>
+      const filtered = allData.filter(row =>
         (row.CreatedForm?.toLowerCase().trim() || '') === currentUserName
       );
 
@@ -83,29 +101,49 @@ function Header({ sidebarExpanded, setSidebarExpanded, setCurrentView, currentVi
       const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
       const role = currentUser?.role || "";
 
-      const { data, error } = await supabase
-        .from('Approval_History')
-        .select('*')
-        .order('DateResponded', { ascending: false });
+      // ✅ BATCH FETCHING
+      let allData = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
 
-      if (error) {
-        console.error('Error fetching approval notifications:', error);
-        return;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('Approval_History')
+          .select('*')
+          .order('DateResponded', { ascending: false })
+          .range(from, from + batchSize - 1);
+
+        if (error) {
+          console.error('Error fetching approval notifications:', error);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += batchSize;
+          
+          if (data.length < batchSize) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
       }
 
-      if (!data) {
+      if (!allData || allData.length === 0) {
         setApprovalNotifications([]);
         return;
       }
 
       if (role === 'admin') {
         // Admin sees all notifications
-        setApprovalNotifications(data);
+        setApprovalNotifications(allData);
         return;
       }
 
       // Filter to only include rows where CreatedForm matches currentUserName
-      const filtered = data.filter(row =>
+      const filtered = allData.filter(row =>
         (row.CreatedForm?.toLowerCase().trim() || '') === currentUserName
       );
 
@@ -227,17 +265,39 @@ const fetchNotifications = async () => {
     const allNotifications = [];
 
     for (const table of tables) {
-      const { data, error } = await supabase.from(table).select('*');
+      // ✅ BATCH FETCHING
+      let allData = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
 
-      if (error) {
-        console.error(`Error fetching from ${table}:`, error.message);
-        continue;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from(table)
+          .select('*')
+          .range(from, from + batchSize - 1);
+
+        if (error) {
+          console.error(`Error fetching from ${table}:`, error.message);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += batchSize;
+          
+          if (data.length < batchSize) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
       }
 
-      console.log(`Fetched ${data?.length || 0} items from ${table}`);
+      console.log(`Fetched ${allData.length} items from ${table}`);
 
-      if (data?.length) {
-        data.forEach(item => {
+      if (allData.length) {
+        allData.forEach(item => {
           const createdFormName = (item.createForm || "").toLowerCase().trim();
           const isCreatedByUser = createdFormName === currentUserName;
 
