@@ -726,72 +726,9 @@ const fetchData = useCallback(async () => {
     setCurrentPage(1);
   }, [filter, statusFilter, searchQuery, dateFrom, dateTo]);
 
-  if (loading) {
-    return (
-      <div style={{
-        padding: '40px',
-        textAlign: 'center',
-        backgroundColor: '#f8f9fa',
-        minHeight: '100vh'
-      }}>
-        <div style={{
-          display: 'inline-block',
-          padding: '20px 40px',
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            border: '4px solid #e3f2fd',
-            borderTop: '4px solid #1976d2',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 20px'
-          }}></div>
-          <h2 style={{ margin: 0, color: '#333' }}>Loading Database...</h2>
-        </div>
-        <style dangerouslySetInnerHTML={{
-          __html: `
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `
-        }} />
-      </div>
-    );
-  }
+ 
 
-  if (error) {
-    return (
-      <div style={{
-        padding: '40px',
-        backgroundColor: '#f8f9fa',
-        minHeight: '100vh'
-      }}>
-        <div style={{
-          maxWidth: '600px',
-          margin: '0 auto',
-          backgroundColor: 'white',
-          padding: '30px',
-          borderRadius: '12px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{
-            backgroundColor: '#ffebee',
-            border: '1px solid #ef5350',
-            borderRadius: '8px',
-            padding: '20px',
-            marginBottom: '20px'
-          }}>
-            <p style={{ margin: 0, color: '#d32f2f' }}>{error}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  
 
   return (
     <div style={{ padding: '20px' }}>
