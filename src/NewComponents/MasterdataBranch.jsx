@@ -34,6 +34,8 @@ export default function AccountsListManager() {
   const [motherMap, setMotherMap] = useState({}); // 🔹 Map dscode -> name
   const [distributorMap, setDistributorMap] = useState({}); // 🔹 Map code -> name
   const [groupMap, setGroupMap] = useState({});
+  const [accountTypeFilter, setAccountTypeFilter] = useState("all");
+  const [isFetching, setIsFetching] = useState(false);
 
   const [newRecord, setNewRecord] = useState({
     distributor_code: '',
@@ -1410,198 +1412,418 @@ const checkAndCleanBPTagging = async () => {
     fetchGroupMap();
   }, []);
 
-  const fetchAndCleanData = async (page = 1, search = "", field = "all") => {
-    try {
-      setLoading(true);
-      const batchSize = itemsPerPage;
-      const offset = (page - 1) * batchSize;
+const fetchAllData = async (search = "", field = "all") => {
+  try {
+    setLoading(true);
+    console.log("🚀 Fetching ALL records...");
 
-      let query = supabase
-        .from("Accounts_List")
-        .select("*", { count: "exact" })
-        .order("id", { ascending: true })
-        .range(offset, offset + batchSize - 1);
+    let query = supabase
+      .from("Accounts_List")
+      .select("*", { count: "exact" })
+      .order("id", { ascending: true });
 
-      // 🔍 Apply comprehensive search filter across ALL fields including names
-      // 🔍 Apply search filter based on selected field
-      if (search.trim()) {
-        const searchTerm = search.trim().toLowerCase();
+    // Apply account type filter
+   // ✅ APPLY ACCOUNT TYPE FILTER FIRST (before search)
+if (accountTypeFilter === "mother_only") {
+  console.log("📊 Applying Mother Only filter: mother_code exists");
+  query = query.not('mother_code', 'is', null).not('mother_code', 'eq', '');
+} else if (accountTypeFilter === "bp_only") {
+  console.log("📊 Applying BP Only filter: bp_code exists");
+  query = query.not('bp_code', 'is', null).not('bp_code', 'eq', '');
+} else if (accountTypeFilter === "agent_only") {
+  console.log("📊 Applying Agent Only filter: agent_code exists");
+  query = query.not('agent_code', 'is', null).not('agent_code', 'eq', '');
+} else if (accountTypeFilter === "distributor_only") {
+  console.log("📊 Applying Distributor Only filter: distributor_code exists");
+  query = query.not('distributor_code', 'is', null).not('distributor_code', 'eq', '');
+} else if (accountTypeFilter === "group_only") {
+  console.log("📊 Applying Group Only filter: group_code exists");
+  query = query.not('group_code', 'is', null).not('group_code', 'eq', '');
+} else {
+  console.log("📊 No account type filter applied (showing all)");
+}
 
-        if (field === 'all') {
-          // Search ALL fields (original behavior)
-          const [distData, motherData, agentData, groupData] = await Promise.all([
-            supabase.from('distributors').select('code, name'),
-            supabase.from('sub_mother_account').select('dscode, name'),
-            supabase.from('Account_Users').select('UserID, name'),
-            supabase.from('mother_account').select('code, name')
-          ]);
+    // Apply search filters (same as paginated version)
+    if (search.trim()) {
+      const searchTerm = search.trim().toLowerCase();
+      
+      if (field === 'all') {
+        const [distData, motherData, agentData, groupData] = await Promise.all([
+          supabase.from('distributors').select('code, name'),
+          supabase.from('sub_mother_account').select('dscode, name'),
+          supabase.from('Account_Users').select('UserID, name'),
+          supabase.from('mother_account').select('code, name')
+        ]);
 
-          const distCodes = new Set();
-          distData.data?.forEach(d => {
-            if (d.name && d.name.toLowerCase().includes(searchTerm)) {
-              distCodes.add(d.code);
-            }
-          });
-
-          const motherCodes = new Set();
-          motherData.data?.forEach(m => {
-            if (m.name && m.name.toLowerCase().includes(searchTerm)) {
-              motherCodes.add(m.dscode);
-            }
-          });
-
-          const agentCodes = new Set();
-          agentData.data?.forEach(a => {
-            if (a.name && a.name.toLowerCase().includes(searchTerm)) {
-              agentCodes.add(a.UserID);
-            }
-          });
-
-          const groupCodes = new Set();
-          groupData.data?.forEach(g => {
-            if (g.name && g.name.toLowerCase().includes(searchTerm)) {
-              groupCodes.add(g.code);
-            }
-          });
-
-          const conditions = [
-            `distributor_code.ilike.%${search}%`,
-            `mother_code.ilike.%${search}%`,
-            `bp_code.ilike.%${search}%`,
-            `bp_name.ilike.%${search}%`,
-            `group_code.ilike.%${search}%`
-          ];
-
-          if (distCodes.size > 0) {
-            conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
+        const distCodes = new Set();
+        distData.data?.forEach(d => {
+          if (d.name && d.name.toLowerCase().includes(searchTerm)) {
+            distCodes.add(d.code);
           }
-          if (motherCodes.size > 0) {
-            conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
+        });
+
+        const motherCodes = new Set();
+        motherData.data?.forEach(m => {
+          if (m.name && m.name.toLowerCase().includes(searchTerm)) {
+            motherCodes.add(m.dscode);
           }
-          if (agentCodes.size > 0) {
-            conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`);
+        });
+
+        const agentCodes = new Set();
+        agentData.data?.forEach(a => {
+          if (a.name && a.name.toLowerCase().includes(searchTerm)) {
+            agentCodes.add(a.UserID);
           }
-          if (groupCodes.size > 0) {
-            conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
+        });
+
+        const groupCodes = new Set();
+        groupData.data?.forEach(g => {
+          if (g.name && g.name.toLowerCase().includes(searchTerm)) {
+            groupCodes.add(g.code);
           }
+        });
 
-          if (!isNaN(search)) {
-            conditions.push(`agent_code.eq.${search}`);
+        const conditions = [
+          `distributor_code.ilike.%${search}%`,
+          `mother_code.ilike.%${search}%`,
+          `bp_code.ilike.%${search}%`,
+          `bp_name.ilike.%${search}%`,
+          `group_code.ilike.%${search}%`
+        ];
+
+        if (distCodes.size > 0) {
+          conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
+        }
+        if (motherCodes.size > 0) {
+          conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
+        }
+        if (agentCodes.size > 0) {
+          conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`);
+        }
+        if (groupCodes.size > 0) {
+          conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
+        }
+
+        if (!isNaN(search)) {
+          conditions.push(`agent_code.eq.${search}`);
+        }
+
+        query = query.or(conditions.join(','));
+      } else if (field === 'distributor') {
+        const { data: distData } = await supabase.from('distributors').select('code, name');
+        const distCodes = new Set();
+        distData?.forEach(d => {
+          if ((d.code && d.code.toLowerCase().includes(searchTerm)) ||
+            (d.name && d.name.toLowerCase().includes(searchTerm))) {
+            distCodes.add(d.code);
           }
-
-          query = query.or(conditions.join(','));
-        } else if (field === 'distributor') {
-          // Search ONLY distributor
-          const { data: distData } = await supabase
-            .from('distributors')
-            .select('code, name');
-
-          const distCodes = new Set();
-          distData?.forEach(d => {
-            if ((d.code && d.code.toLowerCase().includes(searchTerm)) ||
-              (d.name && d.name.toLowerCase().includes(searchTerm))) {
-              distCodes.add(d.code);
-            }
-          });
-
-          if (distCodes.size > 0) {
-            query = query.in('distributor_code', Array.from(distCodes));
-          } else {
-            query = query.ilike('distributor_code', `%${search}%`);
+        });
+        if (distCodes.size > 0) {
+          query = query.in('distributor_code', Array.from(distCodes));
+        } else {
+          query = query.ilike('distributor_code', `%${search}%`);
+        }
+      } else if (field === 'mother') {
+        const { data: motherData } = await supabase.from('sub_mother_account').select('dscode, name');
+        const motherCodes = new Set();
+        motherData?.forEach(m => {
+          if ((m.dscode && m.dscode.toLowerCase().includes(searchTerm)) ||
+            (m.name && m.name.toLowerCase().includes(searchTerm))) {
+            motherCodes.add(m.dscode);
           }
-        } else if (field === 'mother') {
-          // Search ONLY mother account
-          const { data: motherData } = await supabase
-            .from('sub_mother_account')
-            .select('dscode, name');
-
-          const motherCodes = new Set();
-          motherData?.forEach(m => {
-            if ((m.dscode && m.dscode.toLowerCase().includes(searchTerm)) ||
-              (m.name && m.name.toLowerCase().includes(searchTerm))) {
-              motherCodes.add(m.dscode);
-            }
-          });
-
-          if (motherCodes.size > 0) {
-            query = query.in('mother_code', Array.from(motherCodes));
-          } else {
-            query = query.ilike('mother_code', `%${search}%`);
+        });
+        if (motherCodes.size > 0) {
+          query = query.in('mother_code', Array.from(motherCodes));
+        } else {
+          query = query.ilike('mother_code', `%${search}%`);
+        }
+      } else if (field === 'bp_code') {
+        query = query.ilike('bp_code', `%${search}%`);
+      } else if (field === 'bp_name') {
+        query = query.ilike('bp_name', `%${search}%`);
+      } else if (field === 'agent') {
+        const { data: agentData } = await supabase.from('Account_Users').select('UserID, name');
+        const agentCodes = new Set();
+        agentData?.forEach(a => {
+          if ((a.UserID && String(a.UserID).includes(search)) ||
+            (a.name && a.name.toLowerCase().includes(searchTerm))) {
+            agentCodes.add(a.UserID);
           }
-        } else if (field === 'bp_code') {
-          // Search ONLY BP Code
-          query = query.ilike('bp_code', `%${search}%`);
-        } else if (field === 'bp_name') {
-          // Search ONLY BP Name
-          query = query.ilike('bp_name', `%${search}%`);
-        } else if (field === 'agent') {
-          // Search ONLY agent
-          const { data: agentData } = await supabase
-            .from('Account_Users')
-            .select('UserID, name');
-
-          const agentCodes = new Set();
-          agentData?.forEach(a => {
-            if ((a.UserID && String(a.UserID).includes(search)) ||
-              (a.name && a.name.toLowerCase().includes(searchTerm))) {
-              agentCodes.add(a.UserID);
-            }
-          });
-
-          if (agentCodes.size > 0) {
-            query = query.in('agent_code', Array.from(agentCodes));
-          } else if (!isNaN(search)) {
-            query = query.eq('agent_code', parseInt(search));
+        });
+        if (agentCodes.size > 0) {
+          query = query.in('agent_code', Array.from(agentCodes));
+        } else if (!isNaN(search)) {
+          query = query.eq('agent_code', parseInt(search));
+        }
+      } else if (field === 'group') {
+        const { data: groupData } = await supabase.from('mother_account').select('code, name');
+        const groupCodes = new Set();
+        groupData?.forEach(g => {
+          if ((g.code && g.code.toLowerCase().includes(searchTerm)) ||
+            (g.name && g.name.toLowerCase().includes(searchTerm))) {
+            groupCodes.add(g.code);
           }
-        } else if (field === 'group') {
-          // Search ONLY group
-          const { data: groupData } = await supabase
-            .from('mother_account')
-            .select('code, name');
-
-          const groupCodes = new Set();
-          groupData?.forEach(g => {
-            if ((g.code && g.code.toLowerCase().includes(searchTerm)) ||
-              (g.name && g.name.toLowerCase().includes(searchTerm))) {
-              groupCodes.add(g.code);
-            }
-          });
-
-          if (groupCodes.size > 0) {
-            query = query.in('group_code', Array.from(groupCodes));
-          } else {
-            query = query.ilike('group_code', `%${search}%`);
-          }
+        });
+        if (groupCodes.size > 0) {
+          query = query.in('group_code', Array.from(groupCodes));
+        } else {
+          query = query.ilike('group_code', `%${search}%`);
         }
       }
+    }
 
-      const { data: pageData, error, count } = await query;
+    // Fetch ALL records in batches
+    const BATCH_SIZE = 1000;
+    let allRecords = [];
+    let offset = 0;
+    let hasMore = true;
 
+    while (hasMore) {
+      const { data: batch, error } = await query.range(offset, offset + BATCH_SIZE - 1);
+      
       if (error) throw error;
 
-      // 🧩 Clean duplicates
-      const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
-
-      // ✅ Always replace data for current page
-      setData(uniqueData);
-      setTotalCount(count || 0);
-      setLoading(false);
-    } catch (err) {
-      console.error("Error:", err);
-      Swal.fire("Error", err.message, "error");
-      setLoading(false);
+      if (batch && batch.length > 0) {
+        allRecords = [...allRecords, ...batch];
+        offset += BATCH_SIZE;
+        hasMore = batch.length === BATCH_SIZE;
+        
+        console.log(`📦 Loaded ${allRecords.length.toLocaleString()} records so far...`);
+      } else {
+        hasMore = false;
+      }
     }
-  };
+
+    console.log(`✅ Finished loading ${allRecords.length.toLocaleString()} total records`);
+
+    const uniqueData = await autoRemoveDuplicatesOnLoad(allRecords);
+    setData(uniqueData);
+    setTotalCount(uniqueData.length);
+    setLoading(false);
+  } catch (err) {
+    console.error("Error fetching all data:", err);
+    Swal.fire("Error", err.message, "error");
+    setLoading(false);
+  }
+};
+const fetchAndCleanData = async (page = 1, search = "", field = "all") => {
+  // ✅ Prevent multiple simultaneous fetches
+  if (isFetching) {
+    console.log("⚠️ Already fetching, skipping...");
+    return;
+  }
+
+  try {
+    setIsFetching(true);
+    setLoading(true);
+    const batchSize = itemsPerPage;
+    const offset = (page - 1) * batchSize;
+
+    let query = supabase
+      .from("Accounts_List")
+      .select("*", { count: "exact" })
+      .order("id", { ascending: true });
+
+    // ✅ DEBUGGING: Log the filter
+    console.log("🔍 Current Filter State:", {
+      accountTypeFilter,
+      searchField: field,
+      searchTerm: search,
+      page
+    });
+
+    // ✅ APPLY ACCOUNT TYPE FILTER FIRST (before search)
+    if (accountTypeFilter === "mother_only") {
+      console.log("📊 Applying Mother Only filter: mother_code exists");
+      query = query.not('mother_code', 'is', null).not('mother_code', 'eq', '');
+    } else if (accountTypeFilter === "bp_only") {
+      console.log("📊 Applying BP Only filter: bp_code exists");
+      query = query.not('bp_code', 'is', null).not('bp_code', 'eq', '');
+    } else {
+      console.log("📊 No account type filter applied (showing all)");
+    }
+
+    // ✅ THEN APPLY SEARCH FILTERS
+    if (search.trim()) {
+      const searchTerm = search.trim().toLowerCase();
+
+      if (field === 'all') {
+        const [distData, motherData, agentData, groupData] = await Promise.all([
+          supabase.from('distributors').select('code, name'),
+          supabase.from('sub_mother_account').select('dscode, name'),
+          supabase.from('Account_Users').select('UserID, name'),
+          supabase.from('mother_account').select('code, name')
+        ]);
+
+        const distCodes = new Set();
+        distData.data?.forEach(d => {
+          if (d.name && d.name.toLowerCase().includes(searchTerm)) {
+            distCodes.add(d.code);
+          }
+        });
+
+        const motherCodes = new Set();
+        motherData.data?.forEach(m => {
+          if (m.name && m.name.toLowerCase().includes(searchTerm)) {
+            motherCodes.add(m.dscode);
+          }
+        });
+
+        const agentCodes = new Set();
+        agentData.data?.forEach(a => {
+          if (a.name && a.name.toLowerCase().includes(searchTerm)) {
+            agentCodes.add(a.UserID);
+          }
+        });
+
+        const groupCodes = new Set();
+        groupData.data?.forEach(g => {
+          if (g.name && g.name.toLowerCase().includes(searchTerm)) {
+            groupCodes.add(g.code);
+          }
+        });
+
+        const conditions = [
+          `distributor_code.ilike.%${search}%`,
+          `mother_code.ilike.%${search}%`,
+          `bp_code.ilike.%${search}%`,
+          `bp_name.ilike.%${search}%`,
+          `group_code.ilike.%${search}%`
+        ];
+
+        if (distCodes.size > 0) {
+          conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
+        }
+        if (motherCodes.size > 0) {
+          conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
+        }
+        if (agentCodes.size > 0) {
+          conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`);
+        }
+        if (groupCodes.size > 0) {
+          conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
+        }
+
+        if (!isNaN(search)) {
+          conditions.push(`agent_code.eq.${search}`);
+        }
+
+        query = query.or(conditions.join(','));
+      } else if (field === 'distributor') {
+        const { data: distData } = await supabase
+          .from('distributors')
+          .select('code, name');
+
+        const distCodes = new Set();
+        distData?.forEach(d => {
+          if ((d.code && d.code.toLowerCase().includes(searchTerm)) ||
+            (d.name && d.name.toLowerCase().includes(searchTerm))) {
+            distCodes.add(d.code);
+          }
+        });
+
+        if (distCodes.size > 0) {
+          query = query.in('distributor_code', Array.from(distCodes));
+        } else {
+          query = query.ilike('distributor_code', `%${search}%`);
+        }
+      } else if (field === 'mother') {
+        const { data: motherData } = await supabase
+          .from('sub_mother_account')
+          .select('dscode, name');
+
+        const motherCodes = new Set();
+        motherData?.forEach(m => {
+          if ((m.dscode && m.dscode.toLowerCase().includes(searchTerm)) ||
+            (m.name && m.name.toLowerCase().includes(searchTerm))) {
+            motherCodes.add(m.dscode);
+          }
+        });
+
+        if (motherCodes.size > 0) {
+          query = query.in('mother_code', Array.from(motherCodes));
+        } else {
+          query = query.ilike('mother_code', `%${search}%`);
+        }
+      } else if (field === 'bp_code') {
+        query = query.ilike('bp_code', `%${search}%`);
+      } else if (field === 'bp_name') {
+        query = query.ilike('bp_name', `%${search}%`);
+      } else if (field === 'agent') {
+        const { data: agentData } = await supabase
+          .from('Account_Users')
+          .select('UserID, name');
+
+        const agentCodes = new Set();
+        agentData?.forEach(a => {
+          if ((a.UserID && String(a.UserID).includes(search)) ||
+            (a.name && a.name.toLowerCase().includes(searchTerm))) {
+            agentCodes.add(a.UserID);
+          }
+        });
+
+        if (agentCodes.size > 0) {
+          query = query.in('agent_code', Array.from(agentCodes));
+        } else if (!isNaN(search)) {
+          query = query.eq('agent_code', parseInt(search));
+        }
+      } else if (field === 'group') {
+        const { data: groupData } = await supabase
+          .from('mother_account')
+          .select('code, name');
+
+        const groupCodes = new Set();
+        groupData?.forEach(g => {
+          if ((g.code && g.code.toLowerCase().includes(searchTerm)) ||
+            (g.name && g.name.toLowerCase().includes(searchTerm))) {
+            groupCodes.add(g.code);
+          }
+        });
+
+        if (groupCodes.size > 0) {
+          query = query.in('group_code', Array.from(groupCodes));
+        } else {
+          query = query.ilike('group_code', `%${search}%`);
+        }
+      }
+    }
+
+    // ✅ APPLY PAGINATION LAST (after all filters)
+    query = query.range(offset, offset + batchSize - 1);
+
+    const { data: pageData, error, count } = await query;
+
+    if (error) throw error;
+
+    // ✅ DEBUGGING: Log results
+    console.log("📊 FINAL RESULTS:");
+    console.log("   Total Count:", count);
+    console.log("   Records on this page:", pageData?.length);
+
+    // Clean duplicates
+    const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
+
+    setData(uniqueData);
+    setTotalCount(count || 0);
+    setLoading(false);
+    setIsFetching(false);
+  } catch (err) {
+    console.error("Error:", err);
+    Swal.fire("Error", err.message, "error");
+    setLoading(false);
+    setIsFetching(false);
+  }
+};
 
   // ✅ STEP 2: UPDATE useEffect for search - reset to page 1
-  useEffect(() => {
-    const delay = setTimeout(() => {
-      setCurrentPage(1); // ✅ ADD: Reset to page 1 when searching
-      fetchAndCleanData(1, searchTerm, searchField);
-    }, 400);
+useEffect(() => {
+  const delay = setTimeout(() => {
+    setCurrentPage(1); // Reset to page 1 when any filter/search changes
+    fetchAndCleanData(1, searchTerm, searchField);
+  }, 400);
 
-    return () => clearTimeout(delay);
-  }, [searchTerm, searchField]);
+  return () => clearTimeout(delay);
+}, [searchTerm, searchField, accountTypeFilter]);
 
 
 
@@ -2915,105 +3137,128 @@ const checkAndCleanBPTagging = async () => {
 
 
       {/* 🔍 Search with Dropdown Filter */}
-      <div style={{
-        display: 'flex',
-        gap: 10,
-        marginBottom: 15,
-        background: 'white',
-        padding: '15px',
-        borderRadius: 8,
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <select
-          value={searchField}
-          onChange={(e) => {
-            setSearchField(e.target.value);
-            setSearchTerm(''); // Clear search when changing field
-          }}
-          style={{
-            padding: '8px 12px',
-            border: '2px solid #2563eb',
-            borderRadius: 6,
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: 'pointer',
-            minWidth: 180,
-            backgroundColor: '#f8fafc'
-          }}
-        >
-          <option value="all">🔍 Search All Fields</option>
-          <option value="distributor">🏢 Distributor Only</option>
-          <option value="mother">👥 Mother Account Only</option>
-          <option value="bp_code">📋 BP Code Only</option>
-          <option value="bp_name">📝 BP Name Only</option>
-          <option value="agent">👤 Agent Only</option>
-          <option value="group">🏷️ Group Only</option>
-        </select>
+     <div style={{
+  display: 'flex',
+  gap: 10,
+  marginBottom: 15,
+  background: 'white',
+  padding: '15px',
+  borderRadius: 8,
+  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+}}>
 
-        <input
-          type="text"
-          placeholder={
-            searchField === 'all' ? 'Search all fields...' :
-              searchField === 'distributor' ? 'Search distributor code or name...' :
-                searchField === 'mother' ? 'Search mother code or name...' :
-                  searchField === 'bp_code' ? 'Search BP code...' :
-                    searchField === 'bp_name' ? 'Search BP name...' :
-                      searchField === 'agent' ? 'Search agent code or name...' :
-                        'Search group code or name...'
-          }
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{
-            flex: 1,
-            padding: '8px 12px',
-            border: '2px solid #e5e7eb',
-            borderRadius: 6,
-            fontSize: 14,
-            outline: 'none',
-            transition: 'border-color 0.2s'
-          }}
-          onFocus={(e) => e.target.style.borderColor = '#2563eb'}
-          onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-        />
+{/* 🔥 ADD THIS DROPDOWN BEFORE THE SEARCH FIELD DROPDOWN */}
+<select
+  value={accountTypeFilter}
+  onChange={(e) => {
+    setAccountTypeFilter(e.target.value);
+    setCurrentPage(1); // Reset to page 1
+  }}
+  style={{
+    padding: '8px 12px',
+    border: '2px solid #10b981',
+    borderRadius: 6,
+    fontSize: 14,
+    fontWeight: 500,
+    cursor: 'pointer',
+    minWidth: 200,
+    backgroundColor: '#f0fdf4'
+  }}
+>
+  <option value="all">📊 All Accounts</option>
+  <option value="mother_only">👥 Mother Account Only</option>
+  <option value="bp_only">📋 BP Account Only</option>
+  <option value="agent_only">👤 Agent Only</option>
+  <option value="distributor_only">🏢 Distributor Only</option>
+  <option value="group_only">🏷️ Group Only</option>
+</select>
 
-        {searchTerm && (
-          <button
-            onClick={() => setSearchTerm('')}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#ef4444',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: 500,
-              transition: 'background 0.2s'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#dc2626'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#ef4444'}
-          >
-            ✕ Clear
-          </button>
-        )}
+  {/* SEARCH FIELD DROPDOWN */}
+  <select
+    value={searchField}
+    onChange={(e) => {
+      setSearchField(e.target.value);
+      setSearchTerm('');
+    }}
+    style={{
+      padding: '8px 12px',
+      border: '2px solid #2563eb',
+      borderRadius: 6,
+      fontSize: 14,
+      fontWeight: 500,
+      cursor: 'pointer',
+      minWidth: 180,
+      backgroundColor: '#f8fafc'
+    }}
+  >
+    <option value="all">🔍 Search All Fields</option>
+  </select>
 
-        <button
-          onClick={() => setShowAll(!showAll)}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: showAll ? '#6c757d' : '#007bff',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 500,
-            transition: 'background 0.2s'
-          }}
-        >
-          {showAll ? 'Paginate' : 'Show All'}
-        </button>
-      </div>
+  {/* SEARCH INPUT */}
+  <input
+    type="text"
+    placeholder={
+      searchField === 'all' ? 'Search all fields...' :
+      searchField === 'distributor' ? 'Search distributor code or name...' :
+      searchField === 'mother' ? 'Search mother code or name...' :
+      searchField === 'bp_code' ? 'Search BP code...' :
+      searchField === 'bp_name' ? 'Search BP name...' :
+      searchField === 'agent' ? 'Search agent code or name...' :
+      'Search group code or name...'
+    }
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    style={{
+      flex: 1,
+      padding: '8px 12px',
+      border: '2px solid #e5e7eb',
+      borderRadius: 6,
+      fontSize: 14,
+      outline: 'none',
+      transition: 'border-color 0.2s'
+    }}
+    onFocus={(e) => e.target.style.borderColor = '#2563eb'}
+    onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+  />
+
+  {searchTerm && (
+    <button
+      onClick={() => setSearchTerm('')}
+      style={{
+        padding: '8px 16px',
+        backgroundColor: '#ef4444',
+        color: '#fff',
+        border: 'none',
+        borderRadius: 6,
+        cursor: 'pointer',
+        fontSize: 14,
+        fontWeight: 500,
+        transition: 'background 0.2s'
+      }}
+      onMouseEnter={(e) => e.target.style.backgroundColor = '#dc2626'}
+      onMouseLeave={(e) => e.target.style.backgroundColor = '#ef4444'}
+    >
+      ✕ Clear
+    </button>
+  )}
+
+  <button
+    onClick={() => setShowAll(!showAll)}
+    style={{
+      padding: '8px 16px',
+      backgroundColor: showAll ? '#6c757d' : '#007bff',
+      color: '#fff',
+      border: 'none',
+      borderRadius: 6,
+      cursor: 'pointer',
+      fontSize: 14,
+      fontWeight: 500,
+      transition: 'background 0.2s'
+    }}
+  >
+    {showAll ? 'Paginate' : 'Show All'}
+  </button>
+</div>
 
       {/* 🧾 Table */}
       <div
@@ -3508,39 +3753,19 @@ const checkAndCleanBPTagging = async () => {
                   </button>
                 </div>
               </div>
-
-              {/* BP Code */}
-              <div>
-                <label style={{ display: 'block', marginBottom: 8 }}>BP Code</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    name="bp_code"
-                    value={newRecord.bp_code || ''}
-                    onChange={handleInputChange}
-                    style={{
-                      flex: 1,
-                      padding: '10px 12px',
-                      border: '2px solid #e5e7eb',
-                      borderRadius: 8,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowBpModal(true)}
-                    style={{
-                      padding: '10px 14px',
-                      background: '#2563eb',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🔍
-                  </button>
-                </div>
-              </div>
-
+<div>
+        <label style={{ display: 'block', marginBottom: 8 }}>BP Code</label>
+        <BpSearchableDropdown
+          value={newRecord.bp_code || ''}
+          onSelect={(bp) => {
+            setNewRecord(prev => ({
+              ...prev,
+              bp_code: bp.bp_code,
+              bp_name: bp.bp_name
+            }));
+          }}
+        />
+      </div>
               {/* BP Name (Disabled) */}
               <div>
                 <label style={{ display: 'block', marginBottom: 8 }}>BP Name</label>
@@ -4175,14 +4400,182 @@ const checkAndCleanBPTagging = async () => {
 
       {showDistributorModal && <LookupModal title="Select Distributor" columns={['Code', 'Name',]} data={distributors} onSelect={handleSelectDistributor} onClose={() => setShowDistributorModal(false)} fieldKeys={['code', 'name',]} />}
       {showMotherModal && <LookupModal title="Select Mother Account" columns={['Code', 'Name',]} data={motherAccounts} onSelect={handleSelectMother} onClose={() => setShowMotherModal(false)} fieldKeys={['dscode', 'name',]} />}
-      {showBpModal && <LookupModal title="Select BP Account" columns={['Code', 'Name']} data={bpAccounts} onSelect={handleSelectBp} onClose={() => setShowBpModal(false)} fieldKeys={['bp_code', 'bp_name']} />}
       {showAgentModal && <LookupModal title="Select Agent" columns={['ID', 'Name']} data={agents} onSelect={handleSelectAgent} onClose={() => setShowAgentModal(false)} fieldKeys={['UserID', 'name']} />}
     </div >
   );
 }
 
 
+function BpSearchableDropdown({ value, onSelect }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [options, setOptions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedBpName, setSelectedBpName] = useState('');
+  const dropdownRef = useRef(null);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Load BP name when value changes
+  useEffect(() => {
+    if (value && !selectedBpName) {
+      loadBpName(value);
+    }
+  }, [value]);
+
+  const loadBpName = async (bpCode) => {
+    try {
+      const { data, error } = await supabase
+        .from('Bp_Accounts')
+        .select('bp_name')
+        .eq('bp_code', bpCode)
+        .single();
+      
+      if (!error && data) {
+        setSelectedBpName(data.bp_name);
+      }
+    } catch (err) {
+      console.error('Error loading BP name:', err);
+    }
+  };
+
+  // Search BP Accounts with debounce
+  const searchBpAccounts = async (term) => {
+    if (!term || term.length < 2) {
+      setOptions([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('Bp_Accounts')
+        .select('bp_code, bp_name')
+        .or(`bp_code.ilike.%${term}%,bp_name.ilike.%${term}%`)
+        .order('bp_name', { ascending: true })
+        .limit(50); // Show top 50 results
+
+      if (error) throw error;
+      setOptions(data || []);
+    } catch (err) {
+      console.error('Error searching BP:', err);
+      setOptions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Debounced search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (isOpen && searchTerm) {
+        searchBpAccounts(searchTerm);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, isOpen]);
+
+  const handleSelect = (bp) => {
+    onSelect(bp);
+    setSelectedBpName(bp.bp_name);
+    setSearchTerm('');
+    setIsOpen(false);
+    setOptions([]);
+  };
+
+  const displayValue = value ? `${value} - ${selectedBpName}` : '';
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+      <input
+        type="text"
+        value={isOpen ? searchTerm : displayValue}
+        onChange={(e) => {
+          setSearchTerm(e.target.value);
+          if (!isOpen) setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder="Search BP Code or Name..."
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          border: '2px solid #e5e7eb',
+          borderRadius: 8,
+          fontSize: 14,
+          outline: 'none',
+          transition: 'all 0.2s',
+        }}
+        onFocusCapture={(e) => (e.target.style.borderColor = '#2563eb')}
+        onBlur={(e) => setTimeout(() => (e.target.style.borderColor = '#e5e7eb'), 200)}
+      />
+
+      {isOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            marginTop: 4,
+            background: 'white',
+            border: '2px solid #e5e7eb',
+            borderRadius: 8,
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            maxHeight: 300,
+            overflowY: 'auto',
+            zIndex: 1000,
+          }}
+        >
+          {loading ? (
+            <div style={{ padding: 16, textAlign: 'center', color: '#6b7280' }}>
+              Searching...
+            </div>
+          ) : searchTerm.length < 2 ? (
+            <div style={{ padding: 16, textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
+              Type at least 2 characters to search
+            </div>
+          ) : options.length === 0 ? (
+            <div style={{ padding: 16, textAlign: 'center', color: '#6b7280' }}>
+              No results found
+            </div>
+          ) : (
+            options.map((bp, idx) => (
+              <div
+                key={idx}
+                onClick={() => handleSelect(bp)}
+                style={{
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  borderBottom: idx < options.length - 1 ? '1px solid #f3f4f6' : 'none',
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
+              >
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>
+                  {bp.bp_code}
+                </div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                  {bp.bp_name}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
