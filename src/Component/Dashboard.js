@@ -4,96 +4,31 @@ import {
   PieChart, Pie, Cell, Legend,
   LineChart, Line, CartesianGrid,
 } from "recharts";
-
-import { ref, get } from "firebase/database";
-
-import { supabase } from "../supabaseClient"; // import your supabase client
+import { supabase } from "../supabaseClient";
 
 const initialStatuses = [
   { label: "For Approval", color: "#f59e0b", fontSize: "1rem" },
   { label: "Approved", color: "#10b981", fontSize: "1.2rem" },
-  { label: "Disapproved", color: "#ef4444", fontSize: "1.2rem" }, // Keep label as "Disapproved"
+  { label: "Disapproved", color: "#ef4444", fontSize: "1.2rem" },
   { label: "Cancelled", color: "#3b82f6", fontSize: "1rem" },
 ];
-
-
-{
-  initialStatuses.map(({ label, color, fontSize }) => (
-    <div key={label} style={{ color, fontSize, fontWeight: 600 }}>
-      {label}
-    </div>
-  ))
-}
-const ppeTrend = [
-  { month: "Jan", Cancelled: 1 },
-  { month: "Feb", Cancelled: 2 },
-  { month: "Mar", Cancelled: 3 },
-  { month: "Apr", Cancelled: 5 },
-  { month: "May", Cancelled: 6 },
-  { month: "Jun", Cancelled: 8 },
-];
-
-const cardStyle = {
-  flex: "1 1 200px",
-  background: "#fff",
-  borderRadius: "12px",
-  padding: "2rem 1.5rem",
-  margin: "1rem",
-  boxShadow: "0 8px 20px rgba(0,0,0,0.1)",
-  textAlign: "center",
-  transition: "transform 0.3s ease",
-  cursor: "default",
-};
-
-const labelStyle = {
-  fontSize: "1.1rem",
-  fontWeight: "600",
-  marginBottom: "0.5rem",
-  color: "#374151",
-};
-
-const valueStyle = (color) => ({
-  fontSize: "2.8rem",
-  fontWeight: "700",
-  color,
-});
-
-const chartsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))",
-  gap: "2rem",
-  marginTop: "3rem",
-};
-
-const chartContainerStyle = {
-  position: "absolute",
-  bottom: "0.6rem",
-  left: 0,
-  width: "100%",
-  height: "70px",
-  zIndex: 1,
-  opacity: 0.3,
-  borderRadius: "0 0 12px 12px",
-};
 
 export default function Dashboard() {
   const [data, setData] = useState(
     initialStatuses.map(({ label, color }) => ({ label, value: 0, color }))
   );
+  const [monthlyTrend, setMonthlyTrend] = useState([]);
+  const [ppeTrend, setPpeTrend] = useState([]);
+  const [totalRemaining, setTotalRemaining] = useState(null);
+  const [distributorBalances, setDistributorBalances] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [animatedTotal, setAnimatedTotal] = useState(0);
 
-  async function fetchVisaData(tableName) {
-    const { data: records, error } = await supabase.from(tableName).select("notification");
-
-    if (error) {
-      console.error(`Error fetching data from ${tableName}:`, error);
-      return [];
-    }
-    return records || [];
-  }
-useEffect(() => {
+  // Main data fetching effect
+  useEffect(() => {
     async function fetchVisaAndApprovalData() {
       try {
-        const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+        const currentUser = JSON.parse(localStorage.getItem('loggedInUser') || '{}');
         const currentUserId = currentUser?.UserID ? String(currentUser.UserID) : null;
         const role = currentUser?.role || "";
 
@@ -102,7 +37,7 @@ useEffect(() => {
         // Fetch approval history with Response and CreatedForm
         const { data: approvalRecords, error } = await supabase
           .from("Approval_History")
-          .select("Response, CreatedForm");
+          .select("Response, CreatedForm, DateResponded");
 
         if (error) {
           console.error("Error fetching Approval_History:", error);
@@ -115,9 +50,9 @@ useEffect(() => {
         const filteredApprovalRecords = role === 'admin'
           ? approvalRecords
           : approvalRecords.filter(record => {
-              const recordCreatorId = record.CreatedForm ? String(record.CreatedForm) : null;
-              return recordCreatorId === currentUserId;
-            });
+            const recordCreatorId = record.CreatedForm ? String(record.CreatedForm) : null;
+            return recordCreatorId === currentUserId;
+          });
 
         console.log("[Dashboard] Filtered approval records:", filteredApprovalRecords.length);
 
@@ -129,18 +64,23 @@ useEffect(() => {
 
         filteredApprovalRecords.forEach(record => {
           const response = record.Response;
-          if (response === "Approved") {
+          
+          // Check if response is null, undefined, empty, or "Pending" - these are "For Approval"
+          if (!response || response === "" || response === "Pending" || response === "For Approval") {
+            forApprovalCount++;
+          } else if (response === "Approved") {
             approvedCount++;
           } else if (response === "Declined" || response === "Disapproved") {
             disapprovedCount++;
           } else if (response === "Cancelled") {
             cancelledCount++;
           } else {
+            // Any other unknown status goes to "For Approval"
             forApprovalCount++;
           }
         });
 
-        console.log("[Dashboard] Counts - Approved:", approvedCount, "Disapproved:", disapprovedCount, "Cancelled:", cancelledCount, "For Approval:", forApprovalCount);
+        console.log("[Dashboard] Counts - For Approval:", forApprovalCount, "Approved:", approvedCount, "Disapproved:", disapprovedCount, "Cancelled:", cancelledCount);
 
         const statusCounts = {
           "For Approval": forApprovalCount,
@@ -156,6 +96,40 @@ useEffect(() => {
         }));
 
         setData(updatedData);
+
+        // Process monthly trends
+        const monthlyMap = {};
+
+        filteredApprovalRecords.forEach(({ Response, DateResponded }) => {
+          if (!DateResponded) return;
+          
+          let status = Response;
+          
+          // Normalize status
+          if (!status || status === "" || status === "Pending") {
+            status = "For Approval";
+          } else if (status === "Declined") {
+            status = "Disapproved";
+          }
+          
+          const month = new Date(DateResponded).toISOString().slice(0, 7);
+
+          if (!monthlyMap[month]) {
+            monthlyMap[month] = { month };
+          }
+
+          if (["Approved", "Disapproved", "Cancelled", "For Approval"].includes(status)) {
+            monthlyMap[month][status] = (monthlyMap[month][status] || 0) + 1;
+          }
+        });
+
+        const monthlyTrendArray = Object.values(monthlyMap).sort((a, b) =>
+          a.month.localeCompare(b.month)
+        );
+
+        setMonthlyTrend(monthlyTrendArray);
+        setPpeTrend(monthlyTrendArray);
+
       } catch (error) {
         console.error("Error fetching visa and approval data:", error);
       }
@@ -164,95 +138,10 @@ useEffect(() => {
     fetchVisaAndApprovalData();
   }, []);
 
-  const [monthlyTrend, setMonthlyTrend] = useState([]);  // Line data for Approved + Disapproved
-  const [ppeTrend, setPpeTrend] = useState([]);      // Line data for Cancelled
-
-  useEffect(() => {
-    async function fetchApprovalHistory() {
-      const { data: records, error } = await supabase
-        .from("Approval_History")
-        .select("Response");
-
-      if (error) {
-        console.error("Error fetching approval history:", error);
-        return;
-      }
-
-      if (records) {
-        const statusCounts = {};
-
-        records.forEach((record) => {
-          let status = record.Response || "For Approval";
-
-          // Normalize values
-          if (status === "Declined") status = "Disapproved";
-
-          statusCounts[status] = (statusCounts[status] || 0) + 1;
-        });
-
-        const updatedData = initialStatuses.map(({ label, color }) => ({
-          label,
-          value: statusCounts[label] || 0,
-          color,
-        }));
-
-        setData(updatedData);
-      }
-    }
-
-    fetchApprovalHistory();
-  }, []);
-
-
-  const [totalRemaining, setTotalRemaining] = useState(null);
-  const [distributorBalances, setDistributorBalances] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  // Fetch monthly trends (existing code)
-  useEffect(() => {
-    async function fetchMonthlyTrends() {
-      const { data: records, error } = await supabase
-        .from("Approval_History")
-        .select("Response, DateResponded");
-
-      if (error) {
-        console.error("Error fetching trends:", error);
-        return;
-      }
-
-      const monthlyMap = {};
-
-      records.forEach(({ Response, DateResponded }) => {
-        const status = Response === "Declined" ? "Disapproved" : Response;
-        const month = new Date(DateResponded).toISOString().slice(0, 7);
-
-        if (!monthlyMap[month]) {
-          monthlyMap[month] = { month };
-        }
-
-        if (["Approved", "Disapproved", "Cancelled"].includes(status)) {
-          monthlyMap[month][status] = (monthlyMap[month][status] || 0) + 1;
-        }
-      });
-
-      const monthlyTrendArray = Object.values(monthlyMap).sort((a, b) =>
-        a.month.localeCompare(b.month)
-      );
-
-      setMonthlyTrend(monthlyTrendArray);
-      setPpeTrend(monthlyTrendArray);
-    }
-
-    fetchMonthlyTrends();
-  }, []);
-
-
-  const [showDistModal, setShowDistModal] = useState(false);
-
-  // Fetch remaining balances - Total and by Distributor
+  // Fetch remaining balances
   const fetchRemainingBalance = useCallback(async () => {
     setLoading(true);
-    const storedUser = JSON.parse(localStorage.getItem("user"));
+    const storedUser = JSON.parse(localStorage.getItem("user") || '{}');
     if (!storedUser || (!storedUser.UserID && !storedUser.id)) {
       setLoading(false);
       return;
@@ -262,7 +151,7 @@ useEffect(() => {
 
     const { data: budgetData, error: budgetError } = await supabase
       .from("amount_badget")
-      .select("remainingbalance, distributor")
+      .select("remainingbalance, distributor, pwp_code")
       .eq("createduser", userId)
       .or("Approved.is.null,Approved.eq.true");
 
@@ -278,6 +167,29 @@ useEffect(() => {
     );
     setTotalRemaining(total);
 
+    const pwpCodes = [
+      ...new Set(
+        budgetData.map((item) => item.pwp_code).filter((code) => code != null)
+      ),
+    ];
+
+    let coverData = [];
+    if (pwpCodes.length > 0) {
+      const { data: coverRecords, error: coverError } = await supabase
+        .from("cover_pwp")
+        .select("cover_code, budget_year")
+        .in("cover_code", pwpCodes);
+
+      if (!coverError) {
+        coverData = coverRecords || [];
+      }
+    }
+
+    const pwpToYearMap = {};
+    coverData.forEach((cover) => {
+      pwpToYearMap[cover.cover_code] = cover.budget_year;
+    });
+
     const distributorCodes = [
       ...new Set(
         budgetData.map((item) => item.distributor).filter((code) => code != null)
@@ -290,10 +202,6 @@ useEffect(() => {
         .select("code, name")
         .in("code", distributorCodes);
 
-      if (distError) {
-        console.error("Error fetching distributors:", distError);
-      }
-
       const codeToNameMap = {};
       if (distributorData) {
         distributorData.forEach((dist) => {
@@ -301,48 +209,55 @@ useEffect(() => {
         });
       }
 
-      const distBalances = {};
+      const distYearBalances = {};
       budgetData.forEach((item) => {
-        if (item.distributor) {
-          if (!distBalances[item.distributor]) {
-            distBalances[item.distributor] = 0;
+        if (item.distributor && item.pwp_code) {
+          const year = pwpToYearMap[item.pwp_code] || 2025;
+          const key = `${item.distributor}_${year}`;
+
+          if (!distYearBalances[key]) {
+            distYearBalances[key] = {
+              code: item.distributor,
+              year: year,
+              balance: 0
+            };
           }
-          distBalances[item.distributor] += parseFloat(
+          distYearBalances[key].balance += parseFloat(
             item.remainingbalance || 0
           );
         }
       });
 
-      const distArray = Object.entries(distBalances).map(([code, balance]) => ({
-        code,
-        name: codeToNameMap[code] || code,
-        balance,
+      const distArray = Object.values(distYearBalances).map((item) => ({
+        code: item.code,
+        name: codeToNameMap[item.code] || item.code,
+        year: item.year,
+        balance: item.balance,
       }));
 
+      distArray.sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.name.localeCompare(b.name);
+      });
+
       setDistributorBalances(distArray);
-    } else {
-      setDistributorBalances([]);
     }
 
     setLoading(false);
   }, []);
 
-  // Initial fetch
   useEffect(() => {
-    const storedUser = JSON.parse(localStorage.getItem("user"));
+    const storedUser = JSON.parse(localStorage.getItem("user") || '{}');
     if (!storedUser || (!storedUser.UserID && !storedUser.id)) return;
     fetchRemainingBalance();
   }, [fetchRemainingBalance]);
 
-
-  const [animatedTotal, setAnimatedTotal] = useState(0);
-
-  // Animate total remaining balance
+  // Animate total
   useEffect(() => {
     if (totalRemaining == null) return;
 
     let start = 0;
-    const duration = 1000; // 1 second
+    const duration = 1000;
     const increment = totalRemaining / (duration / 16);
     const interval = setInterval(() => {
       start += increment;
@@ -356,8 +271,31 @@ useEffect(() => {
     return () => clearInterval(interval);
   }, [totalRemaining]);
 
+  // Custom Tooltip Component
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div style={{
+          backgroundColor: 'white',
+          padding: '10px',
+          border: '1px solid #ccc',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+        }}>
+          <p style={{ margin: 0, fontWeight: 600, color: '#374151' }}>
+            {label || 'Count'}
+          </p>
+          <p style={{ margin: '4px 0 0 0', color: payload[0].color, fontWeight: 700 }}>
+            {payload[0].name}: {payload[0].value}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "40px 20px", }}>
+    <div style={{ display: "flex", justifyContent: "center", padding: "40px 20px" }}>
       <div style={{ maxWidth: "1800px", width: "100%", overflowX: "auto" }}>
         <h1
           style={{
@@ -373,7 +311,7 @@ useEffect(() => {
           Total Marketing per Status
         </h1>
 
-        {/* ===== Remaining Balance Section ===== */}
+        {/* Remaining Balance Section */}
         <div
           style={{
             padding: "40px",
@@ -433,7 +371,6 @@ useEffect(() => {
             </button>
           </div>
 
-          {/* Two-column layout */}
           <div
             style={{
               display: "grid",
@@ -441,7 +378,6 @@ useEffect(() => {
               gap: "30px",
             }}
           >
-            {/* Total Remaining Balance */}
             <div
               style={{
                 background: "linear-gradient(135deg, #16a34a 0%, #4ade80 100%)",
@@ -453,7 +389,6 @@ useEffect(() => {
                 flexDirection: "column",
                 justifyContent: "center",
                 alignItems: "center",
-                transition: "transform 0.3s ease",
               }}
             >
               <div style={{ fontSize: "1.1rem", opacity: 0.9, marginBottom: "12px" }}>
@@ -464,7 +399,6 @@ useEffect(() => {
                   fontSize: "3rem",
                   fontWeight: "900",
                   marginBottom: "10px",
-                  transition: "0.3s ease-in-out",
                 }}
               >
                 ₱
@@ -478,7 +412,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Distributor Balances */}
             <div
               style={{
                 backgroundColor: "white",
@@ -514,35 +447,52 @@ useEffect(() => {
                     gap: "16px",
                   }}
                 >
-                  {distributorBalances.map((dist) => (
+                  {distributorBalances.map((dist, index) => (
                     <div
-                      key={dist.code}
+                      key={`${dist.code}-${dist.year}-${index}`}
                       style={{
-                        background:
-                          "linear-gradient(135deg, #f0fdfa 0%, #dcfce7 100%)",
+                        background: "linear-gradient(135deg, #f0fdfa 0%, #dcfce7 100%)",
                         borderRadius: "12px",
                         padding: "15px",
                         boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "scale(1.03)";
-                        e.currentTarget.style.boxShadow = "0 8px 22px rgba(0,0,0,0.12)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "scale(1)";
-                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.05)";
+                        position: "relative",
                       }}
                     >
                       <div
                         style={{
+                          position: "absolute",
+                          top: "10px",
+                          right: "10px",
+                          background: "linear-gradient(135deg, #059669 0%, #10b981 100%)",
+                          color: "white",
+                          padding: "4px 12px",
+                          borderRadius: "20px",
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                        }}
+                      >
+                        R{dist.year}
+                      </div>
+
+                      <div
+                        style={{
                           fontWeight: 600,
                           color: "#065f46",
-                          marginBottom: "6px",
+                          marginBottom: "4px",
                           fontSize: "1rem",
+                          paddingRight: "70px",
                         }}
                       >
                         {dist.name}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.8rem",
+                          color: "#6b7280",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        Budget Year {dist.year}
                       </div>
                       <div
                         style={{
@@ -551,8 +501,7 @@ useEffect(() => {
                           fontSize: "1.2rem",
                         }}
                       >
-                        ₱
-                        {dist.balance.toLocaleString("en-PH", {
+                        ₱{dist.balance.toLocaleString("en-PH", {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
@@ -565,7 +514,7 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* ===== Status Cards Section ===== */}
+        {/* Status Cards Section */}
         <div
           style={{
             display: "grid",
@@ -616,20 +565,21 @@ useEffect(() => {
                       <LineChart data={lineData}>
                         <XAxis dataKey="month" hide />
                         <YAxis hide />
-                        <Tooltip />
+                        <Tooltip content={<CustomTooltip />} />
                         <Line
                           type="monotone"
                           dataKey={label}
                           stroke={color}
                           strokeWidth={2.5}
-                          dot={false}
-                          activeDot={{ r: 4 }}
+                          dot={{ r: 3, fill: color }}
+                          activeDot={{ r: 5, fill: color }}
                         />
                       </LineChart>
                     ) : (
                       <BarChart data={[{ name: label, value }]}>
                         <XAxis dataKey="name" hide />
                         <YAxis hide />
+                        <Tooltip content={<CustomTooltip />} />
                         <Bar dataKey="value" fill={color} radius={[6, 6, 0, 0]} />
                       </BarChart>
                     )}
@@ -640,7 +590,7 @@ useEffect(() => {
           })}
         </div>
 
-        {/* ===== Charts Section ===== */}
+        {/* Charts Section */}
         <div
           style={{
             display: "grid",
@@ -649,7 +599,6 @@ useEffect(() => {
             marginBottom: "60px",
           }}
         >
-          {/* Bar Chart */}
           <div style={{
             background: "#fff", borderRadius: "20px", padding: "25px", boxShadow: "0 8px 28px rgba(0,0,0,0.08)"
           }}>
@@ -660,7 +609,7 @@ useEffect(() => {
               <BarChart data={data}>
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="value">
                   {data.map((entry) => (
                     <Cell key={entry.label} fill={entry.color} />
@@ -670,7 +619,6 @@ useEffect(() => {
             </ResponsiveContainer>
           </div>
 
-          {/* Pie Chart */}
           <div style={{
             background: "#fff", borderRadius: "20px", padding: "25px", boxShadow: "0 8px 28px rgba(0,0,0,0.08)"
           }}>
@@ -685,27 +633,27 @@ useEffect(() => {
                   ))}
                 </Pie>
                 <Legend verticalAlign="bottom" height={36} />
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Approved / Disapproved Line Chart */}
           <div style={{
             background: "#fff", borderRadius: "20px", padding: "25px", boxShadow: "0 8px 28px rgba(0,0,0,0.08)"
           }}>
             <h3 style={{ textAlign: "center", marginBottom: "1.5rem", color: "#374151" }}>
-              Monthly Approved
+              Monthly Trends
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={monthlyTrend}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
                 <Legend />
                 <Line type="monotone" dataKey="Approved" stroke="#10b981" strokeWidth={2.5} />
                 <Line type="monotone" dataKey="Disapproved" stroke="#ef4444" strokeWidth={2.5} />
+                <Line type="monotone" dataKey="Cancelled" stroke="#3b82f6" strokeWidth={2.5} />
               </LineChart>
             </ResponsiveContainer>
           </div>
