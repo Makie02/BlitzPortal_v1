@@ -105,329 +105,329 @@ function EnhancedDatabaseInterface() {
     fetchUsers();
   }, []);
 
-const fetchData = useCallback(async () => {
-  try {
-    setLoading(true);
-    setError(null);
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-    let coverData = [];
-    let regularData = [];
-    let allColumns = [];
+      let coverData = [];
+      let regularData = [];
+      let allColumns = [];
 
-    // ✅ BATCH FETCHING FOR COVER PWP
-    if (filter === "all" || filter === "cover") {
-      let allCoverData = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
+      // ✅ BATCH FETCHING FOR COVER PWP
+      if (filter === "all" || filter === "cover") {
+        let allCoverData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
 
-      while (hasMore) {
-        const { data: cData, error: cError } = await supabase
-          .from("cover_pwp")
-          .select(COVER_COLUMNS.join(','))
-          .order("id", { ascending: false })
-          .range(from, from + batchSize - 1);
+        while (hasMore) {
+          const { data: cData, error: cError } = await supabase
+            .from("cover_pwp")
+            .select(COVER_COLUMNS.join(','))
+            .order("id", { ascending: false })
+            .range(from, from + batchSize - 1);
 
-        if (cError) throw cError;
+          if (cError) throw cError;
 
-        if (cData && cData.length > 0) {
-          allCoverData = [...allCoverData, ...cData];
-          from += batchSize;
-          
-          if (cData.length < batchSize) {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-        }
-      }
+          if (cData && cData.length > 0) {
+            allCoverData = [...allCoverData, ...cData];
+            from += batchSize;
 
-      coverData = allCoverData.map((item) => ({
-        ...filterColumns(item, COVER_COLUMNS),
-        source: "cover_pwp",
-        pwp_code: item.cover_code
-      }));
-    }
-
-    // ✅ BATCH FETCHING FOR CLAIMS PWP
-    if (filter === "all" || filter === "claims") {
-      const [distributorsResult] = await Promise.all([
-        supabase.from("distributors").select("code, name")
-      ]);
-
-      if (distributorsResult.error) throw distributorsResult.error;
-
-      // Batch fetch Claims_pwp
-      let allClaimsData = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { data: cData, error: cError } = await supabase
-          .from("Claims_pwp")
-          .select(CLAIMS_COLUMNS.join(','))
-          .order("id", { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (cError) throw cError;
-
-        if (cData && cData.length > 0) {
-          allClaimsData = [...allClaimsData, ...cData];
-          from += batchSize;
-          
-          if (cData.length < batchSize) {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-        }
-      }
-
-      const neededAccountTypeCodes = new Set();
-      allClaimsData.forEach(item => {
-        if (item.account_types) {
-          if (typeof item.account_types === "string" && item.account_types.includes("[")) {
-            try {
-              const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
-              codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
-            } catch {
-              const matches = item.account_types.match(/[A-Z0-9]+/g);
-              if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
+            if (cData.length < batchSize) {
+              hasMore = false;
             }
           } else {
-            neededAccountTypeCodes.add(item.account_types.trim());
-          }
-        }
-      });
-
-      const { data: accountTypesData, error: accountTypesError } = await supabase
-        .from("categorydetails")
-        .select("code, name")
-        .in("code", Array.from(neededAccountTypeCodes));
-
-      if (accountTypesError) throw accountTypesError;
-
-      const distributorsMap = new Map();
-      const accountTypesMap = new Map();
-
-      distributorsResult.data?.forEach(distributor => {
-        distributorsMap.set(distributor.code.toString(), distributor.name);
-      });
-
-      accountTypesData?.forEach(accountType => {
-        accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
-      });
-
-      const claimsFormatted = allClaimsData.map((item) => {
-        const distributorText = distributorsMap.get(item.distributor?.toString()) || item.distributor || '-';
-
-        let accountTypesText = '-';
-        if (item.account_types) {
-          let codes = [];
-          if (typeof item.account_types === "string" && item.account_types.includes("[")) {
-            try {
-              codes = JSON.parse(item.account_types.replace(/'/g, '"'));
-            } catch {
-              const matches = item.account_types.match(/[A-Z0-9]+/g);
-              if (matches) codes = matches;
-            }
-          } else {
-            codes = [item.account_types];
-          }
-          accountTypesText = codes
-            .map(code => accountTypesMap.get(code?.toString().trim()) || code)
-            .join(", ");
-        }
-
-        return {
-          ...filterColumns(item, CLAIMS_COLUMNS),
-          source: "Claims_pwp",
-          pwp_code: item.code_pwp,
-          distributor: distributorText,
-          account_types: accountTypesText
-        };
-      });
-
-      coverData = [...coverData, ...claimsFormatted];
-    }
-
-    // ✅ BATCH FETCHING FOR REGULAR PWP
-    if (filter === "all" || filter === "regular") {
-      let allRegularData = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { data: rData, error: rError } = await supabase
-          .from("regular_pwp")
-          .select(REGULAR_COLUMNS.join(','))
-          .order("id", { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (rError) throw rError;
-
-        if (rData && rData.length > 0) {
-          allRegularData = [...allRegularData, ...rData];
-          from += batchSize;
-          
-          if (rData.length < batchSize) {
             hasMore = false;
           }
-        } else {
-          hasMore = false;
         }
+
+        coverData = allCoverData.map((item) => ({
+          ...filterColumns(item, COVER_COLUMNS),
+          source: "cover_pwp",
+          pwp_code: item.cover_code
+        }));
       }
 
-      regularData = allRegularData.map((item) => ({
-        ...filterColumns(item, REGULAR_COLUMNS),
-        source: "regular_pwp",
-        pwp_code: item.regularpwpcode
-      }));
-    }
+      // ✅ BATCH FETCHING FOR CLAIMS PWP
+      if (filter === "all" || filter === "claims") {
+        const [distributorsResult] = await Promise.all([
+          supabase.from("distributors").select("code, name")
+        ]);
 
-    const mergedData = [...coverData, ...regularData];
+        if (distributorsResult.error) throw distributorsResult.error;
 
-    const allPwpCodes = mergedData
-      .map(item => item.pwp_code)
-      .filter(code => code);
+        // Batch fetch Claims_pwp
+        let allClaimsData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
 
-    const approvalStatusMap = await getApprovalStatus(allPwpCodes);
-    
-    const dataWithApprovalStatus = mergedData.map(item => ({
-      ...item,
-      approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
-      date_responded: approvalStatusMap[item.pwp_code]?.date_responded,
-      approval_created: approvalStatusMap[item.pwp_code]?.approval_created
-    }));
+        while (hasMore) {
+          const { data: cData, error: cError } = await supabase
+            .from("Claims_pwp")
+            .select(CLAIMS_COLUMNS.join(','))
+            .order("id", { ascending: false })
+            .range(from, from + batchSize - 1);
 
-    let filteredData = dataWithApprovalStatus;
+          if (cError) throw cError;
 
-    // ✅ FILTER BY USER BEFORE CONVERTING IDs TO NAMES
-    const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
-    const currentUserID = currentUser?.UserID ?? null;
-    const role = currentUser?.role || "";
+          if (cData && cData.length > 0) {
+            allClaimsData = [...allClaimsData, ...cData];
+            from += batchSize;
 
-    if (role !== 'admin') {
-      filteredData = filteredData.filter(item => {
-        const itemCreatorID = Number(item.createForm);
-        return itemCreatorID === currentUserID;
-      });
-    }
-
-    if (searchQuery) {
-      filteredData = filteredData.filter(item => {
-        const searchFields = [
-          item.code,
-          item.cover_code,
-          item.regularpwpcode,
-          item.code_pwp,
-          item.id,
-          item.account_type,
-          item.accountType,
-          item.pwp_type,
-          item.pwptype,
-          item.createForm
-        ];
-
-        return searchFields.some(field =>
-          field && field.toString().toLowerCase().includes(searchQuery.toLowerCase())
-        );
-      });
-    }
-
-    if (statusFilter !== "all") {
-      filteredData = filteredData.filter(item => {
-        const itemStatus = item.approval_status ? item.approval_status.toLowerCase() : 'pending';
-        if (statusFilter === "pending") {
-          return itemStatus === "pending" || !item.approval_status;
-        }
-        if (statusFilter === "approved") {
-          return itemStatus === "approved";
-        }
-        if (statusFilter === "disapprove") {
-          return itemStatus === "disapprove";
-        }
-        return itemStatus === statusFilter;
-      });
-    }
-
-    if (dateFrom) {
-      filteredData = filteredData.filter(item => {
-        if (!item.created_at) return false;
-        const itemDate = new Date(item.created_at);
-        const fromDate = new Date(dateFrom);
-        return itemDate >= fromDate;
-      });
-    }
-
-    if (dateTo) {
-      filteredData = filteredData.filter(item => {
-        if (!item.created_at) return false;
-        const itemDate = new Date(item.created_at);
-        const toDate = new Date(dateTo);
-        toDate.setHours(23, 59, 59, 999);
-        return itemDate <= toDate;
-      });
-    }
-
-    if (filteredData.length > 0) {
-      const regularCols = REGULAR_COLUMNS.filter(col => col !== 'regularpwpcode');
-      const coverCols = COVER_COLUMNS.filter(col => col !== 'cover_code');
-
-      if (filter === "all") {
-        allColumns = ['id', 'code', 'pwptype', 'created_at', 'createForm'];
-      } else if (filter === "cover") {
-        allColumns = ['id', 'cover_code', ...coverCols.slice(1)];
-      } else if (filter === "regular") {
-        allColumns = ['id', 'regularpwpcode', ...regularCols.slice(1)];
-      } else if (filter === "claims") {
-        allColumns = CLAIMS_COLUMNS;
-      }
-
-      const userIdToNameMap = new Map(
-        users.map(u => [u.UserID, u.name.toUpperCase().trim()])
-      );
-
-      const normalizedData = filteredData.map(item => {
-        let createFormValue = item.createForm;
-        if (createFormValue) {
-          const numVal = Number(createFormValue);
-          if (!isNaN(numVal) && userIdToNameMap.has(numVal)) {
-            createFormValue = userIdToNameMap.get(numVal);
+            if (cData.length < batchSize) {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
           }
         }
+
+        const neededAccountTypeCodes = new Set();
+        allClaimsData.forEach(item => {
+          if (item.account_types) {
+            if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+              try {
+                const codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+                codes.forEach(code => neededAccountTypeCodes.add(code.trim()));
+              } catch {
+                const matches = item.account_types.match(/[A-Z0-9]+/g);
+                if (matches) matches.forEach(code => neededAccountTypeCodes.add(code.trim()));
+              }
+            } else {
+              neededAccountTypeCodes.add(item.account_types.trim());
+            }
+          }
+        });
+
+        const { data: accountTypesData, error: accountTypesError } = await supabase
+          .from("categorydetails")
+          .select("code, name")
+          .in("code", Array.from(neededAccountTypeCodes));
+
+        if (accountTypesError) throw accountTypesError;
+
+        const distributorsMap = new Map();
+        const accountTypesMap = new Map();
+
+        distributorsResult.data?.forEach(distributor => {
+          distributorsMap.set(distributor.code.toString(), distributor.name);
+        });
+
+        accountTypesData?.forEach(accountType => {
+          accountTypesMap.set(accountType.code.toString().trim(), accountType.name);
+        });
+
+        const claimsFormatted = allClaimsData.map((item) => {
+          const distributorText = distributorsMap.get(item.distributor?.toString()) || item.distributor || '-';
+
+          let accountTypesText = '-';
+          if (item.account_types) {
+            let codes = [];
+            if (typeof item.account_types === "string" && item.account_types.includes("[")) {
+              try {
+                codes = JSON.parse(item.account_types.replace(/'/g, '"'));
+              } catch {
+                const matches = item.account_types.match(/[A-Z0-9]+/g);
+                if (matches) codes = matches;
+              }
+            } else {
+              codes = [item.account_types];
+            }
+            accountTypesText = codes
+              .map(code => accountTypesMap.get(code?.toString().trim()) || code)
+              .join(", ");
+          }
+
+          return {
+            ...filterColumns(item, CLAIMS_COLUMNS),
+            source: "Claims_pwp",
+            pwp_code: item.code_pwp,
+            distributor: distributorText,
+            account_types: accountTypesText
+          };
+        });
+
+        coverData = [...coverData, ...claimsFormatted];
+      }
+
+      // ✅ BATCH FETCHING FOR REGULAR PWP
+      if (filter === "all" || filter === "regular") {
+        let allRegularData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data: rData, error: rError } = await supabase
+            .from("regular_pwp")
+            .select(REGULAR_COLUMNS.join(','))
+            .order("id", { ascending: false })
+            .range(from, from + batchSize - 1);
+
+          if (rError) throw rError;
+
+          if (rData && rData.length > 0) {
+            allRegularData = [...allRegularData, ...rData];
+            from += batchSize;
+
+            if (rData.length < batchSize) {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        regularData = allRegularData.map((item) => ({
+          ...filterColumns(item, REGULAR_COLUMNS),
+          source: "regular_pwp",
+          pwp_code: item.regularpwpcode
+        }));
+      }
+
+      const mergedData = [...coverData, ...regularData];
+
+      const allPwpCodes = mergedData
+        .map(item => item.pwp_code)
+        .filter(code => code);
+
+      const approvalStatusMap = await getApprovalStatus(allPwpCodes);
+
+      const dataWithApprovalStatus = mergedData.map(item => ({
+        ...item,
+        approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
+        date_responded: approvalStatusMap[item.pwp_code]?.date_responded,
+        approval_created: approvalStatusMap[item.pwp_code]?.approval_created
+      }));
+
+      let filteredData = dataWithApprovalStatus;
+
+      // ✅ FILTER BY USER BEFORE CONVERTING IDs TO NAMES
+      const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+      const currentUserID = currentUser?.UserID ?? null;
+      const role = currentUser?.role || "";
+
+      if (role !== 'admin') {
+        filteredData = filteredData.filter(item => {
+          const itemCreatorID = Number(item.createForm);
+          return itemCreatorID === currentUserID;
+        });
+      }
+
+      if (searchQuery) {
+        filteredData = filteredData.filter(item => {
+          const searchFields = [
+            item.code,
+            item.cover_code,
+            item.regularpwpcode,
+            item.code_pwp,
+            item.id,
+            item.account_type,
+            item.accountType,
+            item.pwp_type,
+            item.pwptype,
+            item.createForm
+          ];
+
+          return searchFields.some(field =>
+            field && field.toString().toLowerCase().includes(searchQuery.toLowerCase())
+          );
+        });
+      }
+
+      if (statusFilter !== "all") {
+        filteredData = filteredData.filter(item => {
+          const itemStatus = item.approval_status ? item.approval_status.toLowerCase() : 'pending';
+          if (statusFilter === "pending") {
+            return itemStatus === "pending" || !item.approval_status;
+          }
+          if (statusFilter === "approved") {
+            return itemStatus === "approved";
+          }
+          if (statusFilter === "disapprove") {
+            return itemStatus === "disapprove";
+          }
+          return itemStatus === statusFilter;
+        });
+      }
+
+      if (dateFrom) {
+        filteredData = filteredData.filter(item => {
+          if (!item.created_at) return false;
+          const itemDate = new Date(item.created_at);
+          const fromDate = new Date(dateFrom);
+          return itemDate >= fromDate;
+        });
+      }
+
+      if (dateTo) {
+        filteredData = filteredData.filter(item => {
+          if (!item.created_at) return false;
+          const itemDate = new Date(item.created_at);
+          const toDate = new Date(dateTo);
+          toDate.setHours(23, 59, 59, 999);
+          return itemDate <= toDate;
+        });
+      }
+
+      if (filteredData.length > 0) {
+        const regularCols = REGULAR_COLUMNS.filter(col => col !== 'regularpwpcode');
+        const coverCols = COVER_COLUMNS.filter(col => col !== 'cover_code');
 
         if (filter === "all") {
-          return {
-            ...item,
-            createForm: createFormValue,
-            code: item.regularpwpcode || item.cover_code || item.code_pwp || '-',
-            accountType: item.accountType || item.account_type || '-',
-            pwptype: item.pwptype || item.pwp_type || '-',
-            pwp_type: item.pwp_type || item.pwptype || '-',
-          };
+          allColumns = ['id', 'code', 'pwptype', 'created_at', 'createForm'];
+        } else if (filter === "cover") {
+          allColumns = ['id', 'cover_code', ...coverCols.slice(1)];
+        } else if (filter === "regular") {
+          allColumns = ['id', 'regularpwpcode', ...regularCols.slice(1)];
+        } else if (filter === "claims") {
+          allColumns = CLAIMS_COLUMNS;
         }
 
-        return {
-          ...item,
-          createForm: createFormValue
-        };
-      });
+        const userIdToNameMap = new Map(
+          users.map(u => [u.UserID, u.name.toUpperCase().trim()])
+        );
 
-      setColumns(allColumns);
-      setData(normalizedData);
-    } else {
-      setData([]);
-      setColumns([]);
+        const normalizedData = filteredData.map(item => {
+          let createFormValue = item.createForm;
+          if (createFormValue) {
+            const numVal = Number(createFormValue);
+            if (!isNaN(numVal) && userIdToNameMap.has(numVal)) {
+              createFormValue = userIdToNameMap.get(numVal);
+            }
+          }
+
+          if (filter === "all") {
+            return {
+              ...item,
+              createForm: createFormValue,
+              code: item.regularpwpcode || item.cover_code || item.code_pwp || '-',
+              accountType: item.accountType || item.account_type || '-',
+              pwptype: item.pwptype || item.pwp_type || '-',
+              pwp_type: item.pwp_type || item.pwptype || '-',
+            };
+          }
+
+          return {
+            ...item,
+            createForm: createFormValue
+          };
+        });
+
+        setColumns(allColumns);
+        setData(normalizedData);
+      } else {
+        setData([]);
+        setColumns([]);
+      }
+    } catch (err) {
+      setError(`Unexpected error: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    setError(`Unexpected error: ${err.message}`);
-  } finally {
-    setLoading(false);
-  }
-}, [filter, REGULAR_COLUMNS, COVER_COLUMNS, CLAIMS_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, users]);
+  }, [filter, REGULAR_COLUMNS, COVER_COLUMNS, CLAIMS_COLUMNS, statusFilter, searchQuery, dateFrom, dateTo, users]);
 
   const handleEdit = async (row) => {
     let tableName = "regular_pwp";
@@ -726,9 +726,9 @@ const fetchData = useCallback(async () => {
     setCurrentPage(1);
   }, [filter, statusFilter, searchQuery, dateFrom, dateTo]);
 
- 
 
-  
+
+
 
   return (
     <div style={{ padding: '20px' }}>
@@ -1091,44 +1091,65 @@ const fetchData = useCallback(async () => {
 
                           <button
                             onClick={() => setDeleteConfirm(row.id)}
-                            disabled={updating}
+                            disabled={updating || ["Approved", "Declined"].includes(row.approval_status)}
                             aria-label={`Delete ${row.name}`}
-                            title="Delete"
+                            title={
+                              ["Approved", "Declined"].includes(row.approval_status)
+                                ? `Delete disabled (${row.approval_status})`
+                                : "Delete"
+                            }
                             style={{
                               border: "none",
                               background: "none",
-                              cursor: updating ? "not-allowed" : "pointer",
+                              cursor: (updating || ["Approved", "Declined"].includes(row.approval_status))
+                                ? "not-allowed"
+                                : "pointer",
                               padding: "8px",
                               color: "#d32f2f",
                               transition: "transform 0.3s ease, box-shadow 0.3s ease",
-                              boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+                              boxShadow: ["Approved", "Declined"].includes(row.approval_status)
+                                ? "0 4px 6px rgba(108, 117, 125, 0.5)"
+                                : "0 4px 6px rgba(0,0,0,0.2)",
                               borderRadius: "8px",
                               display: "inline-flex",
                               alignItems: "center",
                               justifyContent: "center",
                               marginLeft: "8px",
                               outline: "none",
-                              opacity: updating ? 0.5 : 1,
-                              pointerEvents: updating ? 'none' : 'auto'
+                              opacity: (updating || ["Approved", "Declined"].includes(row.approval_status)) ? 0.5 : 1,
+                              pointerEvents: (updating || ["Approved", "Declined"].includes(row.approval_status)) ? 'none' : 'auto'
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
+                              if (!["Approved", "Declined"].includes(row.approval_status)) {
+                                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                                e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 47, 47, 0.7)";
+                              }
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.transform = "scale(1) rotateX(0) rotateY(0)";
-                              e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+                              e.currentTarget.style.boxShadow = ["Approved", "Declined"].includes(row.approval_status)
+                                ? "0 4px 6px rgba(108, 117, 125, 0.5)"
+                                : "0 4px 6px rgba(0,0,0,0.2)";
                             }}
                             onMouseDown={(e) => {
-                              e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
-                              e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                              if (!["Approved", "Declined"].includes(row.approval_status)) {
+                                e.currentTarget.style.transform = "scale(0.95) rotateX(5deg) rotateY(5deg)";
+                                e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+                              }
                             }}
                             onMouseUp={(e) => {
-                              e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
-                              e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
+                              if (!["Approved", "Declined"].includes(row.approval_status)) {
+                                e.currentTarget.style.transform = "scale(1.1) rotateX(10deg) rotateY(10deg)";
+                                e.currentTarget.style.boxShadow = "0 8px 15px rgba(211, 0, 0, 0.7)";
+                              }
                             }}
                           >
-                            <FaTrash style={{ color: "red", fontSize: "20px" }} />
+                            <FaTrash
+                              style={{
+                                color: ["Approved", "Declined"].includes(row.approval_status) ? "#6c757d" : "red",
+                                fontSize: "20px"
+                              }}
+                            />
                           </button>
                         </div>
                       )}
