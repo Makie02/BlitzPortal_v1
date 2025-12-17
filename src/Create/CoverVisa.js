@@ -27,7 +27,8 @@ const CoverVisa = () => {
   const [submittedBudgets, setSubmittedBudgets] = useState([]);
   const [editingBudget, setEditingBudget] = useState(null);
   const [selectedDistributorUsername, setSelectedDistributorUsername] = useState("");
-
+  const [yearFilter, setYearFilter] = useState("");
+  const [pwpTypeFilter, setPwpTypeFilter] = useState("");
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target;
@@ -1084,101 +1085,109 @@ const CoverVisa = () => {
   };
 
 
-  useEffect(() => {
-    const fetchSubmittedBudgets = async () => {
-      try {
-        // Fetch ALL cover_pwp records (no user filter)
-        const { data: coverData, error: coverError } = await supabase
-          .from("cover_pwp")
-          .select("*")
-          .order("created_at", { ascending: false });
+useEffect(() => {
+  const fetchAllRecords = async (table, select = "*", orderColumn = null) => {
+    let allData = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
 
-        if (coverError) {
-          console.error("Error fetching cover_pwp:", coverError);
-          return;
-        }
+    while (hasMore) {
+      let query = supabase
+        .from(table)
+        .select(select)
+        .range(from, from + batchSize - 1);
 
-        console.log("Fetched ALL cover_pwp data:", coverData);
-
-        // Fetch corresponding amount_badget data
-        if (coverData && coverData.length > 0) {
-          const coverCodes = coverData.map(item => item.cover_code);
-
-          const { data: budgetData, error: budgetError } = await supabase
-            .from("amount_badget")
-            .select("pwp_code, remainingbalance, amountbadget")
-            .in("pwp_code", coverCodes);
-
-          if (budgetError) {
-            console.error("Error fetching amount_badget:", budgetError);
-          }
-
-          console.log("Fetched amount_badget data:", budgetData);
-
-          // Merge the data
-          const mergedData = coverData.map(cover => {
-            const budget = budgetData?.find(b => b.pwp_code === cover.cover_code);
-            return {
-              ...cover,
-              remainingbalance: budget?.remainingbalance || 0,
-              amountbadget_table: budget?.amountbadget || 0
-            };
-          });
-
-          console.log("Merged data:", mergedData);
-          setSubmittedBudgets(mergedData);
-        } else {
-          setSubmittedBudgets([]);
-        }
-      } catch (err) {
-        console.error("Unexpected error:", err);
-        setSubmittedBudgets([]);
+      if (orderColumn) {
+        query = query.order(orderColumn, { ascending: false });
       }
-    };
 
-    // ✅ Initial fetch
-    fetchSubmittedBudgets();
+      const { data, error } = await query;
 
-    // ✅ Real-time subscription to cover_pwp changes
-    const coverSubscription = supabase
-      .channel("cover_pwp_realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cover_pwp",
-        },
-        (payload) => {
-          console.log("Cover PWP changed:", payload);
-          fetchSubmittedBudgets();
-        }
-      )
-      .subscribe();
+      if (error) {
+        console.error(`Error fetching ${table}:`, error);
+        break;
+      }
 
-    // ✅ Real-time subscription to amount_badget changes
-    const budgetSubscription = supabase
-      .channel("amount_badget_realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "amount_badget",
-        },
-        (payload) => {
-          console.log("Amount Budget changed:", payload);
-          fetchSubmittedBudgets();
-        }
-      )
-      .subscribe();
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        from += batchSize;
+        if (data.length < batchSize) hasMore = false;
+      } else {
+        hasMore = false;
+      }
+    }
 
-    // ✅ Cleanup subscriptions
-    return () => {
-      supabase.removeChannel(coverSubscription);
-      supabase.removeChannel(budgetSubscription);
-    };
-  }, []); // Empty dependency array - runs once on mount
+    return allData;
+  };
+
+  const fetchSubmittedBudgets = async () => {
+    try {
+      // ✅ FETCH ALL (NO 1000 LIMIT)
+      const coverData = await fetchAllRecords(
+        "cover_pwp",
+        "*",
+        "created_at"
+      );
+
+      if (!coverData.length) {
+        setSubmittedBudgets([]);
+        return;
+      }
+
+      const budgetData = await fetchAllRecords(
+        "amount_badget",
+        "pwp_code, remainingbalance, amountbadget"
+      );
+
+      // ✅ MAP (FAST)
+      const budgetMap = {};
+      budgetData.forEach(b => {
+        budgetMap[b.pwp_code] = b;
+      });
+
+      // ✅ MERGE
+      const mergedData = coverData.map(cover => {
+        const budget = budgetMap[cover.cover_code];
+        return {
+          ...cover,
+          remainingbalance: budget?.remainingbalance || 0,
+          amountbadget_table: budget?.amountbadget || 0
+        };
+      });
+
+      setSubmittedBudgets(mergedData);
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setSubmittedBudgets([]);
+    }
+  };
+
+  fetchSubmittedBudgets();
+
+  const coverSubscription = supabase
+    .channel("cover_pwp_realtime")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "cover_pwp" },
+      fetchSubmittedBudgets
+    )
+    .subscribe();
+
+  const budgetSubscription = supabase
+    .channel("amount_badget_realtime")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "amount_badget" },
+      fetchSubmittedBudgets
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(coverSubscription);
+    supabase.removeChannel(budgetSubscription);
+  };
+}, []);
 
 
 
@@ -1194,53 +1203,53 @@ const CoverVisa = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; // Change this number to adjust rows per page
-// Add this at the top of your component
-const [availableYears, setAvailableYears] = useState([]);
-const [loadingYears, setLoadingYears] = useState(true);
+  // Add this at the top of your component
+  const [availableYears, setAvailableYears] = useState([]);
+  const [loadingYears, setLoadingYears] = useState(true);
 
-// Add this function
-const fetchAvailableYears = async () => {
-  try {
-    setLoadingYears(true);
-    const { data, error } = await supabase
-      .from("budget_years")
-      .select("year, is_active")
-      .eq("is_active", true)
-      .order("year", { ascending: false });
+  // Add this function
+  const fetchAvailableYears = async () => {
+    try {
+      setLoadingYears(true);
+      const { data, error } = await supabase
+        .from("budget_years")
+        .select("year, is_active")
+        .eq("is_active", true)
+        .order("year", { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const years = data.map(item => item.year);
-    setAvailableYears(years);
+      const years = data.map(item => item.year);
+      setAvailableYears(years);
 
-    // Auto-select first year if available
-    if (years.length > 0 && !formData.budgetYear) {
-      setFormData(prev => ({ ...prev, budgetYear: years[0] }));
+      // Auto-select first year if available
+      if (years.length > 0 && !formData.budgetYear) {
+        setFormData(prev => ({ ...prev, budgetYear: years[0] }));
+      }
+    } catch (err) {
+      console.error("Error fetching years:", err);
+      const currentYear = new Date().getFullYear();
+      setAvailableYears([currentYear]);
+    } finally {
+      setLoadingYears(false);
     }
-  } catch (err) {
-    console.error("Error fetching years:", err);
-    const currentYear = new Date().getFullYear();
-    setAvailableYears([currentYear]);
-  } finally {
-    setLoadingYears(false);
-  }
-};
+  };
 
-// Add to useEffect
-useEffect(() => {
-  fetchAvailableYears();
-  
-  const subscription = supabase
-    .channel("budget_years_realtime")
-    .on("postgres_changes", {
-      event: "*",
-      schema: "public",
-      table: "budget_years",
-    }, () => fetchAvailableYears())
-    .subscribe();
+  // Add to useEffect
+  useEffect(() => {
+    fetchAvailableYears();
 
-  return () => supabase.removeChannel(subscription);
-}, []);
+    const subscription = supabase
+      .channel("budget_years_realtime")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "budget_years",
+      }, () => fetchAvailableYears())
+      .subscribe();
+
+    return () => supabase.removeChannel(subscription);
+  }, []);
   const totalPages = Math.ceil(submittedBudgets.length / itemsPerPage);
 
   return (
@@ -1645,6 +1654,58 @@ useEffect(() => {
       {currentStep === 2 && (
         <>
           <div className="mb-4">
+            {/* Search and Filter Section */}
+            <div className="row mb-3">
+              <div className="col-md-4">
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="🔍 Search by Cover Code or Distributor..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <div className="col-md-3">
+                <select
+                  className="form-select"
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                >
+                  <option value="">All Years</option>
+                  <option value="2024">2024</option>
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                  <option value="2027">2027</option>
+                  <option value="2028">2028</option>
+                  <option value="2029">2029</option>
+                  <option value="2030">2030</option>
+
+                </select>
+              </div>
+              <div className="col-md-3">
+                <select
+                  className="form-select"
+                  value={pwpTypeFilter}
+                  onChange={(e) => setPwpTypeFilter(e.target.value)}
+                >
+                  <option value="">All PWP Types</option>
+                  <option value="COVER">COVER</option>
+                  <option value="COVER_PWP">COVER_PWP</option>
+                </select>
+              </div>
+              <div className="col-md-2">
+                <button
+                  className="btn btn-secondary w-100"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setYearFilter("");
+                    setPwpTypeFilter("");
+                  }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
             <h4 className="mb-3">Submitted Budgets</h4>
 
             {submittedBudgets.length === 0 ? (
@@ -1658,17 +1719,34 @@ useEffect(() => {
                         <th>Cover Code</th>
                         <th>Distributor</th>
                         <th>Amount Budget</th>
+                        <th>Year</th>
                         <th>Remaining Balance</th>
                         <th>Budget Year</th>
                         <th>PWP Type</th>
                         <th>Date Created</th>
                         <th>Last Updated</th>
                         <th>Actions</th>
+
                       </tr>
                     </thead>
 
                     <tbody>
                       {submittedBudgets
+                        .filter((budget) => {
+                          // Search filter
+                          const matchesSearch =
+                            budget.cover_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            distributors.find(d => String(d.code).trim() === String(budget.distributor_code).trim())
+                              ?.name.toLowerCase().includes(searchTerm.toLowerCase());
+
+                          // Year filter
+                          const matchesYear = !yearFilter || String(budget.budget_year) === yearFilter;
+
+                          // PWP Type filter
+                          const matchesPWP = !pwpTypeFilter || budget.pwp_type === pwpTypeFilter;
+
+                          return matchesSearch && matchesYear && matchesPWP;
+                        })
                         .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                         .map((budget) => {
                           const dist = distributors.find(
