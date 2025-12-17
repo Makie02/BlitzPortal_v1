@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../supabaseClient";
 import RecordViewModal from "./RecordViewModal";
@@ -43,19 +42,31 @@ function RecordsPage() {
   // Function to get approval status for PWP codes
   const getApprovalStatus = async (pwpCodes) => {
     try {
-      const { data: approvalData, error } = await supabase
-        .from("Approval_History")
-        .select("PwpCode, Response, DateResponded, created_at")
-        .in("PwpCode", pwpCodes);
+      // Fetch in batches if there are many codes
+      let allApprovalData = [];
+      const batchSize = 1000;
+      
+      for (let i = 0; i < pwpCodes.length; i += batchSize) {
+        const batch = pwpCodes.slice(i, i + batchSize);
+        
+        const { data: approvalData, error } = await supabase
+          .from("Approval_History")
+          .select("PwpCode, Response, DateResponded, created_at")
+          .in("PwpCode", batch);
 
-      if (error) {
-        console.error("Error fetching approval status:", error);
-        return {};
+        if (error) {
+          console.error("Error fetching approval status:", error);
+          continue;
+        }
+
+        if (approvalData) {
+          allApprovalData = [...allApprovalData, ...approvalData];
+        }
       }
 
       // Create a map of PWPCode to approval status
       const approvalMap = {};
-      approvalData?.forEach(approval => {
+      allApprovalData?.forEach(approval => {
         approvalMap[approval.PwpCode] = {
           status: approval.Response || 'Pending',
           date_responded: approval.DateResponded,
@@ -106,11 +117,17 @@ function RecordsPage() {
       let coverData = [];
       let regularData = [];
 
-      // --- FETCH COVER PWP ---
+      // --- FETCH COVER PWP (ALL RECORDS WITH BATCH PAGINATION) ---
       if (filter === "all" || filter === "cover") {
-        const { data: cData, error: cError } = await supabase
-          .from("cover_pwp")
-          .select(`
+        let allCoverData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data: cData, error: cError } = await supabase
+            .from("cover_pwp")
+            .select(`
       id,
       cover_code,
       activity,
@@ -120,22 +137,42 @@ function RecordsPage() {
       created_at,
       createForm
     `)
-          .order("id", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, from + batchSize - 1);
 
-        if (cError) throw cError;
+          if (cError) throw cError;
 
-        coverData = (cData || []).map(item => ({
+          if (cData && cData.length > 0) {
+            allCoverData = [...allCoverData, ...cData];
+            from += batchSize;
+            
+            // If we got less than batchSize, we've reached the end
+            if (cData.length < batchSize) {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        coverData = (allCoverData || []).map(item => ({
           ...item,
           source: "cover_pwp",
           pwp_code: item.cover_code,
         }));
       }
 
-      // ✅ FETCH FOR REGULAR PWP
+      // ✅ FETCH FOR REGULAR PWP (ALL RECORDS WITH BATCH PAGINATION)
       if (filter === "all" || filter === "regular") {
-        const { data: rData, error: rError } = await supabase
-          .from("regular_pwp")
-          .select(`
+        let allRegularData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data: rData, error: rError } = await supabase
+            .from("regular_pwp")
+            .select(`
       id,
       regularpwpcode,
       activity,
@@ -146,11 +183,25 @@ function RecordsPage() {
       branchType,
       createForm
     `)
-          .order("id", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, from + batchSize - 1);
 
-        if (rError) throw rError;
+          if (rError) throw rError;
 
-        regularData = (rData || []).map(item => ({
+          if (rData && rData.length > 0) {
+            allRegularData = [...allRegularData, ...rData];
+            from += batchSize;
+            
+            // If we got less than batchSize, we've reached the end
+            if (rData.length < batchSize) {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        regularData = (allRegularData || []).map(item => ({
           ...item,
           source: "regular_pwp",
           pwp_code: item.regularpwpcode,
@@ -181,15 +232,27 @@ function RecordsPage() {
       const allPwpCodes = mergedData.map(item => item.pwp_code).filter(Boolean);
       const approvalStatusMap = await getApprovalStatus(allPwpCodes);
 
-      const { data: approvalHistoryData, error: approvalHistoryError } = await supabase
-        .from("Approval_History")
-        .select("PwpCode, DateResponded")
-        .in("PwpCode", allPwpCodes);
+      // Fetch approval history in batches
+      let allApprovalHistoryData = [];
+      const batchSize = 1000;
+      
+      for (let i = 0; i < allPwpCodes.length; i += batchSize) {
+        const batch = allPwpCodes.slice(i, i + batchSize);
+        
+        const { data: approvalHistoryData, error: approvalHistoryError } = await supabase
+          .from("Approval_History")
+          .select("PwpCode, DateResponded")
+          .in("PwpCode", batch);
 
-      if (approvalHistoryError) throw approvalHistoryError;
+        if (approvalHistoryError) throw approvalHistoryError;
+
+        if (approvalHistoryData) {
+          allApprovalHistoryData = [...allApprovalHistoryData, ...approvalHistoryData];
+        }
+      }
 
       const approvalDateMap = {};
-      (approvalHistoryData || []).forEach(item => {
+      (allApprovalHistoryData || []).forEach(item => {
         if (!approvalDateMap[item.PwpCode]) {
           approvalDateMap[item.PwpCode] = item.DateResponded;
         }
