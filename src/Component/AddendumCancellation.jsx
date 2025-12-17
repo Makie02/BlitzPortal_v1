@@ -41,58 +41,118 @@ export default function AddendumCancellation({ cover_code }) {
   });
 
 useEffect(() => {
-    async function fetchVisas() {
-      if (!loggedInUser) return; // don't fetch if no user
-      setLoading(true);
-      setError(null);
+  async function fetchVisas() {
+    if (!loggedInUser) return;
+    setLoading(true);
+    setError(null);
 
-      try {
-        const { data: regular = [], error } = await supabase
+    try {
+      // ✅ BATCH FETCH ALL REGULAR PWP DATA
+      let allRegularPwp = [];
+      let hasMore = true;
+      let from = 0;
+      const batchSize = 1000;
+
+      while (hasMore) {
+        const { data: regularBatch, error: regularError } = await supabase
           .from("regular_pwp")
-          .select("*");
+          .select("*")
+          .range(from, from + batchSize - 1);
 
-        if (error) throw error;
+        if (regularError) throw regularError;
 
-        const currentUserId = Number(loggedInUser?.UserID) || null;
-        const currentUserName = (loggedInUser?.name || "").toLowerCase().trim();
+        if (regularBatch && regularBatch.length > 0) {
+          allRegularPwp = [...allRegularPwp, ...regularBatch];
+          from += batchSize;
 
-        // filter visas created by this user
-        const filteredByUser = regular.filter(v => {
-          const createFormId = Number(v.createForm) || null;
-          const createFormName = (v.createFormName || "").toLowerCase().trim();
-          return createFormId === currentUserId || createFormName === currentUserName;
-        });
-
-        // ✅ Check Approval_History for each visa and filter only approved
-        const approvedVisas = [];
-        for (const visa of filteredByUser) {
-          const pwpCode = visa.regularpwpcode || visa.cover_code;
-          if (!pwpCode) continue;
-
-          const { data: approvalData, error: approvalError } = await supabase
-            .from("Approval_History")
-            .select("*")
-            .eq("PwpCode", pwpCode)
-            .eq("Response", "Approved")
-            .limit(1);
-
-          if (!approvalError && approvalData && approvalData.length > 0) {
-            approvedVisas.push({ ...visa, type: "Regular Pwp", display: visa.visaCode });
+          if (regularBatch.length < batchSize) {
+            hasMore = false;
           }
+        } else {
+          hasMore = false;
         }
-
-        setVisas(approvedVisas);
-        setFilteredVisas(approvedVisas);
-      } catch (err) {
-        console.error("Error fetching visas:", err);
-        setError("Unexpected error while fetching visas.");
       }
 
-      setLoading(false);
+      const currentUserId = Number(loggedInUser?.UserID) || null;
+      const currentUserName = (loggedInUser?.name || "").toLowerCase().trim();
+
+      // Filter by current user
+      const filteredByUser = allRegularPwp.filter(v => {
+        const createFormId = Number(v.createForm) || null;
+        const createFormName = (v.createFormName || "").toLowerCase().trim();
+        return createFormId === currentUserId || createFormName === currentUserName;
+      });
+
+      // Get all PWP codes for batch approval check
+      const pwpCodes = filteredByUser
+        .map(v => v.regularpwpcode || v.cover_code)
+        .filter(code => code);
+
+      if (pwpCodes.length === 0) {
+        setVisas([]);
+        setFilteredVisas([]);
+        setLoading(false);
+        return;
+      }
+
+      // ✅ BATCH FETCH APPROVAL HISTORY
+      let allApprovals = [];
+      hasMore = true;
+      from = 0;
+
+      while (hasMore) {
+        const { data: approvalBatch, error: approvalError } = await supabase
+          .from("Approval_History")
+          .select("PwpCode, Response")
+          .in("PwpCode", pwpCodes)
+          .eq("Response", "Approved")
+          .range(from, from + batchSize - 1);
+
+        if (approvalError) throw approvalError;
+
+        if (approvalBatch && approvalBatch.length > 0) {
+          allApprovals = [...allApprovals, ...approvalBatch];
+          from += batchSize;
+
+          if (approvalBatch.length < batchSize) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      // Create a Set of approved PWP codes for fast lookup
+      const approvedPwpCodes = new Set(
+        allApprovals.map(approval => approval.PwpCode)
+      );
+
+      // Filter only approved visas
+      const approvedVisas = filteredByUser
+        .filter(visa => {
+          const pwpCode = visa.regularpwpcode || visa.cover_code;
+          return approvedPwpCodes.has(pwpCode);
+        })
+        .map(visa => ({
+          ...visa,
+          type: "Regular Pwp",
+          display: visa.visaCode
+        }));
+
+      console.log(`✅ Loaded ${approvedVisas.length} approved visas from ${allRegularPwp.length} total records`);
+
+      setVisas(approvedVisas);
+      setFilteredVisas(approvedVisas);
+    } catch (err) {
+      console.error("Error fetching visas:", err);
+      setError("Unexpected error while fetching visas.");
     }
 
-    fetchVisas();
-  }, [loggedInUser]);
+    setLoading(false);
+  }
+
+  fetchVisas();
+}, [loggedInUser]);
 
   useEffect(() => {
     if (!debouncedSearchTerm) {
