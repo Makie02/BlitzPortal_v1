@@ -1772,7 +1772,7 @@ useEffect(() => {
                               <td className="text-center">
                                 <span
                                   style={{
-                                    backgroundColor: budget.budget_year === 2026 ? "#ffc107" : "#28a745",
+                                    backgroundColor: budget.budget_year === 2026 ? "#28a745" : "#28a745",
                                     color: "white",
                                     padding: "4px 12px",
                                     borderRadius: "12px",
