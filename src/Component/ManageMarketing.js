@@ -41,10 +41,6 @@ function EnhancedDatabaseInterface() {
     userID: loggedInUserID
   };
 
-  // Filter data by user BEFORE pagination
-  // Filter data by user BEFORE pagination
-
-  // ✅ NEW
   const totalPages = Math.ceil(data.length / rowsPerPage);
 
   const paginatedData = data.slice(
@@ -62,27 +58,70 @@ function EnhancedDatabaseInterface() {
     return filtered;
   };
 
+  // ✅ FIXED: Fetch ALL approval history and get the LATEST status for each PWP code
   const getApprovalStatus = async (pwpCodes) => {
     try {
-      const { data: approvalData, error } = await supabase
-        .from("Approval_History")
-        .select("PwpCode, Response, DateResponded, created_at")
-        .in("PwpCode", pwpCodes);
+      // Fetch ALL approval records for these codes (not limited)
+      let allApprovalData = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
 
-      if (error) {
-        console.error("Error fetching approval status:", error);
-        return {};
+      while (hasMore) {
+        const { data: approvalBatch, error } = await supabase
+          .from("Approval_History")
+          .select("PwpCode, Response, DateResponded, created_at")
+          .in("PwpCode", pwpCodes)
+          .order('DateResponded', { ascending: false })
+          .range(from, from + batchSize - 1);
+
+        if (error) {
+          console.error("Error fetching approval status:", error);
+          break;
+        }
+
+        if (approvalBatch && approvalBatch.length > 0) {
+          allApprovalData = [...allApprovalData, ...approvalBatch];
+          from += batchSize;
+
+          if (approvalBatch.length < batchSize) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
       }
 
+      console.log(`✅ Loaded ${allApprovalData.length} approval history records`);
+
+      // ✅ Get the LATEST approval for each PWP code
       const approvalMap = {};
-      approvalData?.forEach(approval => {
-        approvalMap[approval.PwpCode] = {
-          status: approval.Response || 'Pending',
-          date_responded: approval.DateResponded,
-          approval_created: approval.created_at
+      
+      // Group by PwpCode and get the most recent one
+      const groupedByCode = {};
+      allApprovalData.forEach(approval => {
+        const code = approval.PwpCode;
+        if (!groupedByCode[code]) {
+          groupedByCode[code] = [];
+        }
+        groupedByCode[code].push(approval);
+      });
+
+      // For each code, get the latest approval
+      Object.keys(groupedByCode).forEach(code => {
+        const approvals = groupedByCode[code];
+        // Sort by DateResponded descending to get latest
+        approvals.sort((a, b) => new Date(b.DateResponded) - new Date(a.DateResponded));
+        const latest = approvals[0];
+        
+        approvalMap[code] = {
+          status: latest.Response || 'Pending',
+          date_responded: latest.DateResponded,
+          approval_created: latest.created_at
         };
       });
 
+      console.log(`✅ Processed approval status for ${Object.keys(approvalMap).length} PWP codes`);
       return approvalMap;
     } catch (err) {
       console.error("Unexpected error fetching approval status:", err);
@@ -157,7 +196,6 @@ function EnhancedDatabaseInterface() {
 
         if (distributorsResult.error) throw distributorsResult.error;
 
-        // Batch fetch Claims_pwp
         let allClaimsData = [];
         let from = 0;
         const batchSize = 1000;
@@ -293,18 +331,22 @@ function EnhancedDatabaseInterface() {
         .map(item => item.pwp_code)
         .filter(code => code);
 
+      // ✅ FIXED: Get approval status with proper latest record logic
       const approvalStatusMap = await getApprovalStatus(allPwpCodes);
 
-      const dataWithApprovalStatus = mergedData.map(item => ({
-        ...item,
-        approval_status: approvalStatusMap[item.pwp_code]?.status || 'Pending',
-        date_responded: approvalStatusMap[item.pwp_code]?.date_responded,
-        approval_created: approvalStatusMap[item.pwp_code]?.approval_created
-      }));
+      const dataWithApprovalStatus = mergedData.map(item => {
+        const approvalInfo = approvalStatusMap[item.pwp_code];
+        return {
+          ...item,
+          approval_status: approvalInfo?.status || 'Pending',
+          date_responded: approvalInfo?.date_responded,
+          approval_created: approvalInfo?.approval_created
+        };
+      });
 
       let filteredData = dataWithApprovalStatus;
 
-      // ✅ FILTER BY USER BEFORE CONVERTING IDs TO NAMES
+      // ✅ FILTER BY USER
       const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
       const currentUserID = currentUser?.UserID ?? null;
       const role = currentUser?.role || "";
@@ -346,8 +388,8 @@ function EnhancedDatabaseInterface() {
           if (statusFilter === "approved") {
             return itemStatus === "approved";
           }
-          if (statusFilter === "disapprove") {
-            return itemStatus === "disapprove";
+          if (statusFilter === "disapprove" || statusFilter === "sent back for revision") {
+            return itemStatus === "disapprove" || itemStatus === "sent back for revision";
           }
           return itemStatus === statusFilter;
         });
@@ -661,6 +703,7 @@ function EnhancedDatabaseInterface() {
         borderColor = '#c8e6c9';
         break;
       case 'disapproved':
+      case 'sent back for revision':
         bgColor = '#ffebee';
         textColor = '#c62828';
         borderColor = '#ffcdd2';
@@ -721,14 +764,9 @@ function EnhancedDatabaseInterface() {
     fetchData();
   }, [fetchData]);
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [filter, statusFilter, searchQuery, dateFrom, dateTo]);
-
-
-
-
 
   return (
     <div style={{ padding: '20px' }}>
