@@ -534,196 +534,230 @@ export default function AccountsListManager() {
 
   // 🔹 Handle Excel Import (no changes needed, just included for completeness)
   // 🔹 Handle Excel Import with IMMEDIATE BP validation
-  const handleImportMother = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+const handleImportMother = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
 
-    // ⚠️⚠️⚠️ CHECK BP_ACCOUNTS FIRST BAGO MAG-PROCESS ⚠️⚠️⚠️
-    Swal.fire({
-      title: 'Checking BP Accounts...',
-      text: 'Validating database...',
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading()
-    });
+  // ⚠️⚠️⚠️ CHECK BP_ACCOUNTS FIRST BAGO MAG-PROCESS ⚠️⚠️⚠️
+  Swal.fire({
+    title: 'Checking BP Accounts...',
+    text: 'Validating database...',
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading()
+  });
 
-    try {
-      // CHECK IF BP_ACCOUNTS HAS DATA
-      const { data: bpCheck, error: bpError } = await supabase
-        .from('Bp_Accounts')
-        .select('bp_code, bp_name')
-        .limit(1);
+  try {
+    // CHECK IF BP_ACCOUNTS HAS DATA
+    const { data: bpCheck, error: bpError } = await supabase
+      .from('Bp_Accounts')
+      .select('bp_code, bp_name')
+      .limit(1);
 
-      if (bpError) {
-        Swal.close();
-        Swal.fire({
-          icon: "error",
-          title: "Database Error!",
-          text: `Failed to check Bp_Accounts: ${bpError.message}`,
-          confirmButtonColor: '#d33'
-        });
-        return;
-      }
-
-      // ⚠️⚠️⚠️ IF BP_ACCOUNTS IS EMPTY - SHOW SUPER WARNING ⚠️⚠️⚠️
-      if (!bpCheck || bpCheck.length === 0) {
-        Swal.close();
-
-        console.error("🚨🚨🚨 BP_ACCOUNTS TABLE IS EMPTY! BLOCKING UPLOAD!");
-
-        Swal.fire({
-          icon: "error",
-          title: "🚨 BP_ACCOUNTS TABLE IS EMPTY!",
-          html: `
-          <div style="text-align:left; font-family: 'Segoe UI', sans-serif;">
-            <div style="background: #fee; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 3px solid #d33;">
-              <h2 style="color: #d33; margin: 0 0 15px 0; font-size: 24px;">⛔ UPLOAD BLOCKED!</h2>
-              <p style="margin: 10px 0; font-size: 16px;"><strong style="color: red;">The Bp_Accounts table has NO RECORDS!</strong></p>
-              <p style="margin: 10px 0; font-size: 14px; color: #666;">You cannot import data without valid BP codes in the system.</p>
-            </div>
-            
-            <div style="background: #fff3cd; padding: 20px; border-radius: 8px; border: 2px solid #ffc107; margin-bottom: 15px;">
-              <h3 style="margin-top: 0; color: #856404;">⚠️ REQUIRED ACTIONS:</h3>
-              <ol style="margin: 15px 0; padding-left: 25px; color: #666; font-size: 14px; line-height: 1.8;">
-                <li><strong>Go to the Bp_Accounts table</strong> (Business Partner Accounts)</li>
-                <li><strong>Add BP codes</strong> that match the codes in your Excel file</li>
-                <li><strong>Make sure each BP code is unique</strong> and properly entered</li>
-                <li><strong>Save all BP Account records</strong></li>
-                <li><strong>Try uploading your Excel file again</strong></li>
-              </ol>
-            </div>
-
-            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196f3;">
-              <h4 style="margin-top: 0; color: #1976d2;">💡 What are BP Codes?</h4>
-              <p style="margin: 5px 0; color: #666; font-size: 13px;">
-                BP (Business Partner) Codes are unique identifiers for customers, vendors, or partners.
-                Every record in your Excel file must have a BP code that exists in the Bp_Accounts table.
-              </p>
-            </div>
-
-            <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 5px solid #f44336;">
-              <p style="margin: 0; color: #c62828; font-size: 14px; font-weight: bold;">
-                ⚠️ You CANNOT proceed with the upload until BP codes are added to Bp_Accounts!
-              </p>
-            </div>
-          </div>
-        `,
-          width: 900,
-          confirmButtonText: '❌ Close - Add BP Codes First',
-          confirmButtonColor: '#d33',
-          allowOutsideClick: false
-        });
-
-        return; // BLOCK THE UPLOAD COMPLETELY
-      }
-
-      console.log("✅ Bp_Accounts has data, proceeding with Excel upload...");
-
-    } catch (err) {
+    if (bpError) {
       Swal.close();
-      console.error("💥 Error checking Bp_Accounts:", err);
       Swal.fire({
         icon: "error",
-        title: "Validation Failed!",
-        text: `Failed to check Bp_Accounts: ${err.message}`,
+        title: "Database Error!",
+        text: `Failed to check Bp_Accounts: ${bpError.message}`,
         confirmButtonColor: '#d33'
       });
       return;
     }
 
-    // ✅ BP_ACCOUNTS HAS DATA - CONTINUE WITH EXCEL PROCESSING
-    const rawData = await readExcelFile(file);
-    if (!rawData.length) return;
+    // ⚠️⚠️⚠️ IF BP_ACCOUNTS IS EMPTY - SHOW SUPER WARNING ⚠️⚠️⚠️
+    if (!bpCheck || bpCheck.length === 0) {
+      Swal.close();
 
-    if (rawData.length > 40000) {
+      console.error("🚨🚨🚨 BP_ACCOUNTS TABLE IS EMPTY! BLOCKING UPLOAD!");
+
       Swal.fire({
-        icon: 'error',
-        title: 'Too Many Rows!',
-        text: `Excel contains ${rawData.length.toLocaleString()} rows. Maximum allowed is 40,000 rows.`,
-        confirmButtonText: 'OK'
+        icon: "error",
+        title: "🚨 BP_ACCOUNTS TABLE IS EMPTY!",
+        html: `
+        <div style="text-align:left; font-family: 'Segoe UI', sans-serif;">
+          <div style="background: #fee; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 3px solid #d33;">
+            <h2 style="color: #d33; margin: 0 0 15px 0; font-size: 24px;">⛔ UPLOAD BLOCKED!</h2>
+            <p style="margin: 10px 0; font-size: 16px;"><strong style="color: red;">The Bp_Accounts table has NO RECORDS!</strong></p>
+            <p style="margin: 10px 0; font-size: 14px; color: #666;">You cannot import data without valid BP codes in the system.</p>
+          </div>
+          
+          <div style="background: #fff3cd; padding: 20px; border-radius: 8px; border: 2px solid #ffc107; margin-bottom: 15px;">
+            <h3 style="margin-top: 0; color: #856404;">⚠️ REQUIRED ACTIONS:</h3>
+            <ol style="margin: 15px 0; padding-left: 25px; color: #666; font-size: 14px; line-height: 1.8;">
+              <li><strong>Go to the Bp_Accounts table</strong> (Business Partner Accounts)</li>
+              <li><strong>Add BP codes</strong> that match the codes in your Excel file</li>
+              <li><strong>Make sure each BP code is unique</strong> and properly entered</li>
+              <li><strong>Save all BP Account records</strong></li>
+              <li><strong>Try uploading your Excel file again</strong></li>
+            </ol>
+          </div>
+
+          <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196f3;">
+            <h4 style="margin-top: 0; color: #1976d2;">💡 What are BP Codes?</h4>
+            <p style="margin: 5px 0; color: #666; font-size: 13px;">
+              BP (Business Partner) Codes are unique identifiers for customers, vendors, or partners.
+              Every record in your Excel file must have a BP code that exists in the Bp_Accounts table.
+            </p>
+          </div>
+
+          <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 5px solid #f44336;">
+            <p style="margin: 0; color: #c62828; font-size: 14px; font-weight: bold;">
+              ⚠️ You CANNOT proceed with the upload until BP codes are added to Bp_Accounts!
+            </p>
+          </div>
+        </div>
+      `,
+        width: 900,
+        confirmButtonText: '❌ Close - Add BP Codes First',
+        confirmButtonColor: '#d33',
+        allowOutsideClick: false
       });
-      return;
+
+      return; // BLOCK THE UPLOAD COMPLETELY
     }
 
+    console.log("✅ Bp_Accounts has data, proceeding with Excel upload...");
+
+  } catch (err) {
+    Swal.close();
+    console.error("💥 Error checking Bp_Accounts:", err);
     Swal.fire({
-      title: 'Processing Excel...',
-      text: 'Converting names to codes...',
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading()
+      icon: "error",
+      title: "Validation Failed!",
+      text: `Failed to check Bp_Accounts: ${err.message}`,
+      confirmButtonColor: '#d33'
+    });
+    return;
+  }
+
+  // ✅ BP_ACCOUNTS HAS DATA - CONTINUE WITH EXCEL PROCESSING
+  Swal.fire({
+    title: 'Reading Excel File...',
+    text: 'Please wait...',
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading()
+  });
+
+  const rawData = await readExcelFile(file);
+  
+  if (!rawData.length) {
+    Swal.close();
+    Swal.fire({
+      icon: 'warning',
+      title: 'Empty File!',
+      text: 'The Excel file contains no data.',
+      confirmButtonText: 'OK'
+    });
+    return;
+  }
+
+  // ✅ REMOVED 40K LIMIT - ACCEPT ANY NUMBER OF ROWS
+  console.log(`📊 Excel contains ${rawData.length.toLocaleString()} rows - Processing all...`);
+
+  // Show warning if file is very large (over 100k rows)
+  if (rawData.length > 100000) {
+    const confirmLarge = await Swal.fire({
+      icon: 'warning',
+      title: 'Large File Detected',
+      html: `
+        <p>Excel contains <strong>${rawData.length.toLocaleString()} rows</strong>.</p>
+        <p>This may take several minutes to process.</p>
+        <p><strong>Do you want to continue?</strong></p>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Process All',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#6c757d'
     });
 
-    try {
-      const [
-        { data: motherAccounts },
-        { data: agentAccounts },
-        { data: bpAccounts },
-        { data: distributorAccounts }
-      ] = await Promise.all([
-        supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
-        supabase.from('Account_Users').select('UserID, name'),
-        supabase.from('Bp_Accounts').select('bp_code, bp_name'),
-        supabase.from('distributors').select('code, name')
-      ]);
+    if (!confirmLarge.isConfirmed) return;
+  }
 
-      // ... rest of your existing Excel processing code ...
-      // (groupNameToCodeMap, motherLookup, findMotherCode, etc.)
+  Swal.fire({
+    title: 'Processing Excel...',
+    html: `Converting names to codes...<br><span id="excel-progress" style="color:#2563eb;font-weight:600;">0 / ${rawData.length.toLocaleString()} rows</span>`,
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading()
+  });
 
-      const groupNameToCodeMap = {};
-      motherAccounts?.forEach(m => {
-        if (m.group_name && m.group_code) {
-          const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
-          groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
-        }
+  try {
+    const [
+      { data: motherAccounts },
+      { data: agentAccounts },
+      { data: bpAccounts },
+      { data: distributorAccounts }
+    ] = await Promise.all([
+      supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
+      supabase.from('Account_Users').select('UserID, name'),
+      supabase.from('Bp_Accounts').select('bp_code, bp_name'),
+      supabase.from('distributors').select('code, name')
+    ]);
+
+    const groupNameToCodeMap = {};
+    motherAccounts?.forEach(m => {
+      if (m.group_name && m.group_code) {
+        const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
+        groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
+      }
+    });
+
+    const motherLookup = {};
+    motherAccounts?.forEach(m => {
+      const groupCode = m.group_code?.toString().trim();
+      const exactName = m.name?.toString().trim().toLowerCase();
+      const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+      if (!groupCode || !m.name) return;
+      if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
+      motherLookup[groupCode][exactName] = m.dscode;
+      motherLookup[groupCode][normalizedName] = m.dscode;
+    });
+
+    const findMotherCode = (rawMotherName, resolvedGroupCode) => {
+      const groupCode = resolvedGroupCode?.toString().trim();
+      if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
+
+      const exactName = rawMotherName.toString().trim().toLowerCase();
+      const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+      const availableNames = motherLookup[groupCode];
+
+      if (availableNames[exactName]) return availableNames[exactName];
+      if (availableNames[normalizedName]) return availableNames[normalizedName];
+      const fuzzyMatch = Object.keys(availableNames).find(dbName =>
+        dbName.includes(normalizedName) || normalizedName.includes(dbName)
+      );
+      if (fuzzyMatch) return availableNames[fuzzyMatch];
+      return Object.values(availableNames)[0] || rawMotherName;
+    };
+
+    const createMap = (arr, key1, key2) => {
+      const map = {};
+      arr?.forEach(item => {
+        if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
+        if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
       });
+      return map;
+    };
 
-      const motherLookup = {};
-      motherAccounts?.forEach(m => {
-        const groupCode = m.group_code?.toString().trim();
-        const exactName = m.name?.toString().trim().toLowerCase();
-        const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-        if (!groupCode || !m.name) return;
-        if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
-        motherLookup[groupCode][exactName] = m.dscode;
-        motherLookup[groupCode][normalizedName] = m.dscode;
-      });
+    const agentMap = createMap(agentAccounts, 'name', 'UserID');
+    const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
+    const distributorMap = createMap(distributorAccounts, 'name', 'code');
+    const bpNameMap = {};
+    bpAccounts?.forEach(b => {
+      if (b.bp_code && b.bp_name)
+        bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
+    });
 
-      const findMotherCode = (rawMotherName, resolvedGroupCode) => {
-        const groupCode = resolvedGroupCode?.toString().trim();
-        if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
+    const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
 
-        const exactName = rawMotherName.toString().trim().toLowerCase();
-        const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-        const availableNames = motherLookup[groupCode];
-
-        if (availableNames[exactName]) return availableNames[exactName];
-        if (availableNames[normalizedName]) return availableNames[normalizedName];
-        const fuzzyMatch = Object.keys(availableNames).find(dbName =>
-          dbName.includes(normalizedName) || normalizedName.includes(dbName)
-        );
-        if (fuzzyMatch) return availableNames[fuzzyMatch];
-        return Object.values(availableNames)[0] || rawMotherName;
-      };
-
-      const createMap = (arr, key1, key2) => {
-        const map = {};
-        arr?.forEach(item => {
-          if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
-          if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
-        });
-        return map;
-      };
-
-      const agentMap = createMap(agentAccounts, 'name', 'UserID');
-      const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
-      const distributorMap = createMap(distributorAccounts, 'name', 'code');
-      const bpNameMap = {};
-      bpAccounts?.forEach(b => {
-        if (b.bp_code && b.bp_name)
-          bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
-      });
-
-      const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
-
-      const processedData = rawData.map((row) => {
+    // Process data in chunks to show progress
+    const CHUNK_SIZE = 1000;
+    const processedData = [];
+    
+    for (let i = 0; i < rawData.length; i += CHUNK_SIZE) {
+      const chunk = rawData.slice(i, i + CHUNK_SIZE);
+      
+      const processedChunk = chunk.map((row) => {
         const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
         const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
         const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
@@ -768,206 +802,182 @@ export default function AccountsListManager() {
         };
       });
 
-      Swal.close();
+      processedData.push(...processedChunk);
 
-      // ⚠️⚠️ VALIDATE BP CODES AGAINST Bp_Accounts ⚠️⚠️
-      // ⚠️⚠️ VALIDATE BP CODES AGAINST Bp_Accounts - FIXED PAGINATION ⚠️⚠️
-      console.log("\n🔍 VALIDATING BP CODES IMMEDIATELY...");
+      // Update progress
+      const progressEl = document.getElementById('excel-progress');
+      if (progressEl) {
+        progressEl.textContent = `${processedData.length.toLocaleString()} / ${rawData.length.toLocaleString()} rows`;
+      }
 
-      Swal.fire({
-        title: 'Validating BP Codes...',
-        html: 'Loading all BP codes from database...<br><span id="validate-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-      });
+      // Small delay to prevent UI blocking
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
 
-      try {
-        // ✅ STEP 1: Get total count first
-        const { count: totalBpCount, error: countError } = await supabase
-          .from('Bp_Accounts')
-          .select('*', { count: 'exact', head: true });
+    Swal.close();
 
-        if (countError) throw countError;
+    // ⚠️⚠️ VALIDATE BP CODES AGAINST Bp_Accounts ⚠️⚠️
+    console.log("\n🔍 VALIDATING BP CODES...");
 
-        console.log(`📊 Total BP codes in database: ${totalBpCount?.toLocaleString() || 0}`);
+    Swal.fire({
+      title: 'Validating BP Codes...',
+      html: 'Loading all BP codes from database...<br><span id="validate-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
 
-        if (!totalBpCount || totalBpCount === 0) {
-          Swal.close();
-          Swal.fire({
-            icon: "error",
-            title: "⚠️ BP Accounts is EMPTY!",
-            text: "Please add BP codes to Bp_Accounts table first.",
-            confirmButtonColor: '#d33'
-          });
-          return;
-        }
+    try {
+      // ✅ STEP 1: Get total count first
+      const { count: totalBpCount, error: countError } = await supabase
+        .from('Bp_Accounts')
+        .select('*', { count: 'exact', head: true });
 
-        // ✅ STEP 2: Load ALL BP codes in batches
-        const BATCH_SIZE = 1000;
-        let allBpCodes = [];
-        let currentOffset = 0;
+      if (countError) throw countError;
 
-        while (currentOffset < totalBpCount) {
-          console.log(`📥 Fetching batch: offset ${currentOffset} to ${currentOffset + BATCH_SIZE - 1}`);
+      console.log(`📊 Total BP codes in database: ${totalBpCount?.toLocaleString() || 0}`);
 
-          const { data: batch, error } = await supabase
-            .from('Bp_Accounts')
-            .select('bp_code')
-            .order('id', { ascending: true })  // ✅ Important: consistent ordering
-            .range(currentOffset, currentOffset + BATCH_SIZE - 1);
-
-          if (error) {
-            console.error("❌ Error fetching batch:", error);
-            throw error;
-          }
-
-          if (!batch || batch.length === 0) {
-            console.log("⚠️ No more data, breaking loop");
-            break;
-          }
-
-          console.log(`✅ Loaded batch: ${batch.length} codes (Total so far: ${allBpCodes.length + batch.length})`);
-
-          allBpCodes = [...allBpCodes, ...batch];
-          currentOffset += BATCH_SIZE;
-
-          // Update progress
-          const progressEl = document.getElementById('validate-progress');
-          if (progressEl) {
-            const percentage = Math.min(100, Math.round((allBpCodes.length / totalBpCount) * 100));
-            progressEl.textContent = `${allBpCodes.length.toLocaleString()} / ${totalBpCount.toLocaleString()} (${percentage}%)`;
-          }
-
-          // Small delay to prevent rate limiting
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-
-        console.log(`✅ FINISHED LOADING: ${allBpCodes.length.toLocaleString()} total BP codes`);
-
-        Swal.close();
-
-        // ✅ STEP 3: Create validation set
-        const validBpCodes = new Set(
-          allBpCodes
-            .map(acc => acc.bp_code?.toString().trim().toUpperCase())
-            .filter(Boolean)
-        );
-
-        console.log(`✅ Valid BP codes in database: ${validBpCodes.size.toLocaleString()}`);
-        console.log("📋 Sample BP codes:", Array.from(validBpCodes).slice(0, 10));
-
-        // ✅ STEP 4: Validate Excel data
-        const invalidRecords = [];
-        processedData.forEach((row, idx) => {
-          const bpCode = row.bp_code?.toString().trim();
-
-          if (!bpCode || bpCode === "") {
-            invalidRecords.push({
-              Row: idx + 2,
-              BP_Code: "❌ EMPTY/NULL",
-              BP_Name: row.bp_name || "N/A",
-              Distributor: row.distributor_code || "N/A",
-              Issue: "BP Code is empty or missing"
-            });
-          } else if (!validBpCodes.has(bpCode.toUpperCase())) {
-            invalidRecords.push({
-              Row: idx + 2,
-              BP_Code: bpCode,
-              BP_Name: row.bp_name || "N/A",
-              Distributor: row.distributor_code || "N/A",
-              Issue: "BP Code NOT FOUND in Bp_Accounts table"
-            });
-          }
-        });
-
-        // ✅ STEP 5: Show results
-        if (invalidRecords.length > 0) {
-          console.log("\n⚠️⚠️⚠️ INVALID BP CODES FOUND:");
-          console.table(invalidRecords);
-
-          const invalidList = invalidRecords.slice(0, 15).map(r =>
-            `<li style="margin: 8px 0; padding: 8px; background: #fee; border-left: 4px solid #d33; border-radius: 4px;">
-        <strong>Row ${r.Row}:</strong> <code style="background: #333; color: #ff6b6b; padding: 2px 6px; border-radius: 3px;">${r.BP_Code}</code><br>
-        <small style="color: #666;">BP Name: ${r.BP_Name} | Distributor: ${r.Distributor}</small><br>
-        <small style="color: #d33;">⚠️ ${r.Issue}</small>
-      </li>`
-          ).join('');
-
-          Swal.fire({
-            icon: "error",
-            title: "🚫 INVALID BP CODES DETECTED!",
-            html: `
-        <div style="text-align:left; font-family: 'Segoe UI', sans-serif;">
-          <div style="background: #fee; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #d33;">
-            <h3 style="color: #d33; margin: 0 0 10px 0;">⛔ EXCEL UPLOAD BLOCKED!</h3>
-            <p style="margin: 5px 0;"><strong style="color: red; font-size: 18px;">${invalidRecords.length}</strong> invalid BP code(s) found!</p>
-          </div>
-          
-          <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 15px; max-height: 400px; overflow-y: auto;">
-            <h4 style="margin-top: 0; color: #333;">❌ Invalid Records:</h4>
-            <ul style="list-style: none; padding: 0; margin: 0;">
-              ${invalidList}
-              ${invalidRecords.length > 15 ?
-                `<li style="margin: 8px 0; padding: 8px; background: #fff3cd; border-left: 4px solid #ffc107;">
-                  <strong>... and ${invalidRecords.length - 15} more</strong>
-                </li>` : ''}
-            </ul>
-          </div>
-
-          <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border: 2px solid #ffc107;">
-            <h4 style="margin-top: 0; color: #856404;">⚠️ ACTION REQUIRED:</h4>
-            <ol style="margin: 10px 0; padding-left: 20px; color: #666;">
-              <li>Go to <strong>Bp Accounts</strong> table</li>
-              <li>Add the missing BP codes listed above</li>
-              <li>Upload your Excel file again</li>
-            </ol>
-          </div>
-        </div>
-      `,
-            width: 800,
-            confirmButtonText: '❌ Close',
-            confirmButtonColor: '#d33',
-            allowOutsideClick: false
-          });
-
-          return;
-        }
-
-        // ✅ ALL VALID
-        console.log("✅ All BP codes validated!");
-
-        setFileName(file.name);
-        setImportData(processedData);
-        setCurrentPageExcel(1);
-        setTotalRows(processedData.length);
-        setProcessedRows(0);
-        setProgressPercent(0);
-        setDuplicatesChecked(false);
-
-        Swal.fire({
-          icon: "success",
-          title: "✅ Excel Uploaded!",
-          html: `
-      <div style="text-align:left;">
-        <p><strong>File:</strong> ${file.name}</p>
-        <p><strong>Total Rows:</strong> ${processedData.length}</p>
-        <p style="color: green;"><strong>✅ All BP codes validated!</strong></p>
-      </div>
-    `,
-          timer: 2000,
-          showConfirmButton: false
-        });
-
-      } catch (error) {
-        console.error('❌ Validation Error:', error);
+      if (!totalBpCount || totalBpCount === 0) {
         Swal.close();
         Swal.fire({
-          icon: 'error',
-          title: 'Validation Failed!',
-          text: error.message,
+          icon: "error",
+          title: "⚠️ BP Accounts is EMPTY!",
+          text: "Please add BP codes to Bp_Accounts table first.",
           confirmButtonColor: '#d33'
         });
+        return;
       }
+
+      // ✅ STEP 2: Load ALL BP codes in batches
+      const BATCH_SIZE = 1000;
+      let allBpCodes = [];
+      let currentOffset = 0;
+
+      while (currentOffset < totalBpCount) {
+        console.log(`📥 Fetching batch: offset ${currentOffset} to ${currentOffset + BATCH_SIZE - 1}`);
+
+        const { data: batch, error } = await supabase
+          .from('Bp_Accounts')
+          .select('bp_code')
+          .order('id', { ascending: true })
+          .range(currentOffset, currentOffset + BATCH_SIZE - 1);
+
+        if (error) {
+          console.error("❌ Error fetching batch:", error);
+          throw error;
+        }
+
+        if (!batch || batch.length === 0) {
+          console.log("⚠️ No more data, breaking loop");
+          break;
+        }
+
+        console.log(`✅ Loaded batch: ${batch.length} codes (Total so far: ${allBpCodes.length + batch.length})`);
+
+        allBpCodes = [...allBpCodes, ...batch];
+        currentOffset += BATCH_SIZE;
+
+        // Update progress
+        const progressEl = document.getElementById('validate-progress');
+        if (progressEl) {
+          const percentage = Math.min(100, Math.round((allBpCodes.length / totalBpCount) * 100));
+          progressEl.textContent = `${allBpCodes.length.toLocaleString()} / ${totalBpCount.toLocaleString()} (${percentage}%)`;
+        }
+
+        // Small delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      console.log(`✅ FINISHED LOADING: ${allBpCodes.length.toLocaleString()} total BP codes`);
+
+      Swal.close();
+
+      // ✅ STEP 3: Create validation set
+      const validBpCodes = new Set(
+        allBpCodes
+          .map(acc => acc.bp_code?.toString().trim().toUpperCase())
+          .filter(Boolean)
+      );
+
+      console.log(`✅ Valid BP codes in database: ${validBpCodes.size.toLocaleString()}`);
+      console.log("📋 Sample BP codes:", Array.from(validBpCodes).slice(0, 10));
+
+      // ✅ STEP 4: Validate Excel data
+      const invalidRecords = [];
+      processedData.forEach((row, idx) => {
+        const bpCode = row.bp_code?.toString().trim();
+
+        if (!bpCode || bpCode === "") {
+          invalidRecords.push({
+            Row: idx + 2,
+            BP_Code: "❌ EMPTY/NULL",
+            BP_Name: row.bp_name || "N/A",
+            Distributor: row.distributor_code || "N/A",
+            Issue: "BP Code is empty or missing"
+          });
+        } else if (!validBpCodes.has(bpCode.toUpperCase())) {
+          invalidRecords.push({
+            Row: idx + 2,
+            BP_Code: bpCode,
+            BP_Name: row.bp_name || "N/A",
+            Distributor: row.distributor_code || "N/A",
+            Issue: "BP Code NOT FOUND in Bp_Accounts table"
+          });
+        }
+      });
+
+      // ✅ STEP 5: Show results
+      if (invalidRecords.length > 0) {
+        console.log("\n⚠️⚠️⚠️ INVALID BP CODES FOUND:");
+        console.table(invalidRecords);
+
+        const invalidList = invalidRecords.slice(0, 15).map(r =>
+          `<li style="margin: 8px 0; padding: 8px; background: #fee; border-left: 4px solid #d33; border-radius: 4px;">
+            <strong>Row ${r.Row}:</strong> <code style="background: #333; color: #ff6b6b; padding: 2px 6px; border-radius: 3px;">${r.BP_Code}</code><br>
+            <small style="color: #666;">BP Name: ${r.BP_Name} | Distributor: ${r.Distributor}</small><br>
+            <small style="color: #d33;">⚠️ ${r.Issue}</small>
+          </li>`
+        ).join('');
+
+        Swal.fire({
+          icon: "error",
+          title: "🚫 INVALID BP CODES DETECTED!",
+          html: `
+            <div style="text-align:left; font-family: 'Segoe UI', sans-serif;">
+              <div style="background: #fee; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #d33;">
+                <h3 style="color: #d33; margin: 0 0 10px 0;">⛔ EXCEL UPLOAD BLOCKED!</h3>
+                <p style="margin: 5px 0;"><strong style="color: red; font-size: 18px;">${invalidRecords.length.toLocaleString()}</strong> invalid BP code(s) found out of <strong>${processedData.length.toLocaleString()}</strong> total rows!</p>
+              </div>
+              
+              <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 15px; max-height: 400px; overflow-y: auto;">
+                <h4 style="margin-top: 0; color: #333;">❌ Invalid Records (showing first 15):</h4>
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                  ${invalidList}
+                  ${invalidRecords.length > 15 ?
+                    `<li style="margin: 8px 0; padding: 8px; background: #fff3cd; border-left: 4px solid #ffc107;">
+                      <strong>... and ${(invalidRecords.length - 15).toLocaleString()} more</strong>
+                    </li>` : ''}
+                </ul>
+              </div>
+
+              <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border: 2px solid #ffc107;">
+                <h4 style="margin-top: 0; color: #856404;">⚠️ ACTION REQUIRED:</h4>
+                <ol style="margin: 10px 0; padding-left: 20px; color: #666;">
+                  <li>Go to <strong>Bp Accounts</strong> table</li>
+                  <li>Add the missing BP codes listed above</li>
+                  <li>Upload your Excel file again</li>
+                </ol>
+              </div>
+            </div>
+          `,
+          width: 800,
+          confirmButtonText: '❌ Close',
+          confirmButtonColor: '#d33',
+          allowOutsideClick: false
+        });
+
+        return;
+      }
+
       // ✅ ALL VALID
       console.log("✅ All BP codes validated!");
 
@@ -981,24 +991,41 @@ export default function AccountsListManager() {
 
       Swal.fire({
         icon: "success",
-        title: "✅ Excel Uploaded!",
+        title: "✅ Excel Uploaded Successfully!",
         html: `
-        <div style="text-align:left;">
-          <p><strong>File:</strong> ${file.name}</p>
-          <p><strong>Total Rows:</strong> ${processedData.length}</p>
-          <p style="color: green;"><strong>✅ All BP codes validated!</strong></p>
-        </div>
-      `,
-        timer: 2000,
+          <div style="text-align:left;">
+            <p><strong>File:</strong> ${file.name}</p>
+            <p><strong>Total Rows:</strong> ${processedData.length.toLocaleString()}</p>
+            <p style="color: green;"><strong>✅ All BP codes validated!</strong></p>
+            <p style="color: #666; font-size: 13px; margin-top: 10px;">Ready to import all ${processedData.length.toLocaleString()} records</p>
+          </div>
+        `,
+        timer: 3000,
         showConfirmButton: false
       });
 
     } catch (error) {
-      console.error('❌ Error:', error);
-      Swal.fire('Error', 'Failed to process Excel', 'error');
+      console.error('❌ Validation Error:', error);
+      Swal.close();
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Failed!',
+        text: error.message,
+        confirmButtonColor: '#d33'
+      });
     }
-  };
 
+  } catch (error) {
+    console.error('❌ Error:', error);
+    Swal.close();
+    Swal.fire({
+      icon: 'error',
+      title: 'Processing Failed!',
+      text: error.message || 'Failed to process Excel',
+      confirmButtonColor: '#d33'
+    });
+  }
+};
   // 🔹 Modal visibility
 
   // 🔹 Excel import data
@@ -4923,7 +4950,6 @@ const modalStyles = {
   closeBtn: { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' },
   footer: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }
 };
-
 
 
 
