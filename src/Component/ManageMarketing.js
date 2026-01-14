@@ -59,75 +59,46 @@ function EnhancedDatabaseInterface() {
   };
 
   // ✅ FIXED: Fetch ALL approval history and get the LATEST status for each PWP code
-  const getApprovalStatus = async (pwpCodes) => {
-    try {
-      // Fetch ALL approval records for these codes (not limited)
-      let allApprovalData = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
+ const getApprovalStatus = async (pwpCodes) => {
+  try {
+    // Fetch in batches if there are many codes
+    let allApprovalData = [];
+    const batchSize = 1000;
+    
+    for (let i = 0; i < pwpCodes.length; i += batchSize) {
+      const batch = pwpCodes.slice(i, i + batchSize);
+      
+      const { data: approvalData, error } = await supabase
+        .from("Approval_History")
+        .select("PwpCode, Response, DateResponded, created_at")
+        .in("PwpCode", batch);  // ✅ WALANG .order() dito!
 
-      while (hasMore) {
-        const { data: approvalBatch, error } = await supabase
-          .from("Approval_History")
-          .select("PwpCode, Response, DateResponded, created_at")
-          .in("PwpCode", pwpCodes)
-          .order('DateResponded', { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (error) {
-          console.error("Error fetching approval status:", error);
-          break;
-        }
-
-        if (approvalBatch && approvalBatch.length > 0) {
-          allApprovalData = [...allApprovalData, ...approvalBatch];
-          from += batchSize;
-
-          if (approvalBatch.length < batchSize) {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-        }
+      if (error) {
+        console.error("Error fetching approval status:", error);
+        continue;
       }
 
-      console.log(`✅ Loaded ${allApprovalData.length} approval history records`);
-
-      // ✅ Get the LATEST approval for each PWP code
-      const approvalMap = {};
-      
-      // Group by PwpCode and get the most recent one
-      const groupedByCode = {};
-      allApprovalData.forEach(approval => {
-        const code = approval.PwpCode;
-        if (!groupedByCode[code]) {
-          groupedByCode[code] = [];
-        }
-        groupedByCode[code].push(approval);
-      });
-
-      // For each code, get the latest approval
-      Object.keys(groupedByCode).forEach(code => {
-        const approvals = groupedByCode[code];
-        // Sort by DateResponded descending to get latest
-        approvals.sort((a, b) => new Date(b.DateResponded) - new Date(a.DateResponded));
-        const latest = approvals[0];
-        
-        approvalMap[code] = {
-          status: latest.Response || 'Pending',
-          date_responded: latest.DateResponded,
-          approval_created: latest.created_at
-        };
-      });
-
-      console.log(`✅ Processed approval status for ${Object.keys(approvalMap).length} PWP codes`);
-      return approvalMap;
-    } catch (err) {
-      console.error("Unexpected error fetching approval status:", err);
-      return {};
+      if (approvalData) {
+        allApprovalData = [...allApprovalData, ...approvalData];
+      }
     }
-  };
+
+    // ✅ SIMPLE LANG - last record lang kinukuha
+    const approvalMap = {};
+    allApprovalData?.forEach(approval => {
+      approvalMap[approval.PwpCode] = {
+        status: approval.Response || 'Pending',
+        date_responded: approval.DateResponded,
+        approval_created: approval.created_at
+      };
+    });
+
+    return approvalMap;
+  } catch (err) {
+    console.error("Unexpected error fetching approval status:", err);
+    return {};
+  }
+};
 
   useEffect(() => {
     const fetchUsers = async () => {
