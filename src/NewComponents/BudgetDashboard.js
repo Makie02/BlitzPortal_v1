@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import * as XLSX from "xlsx";
@@ -199,6 +198,8 @@ export default function CoverPWPBudgetTable() {
                         "id, pwp_code, cover_pwp_code, approver_id, date_responded, response, type, created_form, remaining_balance, credit_budget, updated_amount_badget"
                     )
                     .eq("cover_pwp_code", coverCode)
+                    // ✅ EXCLUDE Cancelled records from details view
+                    .neq("response", "Cancelled")
                     .order("id", { ascending: true })
                     .range(from, from + batchSize - 1);
 
@@ -307,7 +308,8 @@ export default function CoverPWPBudgetTable() {
                     monthlyMap[month] = { month };
                 }
 
-                if (["Approved", "Disapproved", "Cancelled"].includes(status)) {
+                // ✅ EXCLUDE Cancelled status from trends
+                if (["Approved", "Disapproved"].includes(status)) {
                     monthlyMap[month][status] = (monthlyMap[month][status] || 0) + 1;
                 }
             });
@@ -1187,4 +1189,3 @@ export default function CoverPWPBudgetTable() {
         </div>
     );
 }
-
