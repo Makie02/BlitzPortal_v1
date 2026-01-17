@@ -522,13 +522,13 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
         const userId = currentUser?.UserID || "unknown";
         const userType = currentUser?.UserType || "admin";
 
-        // Vars used for logging
         let remainingBalance = null;
         let creditBudget = null;
         let coverPwpCode = null;
         let isPartOfCover = false;
         let isPartOfBudget = false;
         let notPartOfBudget = null;
+        let isInsufficientBudget = false;
 
         try {
             const updatePayload = {
@@ -540,7 +540,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
             // 1️⃣ REGULAR PWP
             // ------------------------------------------------------------------
             if (visaCode.startsWith("R")) {
-
                 const { data: pwpData, error: pwpError } = await supabase
                     .from("regular_pwp")
                     .select("remaining_balance, coverPwpCode, credit_budget, isPartOfCoverPwp, amountbadget")
@@ -553,17 +552,17 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
 
                 isPartOfCover = pwpData.isPartOfCoverPwp === "Yes" || pwpData.isPartOfCoverPwp === true;
 
-                // ✅ CHECK: IS PART OF BUDGET?
+                // ------------------------------------------------------------------
+                // ✅ PART OF COVER / BUDGET
+                // ------------------------------------------------------------------
                 if (isPartOfCover) {
                     isPartOfBudget = true;
-                    creditBudget = parseFloat(pwpData.credit_budget);
-                    remainingBalance = parseFloat(pwpData.remaining_balance);
+                    creditBudget = parseFloat(pwpData.credit_budget || 0);
                     coverPwpCode = pwpData.coverPwpCode;
 
-                    // Validate cover PWP budget
                     const { data: budgetData, error: budgetError } = await supabase
                         .from("amount_badget")
-                        .select("amountbadget, remainingbalance")
+                        .select("remainingbalance")
                         .eq("pwp_code", coverPwpCode)
                         .single();
 
@@ -571,28 +570,47 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                         return Swal.fire("Error", "Failed to fetch cover PWP budget.", "error");
                     }
 
-                    const currentRemaining = parseFloat(budgetData.remainingbalance);
+                    const currentRemaining = parseFloat(budgetData.remainingbalance || 0);
 
-                    // ❌ Kulang ang budget
+                    // ⚠️ WARNING ONLY — NO DENY
                     if (currentRemaining < creditBudget) {
-                        return Swal.fire({
-                            icon: "error",
-                            title: "Denied!",
+                        isInsufficientBudget = true;
+
+                        const warningResult = await Swal.fire({
+                            icon: "warning",
+                            title: "Insufficient Budget Available",
                             html: `
-                            <b>${visaCode}</b> cannot be approved.<br/>
-                            Remaining Balance: <b>${currentRemaining.toLocaleString()}</b><br/>
-                            Required Budget: <b>${creditBudget.toLocaleString()}</b>
-                        `,
-                            confirmButtonColor: "#ef4444",
-                            confirmButtonText: "OK",
+            <p>
+                The PWP <strong>${visaCode}</strong> exceeds the available budget.
+            </p>
+            <hr/>
+            <p>
+                <strong>Remaining Balance:</strong> ${currentRemaining.toLocaleString()}<br/>
+                <strong>Required Budget:</strong> ${creditBudget.toLocaleString()}
+            </p>
+            <p style="color:#b91c1c; margin-top:10px;">
+                Proceeding with this approval will result in a negative budget balance.
+            </p>
+            <p>
+                Do you want to continue?
+            </p>
+        `,
+                            showCancelButton: true,
+                            confirmButtonText: "Approve and Proceed",
+                            cancelButtonText: "Cancel Approval",
+                            confirmButtonColor: "#f59e0b",
+                            cancelButtonColor: "#6b7280",
+                            focusCancel: true,
                         });
+
+                        if (!warningResult.isConfirmed) return;
                     }
 
-                    // Deduct budget
-                    // Deduct budget
+
+                    // 💰 DEDUCT EVEN IF NEGATIVE
                     const newRemaining = currentRemaining - creditBudget;
 
-                    const { error: updateError } = await supabase
+                    const { error: updateCoverError } = await supabase
                         .from("amount_badget")
                         .update({
                             remainingbalance: newRemaining,
@@ -600,63 +618,47 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                         })
                         .eq("pwp_code", coverPwpCode);
 
-                    if (updateError) {
+                    if (updateCoverError) {
                         return Swal.fire("Error", "Failed to update cover PWP balance.", "error");
                     }
 
-                    // ✅ FETCH LATEST COVER PWP REMAINING BALANCE
-                    const { data: latestCoverData, error: latestCoverError } = await supabase
-                        .from("amount_badget")
-                        .select("remainingbalance")
-                        .eq("pwp_code", coverPwpCode)
-                        .single();
+                    remainingBalance = newRemaining;
 
-                    if (latestCoverError) {
-                        console.warn("Failed to fetch latest cover balance:", latestCoverError);
-                        remainingBalance = newRemaining; // Fallback to calculated value
-                    } else {
-                        remainingBalance = parseFloat(latestCoverData.remainingbalance);
-                    }
-
-                    // Update Regular PWP's remaining_balance
-                    const { error: updateRegularError } = await supabase
+                    await supabase
                         .from("regular_pwp")
-                        .update({
-                            remaining_balance: remainingBalance  // Use latest value
-                        })
+                        .update({ remaining_balance: remainingBalance })
                         .eq("regularpwpcode", visaCode);
 
-                    if (updateRegularError) {
-                        return Swal.fire("Error", "Failed to update Regular PWP remaining balance.", "error");
-                    }
                 } else {
-                    // ✅ NOT PART OF BUDGET
+                    // ------------------------------------------------------------------
+                    // ❌ NOT PART OF BUDGET
+                    // ------------------------------------------------------------------
                     isPartOfBudget = false;
 
-                    // Calculate amount from SKU or Accounts
                     let calculatedAmount = 0;
 
-                    // Fetch SKU Listing
-                    const { data: skuData, error: skuError } = await supabase
-                        .from('regular_sku')
-                        .select('total_amount')
-                        .eq('regular_code', visaCode);
+                    const { data: skuData } = await supabase
+                        .from("regular_sku")
+                        .select("total_amount")
+                        .eq("regular_code", visaCode);
 
-                    if (!skuError && skuData && skuData.length > 0) {
-                        calculatedAmount = skuData
-                            .filter(row => row.total_amount != null)
-                            .reduce((acc, row) => acc + parseFloat(row.total_amount || 0), 0);
+                    if (skuData?.length) {
+                        calculatedAmount = skuData.reduce(
+                            (acc, row) => acc + parseFloat(row.total_amount || 0),
+                            0
+                        );
                     } else {
-                        // If no SKU, get from Accounts Budget
-                        const { data: accountsData, error: accountsError } = await supabase
-                            .from('regular_accountlis_badget')
-                            .select('budget')
-                            .eq('regularcode', visaCode);
+                        const { data: accData } = await supabase
+                            .from("regular_accountlis_badget")
+                            .select("budget")
+                            .eq("regularcode", visaCode);
 
-                        if (!accountsError && accountsData && accountsData.length > 0) {
-                            calculatedAmount = accountsData.reduce((acc, row) => acc + parseFloat(row.budget || 0), 0);
+                        if (accData?.length) {
+                            calculatedAmount = accData.reduce(
+                                (acc, row) => acc + parseFloat(row.budget || 0),
+                                0
+                            );
                         } else {
-                            // Fallback to amountbadget field
                             calculatedAmount = parseFloat(pwpData.amountbadget || 0);
                         }
                     }
@@ -664,24 +666,24 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     notPartOfBudget = calculatedAmount.toString();
                 }
 
+            } else {
                 // ------------------------------------------------------------------
                 // 2️⃣ COVER / CLAIMS PWP
                 // ------------------------------------------------------------------
-            } else {
-                const { error: updateError } = await supabase
+                const { error } = await supabase
                     .from("amount_badget")
                     .update(updatePayload)
                     .eq("pwp_code", visaCode);
 
-                if (updateError) {
+                if (error) {
                     return Swal.fire("Error", "Failed to update amount_badget.", "error");
                 }
             }
 
             // ------------------------------------------------------------------
-            // 3️⃣ APPROVAL HISTORY LOG
+            // 3️⃣ APPROVAL HISTORY
             // ------------------------------------------------------------------
-            const { error: historyError } = await supabase.from("Approval_History").insert({
+            await supabase.from("Approval_History").insert({
                 PwpCode: visaCode,
                 ApproverId: userId,
                 DateResponded: dateTime,
@@ -691,39 +693,33 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                 CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
             });
 
-            if (historyError) {
-                return Swal.fire("Error", "Failed to log approval.", "error");
-            }
+            // ------------------------------------------------------------------
+            // 4️⃣ BUDGET HISTORY
+            // ------------------------------------------------------------------
+            const statusValue = isInsufficientBudget
+                ? "Approved - Insufficient Budget"
+                : isPartOfCover
+                    ? "Deduction Amount"
+                    : "No deduction";
+
+            await supabase.from("approved_history_budget").insert({
+                pwp_code: visaCode,
+                approver_id: userId,
+                date_responded: dateTime,
+                response: "Approved",
+                type: userType,
+                created_form: data?.createForm || data?.CreatedForm || "unknown",
+                remaining_balance: remainingBalance,
+                credit_budget: creditBudget,
+                cover_pwp_code: coverPwpCode,
+                status: statusValue,
+                updated_amount_badget: isPartOfCover,
+                isPartOfBudget,
+                notPartOfBudget,
+            });
 
             // ------------------------------------------------------------------
-            // 4️⃣ BUDGET HISTORY LOG (WITH isPartOfBudget & notPartOfBudget)
-            // ------------------------------------------------------------------
-            const statusValue = isPartOfCover ? "Deduction Amount" : "No deduction";
-            const updatedAmount = isPartOfCover ? true : false;
-
-            const { error: historyBudgetError } = await supabase
-                .from("approved_history_budget")
-                .insert({
-                    pwp_code: visaCode,
-                    approver_id: userId,
-                    date_responded: dateTime,
-                    response: "Approved",
-                    type: userType,
-                    created_form: data?.createForm || data?.CreatedForm || "unknown",
-                    remaining_balance: remainingBalance,  // ✅ ITO YUNG VARIABLE NA YAN!
-                    credit_budget: creditBudget,
-                    cover_pwp_code: coverPwpCode,
-                    status: statusValue,
-                    updated_amount_badget: updatedAmount,
-                    isPartOfBudget: isPartOfBudget,
-                    notPartOfBudget: notPartOfBudget,
-                });
-            if (historyBudgetError) {
-                return Swal.fire("Error", "Failed to insert approval + budget.", "error");
-            }
-
-            // ------------------------------------------------------------------
-            // 5️⃣ ACTIVITY LOG (Non-blocking)
+            // 5️⃣ ACTIVITY LOG (NON-BLOCKING)
             // ------------------------------------------------------------------
             try {
                 const ipRes = await fetch("https://api.ipify.org?format=json");
@@ -733,24 +729,25 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
 
                 await supabase.from("RecentActivity").insert({
                     userId,
-                    device: navigator.userAgent || "Unknown Device",
+                    device: navigator.userAgent,
                     location: `${geo.city}, ${geo.region}, ${geo.country_name}`,
                     ip,
                     time: dateTime,
                     action: `Approved ${visaCode}`,
                 });
             } catch (err) {
-                console.warn("Activity logging failed:", err.message);
+                console.warn("Activity logging failed:", err);
             }
 
             // ------------------------------------------------------------------
-            // 6️⃣ SUCCESS MESSAGE
+            // 6️⃣ SUCCESS
             // ------------------------------------------------------------------
             Swal.fire({
                 icon: "success",
                 title: "Approved!",
-                text: `${visaCode} has been approved successfully.`,
-                confirmButtonText: "OK",
+                text: isInsufficientBudget
+                    ? `${visaCode} approved with insufficient budget.`
+                    : `${visaCode} approved successfully.`,
             }).then(() => {
                 onClose();
                 window.location.reload();
@@ -761,6 +758,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
             Swal.fire("Error", "Failed to approve. Please try again.", "error");
         }
     };
+
 
 
     const handleDisapprove = async () => {
@@ -1013,9 +1011,11 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                 'activityDurationFrom',
                                 'activityDurationTo',
                                 'isPartOfCoverPwp',
+                                'coverPwpCode',
                                 'accounts',
                                 'created_at',
                                 'createForm',
+
                             ]
                                 .filter((key) => {
                                     const value = data[key];
@@ -1589,6 +1589,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
             </div >
         </div >
     );
-}; 
+};
 
 export default ViewDataModal;
