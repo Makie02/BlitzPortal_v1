@@ -2384,20 +2384,21 @@ const submit_all = async (e) => {
     const createdBy = parsedUser?.name || "Unknown";
 
     // 📊 Calculate remaining budget (can be negative)
-    let remainingBudget = selectedBalance;
+    // ✅ FIX: Ensure selectedBalance is a valid number, default to 0
+    let remainingBudget = parseFloat(selectedBalance) || 0;
     
     if (rowsAccounts.length > 0 && selectedBalance != null) {
       const totalFromBranches = rowsAccounts.reduce(
         (sum, row) => sum + (parseFloat(row.budget) || 0),
         0
       );
-      remainingBudget = selectedBalance - totalFromBranches;
+      remainingBudget = parseFloat(selectedBalance) - totalFromBranches;
       console.log(`💰 Remaining Budget (Branches): ₱${remainingBudget.toLocaleString()}`);
     }
 
     if (formData.amountbadget && parseFloat(formData.amountbadget) > 0 && selectedBalance != null) {
       const allocatedAmount = parseFloat(formData.amountbadget);
-      remainingBudget = selectedBalance - allocatedAmount;
+      remainingBudget = parseFloat(selectedBalance) - allocatedAmount;
       console.log(`💰 Remaining Budget (Form): ₱${remainingBudget.toLocaleString()}`);
     }
 
@@ -2494,7 +2495,12 @@ const submit_all = async (e) => {
 
       if (budgetError) throw budgetError;
 
-      console.log(`✅ Budget data saved (Remaining: ₱${remainingBudget.toLocaleString()})`);
+      // ✅ FIX: Safely format remainingBudget
+      const formattedBudget = (remainingBudget != null && !isNaN(remainingBudget)) 
+        ? remainingBudget.toLocaleString() 
+        : '0';
+      
+      console.log(`✅ Budget data saved (Remaining: ₱${formattedBudget})`);
     }
 
     // Upload attachments
@@ -2523,13 +2529,18 @@ const submit_all = async (e) => {
     clearInterval(progressInterval);
     if (progressBar) progressBar.style.width = "100%";
 
+    // ✅ FIX: Safe formatting for success modal
+    const formattedRemainingBudget = (remainingBudget != null && !isNaN(remainingBudget)) 
+      ? remainingBudget.toLocaleString() 
+      : '0';
+
     // ✅ Success modal
     await Swal.fire({
       title: "✅ Success!",
       html: `
         <p>Your data has been successfully submitted!</p>
         <p style="margin-top:8px;"><strong>PWP Code:</strong> <span style="color:#16a34a;">${generatedCode}</span></p>
-        ${remainingBudget < 0 ? `<p style="margin-top:4px; color:#dc2626;"><strong>⚠️ Budget Exceeded:</strong> ₱${remainingBudget.toLocaleString()}</p>` : ''}
+        ${remainingBudget < 0 ? `<p style="margin-top:4px; color:#dc2626;"><strong>⚠️ Budget Exceeded:</strong> ₱${formattedRemainingBudget}</p>` : ''}
         <div style="height:6px; background:linear-gradient(90deg,#16a34a,#4ade80); width:100%; border-radius:4px;"></div>
       `,
       icon: "success",
