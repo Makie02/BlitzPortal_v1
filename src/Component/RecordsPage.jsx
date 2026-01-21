@@ -186,9 +186,22 @@ function RecordsPage() {
         while (hasMore) {
           const { data: rData, error: rError } = await supabase
             .from("regular_pwp")
-            .select("id, regularpwpcode, activity, credit_budget, amountbadget, distributor, created_at, branchType, createForm")
+            .select(`
+    id,
+    regularpwpcode,
+    activity,
+    credit_budget,
+    amountbadget,
+    distributor,
+    created_at,
+    branchType,
+    createForm,
+    "activityDurationFrom",
+    "activityDurationTo"
+  `)
             .order("id", { ascending: false })
             .range(from, from + batchSize - 1);
+
 
           if (rError) throw rError;
 
@@ -394,129 +407,131 @@ function RecordsPage() {
     });
   }, [data, currentUserName, currentUserId, role]);
 
-const safeExcelText = (value) => {
-  if (value === null || value === undefined) return "";
-  const str = String(value);
-  return str.length > EXCEL_TEXT_LIMIT
-    ? str.substring(0, EXCEL_TEXT_LIMIT - 3) + "..."
-    : str;
-};
-const EXCEL_TEXT_LIMIT = 32767;
+  const safeExcelText = (value) => {
+    if (value === null || value === undefined) return "";
+    const str = String(value);
+    return str.length > EXCEL_TEXT_LIMIT
+      ? str.substring(0, EXCEL_TEXT_LIMIT - 3) + "..."
+      : str;
+  };
+  const EXCEL_TEXT_LIMIT = 32767;
 
-const exportToExcel = async () => {
-  if (!filteredData || !filteredData.length) {
-    alert("No data to export!");
-    return;
-  }
+  const exportToExcel = async () => {
+    if (!filteredData || !filteredData.length) {
+      alert("No data to export!");
+      return;
+    }
 
-  try {
-    console.log("🔄 Starting Excel export...");
+    try {
+      console.log("🔄 Starting Excel export...");
 
-    // ✅ Columns
-    const exportColumns = [
-      { header: "ID", key: "id" },
-      { header: "REG PWP CODE", key: "pwp_code" },
-      { header: "DISTRIBUTOR", key: "distributor" },
-      { header: "ACTIVITY", key: "activity" },
-      { header: "AMOUNT", key: "credit_budget" },
-      { header: "CREATED DATE", key: "created_at" },
-      { header: "APPROVED DATE", key: "date_responded" },
-      { header: "STATUS", key: "approval_status" },
-      { header: "Account Type", key: "branchType" },
-    ];
+      // ✅ Columns
+      const exportColumns = [
+        { header: "ID", key: "id" },
+        { header: "REG PWP CODE", key: "pwp_code" },
+        { header: "DISTRIBUTOR", key: "distributor" },
+        { header: "ACTIVITY", key: "activity" },
+        { header: "AMOUNT", key: "credit_budget" },
+        { header: "CREATED DATE", key: "created_at" },
+        { header: "APPROVED DATE", key: "date_responded" },
+        { header: "STATUS", key: "approval_status" },
+        { header: "Account Type", key: "branchType" },
+        { header: "ACTIVITY FROM", key: "activityDurationFrom" },
+        { header: "ACTIVITY TO", key: "activityDurationTo" },
+      ];
 
-    // ✅ DATA MAP (SAFE)
-    const exportData = filteredData.map(row => {
-      const obj = {};
+      // ✅ DATA MAP (SAFE)
+      const exportData = filteredData.map(row => {
+        const obj = {};
 
+        exportColumns.forEach(col => {
+          if (col.key === "created_at" || col.key === "date_responded") {
+            obj[col.header] = row[col.key]
+              ? new Date(row[col.key]).toLocaleDateString()
+              : "";
+
+          } else if (col.key === "approval_status") {
+            obj[col.header] = safeExcelText(row[col.key] || "Pending");
+
+          } else if (col.key === "distributor") {
+            obj[col.header] = safeExcelText(
+              distributorMap[row[col.key]] || row[col.key] || "-"
+            );
+
+          } else if (col.key === "credit_budget") {
+            obj[col.header] = Number(row[col.key] || 0);
+
+          } else {
+            obj[col.header] = safeExcelText(row[col.key]);
+          }
+        });
+
+        return obj;
+      });
+
+      // ✅ TOTAL CALCULATION
+      const totalAmount = exportData.reduce(
+        (sum, row) => sum + (Number(row["AMOUNT"]) || 0),
+        0
+      );
+
+      // ✅ TOTAL ROW
+      const totalRow = {};
       exportColumns.forEach(col => {
-        if (col.key === "created_at" || col.key === "date_responded") {
-          obj[col.header] = row[col.key]
-            ? new Date(row[col.key]).toLocaleDateString()
-            : "";
-
-        } else if (col.key === "approval_status") {
-          obj[col.header] = safeExcelText(row[col.key] || "Pending");
-
-        } else if (col.key === "distributor") {
-          obj[col.header] = safeExcelText(
-            distributorMap[row[col.key]] || row[col.key] || "-"
-          );
-
-        } else if (col.key === "credit_budget") {
-          obj[col.header] = Number(row[col.key] || 0);
-
+        if (col.key === "credit_budget") {
+          totalRow[col.header] = totalAmount;
+        } else if (col.key === "activity") {
+          totalRow[col.header] = "TOTAL:";
         } else {
-          obj[col.header] = safeExcelText(row[col.key]);
+          totalRow[col.header] = "";
         }
       });
 
-      return obj;
-    });
+      exportData.push(totalRow);
 
-    // ✅ TOTAL CALCULATION
-    const totalAmount = exportData.reduce(
-      (sum, row) => sum + (Number(row["AMOUNT"]) || 0),
-      0
-    );
+      console.log(`✅ Prepared ${exportData.length} rows for export`);
 
-    // ✅ TOTAL ROW
-    const totalRow = {};
-    exportColumns.forEach(col => {
-      if (col.key === "credit_budget") {
-        totalRow[col.header] = totalAmount;
-      } else if (col.key === "activity") {
-        totalRow[col.header] = "TOTAL:";
-      } else {
-        totalRow[col.header] = "";
-      }
-    });
+      // ✅ CREATE SHEET
+      const worksheet = XLSX.utils.json_to_sheet(exportData, {
+        header: exportColumns.map(c => c.header),
+      });
 
-    exportData.push(totalRow);
+      // ✅ AUTO COLUMN WIDTH
+      worksheet["!cols"] = exportColumns.map(col => ({
+        wch: Math.max(
+          col.header.length,
+          ...exportData.map(r =>
+            r[col.header] ? r[col.header].toString().length : 0
+          )
+        ) + 2,
+      }));
 
-    console.log(`✅ Prepared ${exportData.length} rows for export`);
+      // ✅ WORKBOOK
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "PWP Records");
 
-    // ✅ CREATE SHEET
-    const worksheet = XLSX.utils.json_to_sheet(exportData, {
-      header: exportColumns.map(c => c.header),
-    });
+      // ✅ EXPORT
+      const excelBuffer = XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+      });
 
-    // ✅ AUTO COLUMN WIDTH
-    worksheet["!cols"] = exportColumns.map(col => ({
-      wch: Math.max(
-        col.header.length,
-        ...exportData.map(r =>
-          r[col.header] ? r[col.header].toString().length : 0
-        )
-      ) + 2,
-    }));
+      const blob = new Blob([excelBuffer], {
+        type: "application/octet-stream",
+      });
 
-    // ✅ WORKBOOK
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "PWP Records");
+      const filename = `PWP_Records_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
 
-    // ✅ EXPORT
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
+      saveAs(blob, filename);
 
-    const blob = new Blob([excelBuffer], {
-      type: "application/octet-stream",
-    });
-
-    const filename = `PWP_Records_${new Date()
-      .toISOString()
-      .slice(0, 10)}.xlsx`;
-
-    saveAs(blob, filename);
-
-    console.log(`✅ Excel file saved: ${filename}`);
-  } catch (err) {
-    console.error("❌ Error exporting Excel:", err);
-    alert("Error exporting Excel. Please try again.");
-  }
-};
+      console.log(`✅ Excel file saved: ${filename}`);
+    } catch (err) {
+      console.error("❌ Error exporting Excel:", err);
+      alert("Error exporting Excel. Please try again.");
+    }
+  };
 
   const userIdToNameMap = useMemo(() => {
     const map = new Map();
