@@ -853,7 +853,7 @@ export default function CoverPWPBudgetTable() {
                     Export
                 </button>
             </div>
-            {/* ✅ DISTRIBUTOR TABS - ADD THIS BEFORE TABLE */}
+            {/* ✅ DISTRIBUTOR TABS */}
             <div style={{
                 display: 'flex',
                 gap: 12,
@@ -984,50 +984,126 @@ export default function CoverPWPBudgetTable() {
                                                                 Loading details...
                                                             </div>
                                                         ) : approvedDetails[row.cover_code] && approvedDetails[row.cover_code].length > 0 ? (
-                                                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                                                                <thead>
-                                                                    <tr>
-                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>ID</th>
-                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>PWP Code</th>
-                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Response</th>
-                                                                        <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Remaining Balance</th>
-                                                                        <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Credit Budget</th>
-                                                                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Date Responded</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    {approvedDetails[row.cover_code].map((detail) => (
-                                                                        <tr key={detail.id}>
-                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.id}</td>
-                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.pwp_code}</td>
-                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.response}</td>
-                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
-                                                                                ₱
-                                                                                {detail.remaining_balance !== null
-                                                                                    ? Number(detail.remaining_balance).toLocaleString(undefined, {
-                                                                                        minimumFractionDigits: 2,
-                                                                                        maximumFractionDigits: 2,
-                                                                                    })
-                                                                                    : "-"}
-                                                                            </td>
-                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
-                                                                                ₱
-                                                                                {detail.credit_budget !== null
-                                                                                    ? Number(detail.credit_budget).toLocaleString(undefined, {
-                                                                                        minimumFractionDigits: 2,
-                                                                                        maximumFractionDigits: 2,
-                                                                                    })
-                                                                                    : "-"}
-                                                                            </td>
-                                                                            <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
-                                                                                {detail.date_responded
-                                                                                    ? new Date(detail.date_responded).toLocaleString()
-                                                                                    : "-"}
-                                                                            </td>
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
+                                                            (() => {
+                                                                // ✅ Calculate running balance AND UPDATE DATABASE
+                                                                const details = approvedDetails[row.cover_code];
+                                                                const initialBudget = Number(row.budget2025) || 0;
+                                                                
+                                                                let runningBalance = initialBudget;
+                                                                const detailsWithRunningBalance = details.map((detail) => {
+                                                                    const creditBudget = Number(detail.credit_budget) || 0;
+                                                                    const currentBalance = runningBalance;
+                                                                    runningBalance = runningBalance - creditBudget;
+                                                                    
+                                                                    const calculatedBalance = currentBalance - creditBudget;
+                                                                    
+                                                                    // ✅ AUTO UPDATE approved_history_budget.remaining_balance
+                                                                    (async () => {
+                                                                        try {
+                                                                            const { error } = await supabase
+                                                                                .from('approved_history_budget')
+                                                                                .update({ remaining_balance: calculatedBalance })
+                                                                                .eq('id', detail.id);
+                                                                            
+                                                                            if (error) throw error;
+                                                                            console.log(`✅ Updated remaining_balance for ID ${detail.id}: ₱${calculatedBalance.toFixed(2)}`);
+                                                                        } catch (err) {
+                                                                            console.error(`❌ Failed to update ID ${detail.id}:`, err.message);
+                                                                        }
+                                                                    })();
+                                                                    
+                                                                    return {
+                                                                        ...detail,
+                                                                        calculatedBalance: calculatedBalance
+                                                                    };
+                                                                });
+                                                                
+                                                                const finalBalance = runningBalance;
+                                                                
+                                                                // ✅ AUTO UPDATE amount_badget.remainingbalance with FINAL balance
+                                                                (async () => {
+                                                                    try {
+                                                                        const { error } = await supabase
+                                                                            .from('amount_badget')
+                                                                            .update({ remainingbalance: finalBalance })
+                                                                            .eq('pwp_code', row.cover_code);
+                                                                        
+                                                                        if (error) throw error;
+                                                                        console.log(`✅ Updated amount_badget for ${row.cover_code}: ₱${finalBalance.toFixed(2)}`);
+                                                                    } catch (err) {
+                                                                        console.error(`❌ Failed to update amount_badget for ${row.cover_code}:`, err.message);
+                                                                    }
+                                                                })();
+                                                                
+                                                                return (
+                                                                    <>
+                                                                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                                                                            <thead>
+                                                                                <tr>
+                                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>ID</th>
+                                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>PWP Code</th>
+                                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Response</th>
+                                                                                    <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe", textAlign: "right" }}>Credit Budget</th>
+                                                                                    <th style={{ padding: "8px 10px", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe", textAlign: "right" }}>Remaining Balance</th>
+                                                                                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #bbb", backgroundColor: "#dbeafe" }}>Date Responded</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {detailsWithRunningBalance.map((detail) => (
+                                                                                    <tr key={detail.id}>
+                                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.id}</td>
+                                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.pwp_code}</td>
+                                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>{detail.response}</td>
+                                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd", textAlign: "right" }}>
+                                                                                            ₱{Number(detail.credit_budget || 0).toLocaleString(undefined, {
+                                                                                                minimumFractionDigits: 2,
+                                                                                                maximumFractionDigits: 2,
+                                                                                            })}
+                                                                                        </td>
+                                                                                        <td style={{ 
+                                                                                            padding: "8px 10px", 
+                                                                                            borderTop: "1px solid #ddd", 
+                                                                                            textAlign: "right",
+                                                                                            fontWeight: "600",
+                                                                                            color: detail.calculatedBalance < 0 ? "#dc2626" : "#16a34a"
+                                                                                        }}>
+                                                                                            ₱{Number(detail.calculatedBalance).toLocaleString(undefined, {
+                                                                                                minimumFractionDigits: 2,
+                                                                                                maximumFractionDigits: 2,
+                                                                                            })}
+                                                                                        </td>
+                                                                                        <td style={{ padding: "8px 10px", borderTop: "1px solid #ddd" }}>
+                                                                                            {detail.date_responded
+                                                                                                ? new Date(detail.date_responded).toLocaleString()
+                                                                                                : "-"}
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                ))}
+                                                                            </tbody>
+                                                                            <tfoot>
+                                                                                <tr style={{ backgroundColor: "#f0f9ff", fontWeight: "bold" }}>
+                                                                                    <td colSpan="4" style={{ padding: "12px 10px", textAlign: "right", borderTop: "2px solid #2563eb" }}>
+                                                                                        Final Remaining Balance:
+                                                                                    </td>
+                                                                                    <td style={{ 
+                                                                                        padding: "12px 10px", 
+                                                                                        textAlign: "right", 
+                                                                                        borderTop: "2px solid #2563eb",
+                                                                                        fontSize: "15px",
+                                                                                        color: finalBalance < 0 ? "#dc2626" : "#16a34a"
+                                                                                    }}>
+                                                                                        ₱{finalBalance.toLocaleString(undefined, {
+                                                                                            minimumFractionDigits: 2,
+                                                                                            maximumFractionDigits: 2,
+                                                                                        })}
+                                                                                    </td>
+                                                                                    <td style={{ borderTop: "2px solid #2563eb" }}></td>
+                                                                                </tr>
+                                                                            </tfoot>
+                                                                        </table>
+                                                                    </>
+                                                                );
+                                                            })()
                                                         ) : (
                                                             <div style={{ textAlign: "center", padding: "20px", color: "#999", fontWeight: "500" }}>
                                                                 No data.
