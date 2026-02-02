@@ -15,6 +15,7 @@ const ApprovalList = () => {
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [filterStatus, setFilterStatus] = useState("All"); // "All", "Approved", "Disapproved", "Cancelled"
 
   const [accountUsers, setAccountUsers] = useState([]);
 
@@ -25,14 +26,41 @@ const ApprovalList = () => {
 
   useEffect(() => {
     const fetchAccountUsers = async () => {
-      const { data, error } = await supabase
-        .from("Account_Users")
-        .select("UserID, name");
+      try {
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
 
-      if (error) {
-        console.error("Error fetching users:", error);
-      } else {
-        setAccountUsers(data);
+        console.log("🚀 Starting to fetch all account users...");
+
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from("Account_Users")
+            .select("UserID, name")
+            .range(offset, offset + batchSize - 1);
+
+          if (error) {
+            console.error("❌ Error fetching account users batch:", error);
+            break;
+          }
+
+          if (data && data.length > 0) {
+            allData = [...allData, ...data];
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+            console.log(`📊 Total account users so far: ${allData.length}`);
+          } else {
+            hasMore = false;
+            console.log("🏁 Finished fetching all account users");
+          }
+        }
+
+        setAccountUsers(allData);
+        console.log(`✅ Total account users loaded: ${allData.length}`);
+
+      } catch (err) {
+        console.error("❌ Unexpected error fetching account users:", err);
       }
     };
 
@@ -51,16 +79,42 @@ const ApprovalList = () => {
       setError(null);
 
       try {
-        const { data, error } = await supabase
-          .from("Approval_History")
-          .select("*")
-          .order("created_at", { ascending: false });
+        const batchSize = 1000;
+        let allData = [];
+        let hasMore = true;
+        let offset = 0;
 
-        if (error) throw error;
+        console.log("🚀 Starting to fetch all approval history...");
 
-        setApprovalData(data || []);
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from("Approval_History")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .range(offset, offset + batchSize - 1);
+
+          if (error) {
+            console.error("❌ Error fetching approval history batch:", error);
+            throw error;
+          }
+
+          if (data && data.length > 0) {
+            allData = [...allData, ...data];
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+            console.log(`📊 Total approval records so far: ${allData.length}`);
+          } else {
+            hasMore = false;
+            console.log("🏁 Finished fetching all approval history");
+          }
+        }
+
+        setApprovalData(allData);
+        console.log(`✅ Total approval records loaded: ${allData.length}`);
+
       } catch (err) {
         setError(err.message);
+        console.error("❌ Unexpected error fetching approvals:", err);
       } finally {
         setLoading(false);
       }
@@ -79,12 +133,10 @@ const ApprovalList = () => {
         const createdForm = item.CreatedForm;
         if (!createdForm) return false;
 
-        // Handle numeric CreatedForm (UserID)
         if (typeof createdForm === 'number') {
           return createdForm === currentUserId;
         }
 
-        // Handle string CreatedForm
         if (typeof createdForm === 'string') {
           const createdFormNum = Number(createdForm);
           if (!isNaN(createdFormNum)) {
@@ -96,7 +148,12 @@ const ApprovalList = () => {
       });
     }
 
-    // 🔹 Then apply search filter
+    // 🔹 Filter by Status (NEW!)
+    if (filterStatus !== "All") {
+      filtered = filtered.filter(item => item.Response === filterStatus);
+    }
+
+    // 🔹 Apply search filter
     filtered = filtered.filter((item) => {
       const matchesSearch =
         item.ApproverId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -118,8 +175,9 @@ const ApprovalList = () => {
     });
 
     setFilteredData(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
-  }, [approvalData, searchTerm, dateFrom, dateTo, currentUserId, role]);
+    setCurrentPage(1);
+  }, [approvalData, searchTerm, dateFrom, dateTo, currentUserId, role, filterStatus]); // ADD filterStatus here!
+
 
   // Paginate the already filtered data
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
@@ -314,6 +372,8 @@ const ApprovalList = () => {
     setSearchTerm("");
     setDateFrom("");
     setDateTo("");
+    setFilterStatus("All"); // ADD THIS
+
   };
 
   return (
@@ -432,7 +492,39 @@ const ApprovalList = () => {
                 }}
               />
             </div>
-
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              flexWrap: 'wrap'
+            }}>
+              {['All', 'Approved', 'Disapproved', 'Cancelled'].map(status => (
+                <button
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: filterStatus === status
+                      ? (status === 'Approved' ? '#4caf50' : status === 'Disapproved' ? '#f44336' : status === 'Cancelled' ? '#ff9800' : '#2196f3')
+                      : 'white',
+                    color: filterStatus === status ? 'white' : '#666',
+                    border: `2px solid ${status === 'Approved' ? '#4caf50' :
+                        status === 'Disapproved' ? '#f44336' :
+                          status === 'Cancelled' ? '#ff9800' : '#2196f3'
+                      }`,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    transition: 'all 0.3s'
+                  }}
+                >
+                  {status === 'Approved' && '✓ '}
+                  {status === 'Disapproved' && '✕ '}
+                  {status === 'Cancelled' && '⊘ '}
+                  {status}
+                </button>
+              ))}
+            </div>
             {/* Clear Filters */}
             <button
               onClick={clearFilters}
