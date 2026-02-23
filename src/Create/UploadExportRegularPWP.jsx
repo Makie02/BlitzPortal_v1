@@ -35,343 +35,346 @@ const UploadExportRegularPWP = () => {
     const handleFirst = () => setPage(1);
     const handleLast = () => setPage(totalPages);
 
-
-
-
-
     // 🆕 NEW FUNCTION - Separate Customer List Export
-const fetchAllRecordsForSeparateExport = async () => {
-    setIsPreparingExport(true);
+    const fetchAllRecordsForSeparateExport = async () => {
+        setIsPreparingExport(true);
 
-    try {
-        // ✅ Helper function - YYYYMMDD format (e.g. 20251109)
-        const formatDate = (dateStr) => {
-            if (!dateStr) return "";
-            const d = new Date(dateStr);
-            const yyyy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            return `${yyyy}${mm}${dd}`;
-        };
+        try {
+            // ✅ Helper function - YYYYMMDD format (e.g. 20251109)
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "";
+                const d = new Date(dateStr);
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${yyyy}${mm}${dd}`;
+            };
 
-        const batchSize = 1000;
-        let allData = [];
-        let hasMore = true;
-        let offset = 0;
+            const batchSize = 1000;
+            let allData = [];
+            let hasMore = true;
+            let offset = 0;
 
-        console.log("🔄 Starting to fetch ALL records for SEPARATE export...");
+            console.log("🔄 Starting to fetch ALL records for SEPARATE export...");
 
-        // STEP 1: Fetch all regular_pwp records
-        while (hasMore) {
-            let query = supabase
-                .from("regular_pwp")
-                .select("*", { count: 'exact' })
-                .order("created_at", { ascending: false })
-                .range(offset, offset + batchSize - 1);
+            // STEP 1: Fetch all regular_pwp records
+            while (hasMore) {
+                let query = supabase
+                    .from("regular_pwp")
+                    .select("*", { count: 'exact' })
+                    .order("created_at", { ascending: false })
+                    .range(offset, offset + batchSize - 1);
 
-            const { data, error } = await query;
+                const { data, error } = await query;
 
-            if (error) {
-                console.error("❌ Error fetching batch:", error);
-                break;
-            }
-
-            if (data && data.length > 0) {
-                allData = [...allData, ...data];
-                offset += batchSize;
-                hasMore = data.length === batchSize;
-            } else {
-                hasMore = false;
-            }
-        }
-
-        console.log(`📊 Total PWP records fetched: ${allData.length}`);
-
-        // Filter APPROVED only
-        let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
-        console.log(`✅ Approved records: ${filteredData.length}`);
-
-        // STEP 2: Fetch account budget data (regular_accountlis_badget)
-        console.log("🔄 Fetching account budget data...");
-        let accountBudgetMap = {};
-        let budgetOffset = 0;
-        let hasBudgetMore = true;
-
-        while (hasBudgetMore) {
-            const { data: budgetData, error: budgetError } = await supabase
-                .from("regular_accountlis_badget")
-                .select("regularcode, account_name, budget")
-                .range(budgetOffset, budgetOffset + batchSize - 1);
-
-            if (budgetError) {
-                console.error("❌ Error fetching budget data:", budgetError);
-                break;
-            }
-
-            if (budgetData && budgetData.length > 0) {
-                budgetData.forEach(b => {
-                    if (!accountBudgetMap[b.regularcode]) {
-                        accountBudgetMap[b.regularcode] = {};
-                    }
-                    accountBudgetMap[b.regularcode][b.account_name] = parseFloat(b.budget || 0);
-                });
-                budgetOffset += batchSize;
-                hasBudgetMore = budgetData.length === batchSize;
-            } else {
-                hasBudgetMore = false;
-            }
-        }
-
-        console.log(`✅ Account budget map loaded for ${Object.keys(accountBudgetMap).length} codes`);
-
-        // STEP 3: Fetch SKU data (regular_sku)
-        console.log("🔄 Fetching SKU data...");
-        let skuMap = {};
-        let skuOffset = 0;
-        let hasSkuMore = true;
-
-        while (hasSkuMore) {
-            const { data: skuData, error: skuError } = await supabase
-                .from("regular_sku")
-                .select("regular_code, account_name, total_amount")
-                .range(skuOffset, skuOffset + batchSize - 1);
-
-            if (skuError) {
-                console.error("❌ Error fetching SKU data:", skuError);
-                break;
-            }
-
-            if (skuData && skuData.length > 0) {
-                skuData.forEach(s => {
-                    if (!skuMap[s.regular_code]) {
-                        skuMap[s.regular_code] = {};
-                    }
-                    if (!skuMap[s.regular_code][s.account_name]) {
-                        skuMap[s.regular_code][s.account_name] = 0;
-                    }
-                    skuMap[s.regular_code][s.account_name] += parseFloat(s.total_amount || 0);
-                });
-                skuOffset += batchSize;
-                hasSkuMore = skuData.length === batchSize;
-            } else {
-                hasSkuMore = false;
-            }
-        }
-
-        console.log(`✅ SKU map loaded for ${Object.keys(skuMap).length} codes`);
-
-        // STEP 4: Create separated data with proper budget splitting
-        const separatedData = [];
-
-        filteredData.forEach((r) => {
-            const cleanText = (text) =>
-                text
-                    ? `"${String(text)
-                        .replace(/"/g, '""')
-                        .replace(/,/g, " ")
-                        .replace(/[\r\n]+/g, " ")
-                        .replace(/\s+/g, " ")
-                        .trim()}"`
-                    : "";
-
-            // Parse customer list (branchType)
-            let customerList = [];
-
-            if (r.branchType) {
-                try {
-                    const parsed = JSON.parse(r.branchType);
-                    if (Array.isArray(parsed)) {
-                        customerList = parsed;
-                    } else {
-                        customerList = [r.branchType];
-                    }
-                } catch {
-                    customerList = r.branchType
-                        .split(/[\n,;]/)
-                        .map(c => c.trim())
-                        .filter(c => c.length > 0);
-
-                    if (customerList.length === 0) {
-                        customerList = [r.branchType];
-                    }
+                if (error) {
+                    console.error("❌ Error fetching batch:", error);
+                    break;
                 }
-            } else {
-                customerList = ["-"];
-            }
 
-            // 🔥 CREATE SEPARATE ROW FOR EACH CUSTOMER WITH CORRECT BUDGET
-            customerList.forEach(customer => {
-                let priceVatExt = r.credit_budget || 0;
-
-                const accountBudgets = accountBudgetMap[r.regularpwpcode];
-                const skuBudgets = skuMap[r.regularpwpcode];
-
-                if (skuBudgets && skuBudgets[customer]) {
-                    priceVatExt = skuBudgets[customer];
-                    console.log(`💰 SKU budget for ${r.regularpwpcode} - ${customer}: ${priceVatExt}`);
-                } else if (accountBudgets && accountBudgets[customer]) {
-                    priceVatExt = accountBudgets[customer];
-                    console.log(`💰 Account budget for ${r.regularpwpcode} - ${customer}: ${priceVatExt}`);
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize;
                 } else {
-                    if (customerList.length > 1) {
-                        priceVatExt = parseFloat(r.credit_budget || 0) / customerList.length;
-                        console.log(`⚠️ No budget breakdown for ${r.regularpwpcode} - ${customer}, dividing equally: ${priceVatExt}`);
-                    }
+                    hasMore = false;
+                }
+            }
+
+            console.log(`📊 Total PWP records fetched: ${allData.length}`);
+
+            // Filter APPROVED only
+            let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
+            console.log(`✅ Approved records: ${filteredData.length}`);
+
+            // STEP 2: Fetch account budget data (regular_accountlis_badget)
+            console.log("🔄 Fetching account budget data...");
+            let accountBudgetMap = {};
+            let budgetOffset = 0;
+            let hasBudgetMore = true;
+
+            while (hasBudgetMore) {
+                const { data: budgetData, error: budgetError } = await supabase
+                    .from("regular_accountlis_badget")
+                    .select("regularcode, account_name, budget")
+                    .range(budgetOffset, budgetOffset + batchSize - 1);
+
+                if (budgetError) {
+                    console.error("❌ Error fetching budget data:", budgetError);
+                    break;
                 }
 
-                separatedData.push({
+                if (budgetData && budgetData.length > 0) {
+                    budgetData.forEach(b => {
+                        if (!accountBudgetMap[b.regularcode]) {
+                            accountBudgetMap[b.regularcode] = {};
+                        }
+                        accountBudgetMap[b.regularcode][b.account_name] = parseFloat(b.budget || 0);
+                    });
+                    budgetOffset += batchSize;
+                    hasBudgetMore = budgetData.length === batchSize;
+                } else {
+                    hasBudgetMore = false;
+                }
+            }
+
+            console.log(`✅ Account budget map loaded for ${Object.keys(accountBudgetMap).length} codes`);
+
+            // STEP 3: Fetch SKU data (regular_sku)
+            console.log("🔄 Fetching SKU data...");
+            let skuMap = {};
+            let skuOffset = 0;
+            let hasSkuMore = true;
+
+            while (hasSkuMore) {
+                const { data: skuData, error: skuError } = await supabase
+                    .from("regular_sku")
+                    .select("regular_code, account_name, total_amount")
+                    .range(skuOffset, skuOffset + batchSize - 1);
+
+                if (skuError) {
+                    console.error("❌ Error fetching SKU data:", skuError);
+                    break;
+                }
+
+                if (skuData && skuData.length > 0) {
+                    skuData.forEach(s => {
+                        if (!skuMap[s.regular_code]) {
+                            skuMap[s.regular_code] = {};
+                        }
+                        if (!skuMap[s.regular_code][s.account_name]) {
+                            skuMap[s.regular_code][s.account_name] = 0;
+                        }
+                        skuMap[s.regular_code][s.account_name] += parseFloat(s.total_amount || 0);
+                    });
+                    skuOffset += batchSize;
+                    hasSkuMore = skuData.length === batchSize;
+                } else {
+                    hasSkuMore = false;
+                }
+            }
+
+            console.log(`✅ SKU map loaded for ${Object.keys(skuMap).length} codes`);
+
+            // STEP 4: Create separated data with proper budget splitting
+            const separatedData = [];
+
+            filteredData.forEach((r) => {
+                const cleanText = (text) =>
+                    text
+                        ? `"${String(text)
+                            .replace(/"/g, '""')
+                            .replace(/,/g, " ")
+                            .replace(/[\r\n]+/g, " ")
+                            .replace(/\s+/g, " ")
+                            .trim()}"`
+                        : "";
+
+                // Parse customer list (branchType)
+                let customerList = [];
+
+                if (r.branchType) {
+                    try {
+                        const parsed = JSON.parse(r.branchType);
+                        if (Array.isArray(parsed)) {
+                            customerList = parsed;
+                        } else {
+                            customerList = [r.branchType];
+                        }
+                    } catch {
+                        customerList = r.branchType
+                            .split(/[\n,;]/)
+                            .map(c => c.trim())
+                            .filter(c => c.length > 0);
+
+                        if (customerList.length === 0) {
+                            customerList = [r.branchType];
+                        }
+                    }
+                } else {
+                    customerList = ["-"];
+                }
+
+                // 🔥 CREATE SEPARATE ROW FOR EACH CUSTOMER WITH CORRECT BUDGET
+                customerList.forEach(customer => {
+                    let priceVatExt = r.credit_budget || 0;
+
+                    const accountBudgets = accountBudgetMap[r.regularpwpcode];
+                    const skuBudgets = skuMap[r.regularpwpcode];
+
+                    if (skuBudgets && skuBudgets[customer]) {
+                        priceVatExt = skuBudgets[customer];
+                        console.log(`💰 SKU budget for ${r.regularpwpcode} - ${customer}: ${priceVatExt}`);
+                    } else if (accountBudgets && accountBudgets[customer]) {
+                        priceVatExt = accountBudgets[customer];
+                        console.log(`💰 Account budget for ${r.regularpwpcode} - ${customer}: ${priceVatExt}`);
+                    } else {
+                        if (customerList.length > 1) {
+                            priceVatExt = parseFloat(r.credit_budget || 0) / customerList.length;
+                            console.log(`⚠️ No budget breakdown for ${r.regularpwpcode} - ${customer}, dividing equally: ${priceVatExt}`);
+                        }
+                    }
+
+                    separatedData.push({
+                        "Purchase Order": r.regularpwpcode,
+                        "Vendor": r.distributor,
+                        // ✅ UPDATED: .name
+                        "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
+                        "Suppliers Ref. No.": r.regularpwpcode,
+                        "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
+                        "PO Date": formatDate(r.created_at),
+                        "(01)Description": cleanText(activityMap[r.activity]?.name || r.activity),
+                        "(02)Account Code": cleanText(activityMap[r.activity]?.glcode || ""),
+                        "(06)Price VAT-EXt": parseFloat(priceVatExt).toFixed(2),
+                        "Customer List": cleanText(customer),
+                        "Start Date": formatDate(r.activityDurationFrom),
+                        "End Date": formatDate(r.activityDurationTo),
+                        "Remarks (UDF)": cleanText(
+                            `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`
+                        ),
+                        "Buyer": cleanText(userMap[r.createForm] || r.createForm),
+                        "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
+                        // ✅ DAGDAG: SLP
+                        "SLP": distributorMap[r.distributor]?.slp ?? "",
+                    });
+                });
+            });
+
+            console.log(`🎯 SEPARATED: ${separatedData.length} rows (from ${filteredData.length} approved records)`);
+
+            // Budget validation
+            const totalOriginal = filteredData.reduce((sum, r) => sum + parseFloat(r.credit_budget || 0), 0);
+            const totalSeparated = separatedData.reduce((sum, row) => sum + parseFloat(row["(06)Price VAT-EXt"]), 0);
+            console.log(`💵 Budget verification:`);
+            console.log(`   Original total: ₱${totalOriginal.toFixed(2)}`);
+            console.log(`   Separated total: ₱${totalSeparated.toFixed(2)}`);
+            console.log(`   Difference: ₱${Math.abs(totalOriginal - totalSeparated).toFixed(2)}`);
+
+            // Download as XLSX
+            const worksheet = XLSX.utils.json_to_sheet(separatedData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Separated");
+            XLSX.writeFile(workbook, `regular_pwp_separated_${formatDate(new Date().toISOString())}.xlsx`);
+
+            console.log("✅ Export completed successfully!");
+
+        } catch (error) {
+            console.error("❌ Error:", error);
+        } finally {
+            setIsPreparingExport(false);
+        }
+    };
+
+    // 🔥 NEW: Fetch ALL records with batch processing (bypassing 1000 limit)
+    // EXPORT RULE: Export ALL APPROVED records from database
+    // - Ignores search filter
+    // - Ignores today filter
+    // - Ignores date range filter
+    // - Only exports APPROVED records (has approval date)
+    const fetchAllRecordsForExport = async () => {
+        setIsPreparingExport(true);
+
+        try {
+            // ✅ Helper function - YYYYMMDD format (e.g. 20251109)
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "";
+                const d = new Date(dateStr);
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${yyyy}${mm}${dd}`;
+            };
+
+            const batchSize = 1000;
+            let allData = [];
+            let hasMore = true;
+            let offset = 0;
+
+            console.log("🔄 Starting to fetch ALL records for export...");
+            console.log("📋 Export will include ALL approved records (ignoring view filters)");
+
+            while (hasMore) {
+                console.log(`📥 Fetching batch: records ${offset} to ${offset + batchSize - 1}`);
+
+                let query = supabase
+                    .from("regular_pwp")
+                    .select("*", { count: 'exact' })
+                    .order("created_at", { ascending: false })
+                    .range(offset, offset + batchSize - 1);
+
+                const { data, error } = await query;
+
+                if (error) {
+                    console.error("❌ Error fetching batch:", error);
+                    break;
+                }
+
+                if (data && data.length > 0) {
+                    console.log(`✅ Fetched ${data.length} records`);
+                    allData = [...allData, ...data];
+                    offset += batchSize;
+                    hasMore = data.length === batchSize;
+                } else {
+                    console.log("🏁 No more data to fetch");
+                    hasMore = false;
+                }
+            }
+
+            console.log(`📊 Total records fetched: ${allData.length}`);
+            setTotalRecordsCount(allData.length);
+
+            // 🔥 FILTER: Only APPROVED records (must have approval date)
+            let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
+            console.log(`✅ Approved records: ${filteredData.length} out of ${allData.length}`);
+
+            setApprovedRecordsCount(filteredData.length);
+            console.log(`🎯 FINAL: ${filteredData.length} approved records ready for export`);
+
+            // Prepare export data
+            const csvData = filteredData.map((r) => {
+                const cleanText = (text) =>
+                    text
+                        ? `"${String(text)
+                            .replace(/"/g, '""')
+                            .replace(/,/g, " ")
+                            .replace(/[\r\n]+/g, " ")
+                            .replace(/\s+/g, " ")
+                            .trim()}"`
+                        : "";
+
+                return {
                     "Purchase Order": r.regularpwpcode,
                     "Vendor": r.distributor,
-                    "Vendor Name": cleanText(distributorMap[r.distributor] || r.distributor),
+                    // ✅ UPDATED: .name
+                    "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
                     "Suppliers Ref. No.": r.regularpwpcode,
-                    "Posting Date": formatDate(approvalMap[r.regularpwpcode]),   // ✅ 20251109
-                    "PO Date": formatDate(r.created_at),                          // ✅ 20251109
+                    "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
+                    "PO Date": formatDate(r.created_at),
                     "(01)Description": cleanText(activityMap[r.activity]?.name || r.activity),
                     "(02)Account Code": cleanText(activityMap[r.activity]?.glcode || ""),
-                    "(06)Price VAT-EXt": parseFloat(priceVatExt).toFixed(2),
-                    "Customer List": cleanText(customer),
-                    "Start Date": formatDate(r.activityDurationFrom),             // ✅ 20251109
-                    "End Date": formatDate(r.activityDurationTo),                 // ✅ 20251109
+                    "(06)Price VAT-EXt": r.credit_budget,
+                    "Customer List": cleanText(r.branchType || ""),
+                    "Start Date": formatDate(r.activityDurationFrom),
+                    "End Date": formatDate(r.activityDurationTo),
                     "Remarks (UDF)": cleanText(
                         `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`
                     ),
                     "Buyer": cleanText(userMap[r.createForm] || r.createForm),
                     "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
-                });
+                    // ✅ DAGDAG: SLP
+                    "SLP": distributorMap[r.distributor]?.slp ?? "",
+                };
             });
-        });
 
-        console.log(`🎯 SEPARATED: ${separatedData.length} rows (from ${filteredData.length} approved records)`);
+            setExportData(csvData);
 
-        // Budget validation
-        const totalOriginal = filteredData.reduce((sum, r) => sum + parseFloat(r.credit_budget || 0), 0);
-        const totalSeparated = separatedData.reduce((sum, row) => sum + parseFloat(row["(06)Price VAT-EXt"]), 0);
-        console.log(`💵 Budget verification:`);
-        console.log(`   Original total: ₱${totalOriginal.toFixed(2)}`);
-        console.log(`   Separated total: ₱${totalSeparated.toFixed(2)}`);
-        console.log(`   Difference: ₱${Math.abs(totalOriginal - totalSeparated).toFixed(2)}`);
-
-        // Download as XLSX
-        const worksheet = XLSX.utils.json_to_sheet(separatedData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Separated");
-        XLSX.writeFile(workbook, `regular_pwp_separated_${formatDate(new Date().toISOString())}.xlsx`); // ✅ filename din
-
-        console.log("✅ Export completed successfully!");
-
-    } catch (error) {
-        console.error("❌ Error:", error);
-    } finally {
-        setIsPreparingExport(false);
-    }
-};
-
-    // 🔥 NEW: Fetch ALL records with batch processing (bypassing 1000 limit)
-    // EXPORT RULE: Export ALL APPROVED records from database
-    // - Ignores search filter
-    // - Ignores today filter  
-    // - Ignores date range filter
-    // - Only exports APPROVED records (has approval date)
- const fetchAllRecordsForExport = async () => {
-    setIsPreparingExport(true);
-
-    try {
-        // ✅ Helper function - YYYYMMDD format (e.g. 20251109)
-        const formatDate = (dateStr) => {
-            if (!dateStr) return "";
-            const d = new Date(dateStr);
-            const yyyy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            return `${yyyy}${mm}${dd}`;
-        };
-
-        const batchSize = 1000;
-        let allData = [];
-        let hasMore = true;
-        let offset = 0;
-
-        console.log("🔄 Starting to fetch ALL records for export...");
-        console.log("📋 Export will include ALL approved records (ignoring view filters)");
-
-        while (hasMore) {
-            console.log(`📥 Fetching batch: records ${offset} to ${offset + batchSize - 1}`);
-
-            let query = supabase
-                .from("regular_pwp")
-                .select("*", { count: 'exact' })
-                .order("created_at", { ascending: false })
-                .range(offset, offset + batchSize - 1);
-
-            const { data, error } = await query;
-
-            if (error) {
-                console.error("❌ Error fetching batch:", error);
-                break;
-            }
-
-            if (data && data.length > 0) {
-                console.log(`✅ Fetched ${data.length} records`);
-                allData = [...allData, ...data];
-                offset += batchSize;
-                hasMore = data.length === batchSize;
-            } else {
-                console.log("🏁 No more data to fetch");
-                hasMore = false;
-            }
+        } catch (error) {
+            console.error("❌ Error fetching all records:", error);
+        } finally {
+            setIsPreparingExport(false);
         }
+    };
 
-        console.log(`📊 Total records fetched: ${allData.length}`);
-        setTotalRecordsCount(allData.length);
-
-        // 🔥 FILTER: Only APPROVED records (must have approval date)
-        let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
-        console.log(`✅ Approved records: ${filteredData.length} out of ${allData.length}`);
-
-        setApprovedRecordsCount(filteredData.length);
-        console.log(`🎯 FINAL: ${filteredData.length} approved records ready for export`);
-
-        // Prepare export data
-        const csvData = filteredData.map((r) => {
-            const cleanText = (text) =>
-                text
-                    ? `"${String(text)
-                        .replace(/"/g, '""')
-                        .replace(/,/g, " ")
-                        .replace(/[\r\n]+/g, " ")
-                        .replace(/\s+/g, " ")
-                        .trim()}"`
-                    : "";
-
-            return {
-                "Purchase Order": r.regularpwpcode,
-                "Vendor": r.distributor,
-                "Vendor Name": cleanText(distributorMap[r.distributor] || r.distributor),
-                "Suppliers Ref. No.": r.regularpwpcode,
-                "Posting Date": formatDate(approvalMap[r.regularpwpcode]),  // ✅ 20251109
-                "PO Date": formatDate(r.created_at),                         // ✅ 20251109
-                "(01)Description": cleanText(activityMap[r.activity]?.name || r.activity),
-                "(02)Account Code": cleanText(activityMap[r.activity]?.glcode || ""),
-                "(06)Price VAT-EXt": r.credit_budget,
-                "Customer List": cleanText(r.branchType || ""),
-                "Start Date": formatDate(r.activityDurationFrom),            // ✅ 20251109
-                "End Date": formatDate(r.activityDurationTo),                // ✅ 20251109
-                "Remarks (UDF)": cleanText(
-                    `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`
-                ),
-                "Buyer": cleanText(userMap[r.createForm] || r.createForm),
-                "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
-            };
-        });
-
-        setExportData(csvData);
-
-    } catch (error) {
-        console.error("❌ Error fetching all records:", error);
-    } finally {
-        setIsPreparingExport(false);
-    }
-};
     // 🔥 FIXED SEARCH FUNCTION
     const fetchRecords = async () => {
         setLoading(true);
@@ -427,12 +430,12 @@ const fetchAllRecordsForSeparateExport = async () => {
             if (search) {
                 const searchLower = search.toLowerCase();
                 filteredData = filteredData.filter(r => {
-                    // Search in multiple fields - safely convert to string first
                     const pwpCode = (r.regularpwpcode || '').toString().toLowerCase();
                     const activityName = (activityMap[r.activity]?.name || '').toString().toLowerCase();
                     const activityCode = (r.activity || '').toString().toLowerCase();
                     const distributorCode = (r.distributor || '').toString().toLowerCase();
-                    const distributorName = (distributorMap[r.distributor] || '').toString().toLowerCase();
+                    // ✅ UPDATED: .name
+                    const distributorName = (distributorMap[r.distributor]?.name || '').toString().toLowerCase();
                     const branch = (r.branchType || '').toString().toLowerCase();
                     const objective = (r.objective || '').toString().toLowerCase();
                     const promoScheme = (r.promoScheme || '').toString().toLowerCase();
@@ -517,7 +520,8 @@ const fetchAllRecordsForSeparateExport = async () => {
             while (hasMore) {
                 const { data, error } = await supabase
                     .from("distributors")
-                    .select("code,name")
+                    // ✅ DAGDAG: slp
+                    .select("code, name, slp")
                     .range(offset, offset + batchSize - 1);
 
                 if (error) {
@@ -536,10 +540,10 @@ const fetchAllRecordsForSeparateExport = async () => {
                 }
             }
 
-            // Create map from all fetched data
+            // ✅ UPDATED: store as object { name, slp }
             const map = {};
             allData.forEach(d => {
-                map[d.code] = d.name;
+                map[d.code] = { name: d.name, slp: d.slp };
             });
             setDistributorMap(map);
 
@@ -596,6 +600,7 @@ const fetchAllRecordsForSeparateExport = async () => {
             console.error("❌ Unexpected error fetching approvals:", err);
         }
     };
+
     const fetchActivities = async () => {
         try {
             const batchSize = 1000;
@@ -688,6 +693,7 @@ const fetchAllRecordsForSeparateExport = async () => {
             console.error("❌ Unexpected error fetching users:", err);
         }
     };
+
     useEffect(() => {
         fetchDistributors();
         fetchApprovals();
@@ -695,12 +701,12 @@ const fetchAllRecordsForSeparateExport = async () => {
         fetchUsers();
     }, []);
 
-useEffect(() => {
-    // ✅ Hintayin muna na ma-load yung maps bago mag-fetch
-    if (Object.keys(distributorMap).length > 0 && Object.keys(activityMap).length > 0) {
-        fetchRecords();
-    }
-}, [page, search, filterToday, filterApproved, approvalMap, distributorMap, activityMap, pageSize, dateFrom, dateTo]);
+    useEffect(() => {
+        // ✅ Hintayin muna na ma-load yung maps bago mag-fetch
+        if (Object.keys(distributorMap).length > 0 && Object.keys(activityMap).length > 0) {
+            fetchRecords();
+        }
+    }, [page, search, filterToday, filterApproved, approvalMap, distributorMap, activityMap, pageSize, dateFrom, dateTo]);
 
     // 🔥 Fetch export data ONCE when all maps are loaded
     // Export is INDEPENDENT of view filters - it always exports ALL approved records
@@ -778,7 +784,7 @@ useEffect(() => {
                         </span>
                         <input
                             type="text"
-                            placeholder="Search PWP Code, Activity, Distributor, Branch..." // 🔥 UPDATED PLACEHOLDER
+                            placeholder="Search PWP Code, Activity, Distributor, Branch..."
                             value={search}
                             onChange={handleSearch}
                             style={{
@@ -868,6 +874,7 @@ useEffect(() => {
                     >
                         {isPreparingExport ? "⏳ Preparing..." : "📥 Export Approved CSV"}
                     </CSVLink>
+
                     {/* 🆕 NEW EXPORT BUTTON - Separate Customer List */}
                     <button
                         onClick={fetchAllRecordsForSeparateExport}
@@ -890,6 +897,7 @@ useEffect(() => {
                     >
                         {isPreparingExport ? "⏳ Preparing..." : "📋 Export Separate Customer List"}
                     </button>
+
                     {/* Export Info Badge - Shows Total and Approved counts */}
                     {totalRecordsCount > 0 && (
                         <div style={{
@@ -1082,7 +1090,7 @@ useEffect(() => {
             }}>
                 <table style={{
                     width: "100%",
-                    minWidth: "1500px",
+                    minWidth: "1600px",
                     borderCollapse: "separate",
                     borderSpacing: 0,
                     fontFamily: "system-ui, -apple-system, sans-serif",
@@ -1106,6 +1114,8 @@ useEffect(() => {
                                 "Promo Scheme",
                                 "Buyer",
                                 "Prepared By",
+                                // ✅ DAGDAG: SLP header
+                                "SLP",
                             ].map((col) => (
                                 <th
                                     key={col}
@@ -1133,7 +1143,8 @@ useEffect(() => {
                     <tbody>
                         {loading ? (
                             <tr>
-                                <td colSpan={16} style={{
+                                {/* ✅ UPDATED: colSpan 16 → 17 */}
+                                <td colSpan={17} style={{
                                     textAlign: "center",
                                     padding: "40px",
                                     color: "#718096",
@@ -1144,7 +1155,8 @@ useEffect(() => {
                             </tr>
                         ) : records.length === 0 ? (
                             <tr>
-                                <td colSpan={16} style={{
+                                {/* ✅ UPDATED: colSpan 16 → 17 */}
+                                <td colSpan={17} style={{
                                     textAlign: "center",
                                     padding: "40px",
                                     color: "#718096",
@@ -1189,7 +1201,8 @@ useEffect(() => {
                                         color: "#2d3748",
                                         borderBottom: "1px solid #e2e8f0"
                                     }}>
-                                        {distributorMap[r.distributor] || r.distributor}
+                                        {/* ✅ UPDATED: .name */}
+                                        {distributorMap[r.distributor]?.name || r.distributor}
                                     </td>
                                     <td style={{
                                         padding: "14px 12px",
@@ -1257,16 +1270,14 @@ useEffect(() => {
                                     }}>
                                         {activityMap[r.activity]?.glcode || r.activity}
                                     </td>
-                                    <td
-                                        style={{
-                                            padding: "14px 12px",
-                                            whiteSpace: "nowrap",
-                                            fontSize: "14px",
-                                            color: "#2d3748",
-                                            fontWeight: "600",
-                                            borderBottom: "1px solid #e2e8f0",
-                                        }}
-                                    >
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        color: "#2d3748",
+                                        fontWeight: "600",
+                                        borderBottom: "1px solid #e2e8f0",
+                                    }}>
                                         ₱
                                         {r.credit_budget
                                             ? parseFloat(r.credit_budget).toLocaleString("en-PH", {
@@ -1287,51 +1298,39 @@ useEffect(() => {
                                         }}
                                         title={r.branchType || ""}
                                     >
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "8px",
-                                            }}
-                                        >
-                                            <span
-                                                style={{
-                                                    display: "inline-block",
-                                                    overflow: "hidden",
-                                                    textOverflow: "ellipsis",
-                                                    whiteSpace: "nowrap",
-                                                    maxWidth: "100%",
-                                                    fontWeight: (r.branchType?.length || 0) > 100 ? "500" : "400",
-                                                }}
-                                            >
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            <span style={{
+                                                display: "inline-block",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                                maxWidth: "100%",
+                                                fontWeight: (r.branchType?.length || 0) > 100 ? "500" : "400",
+                                            }}>
                                                 {r.branchType && r.branchType.length > 100
                                                     ? r.branchType.slice(0, 100) + "..."
                                                     : r.branchType || "-"}
                                             </span>
                                             {(r.branchType?.length || 0) > 100 && (
-                                                <span
-                                                    style={{
-                                                        flexShrink: 0,
-                                                        display: "inline-flex",
-                                                        alignItems: "center",
-                                                        justifyContent: "center",
-                                                        width: "18px",
-                                                        height: "18px",
-                                                        borderRadius: "50%",
-                                                        backgroundColor: "#e2e8f0",
-                                                        color: "#718096",
-                                                        fontSize: "11px",
-                                                        fontWeight: "600",
-                                                        cursor: "help",
-                                                    }}
-                                                    title="Text truncated - hover to see full text"
-                                                >
+                                                <span style={{
+                                                    flexShrink: 0,
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    width: "18px",
+                                                    height: "18px",
+                                                    borderRadius: "50%",
+                                                    backgroundColor: "#e2e8f0",
+                                                    color: "#718096",
+                                                    fontSize: "11px",
+                                                    fontWeight: "600",
+                                                    cursor: "help",
+                                                }} title="Text truncated - hover to see full text">
                                                     ...
                                                 </span>
                                             )}
                                         </div>
                                     </td>
-
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1362,51 +1361,39 @@ useEffect(() => {
                                         }}
                                         title={r.objective || ""}
                                     >
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "8px",
-                                            }}
-                                        >
-                                            <span
-                                                style={{
-                                                    display: "inline-block",
-                                                    overflow: "hidden",
-                                                    textOverflow: "ellipsis",
-                                                    whiteSpace: "nowrap",
-                                                    maxWidth: "100%",
-                                                    fontWeight: (r.objective?.length || 0) > 100 ? "500" : "400",
-                                                }}
-                                            >
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            <span style={{
+                                                display: "inline-block",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                                maxWidth: "100%",
+                                                fontWeight: (r.objective?.length || 0) > 100 ? "500" : "400",
+                                            }}>
                                                 {r.objective && r.objective.length > 100
                                                     ? r.objective.slice(0, 100) + "..."
                                                     : r.objective || "-"}
                                             </span>
                                             {(r.objective?.length || 0) > 100 && (
-                                                <span
-                                                    style={{
-                                                        flexShrink: 0,
-                                                        display: "inline-flex",
-                                                        alignItems: "center",
-                                                        justifyContent: "center",
-                                                        width: "18px",
-                                                        height: "18px",
-                                                        borderRadius: "50%",
-                                                        backgroundColor: "#e2e8f0",
-                                                        color: "#718096",
-                                                        fontSize: "11px",
-                                                        fontWeight: "600",
-                                                        cursor: "help",
-                                                    }}
-                                                    title="Text truncated - hover to see full text"
-                                                >
+                                                <span style={{
+                                                    flexShrink: 0,
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    width: "18px",
+                                                    height: "18px",
+                                                    borderRadius: "50%",
+                                                    backgroundColor: "#e2e8f0",
+                                                    color: "#718096",
+                                                    fontSize: "11px",
+                                                    fontWeight: "600",
+                                                    cursor: "help",
+                                                }} title="Text truncated - hover to see full text">
                                                     ...
                                                 </span>
                                             )}
                                         </div>
                                     </td>
-
                                     <td
                                         style={{
                                             padding: "14px 12px",
@@ -1419,45 +1406,34 @@ useEffect(() => {
                                         }}
                                         title={r.promoScheme || ""}
                                     >
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "8px",
-                                            }}
-                                        >
-                                            <span
-                                                style={{
-                                                    display: "inline-block",
-                                                    overflow: "hidden",
-                                                    textOverflow: "ellipsis",
-                                                    whiteSpace: "nowrap",
-                                                    maxWidth: "100%",
-                                                    fontWeight: (r.promoScheme?.length || 0) > 100 ? "500" : "400",
-                                                }}
-                                            >
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            <span style={{
+                                                display: "inline-block",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                                maxWidth: "100%",
+                                                fontWeight: (r.promoScheme?.length || 0) > 100 ? "500" : "400",
+                                            }}>
                                                 {r.promoScheme && r.promoScheme.length > 100
                                                     ? r.promoScheme.slice(0, 100) + "..."
                                                     : r.promoScheme || "-"}
                                             </span>
                                             {(r.promoScheme?.length || 0) > 100 && (
-                                                <span
-                                                    style={{
-                                                        flexShrink: 0,
-                                                        display: "inline-flex",
-                                                        alignItems: "center",
-                                                        justifyContent: "center",
-                                                        width: "18px",
-                                                        height: "18px",
-                                                        borderRadius: "50%",
-                                                        backgroundColor: "#e2e8f0",
-                                                        color: "#718096",
-                                                        fontSize: "11px",
-                                                        fontWeight: "600",
-                                                        cursor: "help",
-                                                    }}
-                                                    title="Text truncated - hover to see full text"
-                                                >
+                                                <span style={{
+                                                    flexShrink: 0,
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    width: "18px",
+                                                    height: "18px",
+                                                    borderRadius: "50%",
+                                                    backgroundColor: "#e2e8f0",
+                                                    color: "#718096",
+                                                    fontSize: "11px",
+                                                    fontWeight: "600",
+                                                    cursor: "help",
+                                                }} title="Text truncated - hover to see full text">
                                                     ...
                                                 </span>
                                             )}
@@ -1480,6 +1456,16 @@ useEffect(() => {
                                         borderBottom: "1px solid #e2e8f0"
                                     }}>
                                         {userMap[r.createForm] || r.createForm}
+                                    </td>
+                                    {/* ✅ DAGDAG: SLP cell - katabi ng Prepared By */}
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        color: "#2d3748",
+                                        borderBottom: "1px solid #e2e8f0"
+                                    }}>
+                                        {distributorMap[r.distributor]?.slp ?? "-"}
                                     </td>
                                 </tr>
                             ))
