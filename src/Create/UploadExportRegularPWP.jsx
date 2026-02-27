@@ -220,6 +220,8 @@ const UploadExportRegularPWP = () => {
                         "Vendor": r.distributor,
                         // ✅ UPDATED: .name
                         "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
+                        // ✅ DAGDAG: SAP Vendor Code
+                        "SAP Vendor Code": distributorMap[r.distributor]?.sap_vendor_code ?? "",
                         "Suppliers Ref. No.": r.regularpwpcode,
                         "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
                         "PO Date": formatDate(r.created_at),
@@ -347,6 +349,8 @@ const UploadExportRegularPWP = () => {
                     "Vendor": r.distributor,
                     // ✅ UPDATED: .name
                     "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
+                    // ✅ DAGDAG: SAP Vendor Code
+                    "SAP Vendor Code": distributorMap[r.distributor]?.sap_vendor_code ?? "",
                     "Suppliers Ref. No.": r.regularpwpcode,
                     "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
                     "PO Date": formatDate(r.created_at),
@@ -439,6 +443,8 @@ const UploadExportRegularPWP = () => {
                     const branch = (r.branchType || '').toString().toLowerCase();
                     const objective = (r.objective || '').toString().toLowerCase();
                     const promoScheme = (r.promoScheme || '').toString().toLowerCase();
+                    // ✅ DAGDAG: search by sap_vendor_code
+                    const sapVendorCode = (distributorMap[r.distributor]?.sap_vendor_code || '').toString().toLowerCase();
 
                     return (
                         pwpCode.includes(searchLower) ||
@@ -448,7 +454,8 @@ const UploadExportRegularPWP = () => {
                         distributorName.includes(searchLower) ||
                         branch.includes(searchLower) ||
                         objective.includes(searchLower) ||
-                        promoScheme.includes(searchLower)
+                        promoScheme.includes(searchLower) ||
+                        sapVendorCode.includes(searchLower)
                     );
                 });
                 console.log(`🔍 Search for "${search}": ${filteredData.length} results found`);
@@ -520,8 +527,8 @@ const UploadExportRegularPWP = () => {
             while (hasMore) {
                 const { data, error } = await supabase
                     .from("distributors")
-                    // ✅ DAGDAG: slp
-                    .select("code, name, slp")
+                    // ✅ DAGDAG: slp, sap_vendor_code
+                    .select("code, name, slp, sap_vendor_code")
                     .range(offset, offset + batchSize - 1);
 
                 if (error) {
@@ -540,10 +547,10 @@ const UploadExportRegularPWP = () => {
                 }
             }
 
-            // ✅ UPDATED: store as object { name, slp }
+            // ✅ UPDATED: store as object { name, slp, sap_vendor_code }
             const map = {};
             allData.forEach(d => {
-                map[d.code] = { name: d.name, slp: d.slp };
+                map[d.code] = { name: d.name, slp: d.slp, sap_vendor_code: d.sap_vendor_code };
             });
             setDistributorMap(map);
 
@@ -1101,6 +1108,7 @@ const UploadExportRegularPWP = () => {
                                 "Regular PWP",
                                 "Vendor Code",
                                 "Distributor",
+                                "SAP Vendor Code", // ✅ DAGDAG
                                 "PWP Code",
                                 "Date Approved",
                                 "Creation Date",
@@ -1143,8 +1151,8 @@ const UploadExportRegularPWP = () => {
                     <tbody>
                         {loading ? (
                             <tr>
-                                {/* ✅ UPDATED: colSpan 16 → 17 */}
-                                <td colSpan={17} style={{
+                                {/* ✅ UPDATED: colSpan 17 → 18 */}
+                                <td colSpan={18} style={{
                                     textAlign: "center",
                                     padding: "40px",
                                     color: "#718096",
@@ -1155,8 +1163,8 @@ const UploadExportRegularPWP = () => {
                             </tr>
                         ) : records.length === 0 ? (
                             <tr>
-                                {/* ✅ UPDATED: colSpan 16 → 17 */}
-                                <td colSpan={17} style={{
+                                {/* ✅ UPDATED: colSpan 17 → 18 */}
+                                <td colSpan={18} style={{
                                     textAlign: "center",
                                     padding: "40px",
                                     color: "#718096",
@@ -1203,6 +1211,16 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {/* ✅ UPDATED: .name */}
                                         {distributorMap[r.distributor]?.name || r.distributor}
+                                    </td>
+                                    {/* ✅ DAGDAG: SAP Vendor Code cell */}
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        color: "#2d3748",
+                                        borderBottom: "1px solid #e2e8f0"
+                                    }}>
+                                        {distributorMap[r.distributor]?.sap_vendor_code ?? "-"}
                                     </td>
                                     <td style={{
                                         padding: "14px 12px",
