@@ -54,6 +54,7 @@ import DashboardForSuperAdmin from "./Component/DashboardForSuperAdmin.js";
 import HighestClaimed from "./Component/HighestClaimed.jsx";
 import TotalSupportPerAccount from "./Component/TotalSupportPerAccount.jsx";
 import ApprovedHistoryBudgetTable from "./Component/RecordsHistoryBudget.js";
+import AccountingModule from "./Component/AccountingModule.jsx";
 function App() {
 
   // Track online/offline status
@@ -416,9 +417,9 @@ function App() {
 
       case "TotalSupportPerAccount": return <TotalSupportPerAccount setCurrentView={setCurrentView} />;
       case "RecordsHistoryBudget": return <ApprovedHistoryBudgetTable setCurrentView={setCurrentView} />;
+      case "AccountingModule": return <AccountingModule setCurrentView={setCurrentView} />;
 
 
-      
       default: return <Dashboard setCurrentView={setCurrentView} />;
     }
   };
