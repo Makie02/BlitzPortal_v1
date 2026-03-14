@@ -28,6 +28,70 @@ function RecordsPage() {
   const [showPDFModal, setShowPDFModal] = useState(false);
   const [selectedPDFRecord, setSelectedPDFRecord] = useState(null);
 
+  // ── ADDED: Accounting Distributor Access ──────────────────────
+  const [assignedDistributorCodes, setAssignedDistributorCodes] = useState(null);
+
+  useEffect(() => {
+    const fetchAccountingAccess = async () => {
+      const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
+      if (!currentUser) return;
+
+      // position stores CODE → fetch name from position table
+      const posCode = currentUser.position || "";
+      const uid = currentUser.UserID || currentUser.id;
+
+      try {
+        // Step 1: Get position name
+        const { data: posData } = await supabase
+          .from("position")
+          .select("name")
+          .eq("code", posCode)
+          .single();
+
+        const posName = (posData?.name || "").toLowerCase().trim();
+
+        // Step 2: Only apply restriction if position name contains "accounting"
+        if (!posName.includes("account")) {
+          setAssignedDistributorCodes(null); // no restriction
+          return;
+        }
+
+        // Step 3: Fetch assigned distributor IDs for this user
+        const { data: accessRows, error: accessErr } = await supabase
+          .from("accounting_account_access_for_distributor")
+          .select("distributor_id")
+          .eq("user_id", uid);
+
+        if (accessErr) throw accessErr;
+
+        const distIds = (accessRows || []).map(r => r.distributor_id);
+
+        if (distIds.length === 0) {
+          setAssignedDistributorCodes(new Set());
+          return;
+        }
+
+        // Step 4: Get distributor codes from IDs
+        const { data: distRows, error: distErr } = await supabase
+          .from("distributors")
+          .select("id, code")
+          .in("id", distIds);
+
+        if (distErr) throw distErr;
+
+        const codes = (distRows || []).map(d => String(d.code));
+        setAssignedDistributorCodes(new Set(codes));
+        // Auto-select first assigned distributor — no need for "All Distributors"
+        if (codes.length === 1) setDistributorFilter(codes[0]);
+      } catch (err) {
+        console.error("Error fetching accounting access:", err);
+        setAssignedDistributorCodes(new Set());
+      }
+    };
+    fetchAccountingAccess();
+  }, []);
+  // ─────────────────────────────────────────────────────────────
+
   const handleViewRecord = (record) => {
     setSelectedRecord(record);
     setShowModal(true);
@@ -278,6 +342,13 @@ function RecordsPage() {
 
       let filteredData = dataWithApprovalStatus;
 
+      // ── ADDED: Accounting restriction — filter by assigned distributors only
+      if (assignedDistributorCodes !== null) {
+        filteredData = filteredData.filter(item =>
+          assignedDistributorCodes.has(String(item.distributor))
+        );
+      }
+
       // ✅ DISTRIBUTOR FILTER
       if (distributorFilter !== "all") {
         filteredData = filteredData.filter(item => String(item.distributor) === distributorFilter);
@@ -377,7 +448,7 @@ function RecordsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, statusFilter, distributorFilter, searchQuery, dateFrom, dateTo, categoryMap, searchField, distributorMap]);
+  }, [filter, statusFilter, distributorFilter, searchQuery, dateFrom, dateTo, categoryMap, searchField, distributorMap, assignedDistributorCodes]);
 
   const currentUser = JSON.parse(localStorage.getItem('loggedInUser'));
   const currentUserName = currentUser?.name?.toLowerCase().trim() || "";
@@ -385,8 +456,15 @@ function RecordsPage() {
   const role = currentUser?.role || "";
 
   const filteredData = useMemo(() => {
+    // Admin role = lahat
     if (role === 'admin') return data;
 
+    // Accounting position = lahat ng records ng assigned distributors
+    // (ang actual distributor filtering ginagawa na sa fetchData via assignedDistributorCodes)
+    // assignedDistributorCodes !== null means Accounting ang position
+    if (assignedDistributorCodes !== null) return data;
+
+    // Others = own records lang (by createForm)
     return data.filter(row => {
       const createForm = row.createForm;
       if (!createForm) return false;
@@ -405,7 +483,7 @@ function RecordsPage() {
 
       return false;
     });
-  }, [data, currentUserName, currentUserId, role]);
+  }, [data, currentUserName, currentUserId, role, assignedDistributorCodes]);
 
   const safeExcelText = (value) => {
     if (value === null || value === undefined) return "";
@@ -677,13 +755,20 @@ function RecordsPage() {
 
   // ✅ Get unique distributors for filter dropdown
   // ✅ TAMA - kumuha from filteredData para sa current view lang
+  // ✅ Kapag Accounting — assigned distributors LANG ang lalabas sa dropdown
   const uniqueDistributors = useMemo(() => {
-    const codes = [...new Set(filteredData.map(item => item.distributor).filter(Boolean))];
+    let codes;
+    if (assignedDistributorCodes !== null) {
+      codes = [...assignedDistributorCodes];
+    } else {
+      codes = [...new Set(filteredData.map(item => item.distributor).filter(Boolean))];
+    }
     return codes.map(code => ({
       code: String(code),
       name: distributorMap[String(code)] || String(code)
     })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filteredData, distributorMap]);
+  }, [filteredData, distributorMap, assignedDistributorCodes]);
+
   useEffect(() => {
     if (Object.keys(categoryMap).length > 0) {
       fetchData();
@@ -786,7 +871,9 @@ function RecordsPage() {
                     border: '1px solid #e1e8ed'
                   }}
                 >
-                  <option value="all">🏢 All Distributors</option>
+                  {assignedDistributorCodes === null && (
+                    <option value="all">🏢 All Distributors</option>
+                  )}
                   {uniqueDistributors.map(dist => (
                     <option key={dist.code} value={dist.code}>
                       {dist.name}
@@ -981,6 +1068,8 @@ function RecordsPage() {
           </button>
         </div>
       </div>
+
+
 
       {showModal && <RecordViewModal record={selectedRecord} onClose={() => { setShowModal(false); setSelectedRecord(null); }} />}
       {showPDFModal && <PDFViewModal record={selectedPDFRecord} onClose={() => { setShowPDFModal(false); setSelectedPDFRecord(null); }} />}
