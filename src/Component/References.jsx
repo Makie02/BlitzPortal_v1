@@ -30,6 +30,7 @@ import UserList from '../NewComponents/UserList.jsx';
 import MasterDataBranch from '../NewComponents/MasterdataBranch.jsx';
 import Bp_Account from '../NewComponents/Bp_Account.jsx';
 import Year from '../NewComponents/Year.jsx';
+import AccountingModule from './AccountingModule.jsx';
 const References = ({ setCurrentView }) => {
   const [view, setView] = useState(null);
   const [user, setUser] = useState(null);
@@ -61,6 +62,7 @@ const References = ({ setCurrentView }) => {
     { id: 23, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch', category: 'accounts', requirePassword: false },
     { id: 24, title: "Year", flag: 'Year', category: 'Year', requirePassword: false },
 
+    { id: 24, title: "Accounting Rules", flag: 'Year', category: 'Year', requirePassword: false },
 
     
   ];
@@ -246,7 +248,7 @@ const References = ({ setCurrentView }) => {
         {view === 'Bp Accounts' && <Bp_Account />}
 
         {view === 'Year' && <Year />}
-
+        {view === 'Accounting Rules' && <AccountingModule />}
         
       </div>
     );
