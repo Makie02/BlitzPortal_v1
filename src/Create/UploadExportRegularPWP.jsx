@@ -202,6 +202,7 @@ const UploadExportRegularPWP = () => {
                     const accountBudgets = accountBudgetMap[r.regularpwpcode];
                     const skuBudgets = skuMap[r.regularpwpcode];
 
+
                     if (skuBudgets && skuBudgets[customer]) {
                         priceVatExt = skuBudgets[customer];
                         console.log(`💰 SKU budget for ${r.regularpwpcode} - ${customer}: ${priceVatExt}`);
@@ -217,27 +218,22 @@ const UploadExportRegularPWP = () => {
 
                     separatedData.push({
                         "Purchase Order": r.regularpwpcode,
-                        "Vendor": r.distributor,
-                        // ✅ UPDATED: .name
                         "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
-                        // ✅ DAGDAG: SAP Vendor Code
                         "SAP Vendor Code": distributorMap[r.distributor]?.sap_vendor_code ?? "",
                         "Suppliers Ref. No.": r.regularpwpcode,
                         "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
                         "PO Date": formatDate(r.created_at),
+                        "Remarks (UDF)": cleanText(`${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`),
+                        "Buyer": cleanText(userMap[r.createForm] || r.createForm),
+                        "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
+                        "SLP": distributorMap[r.distributor]?.slp ?? "",
+                        "Vendor": r.distributor,
                         "(01)Description": cleanText(activityMap[r.activity]?.name || r.activity),
                         "(02)Account Code": cleanText(activityMap[r.activity]?.glcode || ""),
                         "(06)Price VAT-EXt": parseFloat(priceVatExt).toFixed(2),
                         "Customer List": cleanText(customer),
                         "Start Date": formatDate(r.activityDurationFrom),
                         "End Date": formatDate(r.activityDurationTo),
-                        "Remarks (UDF)": cleanText(
-                            `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`
-                        ),
-                        "Buyer": cleanText(userMap[r.createForm] || r.createForm),
-                        "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
-                        // ✅ DAGDAG: SLP
-                        "SLP": distributorMap[r.distributor]?.slp ?? "",
                     });
                 });
             });
@@ -346,27 +342,22 @@ const UploadExportRegularPWP = () => {
 
                 return {
                     "Purchase Order": r.regularpwpcode,
-                    "Vendor": r.distributor,
-                    // ✅ UPDATED: .name
                     "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
-                    // ✅ DAGDAG: SAP Vendor Code
                     "SAP Vendor Code": distributorMap[r.distributor]?.sap_vendor_code ?? "",
                     "Suppliers Ref. No.": r.regularpwpcode,
                     "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
                     "PO Date": formatDate(r.created_at),
+                    "Remarks (UDF)": cleanText(`${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`),
+                    "Buyer": cleanText(userMap[r.createForm] || r.createForm),
+                    "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
+                    "SLP": distributorMap[r.distributor]?.slp ?? "",
+                    "Vendor": r.distributor,
                     "(01)Description": cleanText(activityMap[r.activity]?.name || r.activity),
                     "(02)Account Code": cleanText(activityMap[r.activity]?.glcode || ""),
                     "(06)Price VAT-EXt": r.credit_budget,
                     "Customer List": cleanText(r.branchType || ""),
                     "Start Date": formatDate(r.activityDurationFrom),
                     "End Date": formatDate(r.activityDurationTo),
-                    "Remarks (UDF)": cleanText(
-                        `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`
-                    ),
-                    "Buyer": cleanText(userMap[r.createForm] || r.createForm),
-                    "Prepared By": cleanText(userMap[r.createForm] || r.createForm),
-                    // ✅ DAGDAG: SLP
-                    "SLP": distributorMap[r.distributor]?.slp ?? "",
                 };
             });
 
@@ -1105,25 +1096,23 @@ const UploadExportRegularPWP = () => {
                     <thead>
                         <tr>
                             {[
-                                "Regular PWP",
+                                "Purchase Order",
+                                "Vendor Name",
+                                "SAP Vendor Code",
+                                "Suppliers Ref. No.",
+                                "Posting Date",
+                                "PO Date",
+                                "Remarks (UDF)",
+                                "Buyer",
+                                "Prepared By",
+                                "SLP",
                                 "Vendor Code",
-                                "Distributor",
-                                "SAP Vendor Code", // ✅ DAGDAG
-                                "PWP Code",
-                                "Date Approved",
-                                "Creation Date",
                                 "Activity",
                                 "Activity Code",
                                 "PWP Amount",
                                 "Branch",
                                 "Activity Duration From",
                                 "Activity Duration To",
-                                "Objective",
-                                "Promo Scheme",
-                                "Buyer",
-                                "Prepared By",
-                                // ✅ DAGDAG: SLP header
-                                "SLP",
                             ].map((col) => (
                                 <th
                                     key={col}
@@ -1151,8 +1140,7 @@ const UploadExportRegularPWP = () => {
                     <tbody>
                         {loading ? (
                             <tr>
-                                {/* ✅ UPDATED: colSpan 17 → 18 */}
-                                <td colSpan={18} style={{
+                                <td colSpan={17} style={{
                                     textAlign: "center",
                                     padding: "40px",
                                     color: "#718096",
@@ -1163,8 +1151,7 @@ const UploadExportRegularPWP = () => {
                             </tr>
                         ) : records.length === 0 ? (
                             <tr>
-                                {/* ✅ UPDATED: colSpan 17 → 18 */}
-                                <td colSpan={18} style={{
+                                <td colSpan={17} style={{
                                     textAlign: "center",
                                     padding: "40px",
                                     color: "#718096",
@@ -1184,6 +1171,7 @@ const UploadExportRegularPWP = () => {
                                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#edf2f7"}
                                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? "#ffffff" : "#f7fafc"}
                                 >
+                                    {/* 1. Purchase Order */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1193,6 +1181,8 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {r.regularpwpcode}
                                     </td>
+
+                                    {/* 2. Vendor Name */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1200,19 +1190,10 @@ const UploadExportRegularPWP = () => {
                                         color: "#2d3748",
                                         borderBottom: "1px solid #e2e8f0"
                                     }}>
-                                        {r.distributor}
-                                    </td>
-                                    <td style={{
-                                        padding: "14px 12px",
-                                        whiteSpace: "nowrap",
-                                        fontSize: "14px",
-                                        color: "#2d3748",
-                                        borderBottom: "1px solid #e2e8f0"
-                                    }}>
-                                        {/* ✅ UPDATED: .name */}
                                         {distributorMap[r.distributor]?.name || r.distributor}
                                     </td>
-                                    {/* ✅ DAGDAG: SAP Vendor Code cell */}
+
+                                    {/* 3. SAP Vendor Code */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1222,6 +1203,8 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {distributorMap[r.distributor]?.sap_vendor_code ?? "-"}
                                     </td>
+
+                                    {/* 4. Suppliers Ref. No. */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1231,6 +1214,8 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {r.regularpwpcode}
                                     </td>
+
+                                    {/* 5. Posting Date */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1261,6 +1246,8 @@ const UploadExportRegularPWP = () => {
                                             </span>
                                         )}
                                     </td>
+
+                                    {/* 6. PO Date */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1270,6 +1257,99 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {r.created_at ? new Date(r.created_at).toLocaleDateString() : ""}
                                     </td>
+
+                                    {/* 7. Remarks (UDF) - combined objective + promoScheme */}
+                                    <td
+                                        style={{
+                                            padding: "14px 12px",
+                                            fontSize: "14px",
+                                            color: "#2d3748",
+                                            borderBottom: "1px solid #e2e8f0",
+                                            cursor: "default",
+                                            position: "relative",
+                                            maxWidth: "200px",
+                                        }}
+                                        title={`${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`}
+                                    >
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            <span style={{
+                                                display: "inline-block",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                                maxWidth: "100%",
+                                            }}>
+                                                {(() => {
+                                                    const combined = `${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`;
+                                                    return combined.length > 100 ? combined.slice(0, 100) + "..." : combined || "-";
+                                                })()}
+                                            </span>
+                                            {(`${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`).length > 100 && (
+                                                <span style={{
+                                                    flexShrink: 0,
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    width: "18px",
+                                                    height: "18px",
+                                                    borderRadius: "50%",
+                                                    backgroundColor: "#e2e8f0",
+                                                    color: "#718096",
+                                                    fontSize: "11px",
+                                                    fontWeight: "600",
+                                                    cursor: "help",
+                                                }} title="Text truncated - hover to see full text">
+                                                    ...
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+
+                                    {/* 8. Buyer */}
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        color: "#2d3748",
+                                        borderBottom: "1px solid #e2e8f0"
+                                    }}>
+                                        {userMap[r.createForm] || r.createForm}
+                                    </td>
+
+                                    {/* 9. Prepared By */}
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        color: "#2d3748",
+                                        borderBottom: "1px solid #e2e8f0"
+                                    }}>
+                                        {userMap[r.createForm] || r.createForm}
+                                    </td>
+
+                                    {/* 10. SLP */}
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        color: "#2d3748",
+                                        borderBottom: "1px solid #e2e8f0"
+                                    }}>
+                                        {distributorMap[r.distributor]?.slp ?? "-"}
+                                    </td>
+
+                                    {/* 11. Vendor Code */}
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        color: "#2d3748",
+                                        borderBottom: "1px solid #e2e8f0"
+                                    }}>
+                                        {r.distributor}
+                                    </td>
+
+                                    {/* 12. Activity */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1279,6 +1359,8 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {activityMap[r.activity]?.name || r.activity}
                                     </td>
+
+                                    {/* 13. Activity Code */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1288,6 +1370,8 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {activityMap[r.activity]?.glcode || r.activity}
                                     </td>
+
+                                    {/* 14. PWP Amount */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1296,14 +1380,15 @@ const UploadExportRegularPWP = () => {
                                         fontWeight: "600",
                                         borderBottom: "1px solid #e2e8f0",
                                     }}>
-                                        ₱
-                                        {r.credit_budget
+                                        ₱{r.credit_budget
                                             ? parseFloat(r.credit_budget).toLocaleString("en-PH", {
                                                 minimumFractionDigits: 2,
                                                 maximumFractionDigits: 2,
                                             })
                                             : "0.00"}
                                     </td>
+
+                                    {/* 15. Branch */}
                                     <td
                                         style={{
                                             padding: "14px 12px",
@@ -1349,6 +1434,8 @@ const UploadExportRegularPWP = () => {
                                             )}
                                         </div>
                                     </td>
+
+                                    {/* 16. Activity Duration From */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1358,6 +1445,8 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {r.activityDurationFrom ? new Date(r.activityDurationFrom).toLocaleDateString() : ""}
                                     </td>
+
+                                    {/* 17. Activity Duration To */}
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1367,124 +1456,7 @@ const UploadExportRegularPWP = () => {
                                     }}>
                                         {r.activityDurationTo ? new Date(r.activityDurationTo).toLocaleDateString() : ""}
                                     </td>
-                                    <td
-                                        style={{
-                                            padding: "14px 12px",
-                                            fontSize: "14px",
-                                            color: "#2d3748",
-                                            borderBottom: "1px solid #e2e8f0",
-                                            cursor: "default",
-                                            position: "relative",
-                                            maxWidth: "200px",
-                                        }}
-                                        title={r.objective || ""}
-                                    >
-                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                            <span style={{
-                                                display: "inline-block",
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                                whiteSpace: "nowrap",
-                                                maxWidth: "100%",
-                                                fontWeight: (r.objective?.length || 0) > 100 ? "500" : "400",
-                                            }}>
-                                                {r.objective && r.objective.length > 100
-                                                    ? r.objective.slice(0, 100) + "..."
-                                                    : r.objective || "-"}
-                                            </span>
-                                            {(r.objective?.length || 0) > 100 && (
-                                                <span style={{
-                                                    flexShrink: 0,
-                                                    display: "inline-flex",
-                                                    alignItems: "center",
-                                                    justifyContent: "center",
-                                                    width: "18px",
-                                                    height: "18px",
-                                                    borderRadius: "50%",
-                                                    backgroundColor: "#e2e8f0",
-                                                    color: "#718096",
-                                                    fontSize: "11px",
-                                                    fontWeight: "600",
-                                                    cursor: "help",
-                                                }} title="Text truncated - hover to see full text">
-                                                    ...
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td
-                                        style={{
-                                            padding: "14px 12px",
-                                            fontSize: "14px",
-                                            color: "#2d3748",
-                                            borderBottom: "1px solid #e2e8f0",
-                                            cursor: "default",
-                                            position: "relative",
-                                            maxWidth: "200px",
-                                        }}
-                                        title={r.promoScheme || ""}
-                                    >
-                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                            <span style={{
-                                                display: "inline-block",
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                                whiteSpace: "nowrap",
-                                                maxWidth: "100%",
-                                                fontWeight: (r.promoScheme?.length || 0) > 100 ? "500" : "400",
-                                            }}>
-                                                {r.promoScheme && r.promoScheme.length > 100
-                                                    ? r.promoScheme.slice(0, 100) + "..."
-                                                    : r.promoScheme || "-"}
-                                            </span>
-                                            {(r.promoScheme?.length || 0) > 100 && (
-                                                <span style={{
-                                                    flexShrink: 0,
-                                                    display: "inline-flex",
-                                                    alignItems: "center",
-                                                    justifyContent: "center",
-                                                    width: "18px",
-                                                    height: "18px",
-                                                    borderRadius: "50%",
-                                                    backgroundColor: "#e2e8f0",
-                                                    color: "#718096",
-                                                    fontSize: "11px",
-                                                    fontWeight: "600",
-                                                    cursor: "help",
-                                                }} title="Text truncated - hover to see full text">
-                                                    ...
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td style={{
-                                        padding: "14px 12px",
-                                        whiteSpace: "nowrap",
-                                        fontSize: "14px",
-                                        color: "#2d3748",
-                                        borderBottom: "1px solid #e2e8f0"
-                                    }}>
-                                        {userMap[r.createForm] || r.createForm}
-                                    </td>
-                                    <td style={{
-                                        padding: "14px 12px",
-                                        whiteSpace: "nowrap",
-                                        fontSize: "14px",
-                                        color: "#2d3748",
-                                        borderBottom: "1px solid #e2e8f0"
-                                    }}>
-                                        {userMap[r.createForm] || r.createForm}
-                                    </td>
-                                    {/* ✅ DAGDAG: SLP cell - katabi ng Prepared By */}
-                                    <td style={{
-                                        padding: "14px 12px",
-                                        whiteSpace: "nowrap",
-                                        fontSize: "14px",
-                                        color: "#2d3748",
-                                        borderBottom: "1px solid #e2e8f0"
-                                    }}>
-                                        {distributorMap[r.distributor]?.slp ?? "-"}
-                                    </td>
+
                                 </tr>
                             ))
                         )}
