@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { CSVLink } from "react-csv";
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 const PAGE_SIZE = 10;
 
 const UploadExportRegularPWP = () => {
@@ -173,8 +173,9 @@ const UploadExportRegularPWP = () => {
 
             // Filter APPROVED only
             // Filter APPROVED only
-            let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
-            console.log(`✅ Approved records: ${filteredData.length}`);
+            let filteredData = allData.filter(r =>
+                approvalMap[r.regularpwpcode]?.status?.toLowerCase() === "approved"
+            ); console.log(`✅ Approved records: ${filteredData.length}`);
 
             // ✅ Filter by date range if set
             if (dateFrom || dateTo) {
@@ -330,12 +331,14 @@ const UploadExportRegularPWP = () => {
                         }
                     }
 
+                    // ✅ NEW
                     separatedData.push({
+                        "Status": approvalMap[r.regularpwpcode]?.status || "Approved",
                         "Purchase Order": r.regularpwpcode,
                         "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
                         "SAP Vendor Code": distributorMap[r.distributor]?.sap_vendor_code ?? "",
                         "Suppliers Ref. No.": r.regularpwpcode,
-                        "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
+                        "Posting Date": formatDate(approvalMap[r.regularpwpcode]?.date),
                         "PO Date": formatDate(r.created_at),
                         "Remarks (UDF)": cleanText(`${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`),
                         "Buyer": cleanText(userMap[r.createForm] || r.createForm),
@@ -364,8 +367,34 @@ const UploadExportRegularPWP = () => {
 
             // Download as XLSX
             // Download as XLSX
+            // ✅ NEW
+            // Download as XLSX with colors
             const worksheet = XLSX.utils.json_to_sheet(separatedData);
             const workbook = XLSX.utils.book_new();
+
+            // Green color sa Status column (lahat approved)
+            separatedData.forEach((row, i) => {
+                const cellRef = `A${i + 2}`;
+                if (!worksheet[cellRef]) worksheet[cellRef] = { v: row["Status"], t: "s" };
+                worksheet[cellRef].s = {
+                    fill: { patternType: "solid", fgColor: { rgb: "C6F6D5" } },
+                    font: { bold: true },
+                    alignment: { horizontal: "center" },
+                };
+            });
+
+            // Blue header row
+            const sepHeaders = Object.keys(separatedData[0] || {});
+            sepHeaders.forEach((_, colIdx) => {
+                const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx });
+                if (!worksheet[cellRef]) return;
+                worksheet[cellRef].s = {
+                    fill: { patternType: "solid", fgColor: { rgb: "0D6EFD" } },
+                    font: { bold: true, color: { rgb: "FFFFFF" } },
+                    alignment: { horizontal: "center" },
+                };
+            });
+
             XLSX.utils.book_append_sheet(workbook, worksheet, "Separated");
             XLSX.writeFile(workbook, `regular_pwp_separated_${formatDate(new Date().toISOString())}.xlsx`);
 
@@ -443,8 +472,9 @@ const UploadExportRegularPWP = () => {
 
             // 🔥 FILTER: Only APPROVED records (must have approval date)
             // 🔥 FILTER: Only APPROVED records (must have approval date)
-            let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
-            console.log(`✅ Approved records: ${filteredData.length} out of ${allData.length}`);
+            let filteredData = allData.filter(r =>
+                approvalMap[r.regularpwpcode]?.status?.toLowerCase() === "approved"
+            ); console.log(`✅ Approved records: ${filteredData.length} out of ${allData.length}`);
 
             // ✅ Filter by date range if set
             if (dateFrom || dateTo) {
@@ -471,27 +501,29 @@ const UploadExportRegularPWP = () => {
                 console.log(`📅 After date filter: ${filteredData.length} records`);
             }
 
+
             setApprovedRecordsCount(filteredData.length);
             console.log(`🎯 FINAL: ${filteredData.length} approved records ready for export`);
 
             // Prepare export data
-            const csvData = filteredData.map((r) => {
+            const exportRows = filteredData.map((r) => {
                 const cleanText = (text) =>
                     text
-                        ? `"${String(text)
+                        ? String(text)
                             .replace(/"/g, '""')
                             .replace(/,/g, " ")
                             .replace(/[\r\n]+/g, " ")
                             .replace(/\s+/g, " ")
-                            .trim()}"`
+                            .trim()
                         : "";
 
                 return {
+                    "Status": approvalMap[r.regularpwpcode]?.status || "Pending",
                     "Purchase Order": r.regularpwpcode,
                     "Vendor Name": cleanText(distributorMap[r.distributor]?.name || r.distributor),
                     "SAP Vendor Code": distributorMap[r.distributor]?.sap_vendor_code ?? "",
                     "Suppliers Ref. No.": r.regularpwpcode,
-                    "Posting Date": formatDate(approvalMap[r.regularpwpcode]),
+                    "Posting Date": formatDate(approvalMap[r.regularpwpcode]?.date),
                     "PO Date": formatDate(r.created_at),
                     "Remarks (UDF)": cleanText(`${r.objective || ""}${r.objective && r.promoScheme ? " | " : ""}${r.promoScheme || ""}`),
                     "Buyer": cleanText(userMap[r.createForm] || r.createForm),
@@ -507,8 +539,49 @@ const UploadExportRegularPWP = () => {
                 };
             });
 
-            setExportData(csvData);
+            // Build XLSX with colors
+            const worksheet = XLSX.utils.json_to_sheet(exportRows);
+            const workbook = XLSX.utils.book_new();
 
+            const statusColors = {
+                approved: { rgb: "C6F6D5" },
+                disapproved: { rgb: "FED7D7" },
+                cancelled: { rgb: "FEEBC8" },
+                pending: { rgb: "E2E8F0" },
+            };
+
+            // Color Status column (A2 onwards)
+            exportRows.forEach((row, i) => {
+                const cellRef = `A${i + 2}`;
+                const statusLower = (row["Status"] || "pending").toLowerCase();
+                const rgb = statusColors[statusLower]?.rgb || "E2E8F0";
+                if (!worksheet[cellRef]) worksheet[cellRef] = { v: row["Status"], t: "s" };
+                worksheet[cellRef].s = {
+                    fill: { patternType: "solid", fgColor: { rgb } },
+                    font: { bold: true },
+                    alignment: { horizontal: "center" },
+                };
+            });
+
+            // Color header row (blue + white text)
+            const headers = Object.keys(exportRows[0] || {});
+            headers.forEach((_, colIdx) => {
+                const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx });
+                if (!worksheet[cellRef]) return;
+                worksheet[cellRef].s = {
+                    fill: { patternType: "solid", fgColor: { rgb: "0D6EFD" } },
+                    font: { bold: true, color: { rgb: "FFFFFF" } },
+                    alignment: { horizontal: "center" },
+                };
+            });
+
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Approved");
+            XLSX.writeFile(workbook, `regular_pwp_approved_${formatDate(new Date().toISOString())}.xlsx`);
+
+            // Save export history
+            const exportedCodes = filteredData.map(r => r.regularpwpcode);
+            await saveExportHistory(dateFrom, dateTo, exportedCodes);
+            setExportData([]);
         } catch (error) {
             console.error("❌ Error fetching all records:", error);
         } finally {
@@ -599,9 +672,11 @@ const UploadExportRegularPWP = () => {
             }
 
             // Filter by approval
+          
             if (filterApproved) {
-                filteredData = filteredData.filter(r => approvalMap[r.regularpwpcode]);
-                console.log(`✓ Approved filter: ${filteredData.length} results`);
+                filteredData = filteredData.filter(r =>
+                    approvalMap[r.regularpwpcode]?.status?.toLowerCase() === "approved"
+                );
             }
 
             // Filter by date range (Activity Duration)
@@ -710,7 +785,7 @@ const UploadExportRegularPWP = () => {
             while (hasMore) {
                 const { data, error } = await supabase
                     .from("Approval_History")
-                    .select("PwpCode, DateResponded")
+                    .select("PwpCode, DateResponded, Response")
                     .range(offset, offset + batchSize - 1);
 
                 if (error) {
@@ -730,10 +805,17 @@ const UploadExportRegularPWP = () => {
             }
 
             // Create map from all fetched data (keep latest DateResponded per PwpCode)
+            // ✅ NEW
             const map = {};
             allData.forEach(a => {
-                if (!map[a.PwpCode] || new Date(a.DateResponded) > new Date(map[a.PwpCode])) {
-                    map[a.PwpCode] = a.DateResponded;
+                const status = a.Response?.trim() || "";
+                if (!status) return;
+
+                if (!map[a.PwpCode] || new Date(a.DateResponded) > new Date(map[a.PwpCode]?.date)) {
+                    map[a.PwpCode] = {
+                        date: a.DateResponded,
+                        status: status,
+                    };
                 }
             });
             setApprovalMap(map);
@@ -855,14 +937,14 @@ const UploadExportRegularPWP = () => {
 
     // 🔥 Fetch export data ONCE when all maps are loaded
     // Export is INDEPENDENT of view filters - it always exports ALL approved records
-    useEffect(() => {
-        if (Object.keys(approvalMap).length > 0 &&
-            Object.keys(distributorMap).length > 0 &&
-            Object.keys(activityMap).length > 0 &&
-            Object.keys(userMap).length > 0) {
-            fetchAllRecordsForExport();
-        }
-    }, [approvalMap, distributorMap, activityMap, userMap, dateFrom, dateTo]);
+    // useEffect(() => {
+    //     if (Object.keys(approvalMap).length > 0 &&
+    //         Object.keys(distributorMap).length > 0 &&
+    //         Object.keys(activityMap).length > 0 &&
+    //         Object.keys(userMap).length > 0) {
+    //         fetchAllRecordsForExport();
+    //     }
+    // }, [approvalMap, distributorMap, activityMap, userMap, dateFrom, dateTo]);
 
     const handleSearch = (e) => {
         setSearch(e.target.value);
@@ -996,14 +1078,10 @@ const UploadExportRegularPWP = () => {
                     </button>
 
                     {/* 🔥 EXPORT BUTTON - Only exports APPROVED records with date filters */}
-                    <CSVLink
-                        data={exportData}
-                        filename={`regular_pwp_approved_${new Date().toISOString().split('T')[0]}.csv`}
-                        onClick={async () => {
-                            if (exportData.length === 0) return;
-                            const exportedCodes = exportData.map(r => r["Purchase Order"]);
-                            await saveExportHistory(dateFrom, dateTo, exportedCodes);
-                        }}
+         
+                    <button
+                        onClick={fetchAllRecordsForExport}
+                        disabled={isPreparingExport}
                         style={{
                             padding: "12px 24px",
                             border: "none",
@@ -1015,15 +1093,13 @@ const UploadExportRegularPWP = () => {
                             display: "flex",
                             alignItems: "center",
                             gap: "8px",
-                            textDecoration: "none",
                             transition: "all 0.3s",
                             fontSize: "14px",
-                            opacity: isPreparingExport ? 0.7 : 1,
-                            pointerEvents: isPreparingExport ? "none" : "auto"
+                            opacity: isPreparingExport ? 0.7 : 1
                         }}
                     >
-                        {isPreparingExport ? "⏳ Preparing..." : "📥 Export Approved CSV"}
-                    </CSVLink>
+                        {isPreparingExport ? "⏳ Preparing..." : "📥 Export Approved XLSX"}
+                    </button>
 
                     {/* 🆕 NEW EXPORT BUTTON - Separate Customer List */}
                     <button
@@ -1292,7 +1368,7 @@ const UploadExportRegularPWP = () => {
                         )}
                     </div>
                 )}
-  </div>
+            </div>
 
             {/* Export History Modal */}
             {showHistoryModal && (
@@ -1439,6 +1515,7 @@ const UploadExportRegularPWP = () => {
                     <thead>
                         <tr>
                             {[
+                                "Status",
                                 "Purchase Order",
                                 "Vendor Name",
                                 "SAP Vendor Code",
@@ -1506,8 +1583,11 @@ const UploadExportRegularPWP = () => {
 
 
                         ) : (() => {
+                            // ✅ NEW
                             const isExported = (r) => {
                                 if (!exportHistory) return false;
+                                const status = approvalMap[r.regularpwpcode]?.status?.toLowerCase();
+                                if (status !== "approved") return false; // ✅ only approved rows can be highlighted
                                 if (!exportHistory.dateFrom && !exportHistory.dateTo) return true;
                                 if (exportHistory.dateFrom && exportHistory.dateTo) {
                                     const from = r.activityDurationFrom || "";
@@ -1531,7 +1611,50 @@ const UploadExportRegularPWP = () => {
                                             : idx % 2 === 0 ? "#ffffff" : "#f7fafc";
                                     }}
                                 >
+
+
+                                    <td style={{
+                                        padding: "14px 12px",
+                                        whiteSpace: "nowrap",
+                                        fontSize: "14px",
+                                        borderBottom: "1px solid #e2e8f0"
+                                    }}>
+                                        {(() => {
+                                            const status = approvalMap[r.regularpwpcode]?.status;
+                                            if (!status) return (
+                                                <span style={{
+                                                    padding: "4px 12px",
+                                                    backgroundColor: "#e2e8f0",
+                                                    color: "#4a5568",
+                                                    borderRadius: "20px",
+                                                    fontSize: "12px",
+                                                    fontWeight: "600"
+                                                }}>⏳ Pending</span>
+                                            );
+                                            const statusLower = status.toLowerCase();
+                                            const styles = {
+                                                approved: { bg: "#c6f6d5", color: "#22543d", icon: "✅" },
+                                                disapproved: { bg: "#fed7d7", color: "#742a2a", icon: "❌" },
+                                                cancelled: { bg: "#feebc8", color: "#7b341e", icon: "🚫" },
+                                            };
+                                            const s = styles[statusLower] || { bg: "#e2e8f0", color: "#4a5568", icon: "❓" };
+                                            return (
+                                                <span style={{
+                                                    padding: "4px 12px",
+                                                    backgroundColor: s.bg,
+                                                    color: s.color,
+                                                    borderRadius: "20px",
+                                                    fontSize: "12px",
+                                                    fontWeight: "600"
+                                                }}>
+                                                    {s.icon} {status}
+                                                </span>
+                                            );
+                                        })()}
+                                    </td>
                                     {/* 1. Purchase Order */}
+
+
                                     <td style={{
                                         padding: "14px 12px",
                                         whiteSpace: "nowrap",
@@ -1582,7 +1705,8 @@ const UploadExportRegularPWP = () => {
                                         fontSize: "14px",
                                         borderBottom: "1px solid #e2e8f0"
                                     }}>
-                                        {approvalMap[r.regularpwpcode] ? (
+
+                                        {approvalMap[r.regularpwpcode]?.date ? (
                                             <span style={{
                                                 padding: "4px 10px",
                                                 backgroundColor: "#c6f6d5",
@@ -1591,7 +1715,7 @@ const UploadExportRegularPWP = () => {
                                                 fontSize: "13px",
                                                 fontWeight: "500"
                                             }}>
-                                                {new Date(approvalMap[r.regularpwpcode]).toLocaleDateString()}
+                                                {new Date(approvalMap[r.regularpwpcode].date).toLocaleDateString()}
                                             </span>
                                         ) : (
                                             <span style={{
