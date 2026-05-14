@@ -26,7 +26,95 @@ const UploadExportRegularPWP = () => {
     // New date filter states
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
+    const [exportHistory, setExportHistory] = useState(null); // { dateFrom, dateTo, exportedCodes: [], exportedAt }
+    const [exportedCodesSet, setExportedCodesSet] = useState(new Set());
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
+    const [allExportHistory, setAllExportHistory] = useState([]);
 
+    const fetchAllExportHistory = async () => {
+        try {
+            const { data, error } = await supabase
+                .from("export_history")
+                .select("*")
+                .order("exported_at", { ascending: false })
+                .limit(20);
+
+            if (error || !data) return;
+            setAllExportHistory(data);
+        } catch (err) {
+            console.error("❌ Error fetching export history:", err);
+        }
+    };
+    // Load last export history on mount
+    const loadExportHistory = async () => {
+        try {
+
+
+            const { data, error } = await supabase
+                .from("export_history")
+                .select("*")
+                .order("exported_at", { ascending: false })
+                .limit(1)
+                .single();
+
+            if (error || !data) return;
+
+            const supabaseHistory = {
+                dateFrom: data.date_from,
+                dateTo: data.date_to,
+                exportedCodes: data.pwp_codes || [],
+                exportedAt: data.exported_at,
+                totalRecords: data.total_records,
+            };
+
+            // Use Supabase data (more authoritative)
+            setExportHistory(supabaseHistory);
+            setExportedCodesSet(new Set(supabaseHistory.exportedCodes));
+
+            // Sync to localStorage
+
+        } catch (err) {
+            console.error("❌ Error loading export history:", err);
+        }
+    };
+
+    const saveExportHistory = async (dateFrom, dateTo, exportedCodes) => {
+        try {
+            const currentUser = JSON.parse(localStorage.getItem("loggedInUser"));
+            const exportedBy = currentUser?.name || "Unknown";
+
+            const historyData = {
+                dateFrom,
+                dateTo,
+                exportedCodes,
+                exportedAt: new Date().toISOString(),
+                totalRecords: exportedCodes.length,
+            };
+
+            setExportHistory(historyData);
+            setExportedCodesSet(new Set(exportedCodes));
+
+            // 2️⃣ Save to Supabase
+            const { error } = await supabase
+                .from("export_history")
+                .insert([{
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                    pwp_codes: exportedCodes,
+                    exported_by: exportedBy,
+                    total_records: exportedCodes.length,
+                }]);
+
+            if (error) {
+                console.error("❌ Error saving export history to Supabase:", error);
+            } else {
+                console.log("✅ Export history saved!");
+            }
+
+        } catch (err) {
+            console.error("❌ Error saving export history:", err);
+        }
+    };
     const handlePageSizeChange = (e) => {
         setPageSize(Number(e.target.value));
         setPage(1);
@@ -84,8 +172,34 @@ const UploadExportRegularPWP = () => {
             console.log(`📊 Total PWP records fetched: ${allData.length}`);
 
             // Filter APPROVED only
+            // Filter APPROVED only
             let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
             console.log(`✅ Approved records: ${filteredData.length}`);
+
+            // ✅ Filter by date range if set
+            if (dateFrom || dateTo) {
+                filteredData = filteredData.filter(r => {
+                    const activityFrom = r.activityDurationFrom ? new Date(r.activityDurationFrom) : null;
+                    const activityTo = r.activityDurationTo ? new Date(r.activityDurationTo) : null;
+                    const filterFromDate = dateFrom ? new Date(dateFrom) : null;
+                    const filterToDate = dateTo ? new Date(dateTo) : null;
+
+                    if (filterFromDate && filterToDate) {
+                        // ✅ activityDurationFrom must be EXACTLY within the selected date range
+                        return activityFrom &&
+                            activityFrom >= filterFromDate &&
+                            activityFrom <= filterToDate;
+                    }
+                    if (filterFromDate && !filterToDate) {
+                        return activityTo && activityTo >= filterFromDate;
+                    }
+                    if (!filterFromDate && filterToDate) {
+                        return activityFrom && activityFrom <= filterToDate;
+                    }
+                    return true;
+                });
+                console.log(`📅 After date filter: ${filteredData.length} records`);
+            }
 
             // STEP 2: Fetch account budget data (regular_accountlis_badget)
             console.log("🔄 Fetching account budget data...");
@@ -249,10 +363,16 @@ const UploadExportRegularPWP = () => {
             console.log(`   Difference: ₱${Math.abs(totalOriginal - totalSeparated).toFixed(2)}`);
 
             // Download as XLSX
+            // Download as XLSX
             const worksheet = XLSX.utils.json_to_sheet(separatedData);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Separated");
             XLSX.writeFile(workbook, `regular_pwp_separated_${formatDate(new Date().toISOString())}.xlsx`);
+
+            // ✅ Save export history
+            const exportedCodes = filteredData.map(r => r.regularpwpcode);
+
+            await saveExportHistory(dateFrom, dateTo, exportedCodes);
 
             console.log("✅ Export completed successfully!");
 
@@ -322,8 +442,34 @@ const UploadExportRegularPWP = () => {
             setTotalRecordsCount(allData.length);
 
             // 🔥 FILTER: Only APPROVED records (must have approval date)
+            // 🔥 FILTER: Only APPROVED records (must have approval date)
             let filteredData = allData.filter(r => approvalMap[r.regularpwpcode]);
             console.log(`✅ Approved records: ${filteredData.length} out of ${allData.length}`);
+
+            // ✅ Filter by date range if set
+            if (dateFrom || dateTo) {
+                filteredData = filteredData.filter(r => {
+                    const activityFrom = r.activityDurationFrom ? new Date(r.activityDurationFrom) : null;
+                    const activityTo = r.activityDurationTo ? new Date(r.activityDurationTo) : null;
+                    const filterFromDate = dateFrom ? new Date(dateFrom) : null;
+                    const filterToDate = dateTo ? new Date(dateTo) : null;
+
+                    if (filterFromDate && filterToDate) {
+                        // ✅ activityDurationFrom must be EXACTLY within the selected date range
+                        return activityFrom &&
+                            activityFrom >= filterFromDate &&
+                            activityFrom <= filterToDate;
+                    }
+                    if (filterFromDate && !filterToDate) {
+                        return activityTo && activityTo >= filterFromDate;
+                    }
+                    if (!filterFromDate && filterToDate) {
+                        return activityFrom && activityFrom <= filterToDate;
+                    }
+                    return true;
+                });
+                console.log(`📅 After date filter: ${filteredData.length} records`);
+            }
 
             setApprovedRecordsCount(filteredData.length);
             console.log(`🎯 FINAL: ${filteredData.length} approved records ready for export`);
@@ -470,10 +616,10 @@ const UploadExportRegularPWP = () => {
                     const filterToDate = dateTo ? new Date(dateTo) : null;
 
                     if (filterFromDate && filterToDate) {
-                        return (
-                            (activityFrom && activityFrom <= filterToDate) &&
-                            (activityTo && activityTo >= filterFromDate)
-                        );
+                        // ✅ activityDurationFrom must be EXACTLY within the selected date range
+                        return activityFrom &&
+                            activityFrom >= filterFromDate &&
+                            activityFrom <= filterToDate;
                     }
 
                     if (filterFromDate && !filterToDate) {
@@ -697,6 +843,7 @@ const UploadExportRegularPWP = () => {
         fetchApprovals();
         fetchActivities();
         fetchUsers();
+        loadExportHistory();
     }, []);
 
     useEffect(() => {
@@ -715,7 +862,7 @@ const UploadExportRegularPWP = () => {
             Object.keys(userMap).length > 0) {
             fetchAllRecordsForExport();
         }
-    }, [approvalMap, distributorMap, activityMap, userMap]);
+    }, [approvalMap, distributorMap, activityMap, userMap, dateFrom, dateTo]);
 
     const handleSearch = (e) => {
         setSearch(e.target.value);
@@ -852,6 +999,11 @@ const UploadExportRegularPWP = () => {
                     <CSVLink
                         data={exportData}
                         filename={`regular_pwp_approved_${new Date().toISOString().split('T')[0]}.csv`}
+                        onClick={async () => {
+                            if (exportData.length === 0) return;
+                            const exportedCodes = exportData.map(r => r["Purchase Order"]);
+                            await saveExportHistory(dateFrom, dateTo, exportedCodes);
+                        }}
                         style={{
                             padding: "12px 24px",
                             border: "none",
@@ -1029,7 +1181,71 @@ const UploadExportRegularPWP = () => {
                         </button>
                     )}
                 </div>
-
+                {/* Last Export Info */}
+                {exportHistory && (
+                    <div style={{
+                        marginTop: "12px",
+                        padding: "12px 16px",
+                        backgroundColor: "#fefce8",
+                        border: "2px solid #facc15",
+                        borderRadius: "8px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        fontSize: "13px",
+                    }}>
+                        <span style={{ fontSize: "18px" }}>📤</span>
+                        <span style={{ fontWeight: "700", color: "#854d0e" }}>Last Export:</span>
+                        <span style={{
+                            backgroundColor: "#fde68a",
+                            padding: "3px 10px",
+                            borderRadius: "6px",
+                            fontWeight: "600",
+                            color: "#78350f"
+                        }}>
+                            {exportHistory.dateFrom
+                                ? `${exportHistory.dateFrom} → ${exportHistory.dateTo || "N/A"}`
+                                : "All Records"}
+                        </span>
+                        <span style={{ color: "#92400e" }}>
+                            {exportHistory.totalRecords} records exported
+                        </span>
+                        <span style={{ color: "#a16207", fontSize: "12px" }}>
+                            exported on {new Date(exportHistory.exportedAt).toLocaleString()}
+                        </span>
+                        <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+                            <span style={{
+                                padding: "3px 10px",
+                                backgroundColor: "#fef08a",
+                                borderRadius: "6px",
+                                color: "#854d0e",
+                                fontWeight: "600",
+                                fontSize: "12px"
+                            }}>
+                                🟡 Yellow rows = included in last export
+                            </span>
+                            <button
+                                onClick={() => {
+                                    fetchAllExportHistory();
+                                    setShowHistoryModal(true);
+                                }}
+                                style={{
+                                    padding: "4px 12px",
+                                    borderRadius: "6px",
+                                    border: "none",
+                                    backgroundColor: "#854d0e",
+                                    color: "white",
+                                    fontWeight: "600",
+                                    fontSize: "12px",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                📋 View History
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {/* Active Filters Display */}
                 {(filterToday || filterApproved || dateFrom || dateTo) && (
                     <div style={{
@@ -1076,7 +1292,134 @@ const UploadExportRegularPWP = () => {
                         )}
                     </div>
                 )}
-            </div>
+  </div>
+
+            {/* Export History Modal */}
+            {showHistoryModal && (
+                <div style={{
+                    position: "fixed",
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    zIndex: 1000,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                }}>
+                    <div style={{
+                        backgroundColor: "white",
+                        borderRadius: "12px",
+                        padding: "24px",
+                        width: "700px",
+                        maxHeight: "80vh",
+                        overflowY: "auto",
+                        boxShadow: "0 10px 40px rgba(0,0,0,0.3)",
+                    }}>
+                        {/* Modal Header */}
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "20px",
+                        }}>
+                            <h3 style={{ margin: 0, color: "#1a202c" }}>📋 Export History</h3>
+                            <button
+                                onClick={() => setShowHistoryModal(false)}
+                                style={{
+                                    border: "none",
+                                    background: "#e2e8f0",
+                                    borderRadius: "6px",
+                                    padding: "6px 12px",
+                                    cursor: "pointer",
+                                    fontWeight: "600",
+                                }}
+                            >
+                                ✕ Close
+                            </button>
+                        </div>
+
+                        {/* History List */}
+                        {allExportHistory.length === 0 ? (
+                            <p style={{ textAlign: "center", color: "#718096" }}>No export history found.</p>
+                        ) : (
+                            allExportHistory.map((h, idx) => (
+                                <div
+                                    key={h.id}
+                                    onClick={() => {
+                                        // ✅ Load this export as active highlight
+                                        setExportHistory({
+                                            dateFrom: h.date_from,
+                                            dateTo: h.date_to,
+                                            exportedAt: h.exported_at,
+                                            totalRecords: h.total_records,
+                                            exportedCodes: h.pwp_codes || [],
+                                        });
+                                        setExportedCodesSet(new Set(h.pwp_codes || []));
+                                        setShowHistoryModal(false);
+                                    }}
+                                    style={{
+                                        padding: "14px 16px",
+                                        borderRadius: "8px",
+                                        marginBottom: "10px",
+                                        border: "2px solid",
+                                        borderColor: idx === 0 ? "#facc15" : "#e2e8f0",
+                                        backgroundColor: idx === 0 ? "#fefce8" : "#f7fafc",
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        transition: "all 0.2s",
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#edf2f7"}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = idx === 0 ? "#fefce8" : "#f7fafc"}
+                                >
+                                    <div>
+                                        {idx === 0 && (
+                                            <span style={{
+                                                fontSize: "11px",
+                                                backgroundColor: "#facc15",
+                                                color: "#78350f",
+                                                padding: "2px 8px",
+                                                borderRadius: "4px",
+                                                fontWeight: "700",
+                                                marginBottom: "6px",
+                                                display: "inline-block",
+                                            }}>
+                                                LATEST
+                                            </span>
+                                        )}
+                                        <div style={{ fontWeight: "700", color: "#2d3748", fontSize: "15px" }}>
+                                            {h.date_from && h.date_to
+                                                ? `${h.date_from} → ${h.date_to}`
+                                                : "All Records"}
+                                        </div>
+                                        <div style={{ fontSize: "13px", color: "#718096", marginTop: "4px" }}>
+                                            {new Date(h.exported_at).toLocaleString()} • by {h.exported_by || "Unknown"}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: "right" }}>
+                                        <div style={{
+                                            fontSize: "20px",
+                                            fontWeight: "700",
+                                            color: "#2d3748",
+                                        }}>
+                                            {(h.total_records || 0).toLocaleString()}
+                                        </div>
+                                        <div style={{ fontSize: "12px", color: "#718096" }}>records</div>
+                                        <div style={{
+                                            marginTop: "6px",
+                                            fontSize: "12px",
+                                            color: "#3182ce",
+                                            fontWeight: "600",
+                                        }}>
+                                            Click to highlight →
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Table */}
             <div style={{
@@ -1160,16 +1503,33 @@ const UploadExportRegularPWP = () => {
                                     No records found
                                 </td>
                             </tr>
-                        ) : (
-                            records.map((r, idx) => (
+
+
+                        ) : (() => {
+                            const isExported = (r) => {
+                                if (!exportHistory) return false;
+                                if (!exportHistory.dateFrom && !exportHistory.dateTo) return true;
+                                if (exportHistory.dateFrom && exportHistory.dateTo) {
+                                    const from = r.activityDurationFrom || "";
+                                    return from >= exportHistory.dateFrom && from <= exportHistory.dateTo;
+                                }
+                                return false;
+                            };
+
+                            return records.map((r, idx) => (
                                 <tr
                                     key={r.id}
                                     style={{
-                                        backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f7fafc",
-                                        transition: "all 0.2s"
+                                        backgroundColor: isExported(r) ? "#fefce8" : idx % 2 === 0 ? "#ffffff" : "#f7fafc",
+                                        transition: "all 0.2s",
+                                        outline: isExported(r) ? "2px solid #facc15" : "none",
                                     }}
                                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#edf2f7"}
-                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? "#ffffff" : "#f7fafc"}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = isExported(r)
+                                            ? "#fefce8"
+                                            : idx % 2 === 0 ? "#ffffff" : "#f7fafc";
+                                    }}
                                 >
                                     {/* 1. Purchase Order */}
                                     <td style={{
@@ -1458,8 +1818,9 @@ const UploadExportRegularPWP = () => {
                                     </td>
 
                                 </tr>
+
                             ))
-                        )}
+                        })()}
                     </tbody>
                 </table>
             </div>
