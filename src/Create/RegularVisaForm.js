@@ -16,6 +16,7 @@ const RegularVisaForm = () => {
   // 👉 Add these states at the top of your component
   const [showPack, setShowPack] = useState(true);
   const [showCase, setShowCase] = useState(true);
+  const [manualSrp, setManualSrp] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -2365,214 +2366,214 @@ const RegularVisaForm = () => {
 
 
   // ============================================================
-const submit_all = async (e) => {
-  e.preventDefault();
+  const submit_all = async (e) => {
+    e.preventDefault();
 
-  // 🔒 LOCK to prevent multiple simultaneous submits from same user
-  if (window.isSubmitting) {
-    console.warn("⚠️ Already submitting, please wait...");
-    return;
-  }
-  window.isSubmitting = true;
-
-  let generatedCode = null;
-  let recordId = null;
-
-  try {
-    const storedUser = localStorage.getItem("loggedInUser");
-    const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-    const createdBy = parsedUser?.name || "Unknown";
-
-    // 📊 Calculate remaining budget (can be negative)
-    // ✅ FIX: Ensure selectedBalance is a valid number, default to 0
-    let remainingBudget = parseFloat(selectedBalance) || 0;
-    
-    if (rowsAccounts.length > 0 && selectedBalance != null) {
-      const totalFromBranches = rowsAccounts.reduce(
-        (sum, row) => sum + (parseFloat(row.budget) || 0),
-        0
-      );
-      remainingBudget = parseFloat(selectedBalance) - totalFromBranches;
-      console.log(`💰 Remaining Budget (Branches): ₱${remainingBudget.toLocaleString()}`);
+    // 🔒 LOCK to prevent multiple simultaneous submits from same user
+    if (window.isSubmitting) {
+      console.warn("⚠️ Already submitting, please wait...");
+      return;
     }
+    window.isSubmitting = true;
 
-    if (formData.amountbadget && parseFloat(formData.amountbadget) > 0 && selectedBalance != null) {
-      const allocatedAmount = parseFloat(formData.amountbadget);
-      remainingBudget = parseFloat(selectedBalance) - allocatedAmount;
-      console.log(`💰 Remaining Budget (Form): ₱${remainingBudget.toLocaleString()}`);
-    }
+    let generatedCode = null;
+    let recordId = null;
 
-    // 🌀 Show loading modal
-    Swal.fire({
-      title: "⏳ Generating Code...",
-      html: `
+    try {
+      const storedUser = localStorage.getItem("loggedInUser");
+      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+      const createdBy = parsedUser?.name || "Unknown";
+
+      // 📊 Calculate remaining budget (can be negative)
+      // ✅ FIX: Ensure selectedBalance is a valid number, default to 0
+      let remainingBudget = parseFloat(selectedBalance) || 0;
+
+      if (rowsAccounts.length > 0 && selectedBalance != null) {
+        const totalFromBranches = rowsAccounts.reduce(
+          (sum, row) => sum + (parseFloat(row.budget) || 0),
+          0
+        );
+        remainingBudget = parseFloat(selectedBalance) - totalFromBranches;
+        console.log(`💰 Remaining Budget (Branches): ₱${remainingBudget.toLocaleString()}`);
+      }
+
+      if (formData.amountbadget && parseFloat(formData.amountbadget) > 0 && selectedBalance != null) {
+        const allocatedAmount = parseFloat(formData.amountbadget);
+        remainingBudget = parseFloat(selectedBalance) - allocatedAmount;
+        console.log(`💰 Remaining Budget (Form): ₱${remainingBudget.toLocaleString()}`);
+      }
+
+      // 🌀 Show loading modal
+      Swal.fire({
+        title: "⏳ Generating Code...",
+        html: `
         <div style="width:100%; background:#eee; border-radius:6px; height:10px; margin-top:10px;">
           <div style="width:30%; height:100%; background:linear-gradient(90deg, #4f46e5, #06b6d4); border-radius:6px; animation:pulse 1s infinite;"></div>
         </div>
         <p style="margin-top:8px; font-size:14px; color:#555;">Claiming unique PWP code...</p>
       `,
-      allowOutsideClick: false,
-      showConfirmButton: false,
-    });
+        allowOutsideClick: false,
+        showConfirmButton: false,
+      });
 
-    // 🔐 ATOMIC CODE GENERATION - This prevents duplicates!
-    const codeResult = await generateAndClaimCode(supabase);
-    generatedCode = codeResult.code;
-    recordId = codeResult.recordId;
+      // 🔐 ATOMIC CODE GENERATION - This prevents duplicates!
+      const codeResult = await generateAndClaimCode(supabase);
+      generatedCode = codeResult.code;
+      recordId = codeResult.recordId;
 
-    console.log(`🎯 Claimed code: ${generatedCode}, ID: ${recordId}`);
+      console.log(`🎯 Claimed code: ${generatedCode}, ID: ${recordId}`);
 
-    // Update loading message
-    Swal.update({
-      title: "⏳ Submitting Data...",
-      html: `
+      // Update loading message
+      Swal.update({
+        title: "⏳ Submitting Data...",
+        html: `
         <div id="progress-container" style="width:100%; background:#eee; border-radius:6px; height:10px; margin-top:10px;">
           <div id="progress-bar" style="width:0%; height:100%; background:linear-gradient(90deg, #4f46e5, #06b6d4); border-radius:6px; transition:width 0.3s;"></div>
         </div>
         <p style="margin-top:8px; font-size:14px; color:#555;">Please wait...</p>
         <p style="font-size:12px; color:#888; margin-top:4px;">PWP Code: <strong>${generatedCode}</strong></p>
       `,
-    });
+      });
 
-    const progressBar = Swal.getHtmlContainer().querySelector("#progress-bar");
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-      progress += 2;
-      if (progressBar) progressBar.style.width = `${Math.min(progress, 90)}%`;
-      if (progress >= 90) clearInterval(progressInterval);
-    }, 100);
+      const progressBar = Swal.getHtmlContainer().querySelector("#progress-bar");
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        progress += 2;
+        if (progressBar) progressBar.style.width = `${Math.min(progress, 90)}%`;
+        if (progress >= 90) clearInterval(progressInterval);
+      }, 100);
 
-    // Update formData with the claimed code
-    const updatedFormData = {
-      ...formData,
-      regularpwpcode: generatedCode,
-      isPreviewCode: false
-    };
+      // Update formData with the claimed code
+      const updatedFormData = {
+        ...formData,
+        regularpwpcode: generatedCode,
+        isPreviewCode: false
+      };
 
-    // 📝 Now update the placeholder record with full data
-    await updateRegularPwpRecord(recordId, updatedFormData, createdBy);
+      // 📝 Now update the placeholder record with full data
+      await updateRegularPwpRecord(recordId, updatedFormData, createdBy);
 
-    // 📝 Submit related data
-    await handleSku(generatedCode);
-    await saveRecentActivity();
+      // 📝 Submit related data
+      await handleSku(generatedCode);
+      await saveRecentActivity();
 
-    // 🔍 Submit BAD ORDER if applicable
-    if (updatedFormData.activityName === "BAD ORDER") {
-      const badorderSuccess = await postBadOrderCategories(generatedCode);
-      if (!badorderSuccess) {
-        throw new Error("Bad order submission failed");
+      // 🔍 Submit BAD ORDER if applicable
+      if (updatedFormData.activityName === "BAD ORDER") {
+        const badorderSuccess = await postBadOrderCategories(generatedCode);
+        if (!badorderSuccess) {
+          throw new Error("Bad order submission failed");
+        }
       }
-    }
 
-    // 💾 Save to regular_accountlis_badget
-    if (rowsAccounts.length > 0) {
-      console.log(`💾 Saving budget data...`);
+      // 💾 Save to regular_accountlis_badget
+      if (rowsAccounts.length > 0) {
+        console.log(`💾 Saving budget data...`);
 
-      const filteredRows =
-        (updatedFormData.branchType || []).length > 0
-          ? rowsAccounts.filter((row) =>
-            (updatedFormData.branchType || []).includes(row.account_name)
-          )
-          : rowsAccounts;
+        const filteredRows =
+          (updatedFormData.branchType || []).length > 0
+            ? rowsAccounts.filter((row) =>
+              (updatedFormData.branchType || []).includes(row.account_name)
+            )
+            : rowsAccounts;
 
-      const totalBudget = filteredRows
-        .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
-        .toFixed(2);
+        const totalBudget = filteredRows
+          .reduce((sum, row) => sum + (parseFloat(row.budget) || 0), 0)
+          .toFixed(2);
 
-      // 🔴 Note: Budget can be negative if exceeded
-      const budgetRowsToInsert = filteredRows.map((row) => ({
-        regularcode: generatedCode,
-        account_name: row.account_name,
-        budget: row.budget || 0,
-        created_at: row.created_at || new Date().toISOString(),
-        createform: createdBy,
-        total_budget: totalBudget,
-      }));
+        // 🔴 Note: Budget can be negative if exceeded
+        const budgetRowsToInsert = filteredRows.map((row) => ({
+          regularcode: generatedCode,
+          account_name: row.account_name,
+          budget: row.budget || 0,
+          created_at: row.created_at || new Date().toISOString(),
+          createform: createdBy,
+          total_budget: totalBudget,
+        }));
 
-      const { error: budgetError } = await supabase
-        .from("regular_accountlis_badget")
-        .insert(budgetRowsToInsert);
+        const { error: budgetError } = await supabase
+          .from("regular_accountlis_badget")
+          .insert(budgetRowsToInsert);
 
-      if (budgetError) throw budgetError;
+        if (budgetError) throw budgetError;
 
-      // ✅ FIX: Safely format remainingBudget
-      const formattedBudget = (remainingBudget != null && !isNaN(remainingBudget)) 
-        ? remainingBudget.toLocaleString() 
+        // ✅ FIX: Safely format remainingBudget
+        const formattedBudget = (remainingBudget != null && !isNaN(remainingBudget))
+          ? remainingBudget.toLocaleString()
+          : '0';
+
+        console.log(`✅ Budget data saved (Remaining: ₱${formattedBudget})`);
+      }
+
+      // Upload attachments
+      if (files.length > 0) {
+        await Promise.all(
+          files.map(async (file) => {
+            const base64String = await toBase64(file);
+            const attachmentPayload = {
+              regularpwpcode: generatedCode,
+              filename: file.name,
+              mimetype: file.type,
+              size: file.size,
+              file_data: base64String,
+            };
+            const { error: attachmentError } = await supabase
+              .from("regular_attachments")
+              .insert([attachmentPayload]);
+            if (attachmentError) {
+              throw new Error(`Attachment failed for ${file.name}: ${attachmentError.message}`);
+            }
+          })
+        );
+        console.log("✅ Attachments uploaded");
+      }
+
+      clearInterval(progressInterval);
+      if (progressBar) progressBar.style.width = "100%";
+
+      // ✅ FIX: Safe formatting for success modal
+      const formattedRemainingBudget = (remainingBudget != null && !isNaN(remainingBudget))
+        ? remainingBudget.toLocaleString()
         : '0';
-      
-      console.log(`✅ Budget data saved (Remaining: ₱${formattedBudget})`);
-    }
 
-    // Upload attachments
-    if (files.length > 0) {
-      await Promise.all(
-        files.map(async (file) => {
-          const base64String = await toBase64(file);
-          const attachmentPayload = {
-            regularpwpcode: generatedCode,
-            filename: file.name,
-            mimetype: file.type,
-            size: file.size,
-            file_data: base64String,
-          };
-          const { error: attachmentError } = await supabase
-            .from("regular_attachments")
-            .insert([attachmentPayload]);
-          if (attachmentError) {
-            throw new Error(`Attachment failed for ${file.name}: ${attachmentError.message}`);
-          }
-        })
-      );
-      console.log("✅ Attachments uploaded");
-    }
-
-    clearInterval(progressInterval);
-    if (progressBar) progressBar.style.width = "100%";
-
-    // ✅ FIX: Safe formatting for success modal
-    const formattedRemainingBudget = (remainingBudget != null && !isNaN(remainingBudget)) 
-      ? remainingBudget.toLocaleString() 
-      : '0';
-
-    // ✅ Success modal
-    await Swal.fire({
-      title: "✅ Success!",
-      html: `
+      // ✅ Success modal
+      await Swal.fire({
+        title: "✅ Success!",
+        html: `
         <p>Your data has been successfully submitted!</p>
         <p style="margin-top:8px;"><strong>PWP Code:</strong> <span style="color:#16a34a;">${generatedCode}</span></p>
         ${remainingBudget < 0 ? `<p style="margin-top:4px; color:#dc2626;"><strong>⚠️ Budget Exceeded:</strong> ₱${formattedRemainingBudget}</p>` : ''}
         <div style="height:6px; background:linear-gradient(90deg,#16a34a,#4ade80); width:100%; border-radius:4px;"></div>
       `,
-      icon: "success",
-      showConfirmButton: false,
-      timer: 2000,
-    });
+        icon: "success",
+        showConfirmButton: false,
+        timer: 2000,
+      });
 
-    window.location.reload();
+      window.location.reload();
 
-  } catch (error) {
-    console.error(`❌ Submit Error:`, error);
+    } catch (error) {
+      console.error(`❌ Submit Error:`, error);
 
-    // If we claimed a code but submission failed, delete the placeholder
-    if (recordId) {
-      try {
-        await supabase.from("regular_pwp").delete().eq("id", recordId);
-        console.log(`🗑️ Rolled back placeholder record ${recordId}`);
-      } catch (rollbackError) {
-        console.error("❌ Rollback failed:", rollbackError);
+      // If we claimed a code but submission failed, delete the placeholder
+      if (recordId) {
+        try {
+          await supabase.from("regular_pwp").delete().eq("id", recordId);
+          console.log(`🗑️ Rolled back placeholder record ${recordId}`);
+        } catch (rollbackError) {
+          console.error("❌ Rollback failed:", rollbackError);
+        }
       }
-    }
 
-    Swal.fire({
-      title: "Error!",
-      text: `There was an issue submitting your data: ${error.message}`,
-      icon: "error",
-      confirmButtonText: "Try Again",
-    });
-  } finally {
-    window.isSubmitting = false;
-  }
-};
+      Swal.fire({
+        title: "Error!",
+        text: `There was an issue submitting your data: ${error.message}`,
+        icon: "error",
+        confirmButtonText: "Try Again",
+      });
+    } finally {
+      window.isSubmitting = false;
+    }
+  };
   // ============================================================
   // 🔄 Helper: Update the placeholder record with full data
   // ============================================================
@@ -5326,26 +5327,49 @@ const submit_all = async (e) => {
                   </label>
 
                   {selectedMother?.name !== "NON-CHAIN" && (
-                    <select
-                      className="form-control"
-                      value={selectedBranchForSku}
-                      onChange={(e) => setSelectedBranchForSku(e.target.value)}
-                      style={{ maxWidth: "400px" }}
-                    >
-                      <option value="">Select branch...</option>
-                      <option value="ALL_BRANCHES">🔍 View All Branches</option>
-                      {branchTypes
-                        .filter(
-                          (branch) =>
-                            Array.isArray(formData.branchType) &&
-                            formData.branchType.includes(branch.code)
-                        )
-                        .map((branch) => (
-                          <option key={branch.code} value={branch.code}>
-                            {branch.name}
-                          </option>
-                        ))}
-                    </select>
+                    <div className="d-flex align-items-center gap-3">
+                      <select
+                        className="form-control"
+                        value={selectedBranchForSku}
+                        onChange={(e) => setSelectedBranchForSku(e.target.value)}
+                        style={{ maxWidth: "400px" }}
+                      >
+                        <option value="">Select branch...</option>
+                        <option value="ALL_BRANCHES">🔍 View All Branches</option>
+                        {branchTypes
+                          .filter(
+                            (branch) =>
+                              Array.isArray(formData.branchType) &&
+                              formData.branchType.includes(branch.code)
+                          )
+                          .map((branch) => (
+                            <option key={branch.code} value={branch.code}>
+                              {branch.name}
+                            </option>
+                          ))}
+                      </select>
+
+                      {/* Manual SRP Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setManualSrp(!manualSrp)}
+                        style={{
+                          height: "38px",
+                          padding: "0 16px",
+                          borderRadius: "8px",
+                          border: "none",
+                          fontWeight: "600",
+                          fontSize: "14px",
+                          cursor: "pointer",
+                          backgroundColor: manualSrp ? "#28a745" : "#e9ecef",
+                          color: manualSrp ? "white" : "#333",
+                          transition: "all 0.2s ease-in-out",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {manualSrp ? "✅ Manual SRP" : "Manual SRP"}
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -5473,7 +5497,7 @@ const submit_all = async (e) => {
                                             onChange={(e) =>
                                               handleChangeSkuForBranch(branchName, idx, "SRP", e.target.value)
                                             }
-                                            disabled
+                                            disabled={!manualSrp}
                                           />
                                         </td>
 
@@ -5632,12 +5656,26 @@ const submit_all = async (e) => {
                           checked={showCase}
                           onChange={() => setShowCase(!showCase)}
                           style={{
-                            transform: "scale(1.5)", // ✅ Make checkbox larger
+                            transform: "scale(1.5)",
                             marginRight: "8px",
                             cursor: "pointer",
                           }}
                         />
                         SRP Case
+                      </label>
+
+                      <label style={{ fontSize: "16px", fontWeight: "500", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={manualSrp}
+                          onChange={() => setManualSrp(!manualSrp)}
+                          style={{
+                            transform: "scale(1.5)",
+                            marginRight: "8px",
+                            cursor: "pointer",
+                          }}
+                        />
+                        Manual SRP
                       </label>
                     </div>
 
@@ -5727,20 +5765,20 @@ const submit_all = async (e) => {
                                         sku.sku_code
                                       );
 
-                                      if (showPack && Number(sku.pack || 0) > 0) {
-                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.pack);
-                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "PACK");
-                                      } else if (showCase && Number(sku.case || 0) > 0) {
-                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.case);
-                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "CASE");
-                                      } else {
-                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.default_srp || 0);
-                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", sku.default_uom || "PC");
+                                      if (!manualSrp) {
+                                        if (showPack && Number(sku.pack || 0) > 0) {
+                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.pack);
+                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "PACK");
+                                        } else if (showCase && Number(sku.case || 0) > 0) {
+                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.case);
+                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "CASE");
+                                        } else {
+                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.default_srp || 0);
+                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", sku.default_uom || "PC");
+                                        }
+                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "QTY", sku.default_qty || 1);
                                       }
 
-                                      handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "QTY", sku.default_qty || 1);
-
-                                      // Close modal / reset selection
                                       setShowSkuModal(false);
                                     }
                                   }}
