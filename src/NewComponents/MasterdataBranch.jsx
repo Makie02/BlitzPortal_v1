@@ -37,17 +37,856 @@ export default function AccountsListManager() {
   const [accountTypeFilter, setAccountTypeFilter] = useState("all");
   const [isFetching, setIsFetching] = useState(false);
 
+  const BATCH = 1000;
+  const UPDATE_BATCH = 500; // ✅ ADD THIS
+  // Add these states
+  const [showExportByDistModal, setShowExportByDistModal] = useState(false);
+  const [selectedDistForExport, setSelectedDistForExport] = useState(null);
+  const [exportDistSearch, setExportDistSearch] = useState('');
+
   const [newRecord, setNewRecord] = useState({
     distributor_code: '',
     mother_code: '',
     bp_code: '',
     bp_name: '',
-    agent_code: '',
     group_code: '',
     status: true
-  });
+  })
 
 
+  // const arrangeData = async () => {
+
+  //   const confirm = await Swal.fire({
+  //     title: 'ge DArranata',
+  //     html: `<div style="text-align:left;">
+  //       <p>This will sync missing <b>mother_code</b> values from <b>Accounts_List</b> 
+  //       into <b>sub_mother_account</b> with correct names.</p>
+  //     </div>`,
+  //     icon: 'info',
+  //     showCancelButton: true,
+  //     confirmButtonText: 'Arrange Now',
+  //     cancelButtonText: 'Cancel',
+  //     confirmButtonColor: '#f59e0b',
+  //     cancelButtonColor: '#6c757d',
+  //   });
+
+  //   if (!confirm.isConfirmed) return;
+
+  //   try {
+  //     // Step 1: Load ALL Accounts_List — mother_code + bp_name + group_code
+  //     Swal.fire({
+  //       title: 'Loading Accounts_List...',
+  //       html: 'Fetching records...<br><span id="arr-prog" style="color:#f59e0b;font-weight:600;">0 loaded</span>',
+  //       allowOutsideClick: false,
+  //       didOpen: () => Swal.showLoading(),
+  //     });
+
+  //     const BATCH = 1000;
+  //     let all = [], offset = 0, hasMore = true;
+
+  //     while (hasMore) {
+  //       const { data: batch, error } = await supabase
+  //         .from('Accounts_List')
+  //         .select('mother_code, bp_name, group_code')
+  //         .not('mother_code', 'is', null)
+  //         .not('mother_code', 'eq', '')
+  //         .range(offset, offset + BATCH - 1);
+
+  //       if (error) throw error;
+
+  //       if (batch?.length > 0) {
+  //         all = [...all, ...batch];
+  //         offset += BATCH;
+  //         hasMore = batch.length === BATCH;
+  //         const el = document.getElementById('arr-prog');
+  //         if (el) el.textContent = `${all.length.toLocaleString()} loaded`;
+  //       } else {
+  //         hasMore = false;
+  //       }
+  //     }
+
+  //     console.log(`✅ Total rows loaded: ${all.length}`);
+
+  //     // Step 2: Build map — dscode -> { name, group_code }
+  //     // Ang name dapat = bp_name ng FIRST record na may ganyang mother_code
+  //     // HINDI yung dscode mismo!
+  //     const motherMap = {}; // dscode -> { name, group_code }
+
+  //     all.forEach(row => {
+  //       const dscode = row.mother_code?.toString().trim();
+  //       const bpName = row.bp_name?.toString().trim();
+  //       const groupCode = row.group_code?.toString().trim() || null;
+
+  //       if (!dscode) return;
+
+  //       // Pag wala pa sa map, ilagay
+  //       // Pag meron na pero walang name, i-update
+  //       if (!motherMap[dscode]) {
+  //         motherMap[dscode] = { name: bpName || dscode, group_code: groupCode };
+  //       } else if (!motherMap[dscode].name || motherMap[dscode].name === dscode) {
+  //         // Update lang kung walang proper name pa
+  //         if (bpName) motherMap[dscode].name = bpName;
+  //       }
+  //     });
+
+  //     console.log(`📊 Unique mother codes: ${Object.keys(motherMap).length}`);
+  //     console.log('Sample:', Object.entries(motherMap).slice(0, 5));
+
+  //     // Step 3: Load group_name lookup
+  //     const { data: groupRows } = await supabase
+  //       .from('mother_account')
+  //       .select('code, name')
+  //       .eq('status', true);
+
+  //     const groupCodeToName = {};
+  //     groupRows?.forEach(g => {
+  //       groupCodeToName[String(g.code)] = g.name;
+  //     });
+
+  //     console.log('Group map:', groupCodeToName);
+
+  //     // Step 4: Load existing dscodes from sub_mother_account
+  //     Swal.update({
+  //       title: 'Checking existing records...',
+  //       html: '<span style="color:#f59e0b;font-weight:600;">Loading sub_mother_account...</span>',
+  //     });
+
+  //     let existingSubs = [], subOffset = 0, subHasMore = true;
+
+  //     while (subHasMore) {
+  //       const { data: subBatch, error } = await supabase
+  //         .from('sub_mother_account')
+  //         .select('dscode')
+  //         .range(subOffset, subOffset + BATCH - 1);
+
+  //       if (error) throw error;
+
+  //       if (subBatch?.length > 0) {
+  //         existingSubs = [...existingSubs, ...subBatch];
+  //         subOffset += BATCH;
+  //         subHasMore = subBatch.length === BATCH;
+  //       } else {
+  //         subHasMore = false;
+  //       }
+  //     }
+
+  //     const existingSet = new Set(
+  //       existingSubs.map(s => s.dscode?.toString().trim())
+  //     );
+
+  //     console.log(`✅ Existing in sub_mother_account: ${existingSet.size}`);
+
+  //     // Step 5: Find missing + build insert payload with CORRECT names
+  //     const toInsert = [];
+
+  //     Object.entries(motherMap).forEach(([dscode, info]) => {
+  //       // Skip if already exists
+  //       if (existingSet.has(dscode)) return;
+
+  //       const groupCode = info.group_code;
+  //       const groupName = groupCode ? (groupCodeToName[groupCode] || null) : null;
+
+  //       // ✅ name = bp_name (actual store name), NOT the dscode!
+  //       toInsert.push({
+  //         dscode: dscode,                    // e.g. DS100001
+  //         name: info.name || dscode,        // e.g. FLORES MART INC. ← DITO ANG FIX!
+  //         status: true,
+  //         group_code: groupCode || null,     // e.g. "6002"
+  //         group_name: groupName || null,     // e.g. "DIRECT DISTRIBUTOR"
+  //       });
+  //     });
+
+  //     console.log(`📥 To insert: ${toInsert.length}`);
+  //     console.log('Sample inserts:', toInsert.slice(0, 5));
+
+  //     Swal.close();
+
+  //     if (toInsert.length === 0) {
+  //       Swal.fire({
+  //         icon: 'info',
+  //         title: 'Already Synced!',
+  //         text: `All ${Object.keys(motherMap).length} mother codes already exist.`,
+  //         timer: 2500,
+  //         showConfirmButton: false,
+  //       });
+  //       return;
+  //     }
+
+  //     // Step 6: Insert in batches
+  //     Swal.fire({
+  //       title: 'Inserting missing records...',
+  //       html: `<span id="arr-insert-prog">0 / ${toInsert.length.toLocaleString()}</span>`,
+  //       allowOutsideClick: false,
+  //       didOpen: () => Swal.showLoading(),
+  //     });
+
+  //     const INSERT_BATCH = 500;
+  //     let inserted = 0;
+
+  //     for (let i = 0; i < toInsert.length; i += INSERT_BATCH) {
+  //       const chunk = toInsert.slice(i, i + INSERT_BATCH);
+
+  //       const { error } = await supabase
+  //         .from('sub_mother_account')
+  //         .insert(chunk);
+
+  //       if (error) {
+  //         console.error('Insert error:', error.message);
+  //         await supabase
+  //           .from('sub_mother_account')
+  //           .upsert(chunk, { onConflict: 'dscode', ignoreDuplicates: true });
+  //       }
+
+  //       inserted += chunk.length;
+  //       const el = document.getElementById('arr-insert-prog');
+  //       if (el) el.textContent = `${inserted.toLocaleString()} / ${toInsert.length.toLocaleString()}`;
+  //       await new Promise(r => setTimeout(r, 30));
+  //     }
+
+  //     Swal.close();
+
+  //     await Swal.fire({
+  //       icon: 'success',
+  //       title: 'Arrange Complete!',
+  //       html: `
+  //         <div style="text-align:left;font-family:monospace;">
+  //           <p>📊 <b>Unique mother codes scanned:</b> ${Object.keys(motherMap).length.toLocaleString()}</p>
+  //           <p style="color:green;">✅ <b>Newly inserted:</b> ${inserted.toLocaleString()}</p>
+  //           <p style="color:gray;">⏭️ <b>Already existed (skipped):</b> ${existingSet.size.toLocaleString()}</p>
+  //         </div>
+  //       `,
+  //       confirmButtonText: 'OK',
+  //     });
+
+  //     await fetchMotherAccounts();
+
+  //   } catch (err) {
+  //     console.error('arrangeData error:', err);
+  //     Swal.close();
+  //     Swal.fire('Error', err.message, 'error');
+  //   }
+  // };
+
+  const fixSubMotherNames = async () => {
+    try {
+      Swal.fire({
+        title: '🔄 Loading sub_mother_account...',
+        html: '<span id="fix-sm-prog" style="color:#8b5cf6;font-weight:700;">0 loaded</span>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const BATCH = 1000;
+      let allSubs = [], offset = 0, hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('sub_mother_account')
+          .select('id, dscode, name, group_code')
+          .range(offset, offset + BATCH - 1);
+        if (error) throw error;
+        if (data?.length > 0) {
+          allSubs = [...allSubs, ...data];
+          offset += BATCH;
+          hasMore = data.length === BATCH;
+          const el = document.getElementById('fix-sm-prog');
+          if (el) el.textContent = `${allSubs.length.toLocaleString()} loaded`;
+        } else hasMore = false;
+      }
+
+      // Find rows where name = DS code pattern
+      const dsCodeRows = allSubs.filter(s => /^DS\d+$/i.test(s.name?.trim()));
+      console.log(`Found ${dsCodeRows.length} rows with DS code as name`);
+
+      if (dsCodeRows.length === 0) {
+        Swal.close();
+        Swal.fire({
+          icon: 'info', title: '✅ All Good!',
+          text: 'No sub_mother_account rows need fixing.',
+        });
+        return;
+      }
+
+      // Load Accounts_List to get proper names via mother_code → bp_name
+      const dscodeSet = new Set(dsCodeRows.map(s => s.dscode));
+
+      Swal.update({
+        title: '🔄 Loading Accounts_List for name lookup...',
+        html: '<span id="fix-al-prog" style="color:#8b5cf6;">Loading...</span>',
+      });
+
+      let allAccounts = [], accOffset = 0, accHasMore = true;
+      while (accHasMore) {
+        const { data, error } = await supabase
+          .from('Accounts_List')
+          .select('mother_code, bp_name, group_code')
+          .range(accOffset, accOffset + BATCH - 1);
+        if (error) throw error;
+        if (data?.length > 0) {
+          allAccounts = [...allAccounts, ...data];
+          accOffset += BATCH;
+          accHasMore = data.length === BATCH;
+          const el = document.getElementById('fix-al-prog');
+          if (el) el.textContent = `${allAccounts.length.toLocaleString()} loaded`;
+        } else accHasMore = false;
+      }
+
+      // Build dscode → bp_name map
+      const dscodeToName = {};
+      allAccounts.forEach(row => {
+        const mc = row.mother_code?.toString().trim();
+        const name = row.bp_name?.toString().trim();
+        if (mc && name && dscodeSet.has(mc) && !dscodeToName[mc]) {
+          dscodeToName[mc] = name;
+        }
+      });
+
+      // Build update list
+      const toUpdate = [];
+      let noMatch = 0;
+      dsCodeRows.forEach(row => {
+        const newName = dscodeToName[row.dscode];
+        if (newName) {
+          toUpdate.push({ id: row.id, dscode: row.dscode, name: newName });
+        } else {
+          noMatch++;
+        }
+      });
+
+      Swal.close();
+
+      if (toUpdate.length === 0) {
+        Swal.fire({
+          icon: 'warning', title: '⚠️ No Updates',
+          html: `
+          <div style="text-align:left;font-family:monospace;">
+            <p>Found <b>${dsCodeRows.length}</b> DS-named rows but no matching names in Accounts_List.</p>
+            <p style="color:orange;">⚠️ No match: ${noMatch}</p>
+          </div>
+        `,
+        });
+        return;
+      }
+
+      // Preview
+      const confirmRes = await Swal.fire({
+        icon: 'info',
+        title: '📊 Fix Sub Mother Names',
+        html: `
+        <div style="text-align:left;font-family:monospace;font-size:14px;line-height:1.8;">
+          <p>🔍 <b>Rows with DS code as name:</b> ${dsCodeRows.length.toLocaleString()}</p>
+          <p style="color:green;">✅ <b>Will be fixed:</b> ${toUpdate.length.toLocaleString()}</p>
+          <p style="color:orange;">⚠️ <b>No match found:</b> ${noMatch.toLocaleString()}</p>
+          <hr style="margin:10px 0;"/>
+          <p style="font-size:12px;color:#6b7280;">Sample fixes:</p>
+          ${toUpdate.slice(0, 5).map(u =>
+          `<p style="font-size:12px;">"${u.dscode}" → "<b>${u.name}</b>"</p>`
+        ).join('')}
+        </div>
+      `,
+        showCancelButton: true,
+        confirmButtonText: '⚡ Fix Now',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#8b5cf6',
+      });
+
+      if (!confirmRes.isConfirmed) return;
+
+      // Parallel batch update
+      Swal.fire({
+        title: '⚡ Fixing sub_mother_account names...',
+        html: '<div id="fix-sm-upd">Starting...</div>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const CONCURRENCY = 10;
+      let updated = 0;
+
+      const updateOne = async (item) => {
+        const { error } = await supabase
+          .from('sub_mother_account')
+          .update({ name: item.name })
+          .eq('id', item.id);
+        if (error) console.error(`Update error id=${item.id}:`, error.message);
+        return 1;
+      };
+
+      for (let i = 0; i < toUpdate.length; i += CONCURRENCY) {
+        const slice = toUpdate.slice(i, i + CONCURRENCY);
+        await Promise.all(slice.map(updateOne));
+        updated += slice.length;
+
+        const pct = Math.round(updated / toUpdate.length * 100);
+        const el = document.getElementById('fix-sm-upd');
+        if (el) el.innerHTML = `
+        <b style="color:#8b5cf6;font-size:18px;">${updated.toLocaleString()} / ${toUpdate.length.toLocaleString()}</b>
+        <div style="width:100%;height:10px;background:#eee;border-radius:5px;overflow:hidden;margin-top:8px;">
+          <div style="width:${pct}%;height:100%;background:#8b5cf6;transition:width 0.2s;"></div>
+        </div>
+        <p style="color:#6b7280;font-size:12px;margin-top:4px;">${pct}%</p>
+      `;
+      }
+
+      Swal.close();
+
+      await Swal.fire({
+        icon: 'success',
+        title: '✅ Fix Complete!',
+        html: `
+        <div style="text-align:left;font-family:monospace;font-size:14px;">
+          <p style="color:green;">✅ <b>Names fixed:</b> ${updated.toLocaleString()}</p>
+          <p style="color:orange;">⚠️ <b>No match (skipped):</b> ${noMatch.toLocaleString()}</p>
+        </div>
+      `,
+      });
+
+      await fetchMotherAccounts();
+      fetchAndCleanData(currentPage, searchTerm, searchField);
+
+    } catch (err) {
+      console.error('fixSubMotherNames error:', err);
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+  const [showArrangeModal, setShowArrangeModal] = useState(false);
+  const [arrangeOption, setArrangeOption] = useState('');
+
+  const runArrangeData = async (selectedOp) => {
+    try {
+      Swal.fire({
+        title: '📥 Loading reference tables...',
+        html: '<span id="ref-prog" style="color:#f59e0b;font-weight:700;">Loading...</span>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const [groupRes, subMotherRes] = await Promise.all([
+        supabase.from('mother_account').select('code, name').eq('status', true),
+        supabase.from('sub_mother_account').select('dscode, name, group_code'),
+        // ❌ OLD: .eq('status', true) — tinanggal para makuha lahat
+      ]);
+
+      if (groupRes.error) throw groupRes.error;
+      if (subMotherRes.error) throw subMotherRes.error;
+
+      const nameToGroupCode = {};
+      const validGroupCodes = new Set();
+      groupRes.data?.forEach(g => {
+        validGroupCodes.add(String(g.code).trim());
+        nameToGroupCode[g.name.trim().toLowerCase()] = String(g.code).trim();
+      });
+
+      // Group name lookup (code -> name)
+      const groupCodeToName = {}; // ✅ NEW: ginawa natin ito dito para magamit sa insert
+      groupRes.data?.forEach(g => {
+        groupCodeToName[String(g.code)] = g.name;
+      });
+
+      const nameToDscode = {};
+      const nameGroupToDscode = {};
+      subMotherRes.data?.forEach(s => {
+        const name = s.name?.trim().toLowerCase();
+        const ds = s.dscode?.trim();
+        const gc = s.group_code?.toString().trim();
+        if (!name || !ds) return;
+        if (!nameToDscode[name]) nameToDscode[name] = ds;
+        if (gc) nameGroupToDscode[`${gc}|${name}`] = ds;
+      });
+
+      // Get current max DS number ✅ NEW
+      let maxDsNum = 0;
+      subMotherRes.data?.forEach(s => {
+        const match = s.dscode?.match(/^DS(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxDsNum) maxDsNum = num;
+        }
+      });
+
+      const elRef = document.getElementById('ref-prog');
+      if (elRef) elRef.textContent = 'Loading Accounts_List...';
+
+      const FETCH_BATCH = 1000;
+      const { count: totalRows, error: cntErr } = await supabase
+        .from('Accounts_List')
+        .select('*', { count: 'exact', head: true });
+      if (cntErr) throw cntErr;
+
+      const CONCURRENCY = 10;
+      const all = new Array(totalRows);
+      const totalBatches = Math.ceil(totalRows / FETCH_BATCH);
+      let fetched = 0;
+
+      const fetchBatch = async (batchIndex) => {
+        const from = batchIndex * FETCH_BATCH;
+        const to = from + FETCH_BATCH - 1;
+        const { data, error } = await supabase
+          .from('Accounts_List')
+          .select('id, mother_code, group_code')
+          .range(from, to);
+        if (error) throw error;
+        data.forEach((row, i) => { all[from + i] = row; });
+        fetched += data.length;
+        const el2 = document.getElementById('ref-prog');
+        if (el2) el2.textContent = `Loading... ${fetched.toLocaleString()} / ${totalRows.toLocaleString()}`;
+      };
+
+      for (let i = 0; i < totalBatches; i += CONCURRENCY) {
+        const tasks = [];
+        for (let j = i; j < Math.min(i + CONCURRENCY, totalBatches); j++) {
+          tasks.push(fetchBatch(j));
+        }
+        await Promise.all(tasks);
+      }
+
+      const rows = all.filter(Boolean);
+
+      const byGroupCode = {};
+      const byDscode = {};
+      let noMatchGroup = 0, noMatchMother = 0;
+      let alreadyOkGroup = 0, alreadyOkMother = 0;
+
+      // ✅ NEW: collect unmatched mother names para i-insert sa sub_mother_account
+      const unmatchedMotherNames = new Map(); // name -> { group_code }
+
+      rows.forEach(row => {
+        const rawGC = row.group_code?.toString().trim() || '';
+        const rawMC = row.mother_code?.toString().trim() || '';
+
+        if (selectedOp === 'fix_group_code' || selectedOp === 'fix_both') {
+          if (validGroupCodes.has(rawGC)) {
+            alreadyOkGroup++;
+          } else {
+            const fixed = nameToGroupCode[rawGC.toLowerCase()];
+            if (fixed) {
+              if (!byGroupCode[fixed]) byGroupCode[fixed] = [];
+              byGroupCode[fixed].push(row.id);
+              row.group_code = fixed;
+            } else noMatchGroup++;
+          }
+        }
+
+        if (selectedOp === 'fix_mother_code' || selectedOp === 'fix_both') {
+          if (/^DS\d+$/i.test(rawMC)) { alreadyOkMother++; return; }
+          if (!rawMC) return; // ✅ NEW: skip empty
+
+          const nameLower = rawMC.toLowerCase();
+          const gc = row.group_code?.toString().trim() || '';
+          const ds = nameGroupToDscode[`${gc}|${nameLower}`] || nameToDscode[nameLower];
+
+          if (ds) {
+            if (!byDscode[ds]) byDscode[ds] = [];
+            byDscode[ds].push(row.id);
+          } else {
+            // ✅ NEW: walang match — i-collect para i-insert sa sub_mother_account
+            noMatchMother++;
+            if (!unmatchedMotherNames.has(nameLower)) {
+              unmatchedMotherNames.set(nameLower, {
+                originalName: rawMC,
+                group_code: gc || null,
+                rowIds: [row.id]
+              });
+            } else {
+              unmatchedMotherNames.get(nameLower).rowIds.push(row.id);
+            }
+          }
+        }
+      });
+
+      const totalGroupUpdates = Object.values(byGroupCode).reduce((s, a) => s + a.length, 0);
+      const totalMotherUpdates = Object.values(byDscode).reduce((s, a) => s + a.length, 0);
+
+      Swal.close();
+
+      const confirmRes = await Swal.fire({
+        icon: 'info',
+        title: '📊 Preview',
+        html: `
+        <div style="text-align:left;font-family:monospace;font-size:14px;line-height:1.8;">
+          ${selectedOp !== 'fix_mother_code' ? `
+            <p>🏷️ <b>Group Code fixes:</b> ${totalGroupUpdates.toLocaleString()} rows</p>
+            <p style="color:#6b7280;margin-left:16px;">
+              ✅ Already correct: ${alreadyOkGroup.toLocaleString()} &nbsp;|&nbsp;
+              ⚠️ No match: ${noMatchGroup.toLocaleString()}
+            </p>` : ''}
+          ${selectedOp !== 'fix_group_code' ? `
+            <p>👥 <b>Mother Code fixes:</b> ${totalMotherUpdates.toLocaleString()} rows</p>
+            <p style="color:green;margin-left:16px;">
+              ✅ Already DS code: ${alreadyOkMother.toLocaleString()}
+            </p>
+            <p style="color:#f59e0b;margin-left:16px;">
+              🆕 Will auto-create DS codes: ${unmatchedMotherNames.size.toLocaleString()} new entries
+            </p>` : ''}
+          <hr style="margin:10px 0;"/>
+          <p>📋 <b>Total scanned:</b> ${rows.length.toLocaleString()}</p>
+        </div>
+      `,
+        showCancelButton: true,
+        confirmButtonText: '⚡ Run Now',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#f59e0b',
+      });
+
+      if (!confirmRes.isConfirmed) return;
+
+      // ✅ NEW: Auto-insert unmatched names to sub_mother_account
+      if (unmatchedMotherNames.size > 0 &&
+        (selectedOp === 'fix_mother_code' || selectedOp === 'fix_both')) {
+
+        Swal.fire({
+          title: '🆕 Creating new DS codes...',
+          html: '<div id="insert-sub-prog">Starting...</div>',
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading(),
+        });
+
+        let dsCounter = maxDsNum;
+        const toInsertSubs = [];
+
+        for (const [nameLower, info] of unmatchedMotherNames.entries()) {
+          dsCounter++;
+          const newDs = `DS${String(dsCounter).padStart(6, '0')}`;
+          const groupName = info.group_code
+            ? (groupCodeToName[info.group_code] || null)
+            : null;
+
+          toInsertSubs.push({
+            dscode: newDs,
+            name: info.originalName,
+            status: true,
+            group_code: info.group_code || null,
+            group_name: groupName,
+          });
+
+          // ✅ Add to byDscode para ma-update ang Accounts_List
+          byDscode[newDs] = info.rowIds;
+
+          // ✅ Update in-memory maps
+          nameToDscode[nameLower] = newDs;
+          if (info.group_code) {
+            nameGroupToDscode[`${info.group_code}|${nameLower}`] = newDs;
+          }
+        }
+
+        // Insert to sub_mother_account in batches
+        const INSERT_BATCH = 500;
+        let insertedSubs = 0;
+
+        for (let i = 0; i < toInsertSubs.length; i += INSERT_BATCH) {
+          const chunk = toInsertSubs.slice(i, i + INSERT_BATCH);
+          const { error } = await supabase
+            .from('sub_mother_account')
+            .insert(chunk);
+
+          if (error) {
+            console.error('sub_mother insert error:', error.message);
+            // Try upsert as fallback
+            await supabase
+              .from('sub_mother_account')
+              .upsert(chunk, { onConflict: 'dscode', ignoreDuplicates: true });
+          }
+
+          insertedSubs += chunk.length;
+          const el = document.getElementById('insert-sub-prog');
+          if (el) el.innerHTML = `
+          <b style="color:#f59e0b;font-size:18px;">
+            ${insertedSubs.toLocaleString()} / ${toInsertSubs.length.toLocaleString()}
+          </b> DS codes created
+        `;
+        }
+
+        console.log(`✅ Auto-inserted ${insertedSubs} new entries to sub_mother_account`);
+      }
+
+      // ── Update group codes ──────────────────────────────────
+      const UPDATE_BATCH = 500;
+      const UPDATE_CONCURRENCY = 8;
+      let updatedGroup = 0, updatedMother = 0;
+
+      const updateSlice = async (ids, field, value) => {
+        const { error } = await supabase
+          .from('Accounts_List')
+          .update({ [field]: value })
+          .in('id', ids);
+        if (error) console.error(`Update error [${field}=${value}]:`, error.message);
+        return ids.length;
+      };
+
+      const showProgress = (label, done, total) => {
+        const pct = total > 0 ? Math.round(done / total * 100) : 100;
+        Swal.update({
+          html: `
+          <div style="font-family:monospace;">
+            <p style="margin-bottom:8px;">${label}</p>
+            <b style="color:#f59e0b;font-size:18px;">
+              ${done.toLocaleString()} / ${total.toLocaleString()}
+            </b>
+            <div style="width:100%;height:12px;background:#eee;border-radius:6px;overflow:hidden;margin-top:10px;">
+              <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#f59e0b,#d97706);transition:width 0.2s;"></div>
+            </div>
+            <p style="color:#6b7280;margin-top:6px;font-size:12px;">${pct}%</p>
+          </div>
+        `
+        });
+      };
+
+      if (totalGroupUpdates > 0) {
+        Swal.fire({
+          title: '⚡ Updating Group Codes...',
+          html: '<div>Starting...</div>',
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading(),
+        });
+
+        const tasks = [];
+        for (const [code, ids] of Object.entries(byGroupCode)) {
+          for (let i = 0; i < ids.length; i += UPDATE_BATCH) {
+            tasks.push({ ids: ids.slice(i, i + UPDATE_BATCH), code });
+          }
+        }
+
+        for (let i = 0; i < tasks.length; i += UPDATE_CONCURRENCY) {
+          const slice = tasks.slice(i, i + UPDATE_CONCURRENCY);
+          const results = await Promise.all(
+            slice.map(t => updateSlice(t.ids, 'group_code', t.code))
+          );
+          updatedGroup += results.reduce((s, n) => s + n, 0);
+          showProgress('🏷️ Updating group codes...', updatedGroup, totalGroupUpdates);
+        }
+      }
+
+      // ── Update mother codes (kasama na yung bagong DS codes) ─
+      const totalMotherUpdatesNow = Object.values(byDscode)
+        .reduce((s, a) => s + a.length, 0);
+
+      if (totalMotherUpdatesNow > 0) {
+        Swal.fire({
+          title: '⚡ Updating Mother Codes...',
+          html: '<div>Starting...</div>',
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading(),
+        });
+
+        const tasks = [];
+        for (const [ds, ids] of Object.entries(byDscode)) {
+          for (let i = 0; i < ids.length; i += UPDATE_BATCH) {
+            tasks.push({ ids: ids.slice(i, i + UPDATE_BATCH), ds });
+          }
+        }
+
+        for (let i = 0; i < tasks.length; i += UPDATE_CONCURRENCY) {
+          const slice = tasks.slice(i, i + UPDATE_CONCURRENCY);
+          const results = await Promise.all(
+            slice.map(t => updateSlice(t.ids, 'mother_code', t.ds))
+          );
+          updatedMother += results.reduce((s, n) => s + n, 0);
+          showProgress('👥 Updating mother codes...', updatedMother, totalMotherUpdatesNow);
+        }
+      }
+
+      Swal.close();
+
+      await Swal.fire({
+        icon: 'success',
+        title: '✅ Arrange Complete!',
+        html: `
+        <div style="text-align:left;font-family:monospace;font-size:14px;line-height:1.8;">
+          ${selectedOp !== 'fix_mother_code'
+            ? `<p style="color:green;">🏷️ Group codes fixed: <b>${updatedGroup.toLocaleString()}</b></p>`
+            : ''}
+          ${selectedOp !== 'fix_group_code'
+            ? `<p style="color:green;">👥 Mother codes fixed: <b>${updatedMother.toLocaleString()}</b></p>
+               <p style="color:#f59e0b;">🆕 New DS codes created: <b>${unmatchedMotherNames.size.toLocaleString()}</b></p>`
+            : ''}
+          <p style="color:#6b7280;">
+            ⚠️ No match (group) skipped: ${noMatchGroup.toLocaleString()}
+          </p>
+        </div>
+      `,
+        confirmButtonText: 'OK',
+      });
+
+      fetchAndCleanData(currentPage, searchTerm, searchField);
+      await fetchMotherAccounts(); // ✅ NEW: refresh mother map
+
+    } catch (err) {
+      console.error('runArrangeData error:', err);
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+  // New export by distributor function
+  const handleExportByDistributor = async (distributorCode) => {
+    try {
+      setShowExportModal(true);
+      setExportProgress({ fetched: 0, total: 0, type: "distributor" });
+
+      const batchSize = 1000;
+      let allData = [];
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("Accounts_List")
+          .select("*")
+          .eq("distributor_code", distributorCode)
+          .order("id", { ascending: true })
+          .range(offset, offset + batchSize - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          offset += batchSize;
+          hasMore = data.length === batchSize;
+          setExportProgress({ fetched: allData.length, total: allData.length + (hasMore ? batchSize : 0), type: "distributor" });
+        } else {
+          hasMore = false;
+          setExportProgress({ fetched: allData.length, total: allData.length, type: "distributor" });
+        }
+      }
+
+      if (allData.length === 0) {
+        Swal.fire("No Data", `No records found for distributor: ${distributorCode}`, "warning");
+        setShowExportModal(false);
+        return;
+      }
+
+      // Fetch group map for name resolution
+      const { data: groupData } = await supabase.from("mother_account").select("code, name");
+      const localGroupMap = {};
+      groupData?.forEach(g => { localGroupMap[g.code] = g.name; });
+      const exportData = allData.map((row) => ({
+        distributor_name: distributorMap[row.distributor_code] || row.distributor_code || "",
+        mother_name: motherMap[row.mother_code] || row.mother_code || "",
+        bp_code: row.bp_code || "",
+        bp_name: row.bp_name || "",
+        group_name: localGroupMap[row.group_code] || row.group_code || "",
+        status: row.status ? "Active" : "Inactive",
+      }));
+
+      await new Promise((res) => setTimeout(res, 300));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "AccountsList");
+      const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+      const distName = distributorMap[distributorCode] || distributorCode;
+      saveAs(blob, `accounts_${distName}_${distributorCode}.xlsx`);
+
+      setShowExportModal(false);
+      setShowExportByDistModal(false);
+      setSelectedDistForExport(null);
+      setExportDistSearch('');
+    } catch (err) {
+      console.error("Export Error:", err);
+      Swal.fire("Error", err.message, "error");
+      setShowExportModal(false);
+    }
+  };
   // 🔹 Handle file selection
 
   // 🔹 Delete a row in preview
@@ -265,7 +1104,7 @@ export default function AccountsListManager() {
 
         const { data: batchRecords, error } = await supabase
           .from('Accounts_List')
-          .select('*')
+          .select('id, bp_code, distributor_code, mother_code, bp_name, group_code, status')
           .in('bp_code', batchCodes);
 
         if (error) {
@@ -359,221 +1198,371 @@ export default function AccountsListManager() {
   };
 
   // 🔹 STEP 3: Import with UPDATE logic
+  const BATCH_SIZE = 500;
+  const CONCURRENCY = 8;
+
+  function chunkArray(arr, size) {
+    const chunks = [];
+    for (let i = 0; i < arr.length; i += size) {
+      chunks.push(arr.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  // Run async tasks with max N concurrent at a time
+  async function parallelBatch(items, fn, concurrency = CONCURRENCY, onProgress) {
+    const results = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+      const slice = items.slice(i, i + concurrency);
+      const res = await Promise.all(slice.map(fn));
+      results.push(...res);
+      if (onProgress) onProgress(Math.min(i + concurrency, items.length), items.length);
+    }
+    return results;
+  }
+
+  // ── Main Function ────────────────────────────────────────────
+
   const importDataToDB = async () => {
     if (!importData.length) return;
 
-    // ⚠️ VALIDATE BP CODES BEFORE IMPORTING
-    const validation = await validateBpCodes();
-    if (!validation.valid) {
-      Swal.fire({
-        icon: "error",
-        title: "❌ Cannot Import!",
-        html: `
-        <div style="text-align:left;">
-          <p><strong style="color: red;">Import blocked due to invalid BP codes!</strong></p>
-          <hr>
-          <p>Please fix the following first:</p>
-          <ul>
-            <li>Add missing BP codes to <strong>Bp_Accounts</strong> table</li>
-            <li>Make sure all BP codes exist in the database</li>
-            <li>Run "Check Duplicates" again to validate</li>
-          </ul>
-        </div>
-      `,
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#d33'
-      });
-      return;
-    }
-
-    console.log("\n🚀 STARTING IMPORT TO DATABASE");
-    console.log(`Total rows to import: ${importData.length}`);
-
-    setUploading(true);
-    setImporting(true);
-
-    let successCount = 0;
-    let updatedCount = 0;
-    let skippedCount = 0;
-    let failedRows = [];
+    // ── STEP 1: Load ALL valid BP codes ONCE ──────────────────
+    Swal.fire({
+      title: '🔍 Loading BP codes...',
+      html: '<span id="bp-prog" style="color:#2563eb;font-weight:700;">0 loaded</span>',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading(),
+    });
 
     try {
-      const BATCH_SIZE = 500;
-      const chunks = [];
-      for (let i = 0; i < importData.length; i += BATCH_SIZE) {
-        chunks.push(importData.slice(i, i + BATCH_SIZE));
+      // Get total count first
+      const { count: totalBp, error: cntErr } = await supabase
+        .from('Bp_Accounts')
+        .select('*', { count: 'exact', head: true });
+
+      if (cntErr) throw cntErr;
+
+      if (!totalBp || totalBp === 0) {
+        Swal.close();
+        Swal.fire('Error', 'Bp_Accounts table is empty!', 'error');
+        return;
       }
 
-      console.log(`\n📦 Processing ${chunks.length} batches...`);
+      // Parallel fetch of all BP codes
+      const totalBpBatches = Math.ceil(totalBp / BATCH_SIZE);
+      const bpBatchIndexes = Array.from({ length: totalBpBatches }, (_, i) => i);
 
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        console.log(`\n⚙️ Processing batch ${i + 1}/${chunks.length}...`);
+      let allBpCodes = [];
 
-        const recordsToInsert = [];
-        const recordsToUpdate = [];
-
-        chunk.forEach((row, idx) => {
-          const actualRowNumber = i * BATCH_SIZE + idx + 2;
-
-          if (!row.bp_code) return;
-
-          const record = {
-            distributor_code: row.distributor_code || null,
-            mother_code: row.mother_code || null,
-            bp_code: row.bp_code || null,
-            bp_name: row.bp_name || null,
-            agent_code: row.agent_code ? parseInt(row.agent_code) : null,
-            group_code: row.group_code || null,
-            status: true,
-            _rowNumber: actualRowNumber
-          };
-
-          if (row._updateFlag === 'new') {
-            recordsToInsert.push(record);
-          } else if (row._updateFlag === 'update') {
-            recordsToUpdate.push({ ...record, _oldData: row._oldData });
-          }
-        });
-
-        console.log(`  ✅ To Insert: ${recordsToInsert.length}`);
-        console.log(`  🔄 To Update: ${recordsToUpdate.length}`);
-
-        // INSERT new records
-        if (recordsToInsert.length > 0) {
-          const cleanInserts = recordsToInsert.map(({ _rowNumber, ...r }) => r);
-
-          const { data: insertedData, error } = await supabase
-            .from('Accounts_List')
-            .insert(cleanInserts)
-            .select();
-
-          if (error) {
-            console.error(`❌ Insert error:`, error);
-            recordsToInsert.forEach((r) => {
-              failedRows.push({
-                row: r._rowNumber,
-                error: error.message,
-                bp_code: r.bp_code,
-                action: 'INSERT'
-              });
-            });
-          } else {
-            const insertCount = insertedData?.length || cleanInserts.length;
-            successCount += insertCount;
-            console.log(`  ✅ Inserted ${insertCount} records`);
-          }
-        }
-
-        // UPDATE existing records
-        if (recordsToUpdate.length > 0) {
-          console.log(`\n🔄 UPDATING ${recordsToUpdate.length} RECORDS`);
-
-          for (const record of recordsToUpdate) {
-            const { _rowNumber, _oldData, ...updateData } = record;
-
-            const { error: updateError } = await supabase
-              .from('Accounts_List')
-              .update(updateData)
-              .eq('bp_code', record.bp_code);
-
-            if (updateError) {
-              console.error(`❌ Update error for ${record.bp_code}:`, updateError);
-              failedRows.push({
-                row: _rowNumber,
-                error: updateError.message,
-                bp_code: record.bp_code,
-                action: 'UPDATE'
-              });
-            } else {
-              updatedCount++;
-              console.log(`  🔄 Updated ${record.bp_code}`);
-            }
-          }
-        }
-
-        const processed = Math.min((i + 1) * BATCH_SIZE, importData.length);
-        setProcessedRows(processed);
-        setProgressPercent(Math.round((processed / importData.length) * 100));
-        await new Promise(res => setTimeout(res, 50));
-      }
-
-      const failedCount = failedRows.length;
-      const totalProcessed = importData.length;
-
-      console.log("\n📊 IMPORT COMPLETE!");
-      console.log(`✅ New Records: ${successCount}`);
-      console.log(`🔄 Updated: ${updatedCount}`);
-      console.log(`❌ Failed: ${failedCount}`);
-
-      Swal.fire({
-        icon: failedCount > 0 ? 'warning' : 'success',
-        title: 'Import Finished!',
-        html: `
-        <div style="text-align:left; font-family: monospace;">
-          <p><strong>✅ Imported (New):</strong> ${successCount}</p>
-          <p style="color: orange;"><strong>🔄 Updated:</strong> ${updatedCount}</p>
-          <p style="color: red;"><strong>❌ Failed:</strong> ${failedCount}</p>
-          <hr>
-          <p><strong>📊 Total Processed:</strong> ${totalProcessed}</p>
-        </div>
-      `,
-        confirmButtonText: 'OK',
-        width: 600
+      await parallelBatch(bpBatchIndexes, async (batchIdx) => {
+        const from = batchIdx * BATCH_SIZE;
+        const { data, error } = await supabase
+          .from('Bp_Accounts')
+          .select('bp_code')
+          .range(from, from + BATCH_SIZE - 1);
+        if (error) throw error;
+        return data || [];
+      }, CONCURRENCY, (done, total) => {
+        const el = document.getElementById('bp-prog');
+        if (el) el.textContent = `${done * BATCH_SIZE} / ${totalBp} loaded`;
+      }).then(results => {
+        allBpCodes = results.flat();
       });
 
-    } catch (error) {
-      console.error('💥 IMPORT ERROR:', error);
-      Swal.fire('Error', error.message, 'error');
+      const validBpSet = new Set(
+        allBpCodes.map(r => r.bp_code?.toString().trim().toUpperCase()).filter(Boolean)
+      );
+
+      console.log(`✅ Valid BP codes loaded: ${validBpSet.size}`);
+
+      // ── STEP 2: Validate import data against BP set ───────────
+      const invalidRows = [];
+      importData.forEach((row, idx) => {
+        const code = row.bp_code?.toString().trim().toUpperCase();
+        if (!code) {
+          invalidRows.push({ row: idx + 2, bp_code: 'EMPTY', issue: 'BP code is empty' });
+        } else if (!validBpSet.has(code)) {
+          invalidRows.push({ row: idx + 2, bp_code: code, issue: 'Not found in Bp_Accounts' });
+        }
+      });
+
+      if (invalidRows.length > 0) {
+        Swal.close();
+        const list = invalidRows.slice(0, 15).map(r =>
+          `<li style="margin:6px 0;padding:6px 10px;background:#fee;border-left:3px solid #d33;border-radius:4px;">
+           <strong>Row ${r.row}:</strong> <code>${r.bp_code}</code> — ${r.issue}
+         </li>`
+        ).join('');
+
+        Swal.fire({
+          icon: 'error',
+          title: `🚫 ${invalidRows.length} invalid BP code(s)`,
+          html: `<ul style="list-style:none;padding:0;max-height:350px;overflow-y:auto;">${list}
+          ${invalidRows.length > 15 ? `<li style="padding:8px;color:#888;">...and ${invalidRows.length - 15} more</li>` : ''}
+        </ul>`,
+          width: 700,
+        });
+        return;
+      }
+
+      Swal.close();
+
+      // ── STEP 3: Check existing records in parallel ────────────
+      Swal.fire({
+        title: '🔍 Checking existing records...',
+        html: '<div id="dup-prog">Starting...</div>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const uniqueBpCodes = [...new Set(importData.map(r => r.bp_code?.toString().trim()).filter(Boolean))];
+      const bpChunks = chunkArray(uniqueBpCodes, BATCH_SIZE);
+
+      let existingRecords = [];
+      let checkedCount = 0;
+
+      await parallelBatch(bpChunks, async (chunk) => {
+        const { data, error } = await supabase
+          .from('Accounts_List')
+          .select('id, bp_code, distributor_code, mother_code, bp_name, group_code, status')
+          .in('bp_code', chunk);
+        if (error) throw error;
+        return data || [];
+      }, CONCURRENCY, (done, total) => {
+        checkedCount = done;
+        const pct = Math.round(done / total * 100);
+        const el = document.getElementById('dup-prog');
+        if (el) el.innerHTML = `
+        <b style="color:#2563eb">${done * BATCH_SIZE} / ${uniqueBpCodes.length}</b> codes checked
+        <div style="width:100%;height:8px;background:#eee;border-radius:4px;margin-top:6px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:#2563eb;transition:width 0.2s;"></div>
+        </div>
+      `;
+      }).then(results => {
+        existingRecords = results.flat();
+      });
+
+      // Build lookup map
+      const existingMap = {};
+      existingRecords.forEach(r => {
+        existingMap[r.bp_code?.toString().trim().toUpperCase()] = r;
+      });
+
+      console.log(`✅ Found ${existingRecords.length} existing records`);
+
+      // ── STEP 4: Separate NEW vs UPDATE vs SKIP ────────────────
+      const toInsert = [];
+      const toUpdate = [];
+      let skippedCount = 0;
+
+      importData.forEach(row => {
+        const bpKey = row.bp_code?.toString().trim().toUpperCase();
+        const existing = existingMap[bpKey];
+
+        const newRecord = {
+          distributor_code: row.distributor_code || null,
+          mother_code: row.mother_code || null,
+          bp_code: row.bp_code || null,
+          bp_name: row.bp_name || null,
+          group_code: row.group_code || null,
+        };
+        if (!existing) {
+          toInsert.push({ ...newRecord, status: true });
+          return;
+        }
+
+        const normalize = (v) => (v === '' || v === undefined || v === null) ? null : String(v).trim();
+
+        const hasChanges =
+
+          normalize(newRecord.distributor_code) !== normalize(existing.distributor_code) ||
+          normalize(newRecord.mother_code) !== normalize(existing.mother_code) ||
+          normalize(newRecord.bp_name) !== normalize(existing.bp_name) ||
+          normalize(newRecord.group_code) !== normalize(existing.group_code);
+
+        if (hasChanges) {
+          toUpdate.push({ id: existing.id, ...newRecord, status: existing.status });
+        } else {
+          skippedCount++;
+        }
+      });
+
+      Swal.close();
+
+      // ── STEP 5: Confirm before proceeding ─────────────────────
+      const confirmResult = await Swal.fire({
+        icon: 'info',
+        title: '📊 Smart Import Summary',
+        html: `
+        <div style="text-align:left;font-family:monospace;font-size:14px;line-height:2;">
+          <p>✅ <b>New records:</b> ${toInsert.length.toLocaleString()}</p>
+          <p style="color:orange;">🔄 <b>Will update (changed):</b> ${toUpdate.length.toLocaleString()}</p>
+          <p style="color:gray;">⏭️ <b>Skipped (no changes):</b> ${skippedCount.toLocaleString()}</p>
+          <hr/>
+          <p>📋 <b>Total rows:</b> ${importData.length.toLocaleString()}</p>
+        </div>
+      `,
+        showCancelButton: true,
+        confirmButtonText: 'Proceed',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#10b981',
+      });
+
+      if (!confirmResult.isConfirmed) return;
+
+      // ── STEP 6: INSERT in parallel batches ────────────────────
+      let insertedCount = 0;
+      let updatedCount = 0;
+      const failedBatches = [];
+
+      if (toInsert.length > 0) {
+        Swal.fire({
+          title: '📥 Inserting new records...',
+          html: '<div id="ins-prog">Starting...</div>',
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading(),
+        });
+
+        const insertChunks = chunkArray(toInsert, BATCH_SIZE);
+
+        await parallelBatch(insertChunks, async (chunk) => {
+          const { error } = await supabase.from('Accounts_List').insert(chunk);
+          if (error) {
+            console.error('Insert batch error:', error.message);
+            failedBatches.push({ type: 'insert', count: chunk.length, error: error.message });
+            return 0;
+          }
+          return chunk.length;
+        }, CONCURRENCY, (done, total) => {
+          const count = Math.min(done * BATCH_SIZE, toInsert.length);
+          const pct = Math.round(count / toInsert.length * 100);
+          const el = document.getElementById('ins-prog');
+          if (el) el.innerHTML = `
+          <b style="color:#10b981;font-size:18px;">${count.toLocaleString()} / ${toInsert.length.toLocaleString()}</b>
+          <div style="width:100%;height:10px;background:#eee;border-radius:5px;margin-top:8px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:#10b981;transition:width 0.2s;"></div>
+          </div>
+          <p style="color:#6b7280;margin-top:4px;font-size:12px;">${pct}%</p>
+        `;
+        }).then(results => {
+          insertedCount = results.reduce((s, n) => s + (n || 0), 0);
+        });
+      }
+
+      // ── STEP 7: UPDATE in parallel batches ────────────────────
+      if (toUpdate.length > 0) {
+        Swal.fire({
+          title: '🔄 Updating changed records...',
+          html: '<div id="upd-prog">Starting...</div>',
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading(),
+        });
+
+        const updateChunks = chunkArray(toUpdate, BATCH_SIZE);
+
+        await parallelBatch(updateChunks, async (chunk) => {
+          // upsert by bp_code — NO individual fallback loop
+          const { error } = await supabase
+            .from('Accounts_List')
+            .upsert(chunk, { onConflict: 'id', ignoreDuplicates: false });
+
+          if (error) {
+            console.error('Upsert batch error:', error.message);
+            failedBatches.push({ type: 'update', count: chunk.length, error: error.message });
+            return 0;
+          }
+          return chunk.length;
+        }, CONCURRENCY, (done, total) => {
+          const count = Math.min(done * BATCH_SIZE, toUpdate.length);
+          const pct = Math.round(count / toUpdate.length * 100);
+          const el = document.getElementById('upd-prog');
+          if (el) el.innerHTML = `
+          <b style="color:#f59e0b;font-size:18px;">${count.toLocaleString()} / ${toUpdate.length.toLocaleString()}</b>
+          <div style="width:100%;height:10px;background:#eee;border-radius:5px;margin-top:8px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:#f59e0b;transition:width 0.2s;"></div>
+          </div>
+          <p style="color:#6b7280;margin-top:4px;font-size:12px;">${pct}%</p>
+        `;
+        }).then(results => {
+          updatedCount = results.reduce((s, n) => s + (n || 0), 0);
+        });
+      }
+
+      Swal.close();
+
+      // ── STEP 8: Final summary ─────────────────────────────────
+      await Swal.fire({
+        icon: failedBatches.length > 0 ? 'warning' : 'success',
+        title: '✅ Import Complete!',
+        html: `
+        <div style="text-align:left;font-family:monospace;font-size:14px;line-height:2;">
+          <p style="color:green;">✅ <b>Inserted:</b> ${insertedCount.toLocaleString()}</p>
+          <p style="color:orange;">🔄 <b>Updated:</b> ${updatedCount.toLocaleString()}</p>
+          <p style="color:gray;">⏭️ <b>Skipped:</b> ${skippedCount.toLocaleString()}</p>
+          ${failedBatches.length > 0
+            ? `<p style="color:red;">❌ <b>Failed batches:</b> ${failedBatches.length} 
+               (${failedBatches.reduce((s, b) => s + b.count, 0).toLocaleString()} rows)</p>`
+            : ''}
+          <hr/>
+          <p>📋 <b>Total:</b> ${importData.length.toLocaleString()}</p>
+        </div>
+      `,
+      });
+
+      fetchAndCleanData();
+
+    } catch (err) {
+      console.error('Import error:', err);
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
     } finally {
       setUploading(false);
       setImporting(false);
-      fetchAndCleanData();
     }
   };
 
   // 🔹 Handle Excel Import (no changes needed, just included for completeness)
   // 🔹 Handle Excel Import with IMMEDIATE BP validation
-const handleImportMother = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const handleImportMother = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-  // ⚠️⚠️⚠️ CHECK BP_ACCOUNTS FIRST BAGO MAG-PROCESS ⚠️⚠️⚠️
-  Swal.fire({
-    title: 'Checking BP Accounts...',
-    text: 'Validating database...',
-    allowOutsideClick: false,
-    didOpen: () => Swal.showLoading()
-  });
+    // ⚠️⚠️⚠️ CHECK BP_ACCOUNTS FIRST BAGO MAG-PROCESS ⚠️⚠️⚠️
+    Swal.fire({
+      title: 'Checking BP Accounts...',
+      text: 'Validating database...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
 
-  try {
-    // CHECK IF BP_ACCOUNTS HAS DATA
-    const { data: bpCheck, error: bpError } = await supabase
-      .from('Bp_Accounts')
-      .select('bp_code, bp_name')
-      .limit(1);
+    try {
+      // CHECK IF BP_ACCOUNTS HAS DATA
+      const { data: bpCheck, error: bpError } = await supabase
+        .from('Bp_Accounts')
+        .select('bp_code, bp_name')
+        .limit(1);
 
-    if (bpError) {
-      Swal.close();
-      Swal.fire({
-        icon: "error",
-        title: "Database Error!",
-        text: `Failed to check Bp_Accounts: ${bpError.message}`,
-        confirmButtonColor: '#d33'
-      });
-      return;
-    }
+      if (bpError) {
+        Swal.close();
+        Swal.fire({
+          icon: "error",
+          title: "Database Error!",
+          text: `Failed to check Bp_Accounts: ${bpError.message}`,
+          confirmButtonColor: '#d33'
+        });
+        return;
+      }
 
-    // ⚠️⚠️⚠️ IF BP_ACCOUNTS IS EMPTY - SHOW SUPER WARNING ⚠️⚠️⚠️
-    if (!bpCheck || bpCheck.length === 0) {
-      Swal.close();
+      // ⚠️⚠️⚠️ IF BP_ACCOUNTS IS EMPTY - SHOW SUPER WARNING ⚠️⚠️⚠️
+      if (!bpCheck || bpCheck.length === 0) {
+        Swal.close();
 
-      console.error("🚨🚨🚨 BP_ACCOUNTS TABLE IS EMPTY! BLOCKING UPLOAD!");
+        console.error("🚨🚨🚨 BP_ACCOUNTS TABLE IS EMPTY! BLOCKING UPLOAD!");
 
-      Swal.fire({
-        icon: "error",
-        title: "🚨 BP_ACCOUNTS TABLE IS EMPTY!",
-        html: `
+        Swal.fire({
+          icon: "error",
+          title: "🚨 BP_ACCOUNTS TABLE IS EMPTY!",
+          html: `
         <div style="text-align:left; font-family: 'Segoe UI', sans-serif;">
           <div style="background: #fee; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 3px solid #d33;">
             <h2 style="color: #d33; margin: 0 0 15px 0; font-size: 24px;">⛔ UPLOAD BLOCKED!</h2>
@@ -607,341 +1596,340 @@ const handleImportMother = async (e) => {
           </div>
         </div>
       `,
-        width: 900,
-        confirmButtonText: '❌ Close - Add BP Codes First',
-        confirmButtonColor: '#d33',
-        allowOutsideClick: false
-      });
+          width: 900,
+          confirmButtonText: '❌ Close - Add BP Codes First',
+          confirmButtonColor: '#d33',
+          allowOutsideClick: false
+        });
 
-      return; // BLOCK THE UPLOAD COMPLETELY
+        return; // BLOCK THE UPLOAD COMPLETELY
+      }
+
+      console.log("✅ Bp_Accounts has data, proceeding with Excel upload...");
+
+    } catch (err) {
+      Swal.close();
+      console.error("💥 Error checking Bp_Accounts:", err);
+      Swal.fire({
+        icon: "error",
+        title: "Validation Failed!",
+        text: `Failed to check Bp_Accounts: ${err.message}`,
+        confirmButtonColor: '#d33'
+      });
+      return;
     }
 
-    console.log("✅ Bp_Accounts has data, proceeding with Excel upload...");
-
-  } catch (err) {
-    Swal.close();
-    console.error("💥 Error checking Bp_Accounts:", err);
+    // ✅ BP_ACCOUNTS HAS DATA - CONTINUE WITH EXCEL PROCESSING
     Swal.fire({
-      icon: "error",
-      title: "Validation Failed!",
-      text: `Failed to check Bp_Accounts: ${err.message}`,
-      confirmButtonColor: '#d33'
+      title: 'Reading Excel File...',
+      text: 'Please wait...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
     });
-    return;
-  }
 
-  // ✅ BP_ACCOUNTS HAS DATA - CONTINUE WITH EXCEL PROCESSING
-  Swal.fire({
-    title: 'Reading Excel File...',
-    text: 'Please wait...',
-    allowOutsideClick: false,
-    didOpen: () => Swal.showLoading()
-  });
+    const rawData = await readExcelFile(file);
 
-  const rawData = await readExcelFile(file);
-  
-  if (!rawData.length) {
-    Swal.close();
-    Swal.fire({
-      icon: 'warning',
-      title: 'Empty File!',
-      text: 'The Excel file contains no data.',
-      confirmButtonText: 'OK'
-    });
-    return;
-  }
+    if (!rawData.length) {
+      Swal.close();
+      Swal.fire({
+        icon: 'warning',
+        title: 'Empty File!',
+        text: 'The Excel file contains no data.',
+        confirmButtonText: 'OK'
+      });
+      return;
+    }
 
-  // ✅ REMOVED 40K LIMIT - ACCEPT ANY NUMBER OF ROWS
-  console.log(`📊 Excel contains ${rawData.length.toLocaleString()} rows - Processing all...`);
+    // ✅ REMOVED 40K LIMIT - ACCEPT ANY NUMBER OF ROWS
+    console.log(`📊 Excel contains ${rawData.length.toLocaleString()} rows - Processing all...`);
 
-  // Show warning if file is very large (over 100k rows)
-  if (rawData.length > 100000) {
-    const confirmLarge = await Swal.fire({
-      icon: 'warning',
-      title: 'Large File Detected',
-      html: `
+    // Show warning if file is very large (over 100k rows)
+    if (rawData.length > 100000) {
+      const confirmLarge = await Swal.fire({
+        icon: 'warning',
+        title: 'Large File Detected',
+        html: `
         <p>Excel contains <strong>${rawData.length.toLocaleString()} rows</strong>.</p>
         <p>This may take several minutes to process.</p>
         <p><strong>Do you want to continue?</strong></p>
       `,
-      showCancelButton: true,
-      confirmButtonText: 'Yes, Process All',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#2563eb',
-      cancelButtonColor: '#6c757d'
-    });
-
-    if (!confirmLarge.isConfirmed) return;
-  }
-
-  Swal.fire({
-    title: 'Processing Excel...',
-    html: `Converting names to codes...<br><span id="excel-progress" style="color:#2563eb;font-weight:600;">0 / ${rawData.length.toLocaleString()} rows</span>`,
-    allowOutsideClick: false,
-    didOpen: () => Swal.showLoading()
-  });
-
-  try {
-    const [
-      { data: motherAccounts },
-      { data: agentAccounts },
-      { data: bpAccounts },
-      { data: distributorAccounts }
-    ] = await Promise.all([
-      supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
-      supabase.from('Account_Users').select('UserID, name'),
-      supabase.from('Bp_Accounts').select('bp_code, bp_name'),
-      supabase.from('distributors').select('code, name')
-    ]);
-
-    const groupNameToCodeMap = {};
-    motherAccounts?.forEach(m => {
-      if (m.group_name && m.group_code) {
-        const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
-        groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
-      }
-    });
-
-    const motherLookup = {};
-    motherAccounts?.forEach(m => {
-      const groupCode = m.group_code?.toString().trim();
-      const exactName = m.name?.toString().trim().toLowerCase();
-      const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-      if (!groupCode || !m.name) return;
-      if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
-      motherLookup[groupCode][exactName] = m.dscode;
-      motherLookup[groupCode][normalizedName] = m.dscode;
-    });
-
-    const findMotherCode = (rawMotherName, resolvedGroupCode) => {
-      const groupCode = resolvedGroupCode?.toString().trim();
-      if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
-
-      const exactName = rawMotherName.toString().trim().toLowerCase();
-      const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
-      const availableNames = motherLookup[groupCode];
-
-      if (availableNames[exactName]) return availableNames[exactName];
-      if (availableNames[normalizedName]) return availableNames[normalizedName];
-      const fuzzyMatch = Object.keys(availableNames).find(dbName =>
-        dbName.includes(normalizedName) || normalizedName.includes(dbName)
-      );
-      if (fuzzyMatch) return availableNames[fuzzyMatch];
-      return Object.values(availableNames)[0] || rawMotherName;
-    };
-
-    const createMap = (arr, key1, key2) => {
-      const map = {};
-      arr?.forEach(item => {
-        if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
-        if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
-      });
-      return map;
-    };
-
-    const agentMap = createMap(agentAccounts, 'name', 'UserID');
-    const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
-    const distributorMap = createMap(distributorAccounts, 'name', 'code');
-    const bpNameMap = {};
-    bpAccounts?.forEach(b => {
-      if (b.bp_code && b.bp_name)
-        bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
-    });
-
-    const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
-
-    // Process data in chunks to show progress
-    const CHUNK_SIZE = 1000;
-    const processedData = [];
-    
-    for (let i = 0; i < rawData.length; i += CHUNK_SIZE) {
-      const chunk = rawData.slice(i, i + CHUNK_SIZE);
-      
-      const processedChunk = chunk.map((row) => {
-        const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
-        const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
-        const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
-        const rawBp = row.bp_code?.toString().trim() || '';
-        const rawDist = row.distributor_code?.toString().trim() || row.distributor_name?.toString().trim() || '';
-
-        let groupCode = rawGroup;
-        if (!isCode(rawGroup)) {
-          groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
-        }
-
-        let motherCode = rawMother;
-        if (!isCode(rawMother)) {
-          motherCode = findMotherCode(rawMother, groupCode);
-        }
-
-        const agentCode = isCode(rawAgent)
-          ? rawAgent
-          : (agentMap[rawAgent.toLowerCase()] || rawAgent);
-
-        const bpCode = isCode(rawBp)
-          ? rawBp
-          : (bpMap[rawBp.toLowerCase()] || rawBp);
-
-        const bpName =
-          bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
-          row.bp_name ||
-          null;
-
-        const distributorCode = isCode(rawDist)
-          ? rawDist
-          : (distributorMap[rawDist.toLowerCase()] || rawDist);
-
-        return {
-          distributor_code: distributorCode || '',
-          mother_code: motherCode || '',
-          bp_code: bpCode || '',
-          bp_name: bpName || '',
-          agent_code: agentCode || '',
-          group_code: groupCode || '',
-          status: 'status'
-        };
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Process All',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#2563eb',
+        cancelButtonColor: '#6c757d'
       });
 
-      processedData.push(...processedChunk);
-
-      // Update progress
-      const progressEl = document.getElementById('excel-progress');
-      if (progressEl) {
-        progressEl.textContent = `${processedData.length.toLocaleString()} / ${rawData.length.toLocaleString()} rows`;
-      }
-
-      // Small delay to prevent UI blocking
-      await new Promise(resolve => setTimeout(resolve, 10));
+      if (!confirmLarge.isConfirmed) return;
     }
 
-    Swal.close();
-
-    // ⚠️⚠️ VALIDATE BP CODES AGAINST Bp_Accounts ⚠️⚠️
-    console.log("\n🔍 VALIDATING BP CODES...");
-
     Swal.fire({
-      title: 'Validating BP Codes...',
-      html: 'Loading all BP codes from database...<br><span id="validate-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>',
+      title: 'Processing Excel...',
+      html: `Converting names to codes...<br><span id="excel-progress" style="color:#2563eb;font-weight:600;">0 / ${rawData.length.toLocaleString()} rows</span>`,
       allowOutsideClick: false,
       didOpen: () => Swal.showLoading()
     });
 
     try {
-      // ✅ STEP 1: Get total count first
-      const { count: totalBpCount, error: countError } = await supabase
-        .from('Bp_Accounts')
-        .select('*', { count: 'exact', head: true });
+      const [
+        { data: motherAccounts },
+        { data: agentAccounts },
+        { data: bpAccounts },
+        { data: distributorAccounts }
+      ] = await Promise.all([
+        supabase.from('sub_mother_account').select('dscode, name, group_name, group_code'),
+        supabase.from('Account_Users').select('UserID, name'),
+        supabase.from('Bp_Accounts').select('bp_code, bp_name'),
+        supabase.from('distributors').select('code, name')
+      ]);
 
-      if (countError) throw countError;
-
-      console.log(`📊 Total BP codes in database: ${totalBpCount?.toLocaleString() || 0}`);
-
-      if (!totalBpCount || totalBpCount === 0) {
-        Swal.close();
-        Swal.fire({
-          icon: "error",
-          title: "⚠️ BP Accounts is EMPTY!",
-          text: "Please add BP codes to Bp_Accounts table first.",
-          confirmButtonColor: '#d33'
-        });
-        return;
-      }
-
-      // ✅ STEP 2: Load ALL BP codes in batches
-      const BATCH_SIZE = 1000;
-      let allBpCodes = [];
-      let currentOffset = 0;
-
-      while (currentOffset < totalBpCount) {
-        console.log(`📥 Fetching batch: offset ${currentOffset} to ${currentOffset + BATCH_SIZE - 1}`);
-
-        const { data: batch, error } = await supabase
-          .from('Bp_Accounts')
-          .select('bp_code')
-          .order('id', { ascending: true })
-          .range(currentOffset, currentOffset + BATCH_SIZE - 1);
-
-        if (error) {
-          console.error("❌ Error fetching batch:", error);
-          throw error;
-        }
-
-        if (!batch || batch.length === 0) {
-          console.log("⚠️ No more data, breaking loop");
-          break;
-        }
-
-        console.log(`✅ Loaded batch: ${batch.length} codes (Total so far: ${allBpCodes.length + batch.length})`);
-
-        allBpCodes = [...allBpCodes, ...batch];
-        currentOffset += BATCH_SIZE;
-
-        // Update progress
-        const progressEl = document.getElementById('validate-progress');
-        if (progressEl) {
-          const percentage = Math.min(100, Math.round((allBpCodes.length / totalBpCount) * 100));
-          progressEl.textContent = `${allBpCodes.length.toLocaleString()} / ${totalBpCount.toLocaleString()} (${percentage}%)`;
-        }
-
-        // Small delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-
-      console.log(`✅ FINISHED LOADING: ${allBpCodes.length.toLocaleString()} total BP codes`);
-
-      Swal.close();
-
-      // ✅ STEP 3: Create validation set
-      const validBpCodes = new Set(
-        allBpCodes
-          .map(acc => acc.bp_code?.toString().trim().toUpperCase())
-          .filter(Boolean)
-      );
-
-      console.log(`✅ Valid BP codes in database: ${validBpCodes.size.toLocaleString()}`);
-      console.log("📋 Sample BP codes:", Array.from(validBpCodes).slice(0, 10));
-
-      // ✅ STEP 4: Validate Excel data
-      const invalidRecords = [];
-      processedData.forEach((row, idx) => {
-        const bpCode = row.bp_code?.toString().trim();
-
-        if (!bpCode || bpCode === "") {
-          invalidRecords.push({
-            Row: idx + 2,
-            BP_Code: "❌ EMPTY/NULL",
-            BP_Name: row.bp_name || "N/A",
-            Distributor: row.distributor_code || "N/A",
-            Issue: "BP Code is empty or missing"
-          });
-        } else if (!validBpCodes.has(bpCode.toUpperCase())) {
-          invalidRecords.push({
-            Row: idx + 2,
-            BP_Code: bpCode,
-            BP_Name: row.bp_name || "N/A",
-            Distributor: row.distributor_code || "N/A",
-            Issue: "BP Code NOT FOUND in Bp_Accounts table"
-          });
+      const groupNameToCodeMap = {};
+      motherAccounts?.forEach(m => {
+        if (m.group_name && m.group_code) {
+          const normalizedGroupName = m.group_name.toString().trim().toLowerCase();
+          groupNameToCodeMap[normalizedGroupName] = m.group_code.toString();
         }
       });
 
-      // ✅ STEP 5: Show results
-      if (invalidRecords.length > 0) {
-        console.log("\n⚠️⚠️⚠️ INVALID BP CODES FOUND:");
-        console.table(invalidRecords);
+      const motherLookup = {};
+      motherAccounts?.forEach(m => {
+        const groupCode = m.group_code?.toString().trim();
+        const exactName = m.name?.toString().trim().toLowerCase();
+        const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+        if (!groupCode || !m.name) return;
+        if (!motherLookup[groupCode]) motherLookup[groupCode] = {};
+        motherLookup[groupCode][exactName] = m.dscode;
+        motherLookup[groupCode][normalizedName] = m.dscode;
+      });
 
-        const invalidList = invalidRecords.slice(0, 15).map(r =>
-          `<li style="margin: 8px 0; padding: 8px; background: #fee; border-left: 4px solid #d33; border-radius: 4px;">
+      const findMotherCode = (rawMotherName, resolvedGroupCode) => {
+        const groupCode = resolvedGroupCode?.toString().trim();
+        if (!groupCode || !motherLookup[groupCode]) return rawMotherName;
+
+        const exactName = rawMotherName.toString().trim().toLowerCase();
+        const normalizedName = exactName.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '').replace(/\s+/g, ' ').trim();
+        const availableNames = motherLookup[groupCode];
+
+        if (availableNames[exactName]) return availableNames[exactName];
+        if (availableNames[normalizedName]) return availableNames[normalizedName];
+        const fuzzyMatch = Object.keys(availableNames).find(dbName =>
+          dbName.includes(normalizedName) || normalizedName.includes(dbName)
+        );
+        if (fuzzyMatch) return availableNames[fuzzyMatch];
+        return Object.values(availableNames)[0] || rawMotherName;
+      };
+
+      const createMap = (arr, key1, key2) => {
+        const map = {};
+        arr?.forEach(item => {
+          if (item[key1]) map[item[key1].toString().trim().toLowerCase()] = item[key2];
+          if (item[key2]) map[item[key2].toString().trim().toLowerCase()] = item[key2];
+        });
+        return map;
+      };
+
+      const agentMap = createMap(agentAccounts, 'name', 'UserID');
+      const bpMap = createMap(bpAccounts, 'bp_name', 'bp_code');
+      const distributorMap = createMap(distributorAccounts, 'name', 'code');
+      const bpNameMap = {};
+      bpAccounts?.forEach(b => {
+        if (b.bp_code && b.bp_name)
+          bpNameMap[b.bp_code.toString().trim().toLowerCase()] = b.bp_name;
+      });
+
+      const isCode = (val) => /^[A-Z0-9\-_]+$/i.test(val || '');
+
+      // Process data in chunks to show progress
+      const CHUNK_SIZE = 1000;
+      const processedData = [];
+
+      for (let i = 0; i < rawData.length; i += CHUNK_SIZE) {
+        const chunk = rawData.slice(i, i + CHUNK_SIZE);
+
+        const processedChunk = chunk.map((row) => {
+          const rawGroup = row.group_code?.toString().trim() || row.group_name?.toString().trim() || '';
+          const rawMother = row.mother_code?.toString().trim() || row.mother_name?.toString().trim() || '';
+          const rawAgent = row.agent_code?.toString().trim() || row.agent_name?.toString().trim() || '';
+          const rawBp = row.bp_code?.toString().trim() || '';
+          const rawDist = row.distributor_code?.toString().trim() || row.distributor_name?.toString().trim() || '';
+
+          let groupCode = rawGroup;
+          if (!isCode(rawGroup)) {
+            groupCode = groupNameToCodeMap[rawGroup.toLowerCase()] || rawGroup;
+          }
+
+          let motherCode = rawMother;
+          if (!isCode(rawMother)) {
+            motherCode = findMotherCode(rawMother, groupCode);
+          }
+
+          const agentCode = isCode(rawAgent)
+            ? rawAgent
+            : (agentMap[rawAgent.toLowerCase()] || rawAgent);
+
+          const bpCode = isCode(rawBp)
+            ? rawBp
+            : (bpMap[rawBp.toLowerCase()] || rawBp);
+
+          const bpName =
+            bpNameMap[bpCode?.toString().trim().toLowerCase()] ||
+            row.bp_name ||
+            null;
+
+          const distributorCode = isCode(rawDist)
+            ? rawDist
+            : (distributorMap[rawDist.toLowerCase()] || rawDist);
+
+          return {
+            distributor_code: distributorCode || '',
+            mother_code: motherCode || '',
+            bp_code: bpCode || '',
+            bp_name: bpName || '',
+            group_code: groupCode || '',
+            status: 'status'
+          };
+        });
+
+        processedData.push(...processedChunk);
+
+        // Update progress
+        const progressEl = document.getElementById('excel-progress');
+        if (progressEl) {
+          progressEl.textContent = `${processedData.length.toLocaleString()} / ${rawData.length.toLocaleString()} rows`;
+        }
+
+        // Small delay to prevent UI blocking
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+
+      Swal.close();
+
+      // ⚠️⚠️ VALIDATE BP CODES AGAINST Bp_Accounts ⚠️⚠️
+      console.log("\n🔍 VALIDATING BP CODES...");
+
+      Swal.fire({
+        title: 'Validating BP Codes...',
+        html: 'Loading all BP codes from database...<br><span id="validate-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+      });
+
+      try {
+        // ✅ STEP 1: Get total count first
+        const { count: totalBpCount, error: countError } = await supabase
+          .from('Bp_Accounts')
+          .select('*', { count: 'exact', head: true });
+
+        if (countError) throw countError;
+
+        console.log(`📊 Total BP codes in database: ${totalBpCount?.toLocaleString() || 0}`);
+
+        if (!totalBpCount || totalBpCount === 0) {
+          Swal.close();
+          Swal.fire({
+            icon: "error",
+            title: "⚠️ BP Accounts is EMPTY!",
+            text: "Please add BP codes to Bp_Accounts table first.",
+            confirmButtonColor: '#d33'
+          });
+          return;
+        }
+
+        // ✅ STEP 2: Load ALL BP codes in batches
+        const BATCH_SIZE = 1000;
+        let allBpCodes = [];
+        let currentOffset = 0;
+
+        while (currentOffset < totalBpCount) {
+          console.log(`📥 Fetching batch: offset ${currentOffset} to ${currentOffset + BATCH_SIZE - 1}`);
+
+          const { data: batch, error } = await supabase
+            .from('Bp_Accounts')
+            .select('bp_code')
+            .order('id', { ascending: true })
+            .range(currentOffset, currentOffset + BATCH_SIZE - 1);
+
+          if (error) {
+            console.error("❌ Error fetching batch:", error);
+            throw error;
+          }
+
+          if (!batch || batch.length === 0) {
+            console.log("⚠️ No more data, breaking loop");
+            break;
+          }
+
+          console.log(`✅ Loaded batch: ${batch.length} codes (Total so far: ${allBpCodes.length + batch.length})`);
+
+          allBpCodes = [...allBpCodes, ...batch];
+          currentOffset += BATCH_SIZE;
+
+          // Update progress
+          const progressEl = document.getElementById('validate-progress');
+          if (progressEl) {
+            const percentage = Math.min(100, Math.round((allBpCodes.length / totalBpCount) * 100));
+            progressEl.textContent = `${allBpCodes.length.toLocaleString()} / ${totalBpCount.toLocaleString()} (${percentage}%)`;
+          }
+
+          // Small delay to prevent rate limiting
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        console.log(`✅ FINISHED LOADING: ${allBpCodes.length.toLocaleString()} total BP codes`);
+
+        Swal.close();
+
+        // ✅ STEP 3: Create validation set
+        const validBpCodes = new Set(
+          allBpCodes
+            .map(acc => acc.bp_code?.toString().trim().toUpperCase())
+            .filter(Boolean)
+        );
+
+        console.log(`✅ Valid BP codes in database: ${validBpCodes.size.toLocaleString()}`);
+        console.log("📋 Sample BP codes:", Array.from(validBpCodes).slice(0, 10));
+
+        // ✅ STEP 4: Validate Excel data
+        const invalidRecords = [];
+        processedData.forEach((row, idx) => {
+          const bpCode = row.bp_code?.toString().trim();
+
+          if (!bpCode || bpCode === "") {
+            invalidRecords.push({
+              Row: idx + 2,
+              BP_Code: "❌ EMPTY/NULL",
+              BP_Name: row.bp_name || "N/A",
+              Distributor: row.distributor_code || "N/A",
+              Issue: "BP Code is empty or missing"
+            });
+          } else if (!validBpCodes.has(bpCode.toUpperCase())) {
+            invalidRecords.push({
+              Row: idx + 2,
+              BP_Code: bpCode,
+              BP_Name: row.bp_name || "N/A",
+              Distributor: row.distributor_code || "N/A",
+              Issue: "BP Code NOT FOUND in Bp_Accounts table"
+            });
+          }
+        });
+
+        // ✅ STEP 5: Show results
+        if (invalidRecords.length > 0) {
+          console.log("\n⚠️⚠️⚠️ INVALID BP CODES FOUND:");
+          console.table(invalidRecords);
+
+          const invalidList = invalidRecords.slice(0, 15).map(r =>
+            `<li style="margin: 8px 0; padding: 8px; background: #fee; border-left: 4px solid #d33; border-radius: 4px;">
             <strong>Row ${r.Row}:</strong> <code style="background: #333; color: #ff6b6b; padding: 2px 6px; border-radius: 3px;">${r.BP_Code}</code><br>
             <small style="color: #666;">BP Name: ${r.BP_Name} | Distributor: ${r.Distributor}</small><br>
             <small style="color: #d33;">⚠️ ${r.Issue}</small>
           </li>`
-        ).join('');
+          ).join('');
 
-        Swal.fire({
-          icon: "error",
-          title: "🚫 INVALID BP CODES DETECTED!",
-          html: `
+          Swal.fire({
+            icon: "error",
+            title: "🚫 INVALID BP CODES DETECTED!",
+            html: `
             <div style="text-align:left; font-family: 'Segoe UI', sans-serif;">
               <div style="background: #fee; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #d33;">
                 <h3 style="color: #d33; margin: 0 0 10px 0;">⛔ EXCEL UPLOAD BLOCKED!</h3>
@@ -953,7 +1941,7 @@ const handleImportMother = async (e) => {
                 <ul style="list-style: none; padding: 0; margin: 0;">
                   ${invalidList}
                   ${invalidRecords.length > 15 ?
-                    `<li style="margin: 8px 0; padding: 8px; background: #fff3cd; border-left: 4px solid #ffc107;">
+                `<li style="margin: 8px 0; padding: 8px; background: #fff3cd; border-left: 4px solid #ffc107;">
                       <strong>... and ${(invalidRecords.length - 15).toLocaleString()} more</strong>
                     </li>` : ''}
                 </ul>
@@ -969,30 +1957,30 @@ const handleImportMother = async (e) => {
               </div>
             </div>
           `,
-          width: 800,
-          confirmButtonText: '❌ Close',
-          confirmButtonColor: '#d33',
-          allowOutsideClick: false
-        });
+            width: 800,
+            confirmButtonText: '❌ Close',
+            confirmButtonColor: '#d33',
+            allowOutsideClick: false
+          });
 
-        return;
-      }
+          return;
+        }
 
-      // ✅ ALL VALID
-      console.log("✅ All BP codes validated!");
+        // ✅ ALL VALID
+        console.log("✅ All BP codes validated!");
 
-      setFileName(file.name);
-      setImportData(processedData);
-      setCurrentPageExcel(1);
-      setTotalRows(processedData.length);
-      setProcessedRows(0);
-      setProgressPercent(0);
-      setDuplicatesChecked(false);
+        setFileName(file.name);
+        setImportData(processedData);
+        setCurrentPageExcel(1);
+        setTotalRows(processedData.length);
+        setProcessedRows(0);
+        setProgressPercent(0);
+        setDuplicatesChecked(false);
 
-      Swal.fire({
-        icon: "success",
-        title: "✅ Excel Uploaded Successfully!",
-        html: `
+        Swal.fire({
+          icon: "success",
+          title: "✅ Excel Uploaded Successfully!",
+          html: `
           <div style="text-align:left;">
             <p><strong>File:</strong> ${file.name}</p>
             <p><strong>Total Rows:</strong> ${processedData.length.toLocaleString()}</p>
@@ -1000,32 +1988,32 @@ const handleImportMother = async (e) => {
             <p style="color: #666; font-size: 13px; margin-top: 10px;">Ready to import all ${processedData.length.toLocaleString()} records</p>
           </div>
         `,
-        timer: 3000,
-        showConfirmButton: false
-      });
+          timer: 3000,
+          showConfirmButton: false
+        });
+
+      } catch (error) {
+        console.error('❌ Validation Error:', error);
+        Swal.close();
+        Swal.fire({
+          icon: 'error',
+          title: 'Validation Failed!',
+          text: error.message,
+          confirmButtonColor: '#d33'
+        });
+      }
 
     } catch (error) {
-      console.error('❌ Validation Error:', error);
+      console.error('❌ Error:', error);
       Swal.close();
       Swal.fire({
         icon: 'error',
-        title: 'Validation Failed!',
-        text: error.message,
+        title: 'Processing Failed!',
+        text: error.message || 'Failed to process Excel',
         confirmButtonColor: '#d33'
       });
     }
-
-  } catch (error) {
-    console.error('❌ Error:', error);
-    Swal.close();
-    Swal.fire({
-      icon: 'error',
-      title: 'Processing Failed!',
-      text: error.message || 'Failed to process Excel',
-      confirmButtonColor: '#d33'
-    });
-  }
-};
+  };
   // 🔹 Modal visibility
 
   // 🔹 Excel import data
@@ -1049,193 +2037,193 @@ const handleImportMother = async (e) => {
   const currentRowsExcel = importData.slice(indexOfFirstRowExcel, indexOfLastRowExcel);
   const totalPagesExcel = Math.ceil(importData.length / rowsPerPageExcel);
 
-const checkAndCleanBPTagging = async () => {
-  try {
-    console.log("\n🚀 ========== STARTING BP TAGGING CHECK ==========");
-    
-    // 1️⃣ Confirmation
-    const result = await Swal.fire({
-      title: '🔍 Check BP List Tagging',
-      text: 'This will check and remove accounts not existing in BP_Accounts. Continue?',
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, Check Now',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#3085d6',
-      cancelButtonColor: '#d33',
-    });
-    if (!result.isConfirmed) return;
+  const checkAndCleanBPTagging = async () => {
+    try {
+      console.log("\n🚀 ========== STARTING BP TAGGING CHECK ==========");
 
-    // 2️⃣ Loading while fetching Accounts_List
-    Swal.fire({
-      title: '🔄 Loading Accounts_List...',
-      html: '<span id="accounts-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>',
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading()
-    });
-
-    // 3️⃣ Fetch ALL Accounts_List with pagination
-    console.log("\n📥 STEP 1: Loading ALL Accounts_List records...");
-    const batchSize = 1000;
-    let allAccountsList = [];
-    let offset = 0;
-    let hasMore = true;
-
-    while (hasMore) {
-      const { data: batch, error } = await supabase
-        .from('Accounts_List')
-        .select('id, bp_code, bp_name, distributor_code, mother_code, agent_code, group_code')
-        .range(offset, offset + batchSize - 1);
-
-      if (error) {
-        console.error("❌ Error fetching Accounts_List:", error);
-        throw error;
-      }
-
-      if (batch && batch.length > 0) {
-        allAccountsList = [...allAccountsList, ...batch];
-        offset += batchSize;
-        hasMore = batch.length === batchSize;
-
-        const progressEl = document.getElementById('accounts-progress');
-        if (progressEl) {
-          progressEl.textContent = `${allAccountsList.length.toLocaleString()} loaded...`;
-        }
-
-        console.log(`📦 Batch ${Math.floor(offset / batchSize)}: Loaded ${allAccountsList.length.toLocaleString()} total Accounts_List records`);
-      } else {
-        hasMore = false;
-      }
-    }
-
-    console.log(`✅ Finished loading Accounts_List: ${allAccountsList.length.toLocaleString()} total records`);
-    console.log("📋 Sample Accounts_List (first 5):", allAccountsList.slice(0, 5));
-
-    // 4️⃣ Loading Bp_Accounts
-    Swal.update({
-      title: '🔄 Loading Bp_Accounts...',
-      html: '<span id="bp-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>'
-    });
-
-    console.log("\n📥 STEP 2: Loading ALL Bp_Accounts records...");
-    let allBpAccounts = [];
-    offset = 0;
-    hasMore = true;
-
-    while (hasMore) {
-      const { data: batch, error } = await supabase
-        .from('Bp_Accounts')
-        .select('bp_code')
-        .range(offset, offset + batchSize - 1);
-
-      if (error) {
-        console.error("❌ Error fetching Bp_Accounts:", error);
-        throw error;
-      }
-
-      if (batch && batch.length > 0) {
-        allBpAccounts = [...allBpAccounts, ...batch];
-        offset += batchSize;
-        hasMore = batch.length === batchSize;
-
-        const progressEl = document.getElementById('bp-progress');
-        if (progressEl) {
-          progressEl.textContent = `${allBpAccounts.length.toLocaleString()} loaded...`;
-        }
-
-        console.log(`📦 Batch ${Math.floor(offset / batchSize)}: Loaded ${allBpAccounts.length.toLocaleString()} total BP codes`);
-      } else {
-        hasMore = false;
-      }
-    }
-
-    console.log(`✅ Finished loading Bp_Accounts: ${allBpAccounts.length.toLocaleString()} total BP codes`);
-    console.log("📋 Sample Bp_Accounts (first 10):", allBpAccounts.slice(0, 10));
-
-    // 5️⃣ Checking for mismatches
-    Swal.update({
-      title: '🔍 Checking for mismatches...',
-      html: 'Comparing Accounts_List against Bp_Accounts...'
-    });
-
-    console.log("\n🔍 STEP 3: Checking for BP codes NOT in Bp_Accounts...");
-
-    // Normalize BP codes for matching
-    const normalize = str =>
-      (str || "")
-        .toString()
-        .trim()
-        .toUpperCase()
-        .replace(/[-–—]/g, "-")
-        .replace(/\s+/g, "")
-        .replace(/[^A-Z0-9-]/g, "");
-
-    const validBPCodes = new Set(allBpAccounts.map(bp => normalize(bp.bp_code)));
-    console.log(`✅ Valid BP Codes Set created: ${validBPCodes.size.toLocaleString()} unique codes`);
-    console.log("📋 Sample valid BP codes (first 10):", Array.from(validBPCodes).slice(0, 10));
-
-    // 6️⃣ Find accounts NOT in BP_Accounts
-    const accountsToDelete = [];
-    
-    allAccountsList.forEach((acc, idx) => {
-      const rawCode = acc.bp_code;
-      const normalizedCode = normalize(rawCode);
-      const exists = validBPCodes.has(normalizedCode);
-
-      if (!exists) {
-        accountsToDelete.push(acc);
-        
-        // Log first 10 mismatches in detail
-        if (accountsToDelete.length <= 10) {
-          console.log(`\n❌ MISMATCH #${accountsToDelete.length}:`);
-          console.log(`   Raw BP Code: "${rawCode}"`);
-          console.log(`   Normalized: "${normalizedCode}"`);
-          console.log(`   Exists in Bp_Accounts: ${exists}`);
-          console.log(`   Full Record:`, acc);
-        }
-      }
-    });
-
-    console.log(`\n📊 RESULTS:`);
-    console.log(`   Total Accounts_List: ${allAccountsList.length.toLocaleString()}`);
-    console.log(`   Valid BP Codes: ${validBPCodes.size.toLocaleString()}`);
-    console.log(`   ❌ NOT FOUND in Bp_Accounts: ${accountsToDelete.length.toLocaleString()}`);
-
-    if (accountsToDelete.length > 10) {
-      console.log(`\n⚠️ Total ${accountsToDelete.length} accounts NOT in Bp_Accounts`);
-      console.table(accountsToDelete.slice(0, 20)); // Show first 20 in table
-    } else if (accountsToDelete.length > 0) {
-      console.table(accountsToDelete);
-    }
-
-    Swal.close();
-
-    // 7️⃣ No deletion needed
-    if (accountsToDelete.length === 0) {
-      console.log("\n✅ ALL ACCOUNTS VALID! No cleanup needed.");
-      Swal.fire({
-        icon: 'success',
-        title: '✅ All Clear!',
-        text: 'All accounts exist in BP_Accounts.',
-        timer: 2000,
-        showConfirmButton: false
+      // 1️⃣ Confirmation
+      const result = await Swal.fire({
+        title: '🔍 Check BP List Tagging',
+        text: 'This will check and remove accounts not existing in BP_Accounts. Continue?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Check Now',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
       });
-      return;
-    }
+      if (!result.isConfirmed) return;
 
-    // 8️⃣ Show confirmation with PAGINATION
-    console.log("\n⚠️ Showing confirmation dialog for deletion...");
-    
-    let currentModalPage = 1;
-    const rowsPerModalPage = 15;
-    const totalModalPages = Math.ceil(accountsToDelete.length / rowsPerModalPage);
+      // 2️⃣ Loading while fetching Accounts_List
+      Swal.fire({
+        title: '🔄 Loading Accounts_List...',
+        html: '<span id="accounts-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+      });
 
-    const showPaginatedTable = (page) => {
-      const startIdx = (page - 1) * rowsPerModalPage;
-      const endIdx = startIdx + rowsPerModalPage;
-      const pageData = accountsToDelete.slice(startIdx, endIdx);
+      // 3️⃣ Fetch ALL Accounts_List with pagination
+      console.log("\n📥 STEP 1: Loading ALL Accounts_List records...");
+      const batchSize = 1000;
+      let allAccountsList = [];
+      let offset = 0;
+      let hasMore = true;
 
-      const tableRows = pageData.map(acc => `
+      while (hasMore) {
+        const { data: batch, error } = await supabase
+          .from('Accounts_List')
+          .select('id, bp_code, bp_name, distributor_code, mother_code, agent_code, group_code')
+          .range(offset, offset + batchSize - 1);
+
+        if (error) {
+          console.error("❌ Error fetching Accounts_List:", error);
+          throw error;
+        }
+
+        if (batch && batch.length > 0) {
+          allAccountsList = [...allAccountsList, ...batch];
+          offset += batchSize;
+          hasMore = batch.length === batchSize;
+
+          const progressEl = document.getElementById('accounts-progress');
+          if (progressEl) {
+            progressEl.textContent = `${allAccountsList.length.toLocaleString()} loaded...`;
+          }
+
+          console.log(`📦 Batch ${Math.floor(offset / batchSize)}: Loaded ${allAccountsList.length.toLocaleString()} total Accounts_List records`);
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`✅ Finished loading Accounts_List: ${allAccountsList.length.toLocaleString()} total records`);
+      console.log("📋 Sample Accounts_List (first 5):", allAccountsList.slice(0, 5));
+
+      // 4️⃣ Loading Bp_Accounts
+      Swal.update({
+        title: '🔄 Loading Bp_Accounts...',
+        html: '<span id="bp-progress" style="color:#2563eb;font-weight:600;">0 loaded...</span>'
+      });
+
+      console.log("\n📥 STEP 2: Loading ALL Bp_Accounts records...");
+      let allBpAccounts = [];
+      offset = 0;
+      hasMore = true;
+
+      while (hasMore) {
+        const { data: batch, error } = await supabase
+          .from('Bp_Accounts')
+          .select('bp_code')
+          .range(offset, offset + batchSize - 1);
+
+        if (error) {
+          console.error("❌ Error fetching Bp_Accounts:", error);
+          throw error;
+        }
+
+        if (batch && batch.length > 0) {
+          allBpAccounts = [...allBpAccounts, ...batch];
+          offset += batchSize;
+          hasMore = batch.length === batchSize;
+
+          const progressEl = document.getElementById('bp-progress');
+          if (progressEl) {
+            progressEl.textContent = `${allBpAccounts.length.toLocaleString()} loaded...`;
+          }
+
+          console.log(`📦 Batch ${Math.floor(offset / batchSize)}: Loaded ${allBpAccounts.length.toLocaleString()} total BP codes`);
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`✅ Finished loading Bp_Accounts: ${allBpAccounts.length.toLocaleString()} total BP codes`);
+      console.log("📋 Sample Bp_Accounts (first 10):", allBpAccounts.slice(0, 10));
+
+      // 5️⃣ Checking for mismatches
+      Swal.update({
+        title: '🔍 Checking for mismatches...',
+        html: 'Comparing Accounts_List against Bp_Accounts...'
+      });
+
+      console.log("\n🔍 STEP 3: Checking for BP codes NOT in Bp_Accounts...");
+
+      // Normalize BP codes for matching
+      const normalize = str =>
+        (str || "")
+          .toString()
+          .trim()
+          .toUpperCase()
+          .replace(/[-–—]/g, "-")
+          .replace(/\s+/g, "")
+          .replace(/[^A-Z0-9-]/g, "");
+
+      const validBPCodes = new Set(allBpAccounts.map(bp => normalize(bp.bp_code)));
+      console.log(`✅ Valid BP Codes Set created: ${validBPCodes.size.toLocaleString()} unique codes`);
+      console.log("📋 Sample valid BP codes (first 10):", Array.from(validBPCodes).slice(0, 10));
+
+      // 6️⃣ Find accounts NOT in BP_Accounts
+      const accountsToDelete = [];
+
+      allAccountsList.forEach((acc, idx) => {
+        const rawCode = acc.bp_code;
+        const normalizedCode = normalize(rawCode);
+        const exists = validBPCodes.has(normalizedCode);
+
+        if (!exists) {
+          accountsToDelete.push(acc);
+
+          // Log first 10 mismatches in detail
+          if (accountsToDelete.length <= 10) {
+            console.log(`\n❌ MISMATCH #${accountsToDelete.length}:`);
+            console.log(`   Raw BP Code: "${rawCode}"`);
+            console.log(`   Normalized: "${normalizedCode}"`);
+            console.log(`   Exists in Bp_Accounts: ${exists}`);
+            console.log(`   Full Record:`, acc);
+          }
+        }
+      });
+
+      console.log(`\n📊 RESULTS:`);
+      console.log(`   Total Accounts_List: ${allAccountsList.length.toLocaleString()}`);
+      console.log(`   Valid BP Codes: ${validBPCodes.size.toLocaleString()}`);
+      console.log(`   ❌ NOT FOUND in Bp_Accounts: ${accountsToDelete.length.toLocaleString()}`);
+
+      if (accountsToDelete.length > 10) {
+        console.log(`\n⚠️ Total ${accountsToDelete.length} accounts NOT in Bp_Accounts`);
+        console.table(accountsToDelete.slice(0, 20)); // Show first 20 in table
+      } else if (accountsToDelete.length > 0) {
+        console.table(accountsToDelete);
+      }
+
+      Swal.close();
+
+      // 7️⃣ No deletion needed
+      if (accountsToDelete.length === 0) {
+        console.log("\n✅ ALL ACCOUNTS VALID! No cleanup needed.");
+        Swal.fire({
+          icon: 'success',
+          title: '✅ All Clear!',
+          text: 'All accounts exist in BP_Accounts.',
+          timer: 2000,
+          showConfirmButton: false
+        });
+        return;
+      }
+
+      // 8️⃣ Show confirmation with PAGINATION
+      console.log("\n⚠️ Showing confirmation dialog for deletion...");
+
+      let currentModalPage = 1;
+      const rowsPerModalPage = 15;
+      const totalModalPages = Math.ceil(accountsToDelete.length / rowsPerModalPage);
+
+      const showPaginatedTable = (page) => {
+        const startIdx = (page - 1) * rowsPerModalPage;
+        const endIdx = startIdx + rowsPerModalPage;
+        const pageData = accountsToDelete.slice(startIdx, endIdx);
+
+        const tableRows = pageData.map(acc => `
         <tr class="border-b hover:bg-gray-50">
           <td class="px-3 py-2 text-sm">${acc.bp_code || 'N/A'}</td>
           <td class="px-3 py-2 text-sm">${acc.bp_name || 'N/A'}</td>
@@ -1246,7 +2234,7 @@ const checkAndCleanBPTagging = async () => {
         </tr>
       `).join('');
 
-      return `
+        return `
         <div class="text-left">
           <p class="mb-4 text-center">
             <strong>Found ${accountsToDelete.length.toLocaleString()} accounts not in BP_Accounts</strong>
@@ -1295,57 +2283,57 @@ const checkAndCleanBPTagging = async () => {
           <p class="mt-4 text-center text-red-600 font-semibold">Do you want to delete these accounts?</p>
         </div>
       `;
-    };
+      };
 
-    const deleteConfirm = await Swal.fire({
-      icon: 'warning',
-      title: '⚠️ Accounts Not in BP_Accounts',
-      html: showPaginatedTable(currentModalPage),
-      width: '950px',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, Delete All',
-      cancelButtonText: 'No, Cancel',
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      customClass: { htmlContainer: 'swal-wide-content' },
-      didOpen: () => {
-        // Handle pagination button clicks
-        const prevBtn = document.getElementById('prev-page-btn');
-        const nextBtn = document.getElementById('next-page-btn');
+      const deleteConfirm = await Swal.fire({
+        icon: 'warning',
+        title: '⚠️ Accounts Not in BP_Accounts',
+        html: showPaginatedTable(currentModalPage),
+        width: '950px',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Delete All',
+        cancelButtonText: 'No, Cancel',
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        customClass: { htmlContainer: 'swal-wide-content' },
+        didOpen: () => {
+          // Handle pagination button clicks
+          const prevBtn = document.getElementById('prev-page-btn');
+          const nextBtn = document.getElementById('next-page-btn');
 
-        if (prevBtn) {
-          prevBtn.onclick = () => {
-            if (currentModalPage > 1) {
-              currentModalPage--;
-              Swal.update({ html: showPaginatedTable(currentModalPage) });
-              // Re-attach event listeners after update
-              setTimeout(() => {
-                const newPrevBtn = document.getElementById('prev-page-btn');
-                const newNextBtn = document.getElementById('next-page-btn');
-                if (newPrevBtn) newPrevBtn.onclick = prevBtn.onclick;
-                if (newNextBtn) newNextBtn.onclick = nextBtn.onclick;
-              }, 0);
-            }
-          };
+          if (prevBtn) {
+            prevBtn.onclick = () => {
+              if (currentModalPage > 1) {
+                currentModalPage--;
+                Swal.update({ html: showPaginatedTable(currentModalPage) });
+                // Re-attach event listeners after update
+                setTimeout(() => {
+                  const newPrevBtn = document.getElementById('prev-page-btn');
+                  const newNextBtn = document.getElementById('next-page-btn');
+                  if (newPrevBtn) newPrevBtn.onclick = prevBtn.onclick;
+                  if (newNextBtn) newNextBtn.onclick = nextBtn.onclick;
+                }, 0);
+              }
+            };
+          }
+
+          if (nextBtn) {
+            nextBtn.onclick = () => {
+              if (currentModalPage < totalModalPages) {
+                currentModalPage++;
+                Swal.update({ html: showPaginatedTable(currentModalPage) });
+                // Re-attach event listeners after update
+                setTimeout(() => {
+                  const newPrevBtn = document.getElementById('prev-page-btn');
+                  const newNextBtn = document.getElementById('next-page-btn');
+                  if (newPrevBtn) newPrevBtn.onclick = prevBtn.onclick;
+                  if (newNextBtn) newNextBtn.onclick = nextBtn.onclick;
+                }, 0);
+              }
+            };
+          }
         }
-
-        if (nextBtn) {
-          nextBtn.onclick = () => {
-            if (currentModalPage < totalModalPages) {
-              currentModalPage++;
-              Swal.update({ html: showPaginatedTable(currentModalPage) });
-              // Re-attach event listeners after update
-              setTimeout(() => {
-                const newPrevBtn = document.getElementById('prev-page-btn');
-                const newNextBtn = document.getElementById('next-page-btn');
-                if (newPrevBtn) newPrevBtn.onclick = prevBtn.onclick;
-                if (newNextBtn) newNextBtn.onclick = nextBtn.onclick;
-              }, 0);
-            }
-          };
-        }
-      }
-    });
+      });
 
 
 
@@ -1358,75 +2346,75 @@ const checkAndCleanBPTagging = async () => {
 
 
 
-    
 
-    if (!deleteConfirm.isConfirmed) {
-      console.log("\n❌ User cancelled deletion");
-      Swal.fire('Cancelled', 'No accounts were deleted.', 'info');
-      return;
-    }
 
-    // 9️⃣ Delete in batches
-    console.log("\n🗑️ STEP 4: Starting deletion process...");
-    
-    Swal.fire({
-      title: '🗑️ Deleting...',
-      html: `Deleting ${accountsToDelete.length.toLocaleString()} accounts...`,
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading()
-    });
-
-    const idsToDelete = accountsToDelete.map(acc => acc.id);
-    const deleteBatchSize = 100;
-    let deletedCount = 0;
-
-    for (let i = 0; i < idsToDelete.length; i += deleteBatchSize) {
-      const batch = idsToDelete.slice(i, i + deleteBatchSize);
-      
-      console.log(`🗑️ Deleting batch ${Math.floor(i / deleteBatchSize) + 1}: ${batch.length} records`);
-      
-      const { error: deleteError } = await supabase
-        .from('Accounts_List')
-        .delete()
-        .in('id', batch);
-        
-      if (deleteError) {
-        console.error(`❌ Batch delete failed:`, deleteError);
-        throw deleteError;
+      if (!deleteConfirm.isConfirmed) {
+        console.log("\n❌ User cancelled deletion");
+        Swal.fire('Cancelled', 'No accounts were deleted.', 'info');
+        return;
       }
 
-      deletedCount += batch.length;
-      console.log(`✅ Deleted ${deletedCount}/${idsToDelete.length} records so far`);
-      
-      Swal.update({ html: `Deleted ${deletedCount.toLocaleString()} of ${idsToDelete.length.toLocaleString()} accounts...` });
+      // 9️⃣ Delete in batches
+      console.log("\n🗑️ STEP 4: Starting deletion process...");
+
+      Swal.fire({
+        title: '🗑️ Deleting...',
+        html: `Deleting ${accountsToDelete.length.toLocaleString()} accounts...`,
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+      });
+
+      const idsToDelete = accountsToDelete.map(acc => acc.id);
+      const deleteBatchSize = 100;
+      let deletedCount = 0;
+
+      for (let i = 0; i < idsToDelete.length; i += deleteBatchSize) {
+        const batch = idsToDelete.slice(i, i + deleteBatchSize);
+
+        console.log(`🗑️ Deleting batch ${Math.floor(i / deleteBatchSize) + 1}: ${batch.length} records`);
+
+        const { error: deleteError } = await supabase
+          .from('Accounts_List')
+          .delete()
+          .in('id', batch);
+
+        if (deleteError) {
+          console.error(`❌ Batch delete failed:`, deleteError);
+          throw deleteError;
+        }
+
+        deletedCount += batch.length;
+        console.log(`✅ Deleted ${deletedCount}/${idsToDelete.length} records so far`);
+
+        Swal.update({ html: `Deleted ${deletedCount.toLocaleString()} of ${idsToDelete.length.toLocaleString()} accounts...` });
+      }
+
+      console.log(`\n✅ DELETION COMPLETE: ${deletedCount.toLocaleString()} records deleted`);
+      console.log("🚀 ========== BP TAGGING CHECK FINISHED ==========\n");
+
+      // ✅ Final success
+      await Swal.fire({
+        icon: 'success',
+        title: '✅ Cleanup Complete!',
+        html: `<p class="text-center text-green-600 font-bold">Successfully deleted ${deletedCount.toLocaleString()} accounts not in BP_Accounts.</p>`,
+        confirmButtonText: 'OK'
+      });
+
+      // Refresh data
+      fetchAndCleanData(currentPage, searchTerm, searchField);
+
+    } catch (err) {
+      console.error('\n💥 ERROR in checkAndCleanBPTagging:', err);
+      console.error('Error details:', err.message);
+      console.error('Stack trace:', err.stack);
+
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err.message || 'Failed to check BP tagging',
+      });
     }
-
-    console.log(`\n✅ DELETION COMPLETE: ${deletedCount.toLocaleString()} records deleted`);
-    console.log("🚀 ========== BP TAGGING CHECK FINISHED ==========\n");
-
-    // ✅ Final success
-    await Swal.fire({
-      icon: 'success',
-      title: '✅ Cleanup Complete!',
-      html: `<p class="text-center text-green-600 font-bold">Successfully deleted ${deletedCount.toLocaleString()} accounts not in BP_Accounts.</p>`,
-      confirmButtonText: 'OK'
-    });
-
-    // Refresh data
-    fetchAndCleanData(currentPage, searchTerm, searchField);
-
-  } catch (err) {
-    console.error('\n💥 ERROR in checkAndCleanBPTagging:', err);
-    console.error('Error details:', err.message);
-    console.error('Stack trace:', err.stack);
-    
-    Swal.fire({
-      icon: 'error',
-      title: 'Error',
-      text: err.message || 'Failed to check BP tagging',
-    });
-  }
-};
+  };
 
   // 🔹 File ref
   const fileInputRef = useRef(null);
@@ -1439,418 +2427,418 @@ const checkAndCleanBPTagging = async () => {
     fetchGroupMap();
   }, []);
 
-const fetchAllData = async (search = "", field = "all") => {
-  try {
-    setLoading(true);
-    console.log("🚀 Fetching ALL records...");
+  const fetchAllData = async (search = "", field = "all") => {
+    try {
+      setLoading(true);
+      console.log("🚀 Fetching ALL records...");
 
-    let query = supabase
-      .from("Accounts_List")
-      .select("*", { count: "exact" })
-      .order("id", { ascending: true });
+      let query = supabase
+        .from("Accounts_List")
+        .select("*", { count: "exact" })
+        .order("id", { ascending: true });
 
-    // Apply account type filter
-   // ✅ APPLY ACCOUNT TYPE FILTER FIRST (before search)
-if (accountTypeFilter === "mother_only") {
-  console.log("📊 Applying Mother Only filter: mother_code exists");
-  query = query.not('mother_code', 'is', null).not('mother_code', 'eq', '');
-} else if (accountTypeFilter === "bp_only") {
-  console.log("📊 Applying BP Only filter: bp_code exists");
-  query = query.not('bp_code', 'is', null).not('bp_code', 'eq', '');
-} else if (accountTypeFilter === "agent_only") {
-  console.log("📊 Applying Agent Only filter: agent_code exists");
-  query = query.not('agent_code', 'is', null).not('agent_code', 'eq', '');
-} else if (accountTypeFilter === "distributor_only") {
-  console.log("📊 Applying Distributor Only filter: distributor_code exists");
-  query = query.not('distributor_code', 'is', null).not('distributor_code', 'eq', '');
-} else if (accountTypeFilter === "group_only") {
-  console.log("📊 Applying Group Only filter: group_code exists");
-  query = query.not('group_code', 'is', null).not('group_code', 'eq', '');
-} else {
-  console.log("📊 No account type filter applied (showing all)");
-}
+      // Apply account type filter
+      // ✅ APPLY ACCOUNT TYPE FILTER FIRST (before search)
+      if (accountTypeFilter === "mother_only") {
+        console.log("📊 Applying Mother Only filter: mother_code exists");
+        query = query.not('mother_code', 'is', null).not('mother_code', 'eq', '');
+      } else if (accountTypeFilter === "bp_only") {
+        console.log("📊 Applying BP Only filter: bp_code exists");
+        query = query.not('bp_code', 'is', null).not('bp_code', 'eq', '');
+      } else if (accountTypeFilter === "agent_only") {
+        console.log("📊 Applying Agent Only filter: agent_code exists");
+        query = query.not('agent_code', 'is', null).not('agent_code', 'eq', '');
+      } else if (accountTypeFilter === "distributor_only") {
+        console.log("📊 Applying Distributor Only filter: distributor_code exists");
+        query = query.not('distributor_code', 'is', null).not('distributor_code', 'eq', '');
+      } else if (accountTypeFilter === "group_only") {
+        console.log("📊 Applying Group Only filter: group_code exists");
+        query = query.not('group_code', 'is', null).not('group_code', 'eq', '');
+      } else {
+        console.log("📊 No account type filter applied (showing all)");
+      }
 
-    // Apply search filters (same as paginated version)
-    if (search.trim()) {
-      const searchTerm = search.trim().toLowerCase();
-      
-      if (field === 'all') {
-        const [distData, motherData, agentData, groupData] = await Promise.all([
-          supabase.from('distributors').select('code, name'),
-          supabase.from('sub_mother_account').select('dscode, name'),
-          supabase.from('Account_Users').select('UserID, name'),
-          supabase.from('mother_account').select('code, name')
-        ]);
+      // Apply search filters (same as paginated version)
+      if (search.trim()) {
+        const searchTerm = search.trim().toLowerCase();
 
-        const distCodes = new Set();
-        distData.data?.forEach(d => {
-          if (d.name && d.name.toLowerCase().includes(searchTerm)) {
-            distCodes.add(d.code);
+        if (field === 'all') {
+          const [distData, motherData, agentData, groupData] = await Promise.all([
+            supabase.from('distributors').select('code, name'),
+            supabase.from('sub_mother_account').select('dscode, name'),
+            supabase.from('Account_Users').select('UserID, name'),
+            supabase.from('mother_account').select('code, name')
+          ]);
+
+          const distCodes = new Set();
+          distData.data?.forEach(d => {
+            if (d.name && d.name.toLowerCase().includes(searchTerm)) {
+              distCodes.add(d.code);
+            }
+          });
+
+          const motherCodes = new Set();
+          motherData.data?.forEach(m => {
+            if (m.name && m.name.toLowerCase().includes(searchTerm)) {
+              motherCodes.add(m.dscode);
+            }
+          });
+
+          const agentCodes = new Set();
+          agentData.data?.forEach(a => {
+            if (a.name && a.name.toLowerCase().includes(searchTerm)) {
+              agentCodes.add(a.UserID);
+            }
+          });
+
+          const groupCodes = new Set();
+          groupData.data?.forEach(g => {
+            if (g.name && g.name.toLowerCase().includes(searchTerm)) {
+              groupCodes.add(g.code);
+            }
+          });
+
+          const conditions = [
+            `distributor_code.ilike.%${search}%`,
+            `mother_code.ilike.%${search}%`,
+            `bp_code.ilike.%${search}%`,
+            `bp_name.ilike.%${search}%`,
+            `group_code.ilike.%${search}%`
+          ];
+
+          if (distCodes.size > 0) {
+            conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
           }
-        });
-
-        const motherCodes = new Set();
-        motherData.data?.forEach(m => {
-          if (m.name && m.name.toLowerCase().includes(searchTerm)) {
-            motherCodes.add(m.dscode);
+          if (motherCodes.size > 0) {
+            conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
           }
-        });
-
-        const agentCodes = new Set();
-        agentData.data?.forEach(a => {
-          if (a.name && a.name.toLowerCase().includes(searchTerm)) {
-            agentCodes.add(a.UserID);
+          if (agentCodes.size > 0) {
+            conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`);
           }
-        });
-
-        const groupCodes = new Set();
-        groupData.data?.forEach(g => {
-          if (g.name && g.name.toLowerCase().includes(searchTerm)) {
-            groupCodes.add(g.code);
+          if (groupCodes.size > 0) {
+            conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
           }
-        });
 
-        const conditions = [
-          `distributor_code.ilike.%${search}%`,
-          `mother_code.ilike.%${search}%`,
-          `bp_code.ilike.%${search}%`,
-          `bp_name.ilike.%${search}%`,
-          `group_code.ilike.%${search}%`
-        ];
+          if (!isNaN(search)) {
+            conditions.push(`agent_code.eq.${search}`);
+          }
 
-        if (distCodes.size > 0) {
-          conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
-        }
-        if (motherCodes.size > 0) {
-          conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
-        }
-        if (agentCodes.size > 0) {
-          conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`);
-        }
-        if (groupCodes.size > 0) {
-          conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
-        }
-
-        if (!isNaN(search)) {
-          conditions.push(`agent_code.eq.${search}`);
-        }
-
-        query = query.or(conditions.join(','));
-      } else if (field === 'distributor') {
-        const { data: distData } = await supabase.from('distributors').select('code, name');
-        const distCodes = new Set();
-        distData?.forEach(d => {
-          if ((d.code && d.code.toLowerCase().includes(searchTerm)) ||
-            (d.name && d.name.toLowerCase().includes(searchTerm))) {
-            distCodes.add(d.code);
+          query = query.or(conditions.join(','));
+        } else if (field === 'distributor') {
+          const { data: distData } = await supabase.from('distributors').select('code, name');
+          const distCodes = new Set();
+          distData?.forEach(d => {
+            if ((d.code && d.code.toLowerCase().includes(searchTerm)) ||
+              (d.name && d.name.toLowerCase().includes(searchTerm))) {
+              distCodes.add(d.code);
+            }
+          });
+          if (distCodes.size > 0) {
+            query = query.in('distributor_code', Array.from(distCodes));
+          } else {
+            query = query.ilike('distributor_code', `%${search}%`);
           }
-        });
-        if (distCodes.size > 0) {
-          query = query.in('distributor_code', Array.from(distCodes));
-        } else {
-          query = query.ilike('distributor_code', `%${search}%`);
-        }
-      } else if (field === 'mother') {
-        const { data: motherData } = await supabase.from('sub_mother_account').select('dscode, name');
-        const motherCodes = new Set();
-        motherData?.forEach(m => {
-          if ((m.dscode && m.dscode.toLowerCase().includes(searchTerm)) ||
-            (m.name && m.name.toLowerCase().includes(searchTerm))) {
-            motherCodes.add(m.dscode);
+        } else if (field === 'mother') {
+          const { data: motherData } = await supabase.from('sub_mother_account').select('dscode, name');
+          const motherCodes = new Set();
+          motherData?.forEach(m => {
+            if ((m.dscode && m.dscode.toLowerCase().includes(searchTerm)) ||
+              (m.name && m.name.toLowerCase().includes(searchTerm))) {
+              motherCodes.add(m.dscode);
+            }
+          });
+          if (motherCodes.size > 0) {
+            query = query.in('mother_code', Array.from(motherCodes));
+          } else {
+            query = query.ilike('mother_code', `%${search}%`);
           }
-        });
-        if (motherCodes.size > 0) {
-          query = query.in('mother_code', Array.from(motherCodes));
-        } else {
-          query = query.ilike('mother_code', `%${search}%`);
-        }
-      } else if (field === 'bp_code') {
-        query = query.ilike('bp_code', `%${search}%`);
-      } else if (field === 'bp_name') {
-        query = query.ilike('bp_name', `%${search}%`);
-      } else if (field === 'agent') {
-        const { data: agentData } = await supabase.from('Account_Users').select('UserID, name');
-        const agentCodes = new Set();
-        agentData?.forEach(a => {
-          if ((a.UserID && String(a.UserID).includes(search)) ||
-            (a.name && a.name.toLowerCase().includes(searchTerm))) {
-            agentCodes.add(a.UserID);
+        } else if (field === 'bp_code') {
+          query = query.ilike('bp_code', `%${search}%`);
+        } else if (field === 'bp_name') {
+          query = query.ilike('bp_name', `%${search}%`);
+        } else if (field === 'agent') {
+          const { data: agentData } = await supabase.from('Account_Users').select('UserID, name');
+          const agentCodes = new Set();
+          agentData?.forEach(a => {
+            if ((a.UserID && String(a.UserID).includes(search)) ||
+              (a.name && a.name.toLowerCase().includes(searchTerm))) {
+              agentCodes.add(a.UserID);
+            }
+          });
+          if (agentCodes.size > 0) {
+            query = query.in('agent_code', Array.from(agentCodes));
+          } else if (!isNaN(search)) {
+            query = query.eq('agent_code', parseInt(search));
           }
-        });
-        if (agentCodes.size > 0) {
-          query = query.in('agent_code', Array.from(agentCodes));
-        } else if (!isNaN(search)) {
-          query = query.eq('agent_code', parseInt(search));
-        }
-      } else if (field === 'group') {
-        const { data: groupData } = await supabase.from('mother_account').select('code, name');
-        const groupCodes = new Set();
-        groupData?.forEach(g => {
-          if ((g.code && g.code.toLowerCase().includes(searchTerm)) ||
-            (g.name && g.name.toLowerCase().includes(searchTerm))) {
-            groupCodes.add(g.code);
+        } else if (field === 'group') {
+          const { data: groupData } = await supabase.from('mother_account').select('code, name');
+          const groupCodes = new Set();
+          groupData?.forEach(g => {
+            if ((g.code && g.code.toLowerCase().includes(searchTerm)) ||
+              (g.name && g.name.toLowerCase().includes(searchTerm))) {
+              groupCodes.add(g.code);
+            }
+          });
+          if (groupCodes.size > 0) {
+            query = query.in('group_code', Array.from(groupCodes));
+          } else {
+            query = query.ilike('group_code', `%${search}%`);
           }
-        });
-        if (groupCodes.size > 0) {
-          query = query.in('group_code', Array.from(groupCodes));
-        } else {
-          query = query.ilike('group_code', `%${search}%`);
         }
       }
+
+      // Fetch ALL records in batches
+      const BATCH_SIZE = 1000;
+      let allRecords = [];
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data: batch, error } = await query.range(offset, offset + BATCH_SIZE - 1);
+
+        if (error) throw error;
+
+        if (batch && batch.length > 0) {
+          allRecords = [...allRecords, ...batch];
+          offset += BATCH_SIZE;
+          hasMore = batch.length === BATCH_SIZE;
+
+          console.log(`📦 Loaded ${allRecords.length.toLocaleString()} records so far...`);
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`✅ Finished loading ${allRecords.length.toLocaleString()} total records`);
+
+      const uniqueData = await autoRemoveDuplicatesOnLoad(allRecords);
+      setData(uniqueData);
+      setTotalCount(uniqueData.length);
+      setLoading(false);
+    } catch (err) {
+      console.error("Error fetching all data:", err);
+      Swal.fire("Error", err.message, "error");
+      setLoading(false);
+    }
+  };
+  const fetchAndCleanData = async (page = 1, search = "", field = "all") => {
+    // ✅ Prevent multiple simultaneous fetches
+    if (isFetching) {
+      console.log("⚠️ Already fetching, skipping...");
+      return;
     }
 
-    // Fetch ALL records in batches
-    const BATCH_SIZE = 1000;
-    let allRecords = [];
-    let offset = 0;
-    let hasMore = true;
+    try {
+      setIsFetching(true);
+      setLoading(true);
+      const batchSize = itemsPerPage;
+      const offset = (page - 1) * batchSize;
 
-    while (hasMore) {
-      const { data: batch, error } = await query.range(offset, offset + BATCH_SIZE - 1);
-      
+      let query = supabase
+        .from("Accounts_List")
+        .select("*", { count: "exact" })
+        .order("id", { ascending: true });
+
+      // ✅ DEBUGGING: Log the filter
+      console.log("🔍 Current Filter State:", {
+        accountTypeFilter,
+        searchField: field,
+        searchTerm: search,
+        page
+      });
+
+      // ✅ APPLY ACCOUNT TYPE FILTER FIRST (before search)
+      if (accountTypeFilter === "mother_only") {
+        console.log("📊 Applying Mother Only filter: mother_code exists");
+        query = query.not('mother_code', 'is', null).not('mother_code', 'eq', '');
+      } else if (accountTypeFilter === "bp_only") {
+        console.log("📊 Applying BP Only filter: bp_code exists");
+        query = query.not('bp_code', 'is', null).not('bp_code', 'eq', '');
+      } else {
+        console.log("📊 No account type filter applied (showing all)");
+      }
+
+      // ✅ THEN APPLY SEARCH FILTERS
+      if (search.trim()) {
+        const searchTerm = search.trim().toLowerCase();
+
+        if (field === 'all') {
+          const [distData, motherData, agentData, groupData] = await Promise.all([
+            supabase.from('distributors').select('code, name'),
+            supabase.from('sub_mother_account').select('dscode, name'),
+            supabase.from('Account_Users').select('UserID, name'),
+            supabase.from('mother_account').select('code, name')
+          ]);
+
+          const distCodes = new Set();
+          distData.data?.forEach(d => {
+            if (d.name && d.name.toLowerCase().includes(searchTerm)) {
+              distCodes.add(d.code);
+            }
+          });
+
+          const motherCodes = new Set();
+          motherData.data?.forEach(m => {
+            if (m.name && m.name.toLowerCase().includes(searchTerm)) {
+              motherCodes.add(m.dscode);
+            }
+          });
+
+          const agentCodes = new Set();
+          agentData.data?.forEach(a => {
+            if (a.name && a.name.toLowerCase().includes(searchTerm)) {
+              agentCodes.add(a.UserID);
+            }
+          });
+
+          const groupCodes = new Set();
+          groupData.data?.forEach(g => {
+            if (g.name && g.name.toLowerCase().includes(searchTerm)) {
+              groupCodes.add(g.code);
+            }
+          });
+
+          const conditions = [
+            `distributor_code.ilike.%${search}%`,
+            `mother_code.ilike.%${search}%`,
+            `bp_code.ilike.%${search}%`,
+            `bp_name.ilike.%${search}%`,
+            `group_code.ilike.%${search}%`
+          ];
+
+          if (distCodes.size > 0) {
+            conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
+          }
+          if (motherCodes.size > 0) {
+            conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
+          }
+          if (agentCodes.size > 0) {
+            conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`);
+          }
+          if (groupCodes.size > 0) {
+            conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
+          }
+
+          if (!isNaN(search)) {
+            conditions.push(`agent_code.eq.${search}`);
+          }
+
+          query = query.or(conditions.join(','));
+        } else if (field === 'distributor') {
+          const { data: distData } = await supabase
+            .from('distributors')
+            .select('code, name');
+
+          const distCodes = new Set();
+          distData?.forEach(d => {
+            if ((d.code && d.code.toLowerCase().includes(searchTerm)) ||
+              (d.name && d.name.toLowerCase().includes(searchTerm))) {
+              distCodes.add(d.code);
+            }
+          });
+
+          if (distCodes.size > 0) {
+            query = query.in('distributor_code', Array.from(distCodes));
+          } else {
+            query = query.ilike('distributor_code', `%${search}%`);
+          }
+        } else if (field === 'mother') {
+          const { data: motherData } = await supabase
+            .from('sub_mother_account')
+            .select('dscode, name');
+
+          const motherCodes = new Set();
+          motherData?.forEach(m => {
+            if ((m.dscode && m.dscode.toLowerCase().includes(searchTerm)) ||
+              (m.name && m.name.toLowerCase().includes(searchTerm))) {
+              motherCodes.add(m.dscode);
+            }
+          });
+
+          if (motherCodes.size > 0) {
+            query = query.in('mother_code', Array.from(motherCodes));
+          } else {
+            query = query.ilike('mother_code', `%${search}%`);
+          }
+        } else if (field === 'bp_code') {
+          query = query.ilike('bp_code', `%${search}%`);
+        } else if (field === 'bp_name') {
+          query = query.ilike('bp_name', `%${search}%`);
+        } else if (field === 'agent') {
+          const { data: agentData } = await supabase
+            .from('Account_Users')
+            .select('UserID, name');
+
+          const agentCodes = new Set();
+          agentData?.forEach(a => {
+            if ((a.UserID && String(a.UserID).includes(search)) ||
+              (a.name && a.name.toLowerCase().includes(searchTerm))) {
+              agentCodes.add(a.UserID);
+            }
+          });
+
+          if (agentCodes.size > 0) {
+            query = query.in('agent_code', Array.from(agentCodes));
+          } else if (!isNaN(search)) {
+            query = query.eq('agent_code', parseInt(search));
+          }
+        } else if (field === 'group') {
+          const { data: groupData } = await supabase
+            .from('mother_account')
+            .select('code, name');
+
+          const groupCodes = new Set();
+          groupData?.forEach(g => {
+            if ((g.code && g.code.toLowerCase().includes(searchTerm)) ||
+              (g.name && g.name.toLowerCase().includes(searchTerm))) {
+              groupCodes.add(g.code);
+            }
+          });
+
+          if (groupCodes.size > 0) {
+            query = query.in('group_code', Array.from(groupCodes));
+          } else {
+            query = query.ilike('group_code', `%${search}%`);
+          }
+        }
+      }
+
+      // ✅ APPLY PAGINATION LAST (after all filters)
+      query = query.range(offset, offset + batchSize - 1);
+
+      const { data: pageData, error, count } = await query;
+
       if (error) throw error;
 
-      if (batch && batch.length > 0) {
-        allRecords = [...allRecords, ...batch];
-        offset += BATCH_SIZE;
-        hasMore = batch.length === BATCH_SIZE;
-        
-        console.log(`📦 Loaded ${allRecords.length.toLocaleString()} records so far...`);
-      } else {
-        hasMore = false;
-      }
+      // ✅ DEBUGGING: Log results
+      console.log("📊 FINAL RESULTS:");
+      console.log("   Total Count:", count);
+      console.log("   Records on this page:", pageData?.length);
+
+      // Clean duplicates
+      const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
+
+      setData(uniqueData);
+      setTotalCount(count || 0);
+      setLoading(false);
+      setIsFetching(false);
+    } catch (err) {
+      console.error("Error:", err);
+      Swal.fire("Error", err.message, "error");
+      setLoading(false);
+      setIsFetching(false);
     }
-
-    console.log(`✅ Finished loading ${allRecords.length.toLocaleString()} total records`);
-
-    const uniqueData = await autoRemoveDuplicatesOnLoad(allRecords);
-    setData(uniqueData);
-    setTotalCount(uniqueData.length);
-    setLoading(false);
-  } catch (err) {
-    console.error("Error fetching all data:", err);
-    Swal.fire("Error", err.message, "error");
-    setLoading(false);
-  }
-};
-const fetchAndCleanData = async (page = 1, search = "", field = "all") => {
-  // ✅ Prevent multiple simultaneous fetches
-  if (isFetching) {
-    console.log("⚠️ Already fetching, skipping...");
-    return;
-  }
-
-  try {
-    setIsFetching(true);
-    setLoading(true);
-    const batchSize = itemsPerPage;
-    const offset = (page - 1) * batchSize;
-
-    let query = supabase
-      .from("Accounts_List")
-      .select("*", { count: "exact" })
-      .order("id", { ascending: true });
-
-    // ✅ DEBUGGING: Log the filter
-    console.log("🔍 Current Filter State:", {
-      accountTypeFilter,
-      searchField: field,
-      searchTerm: search,
-      page
-    });
-
-    // ✅ APPLY ACCOUNT TYPE FILTER FIRST (before search)
-    if (accountTypeFilter === "mother_only") {
-      console.log("📊 Applying Mother Only filter: mother_code exists");
-      query = query.not('mother_code', 'is', null).not('mother_code', 'eq', '');
-    } else if (accountTypeFilter === "bp_only") {
-      console.log("📊 Applying BP Only filter: bp_code exists");
-      query = query.not('bp_code', 'is', null).not('bp_code', 'eq', '');
-    } else {
-      console.log("📊 No account type filter applied (showing all)");
-    }
-
-    // ✅ THEN APPLY SEARCH FILTERS
-    if (search.trim()) {
-      const searchTerm = search.trim().toLowerCase();
-
-      if (field === 'all') {
-        const [distData, motherData, agentData, groupData] = await Promise.all([
-          supabase.from('distributors').select('code, name'),
-          supabase.from('sub_mother_account').select('dscode, name'),
-          supabase.from('Account_Users').select('UserID, name'),
-          supabase.from('mother_account').select('code, name')
-        ]);
-
-        const distCodes = new Set();
-        distData.data?.forEach(d => {
-          if (d.name && d.name.toLowerCase().includes(searchTerm)) {
-            distCodes.add(d.code);
-          }
-        });
-
-        const motherCodes = new Set();
-        motherData.data?.forEach(m => {
-          if (m.name && m.name.toLowerCase().includes(searchTerm)) {
-            motherCodes.add(m.dscode);
-          }
-        });
-
-        const agentCodes = new Set();
-        agentData.data?.forEach(a => {
-          if (a.name && a.name.toLowerCase().includes(searchTerm)) {
-            agentCodes.add(a.UserID);
-          }
-        });
-
-        const groupCodes = new Set();
-        groupData.data?.forEach(g => {
-          if (g.name && g.name.toLowerCase().includes(searchTerm)) {
-            groupCodes.add(g.code);
-          }
-        });
-
-        const conditions = [
-          `distributor_code.ilike.%${search}%`,
-          `mother_code.ilike.%${search}%`,
-          `bp_code.ilike.%${search}%`,
-          `bp_name.ilike.%${search}%`,
-          `group_code.ilike.%${search}%`
-        ];
-
-        if (distCodes.size > 0) {
-          conditions.push(`distributor_code.in.(${Array.from(distCodes).join(',')})`);
-        }
-        if (motherCodes.size > 0) {
-          conditions.push(`mother_code.in.(${Array.from(motherCodes).join(',')})`);
-        }
-        if (agentCodes.size > 0) {
-          conditions.push(`agent_code.in.(${Array.from(agentCodes).join(',')})`);
-        }
-        if (groupCodes.size > 0) {
-          conditions.push(`group_code.in.(${Array.from(groupCodes).join(',')})`);
-        }
-
-        if (!isNaN(search)) {
-          conditions.push(`agent_code.eq.${search}`);
-        }
-
-        query = query.or(conditions.join(','));
-      } else if (field === 'distributor') {
-        const { data: distData } = await supabase
-          .from('distributors')
-          .select('code, name');
-
-        const distCodes = new Set();
-        distData?.forEach(d => {
-          if ((d.code && d.code.toLowerCase().includes(searchTerm)) ||
-            (d.name && d.name.toLowerCase().includes(searchTerm))) {
-            distCodes.add(d.code);
-          }
-        });
-
-        if (distCodes.size > 0) {
-          query = query.in('distributor_code', Array.from(distCodes));
-        } else {
-          query = query.ilike('distributor_code', `%${search}%`);
-        }
-      } else if (field === 'mother') {
-        const { data: motherData } = await supabase
-          .from('sub_mother_account')
-          .select('dscode, name');
-
-        const motherCodes = new Set();
-        motherData?.forEach(m => {
-          if ((m.dscode && m.dscode.toLowerCase().includes(searchTerm)) ||
-            (m.name && m.name.toLowerCase().includes(searchTerm))) {
-            motherCodes.add(m.dscode);
-          }
-        });
-
-        if (motherCodes.size > 0) {
-          query = query.in('mother_code', Array.from(motherCodes));
-        } else {
-          query = query.ilike('mother_code', `%${search}%`);
-        }
-      } else if (field === 'bp_code') {
-        query = query.ilike('bp_code', `%${search}%`);
-      } else if (field === 'bp_name') {
-        query = query.ilike('bp_name', `%${search}%`);
-      } else if (field === 'agent') {
-        const { data: agentData } = await supabase
-          .from('Account_Users')
-          .select('UserID, name');
-
-        const agentCodes = new Set();
-        agentData?.forEach(a => {
-          if ((a.UserID && String(a.UserID).includes(search)) ||
-            (a.name && a.name.toLowerCase().includes(searchTerm))) {
-            agentCodes.add(a.UserID);
-          }
-        });
-
-        if (agentCodes.size > 0) {
-          query = query.in('agent_code', Array.from(agentCodes));
-        } else if (!isNaN(search)) {
-          query = query.eq('agent_code', parseInt(search));
-        }
-      } else if (field === 'group') {
-        const { data: groupData } = await supabase
-          .from('mother_account')
-          .select('code, name');
-
-        const groupCodes = new Set();
-        groupData?.forEach(g => {
-          if ((g.code && g.code.toLowerCase().includes(searchTerm)) ||
-            (g.name && g.name.toLowerCase().includes(searchTerm))) {
-            groupCodes.add(g.code);
-          }
-        });
-
-        if (groupCodes.size > 0) {
-          query = query.in('group_code', Array.from(groupCodes));
-        } else {
-          query = query.ilike('group_code', `%${search}%`);
-        }
-      }
-    }
-
-    // ✅ APPLY PAGINATION LAST (after all filters)
-    query = query.range(offset, offset + batchSize - 1);
-
-    const { data: pageData, error, count } = await query;
-
-    if (error) throw error;
-
-    // ✅ DEBUGGING: Log results
-    console.log("📊 FINAL RESULTS:");
-    console.log("   Total Count:", count);
-    console.log("   Records on this page:", pageData?.length);
-
-    // Clean duplicates
-    const uniqueData = await autoRemoveDuplicatesOnLoad(pageData);
-
-    setData(uniqueData);
-    setTotalCount(count || 0);
-    setLoading(false);
-    setIsFetching(false);
-  } catch (err) {
-    console.error("Error:", err);
-    Swal.fire("Error", err.message, "error");
-    setLoading(false);
-    setIsFetching(false);
-  }
-};
+  };
 
   // ✅ STEP 2: UPDATE useEffect for search - reset to page 1
-useEffect(() => {
-  const delay = setTimeout(() => {
-    setCurrentPage(1); // Reset to page 1 when any filter/search changes
-    fetchAndCleanData(1, searchTerm, searchField);
-  }, 400);
+  useEffect(() => {
+    const delay = setTimeout(() => {
+      setCurrentPage(1); // Reset to page 1 when any filter/search changes
+      fetchAndCleanData(1, searchTerm, searchField);
+    }, 400);
 
-  return () => clearTimeout(delay);
-}, [searchTerm, searchField, accountTypeFilter]);
+    return () => clearTimeout(delay);
+  }, [searchTerm, searchField, accountTypeFilter]);
 
 
 
@@ -2052,9 +3040,222 @@ useEffect(() => {
       console.error("🔥 Error fetching sub_mother_account:", err);
     }
   };
+  const [syncingSubMother, setSyncingSubMother] = useState(false);
+  const [syncStats, setSyncStats] = useState(null); // { total, added, skipped, groupsMissing }
+
+  const generateDscode = async () => {
+    // Get the latest dscode to determine next number
+    const { data: latest } = await supabase
+      .from('sub_mother_account')
+      .select('dscode')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    const lastCode = latest?.[0]?.dscode || 'DS000000';
+    const numPart = parseInt(lastCode.replace(/\D/g, '')) || 0;
+    const nextNum = numPart + 1;
+    return `DS${String(nextNum).padStart(6, '0')}`;
+  };
 
 
+  // 🔹 Sync Accounts_List mother_codes → sub_mother_account
+  const syncToSubMotherAccount = async (importedData = null) => {
+    try {
+      setSyncingSubMother(true);
 
+      // ✅ Step 1: Load source data
+      let sourceData = importedData;
+      if (!sourceData) {
+        Swal.fire({
+          title: '🔄 Loading Accounts_List...',
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading()
+        });
+
+        const BATCH = 1000;
+        let all = [], offset = 0, hasMore = true;
+        while (hasMore) {
+          const { data: batch, error } = await supabase
+            .from('Accounts_List')
+            .select('mother_code, bp_name, group_code')
+            .range(offset, offset + BATCH - 1);
+          if (error) throw error;
+          if (batch?.length > 0) {
+            all = [...all, ...batch];
+            offset += BATCH;
+            hasMore = batch.length === BATCH;
+          } else hasMore = false;
+        }
+        sourceData = all;
+        Swal.close();
+      }
+
+      // ✅ Step 2: Fetch mother_account for group lookup
+      // mother_account: code (int) = 6001/6002/6003/6004, name = "DIRECT MEGASOFT" etc.
+      const { data: groupRows, error: groupErr } = await supabase
+        .from('mother_account')
+        .select('code, name')
+        .eq('status', true);
+
+      if (groupErr) throw groupErr;
+
+      // Map: "6001" -> "DIRECT MEGASOFT", "6002" -> "DIRECT DISTRIBUTOR", etc.
+      const groupCodeToName = {};
+      groupRows?.forEach(g => {
+        groupCodeToName[String(g.code)] = g.name;
+      });
+
+      console.log('📋 Group map:', groupCodeToName);
+
+      // ✅ Step 3: Fetch ALL existing sub_mother_account records
+      // We need both dscode AND name to check for duplicates
+      const { data: existingSubs } = await supabase
+        .from('sub_mother_account')
+        .select('dscode, name');
+
+      // Set of existing dscodes (e.g. DS100000, DS100001...)
+      const existingDscodes = new Set(existingSubs?.map(s => s.dscode) || []);
+
+      // Set of existing names (lowercase) to avoid name duplicates
+      const existingNames = new Set(
+        existingSubs?.map(s => s.name?.toString().trim().toLowerCase()) || []
+      );
+
+      // Get the highest DS number to continue sequence
+      let maxDsNum = 0;
+      existingSubs?.forEach(s => {
+        const match = s.dscode?.match(/^DS(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxDsNum) maxDsNum = num;
+        }
+      });
+
+      console.log(`✅ Existing sub_mother_account: ${existingDscodes.size} records`);
+      console.log(`✅ Max DS number found: DS${maxDsNum}`);
+
+      // ✅ Step 4: Collect unique mother names from Accounts_List
+      // Group by mother_code — get unique mother names
+      // Key = bp_name (the mother account name), value = { group_code }
+      const uniqueMotherNames = new Map(); // bp_name -> { group_code }
+
+      sourceData.forEach(row => {
+        const motherName = row.bp_name?.toString().trim();
+        const groupCode = row.group_code?.toString().trim() || null;
+
+        if (!motherName || motherName === '') return;
+
+        // Use name as key (to group same names together)
+        if (!uniqueMotherNames.has(motherName)) {
+          uniqueMotherNames.set(motherName, { group_code: groupCode });
+        }
+      });
+
+      console.log(`📊 Unique mother names found: ${uniqueMotherNames.size}`);
+
+      // ✅ Step 5: Build insert list
+      const toInsert = [];
+      const skipped = [];
+      const groupsMissing = [];
+      let dsCounter = maxDsNum; // Continue from last DS number
+
+      for (const [motherName, info] of uniqueMotherNames.entries()) {
+        const normalizedName = motherName.toLowerCase();
+
+        // Skip if name already exists in sub_mother_account
+        if (existingNames.has(normalizedName)) {
+          skipped.push(motherName);
+          continue;
+        }
+
+        // Resolve group info
+        const rawGroupCode = info.group_code; // e.g. "6001", "6002"
+        const resolvedGroupName = rawGroupCode
+          ? (groupCodeToName[rawGroupCode] || null)
+          : null;
+
+        if (rawGroupCode && !groupCodeToName[rawGroupCode]) {
+          groupsMissing.push({ motherName, groupCode: rawGroupCode });
+          console.warn(`⚠️ No group found for code: ${rawGroupCode}`);
+        }
+
+        // ✅ Generate next DS code
+        dsCounter++;
+        const newDscode = `DS${String(dsCounter).padStart(6, '0')}`;
+
+        toInsert.push({
+          dscode: newDscode,              // ✅ Auto-generated: DS100449, DS100450...
+          name: motherName,              // ✅ The actual mother account name
+          status: true,
+          group_code: rawGroupCode || null,      // ✅ "6001", "6002", "6003", "6004"
+          group_name: resolvedGroupName || null, // ✅ "DIRECT MEGASOFT", "DIRECT DISTRIBUTOR"
+        });
+      }
+
+      console.log(`✅ To insert: ${toInsert.length}, Skipped: ${skipped.length}`);
+      if (groupsMissing.length > 0) {
+        console.warn('⚠️ Missing group mappings:', groupsMissing);
+      }
+
+      // ✅ Step 6: Insert in batches
+      let insertedCount = 0;
+      const INSERT_BATCH = 500;
+
+      if (toInsert.length > 0) {
+        Swal.fire({
+          title: '📥 Syncing to sub_mother_account...',
+          html: `<span id="sync-progress">0 / ${toInsert.length}</span>`,
+          allowOutsideClick: false,
+          didOpen: () => Swal.showLoading()
+        });
+
+        for (let i = 0; i < toInsert.length; i += INSERT_BATCH) {
+          const chunk = toInsert.slice(i, i + INSERT_BATCH);
+
+          const { error } = await supabase
+            .from('sub_mother_account')
+            .insert(chunk);
+
+          if (error) {
+            console.error('❌ Insert error:', error.message);
+            // Try upsert as fallback
+            await supabase
+              .from('sub_mother_account')
+              .upsert(chunk, { onConflict: 'dscode', ignoreDuplicates: true });
+          }
+
+          insertedCount += chunk.length;
+
+          const el = document.getElementById('sync-progress');
+          if (el) el.textContent = `${insertedCount} / ${toInsert.length}`;
+
+          await new Promise(r => setTimeout(r, 50));
+        }
+      }
+
+      Swal.close();
+
+      const stats = {
+        total: uniqueMotherNames.size,
+        added: insertedCount,
+        skipped: skipped.length,
+        groupsMissing: groupsMissing.length,
+      };
+
+      setSyncStats(stats);
+      console.log('✅ Sync complete:', stats);
+
+      return stats;
+
+    } catch (err) {
+      console.error('💥 Sync error:', err);
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+      return null;
+    } finally {
+      setSyncingSubMother(false);
+    }
+  };
   // ✅ Fetch first 1,000 records for initial modal load
   // ✅ Fetch BP Accounts with pagination - Shows first page fast, loads more on demand
   const fetchBpAccounts = async (page = 1, searchTerm = '') => {
@@ -2228,8 +3429,6 @@ useEffect(() => {
             mother_code: '',
             bp_code: '',
             bp_name: '',
-            agent_code: '',
-
             group_code: '',
             status: true,
           });
@@ -2322,13 +3521,12 @@ useEffect(() => {
       setExportProgress({ fetched: 0, total: 0, type });
 
       const headers = [
-        "distributor_name",
-        "mother_name",
-        "bp_code",
-        "bp_name",
-        "agent_name",
-        "group_name",
-        "status",
+        'distributor_code',
+        'mother_code',
+        'bp_code',
+        'bp_name',
+        'group_code',
+        'status'
       ];
 
       let exportData = [];
@@ -2384,7 +3582,6 @@ useEffect(() => {
           mother_name: motherMap[row.mother_code] || row.mother_code || "",
           bp_code: row.bp_code || "",
           bp_name: row.bp_name || "",
-          agent_name: agentMap[row.agent_code] || row.agent_code || "",
           group_name: groupMap[row.group_code] || row.group_code || "",
           status: row.status ? "Active" : "Inactive",
         }));
@@ -2602,7 +3799,103 @@ useEffect(() => {
       Swal.fire('Error', 'Failed to generate Excel.', 'error');
     }
   };
+  // PALITAN YUNG BUONG handleExportUpdates function:
+  const handleExportUpdates = async () => {
+    const updateRows = importData.filter(row => row._updateFlag === 'update');
 
+    if (updateRows.length === 0) {
+      Swal.fire('No Updates', 'Walang rows na marked as Update.', 'info');
+      return;
+    }
+
+    const confirmRes = await Swal.fire({
+      icon: 'warning',
+      title: `🔄 Import ${updateRows.length.toLocaleString()} Updates?`,
+      html: `
+      <div style="text-align:left;font-family:monospace;font-size:14px;line-height:1.8;">
+        <p>🟠 <b>Rows to update:</b> ${updateRows.length.toLocaleString()}</p>
+        <p style="color:#6b7280;font-size:12px;">This will upsert these rows to Supabase using bp_code as conflict key.</p>
+      </div>
+    `,
+      showCancelButton: true,
+      confirmButtonText: '⚡ Import Updates',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#f59e0b',
+    });
+
+    if (!confirmRes.isConfirmed) return;
+
+    Swal.fire({
+      title: '🔄 Importing updates...',
+      html: '<div id="upd-only-prog">Starting...</div>',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading(),
+    });
+
+    try {
+      const toUpdate = updateRows.map(row => ({
+        id: row._oldData?.id,
+        distributor_code: row.distributor_code || null,
+        mother_code: row.mother_code || null,
+        bp_code: row.bp_code || null,
+        bp_name: row.bp_name || null,
+        group_code: row.group_code || null,
+        status: row._oldData?.status ?? true,
+      }));
+
+      const chunks = chunkArray(toUpdate, BATCH_SIZE);
+      let updatedCount = 0;
+      const failedBatches = [];
+
+      await parallelBatch(chunks, async (chunk) => {
+        const { error } = await supabase
+          .from('Accounts_List')
+          .upsert(chunk, { onConflict: 'id', ignoreDuplicates: false });
+
+        if (error) {
+          console.error('Upsert error:', error.message);
+          failedBatches.push({ count: chunk.length, error: error.message });
+          return 0;
+        }
+        return chunk.length;
+      }, CONCURRENCY, (done, total) => {
+        const count = Math.min(done * BATCH_SIZE, toUpdate.length);
+        const pct = Math.round(count / toUpdate.length * 100);
+        const el = document.getElementById('upd-only-prog');
+        if (el) el.innerHTML = `
+        <b style="color:#f59e0b;font-size:18px;">${count.toLocaleString()} / ${toUpdate.length.toLocaleString()}</b>
+        <div style="width:100%;height:10px;background:#eee;border-radius:5px;margin-top:8px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:#f59e0b;transition:width 0.2s;"></div>
+        </div>
+        <p style="color:#6b7280;margin-top:4px;font-size:12px;">${pct}%</p>
+      `;
+      }).then(results => {
+        updatedCount = results.reduce((s, n) => s + (n || 0), 0);
+      });
+
+      Swal.close();
+
+      await Swal.fire({
+        icon: failedBatches.length > 0 ? 'warning' : 'success',
+        title: '✅ Import Updates Complete!',
+        html: `
+        <div style="text-align:left;font-family:monospace;font-size:14px;line-height:2;">
+          <p style="color:orange;">🔄 <b>Updated:</b> ${updatedCount.toLocaleString()}</p>
+          ${failedBatches.length > 0
+            ? `<p style="color:red;">❌ <b>Failed batches:</b> ${failedBatches.length}</p>`
+            : ''}
+        </div>
+      `,
+      });
+
+      fetchAndCleanData();
+
+    } catch (err) {
+      console.error('Import updates error:', err);
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
 
   return (
     <div style={styles.container}>
@@ -2647,8 +3940,18 @@ useEffect(() => {
                 📊 Export All Data
               </div>
 
+              <div
+                style={styles.menuItem}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#e8f0fe")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "white")}
+                onClick={() => {
+                  setShowExportByDistModal(true);
+                  setShowExportMenu(false);
+                }}
+              >
+                📦 Export by Distributor
+              </div>
 
-              {/* Tagging */}
               <div
                 style={styles.menuItem}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#e8f0fe')}
@@ -2919,7 +4222,6 @@ useEffect(() => {
                           <th style={{ ...thStyle, minWidth: "120px" }}>Mother Code</th>
                           <th style={{ ...thStyle, minWidth: "120px" }}>BP Code</th>
                           <th style={{ ...thStyle, minWidth: "150px" }}>BP Name</th>
-                          <th style={{ ...thStyle, minWidth: "120px" }}>Agent Code</th>
                           <th style={{ ...thStyle, minWidth: "120px" }}>Group Code</th>
                           <th style={{ ...thStyle, minWidth: "100px" }}>Status</th>
                           <th style={{ ...thStyle, minWidth: "100px" }}>Actions</th>
@@ -2990,14 +4292,7 @@ useEffect(() => {
                                   </div>
                                 )}
                               </td>
-                              <td style={hasChanged('agent_code') ? changedCellStyle : tdStyle}>
-                                {row.agent_code}
-                                {hasChanged('agent_code') && oldData && (
-                                  <div style={{ fontSize: "0.75em", color: "#666", marginTop: "2px" }}>
-                                    Old: {oldData.agent_code || 'N/A'}
-                                  </div>
-                                )}
-                              </td>
+
                               <td style={hasChanged('group_code') ? changedCellStyle : tdStyle}>
                                 {row.group_code}
                                 {hasChanged('group_code') && oldData && (
@@ -3076,43 +4371,49 @@ useEffect(() => {
                 )}
 
                 {/* Footer Buttons */}
-                <div style={{ marginTop: "20px", textAlign: "right" }}>
+                <div style={{ marginTop: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <button
-                    onClick={() => {
-                      setShowExcelModal(false);
-                      setImportData([]);
-                      setExistingRows([]);
-                      setDuplicatesChecked(false);
-                      setFileName('');
-                      setProcessedRows(0);
-                      setProgressPercent(0);
-                    }}
-                    style={{
-                      padding: "6px 12px",
-                      marginRight: "10px",
-                      backgroundColor: "#6c757d",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
+                    onClick={() => { setShowExcelModal(false); setImportData([]); setExistingRows([]); setDuplicatesChecked(false); setFileName(''); setProcessedRows(0); setProgressPercent(0); }}
+                    style={{ padding: "6px 12px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
                   >
                     Close
                   </button>
-                  <button
-                    onClick={importDataToDB}
-                    disabled={importing || importData.length === 0 || !duplicatesChecked}
-                    style={{
-                      padding: "6px 12px",
-                      backgroundColor: "#28a745",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: importing || importData.length === 0 || !duplicatesChecked ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {importing ? "Importing..." : "📤 Import"}
-                  </button>
+
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    {/* EXPORT UPDATES BUTTON — visible lang pag may update rows at naka-check na duplicates */}
+                    {duplicatesChecked && importData.some(r => r._updateFlag === 'update') && (
+                      <button
+                        onClick={handleExportUpdates}
+                        style={{
+                          padding: "6px 14px",
+                          backgroundColor: "#f59e0b",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          fontWeight: 500,
+                        }}
+
+                      >🔄 Import Updates ({importData.filter(r => r._updateFlag === 'update').length})
+
+                      </button>
+                    )}
+
+                    <button
+                      onClick={importDataToDB}
+                      disabled={importing || importData.length === 0 || !duplicatesChecked}
+                      style={{
+                        padding: "6px 12px",
+                        backgroundColor: "#28a745",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: importing || importData.length === 0 || !duplicatesChecked ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {importing ? "Importing..." : "📤 Import"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3122,8 +4423,231 @@ useEffect(() => {
 
 
 
+        {/* Sync Sub Mother Account button — only show if data exists */}
+        {totalCount > 0 && (
+          <button
+            onClick={async () => {
+              const confirm = await Swal.fire({
+                title: '🔄 Sync Sub Mother Account',
+                html: `
+          <div style="text-align:left;">
+            <p>This will scan <strong>Accounts_List</strong> and add any <strong>mother_code</strong> values not yet in <strong>sub_mother_account</strong>.</p>
+            <p style="color:#6b7280; font-size:13px;">Already-existing entries will be skipped. No deletions.</p>
+          </div>
+        `,
+                icon: 'info',
+                showCancelButton: true,
+                confirmButtonText: '🔄 Sync Now',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#8b5cf6',
+                cancelButtonColor: '#6c757d',
+              });
 
+              if (!confirm.isConfirmed) return;
 
+              const result = await syncToSubMotherAccount();
+              if (result) {
+                Swal.fire({
+                  icon: result.added > 0 ? 'success' : 'info',
+                  title: result.added > 0 ? '✅ Sync Complete!' : 'ℹ️ Nothing to Sync',
+                  html: `
+            <div style="text-align:left; font-family: monospace;">
+              <p>📊 <strong>Unique mother codes found:</strong> ${result.total}</p>
+              <p style="color:green;">✅ <strong>Added:</strong> ${result.added}</p>
+              <p style="color:gray;">⏭️ <strong>Skipped (already exist):</strong> ${result.skipped}</p>
+              ${result.groupsMissing > 0
+                      ? `<p style="color:orange;">⚠️ <strong>Missing group code mapping:</strong> ${result.groupsMissing} entries (group_name will be null)</p>`
+                      : ''}
+            </div>
+          `,
+                  confirmButtonText: 'OK',
+                });
+                await fetchMotherAccounts(); // Refresh mother accounts list
+              }
+            }}
+            disabled={syncingSubMother}
+            style={{
+              padding: '10px 15px',
+              background: syncingSubMother ? '#9ca3af' : '#8b5cf6',
+              color: 'white',
+              border: 'none',
+              borderRadius: 5,
+              cursor: syncingSubMother ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {syncingSubMother ? '🔄 Syncing...' : '🔄 Sync Sub Mother'}
+          </button>
+        )}
+        {/* ── Arrange Data Modal ── */}
+        <button
+          onClick={() => setShowArrangeModal(true)}
+          style={{
+            padding: '10px 15px',
+            background: '#f59e0b',
+            color: 'white', border: 'none', borderRadius: 5,
+            cursor: 'pointer',
+          }}
+        >
+          🗂️ Arrange Data
+        </button>
+
+        {showArrangeModal && (
+          <div
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: 2000,
+            }}
+            onClick={() => { setShowArrangeModal(false); setArrangeOption(''); }}
+          >
+            <div
+              style={{
+                background: 'white', borderRadius: 16, width: '100%', maxWidth: 480,
+                overflow: 'hidden', boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div style={{
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                padding: '18px 24px', display: 'flex',
+                justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <h3 style={{ margin: 0, color: 'white', fontSize: 20, fontWeight: 600 }}>
+                  🗂️ Arrange Data
+                </h3>
+                <button
+                  onClick={() => { setShowArrangeModal(false); setArrangeOption(''); }}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white',
+                    width: 32, height: 32, borderRadius: 8, cursor: 'pointer', fontSize: 20,
+                  }}
+                >×</button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: '24px' }}>
+                <p style={{ margin: '0 0 16px', color: '#374151', fontSize: 14 }}>
+                  Select which operation to run:
+                </p>
+
+                {/* Options */}
+                {[
+                  {
+                    value: 'fix_group_code',
+                    icon: '🏷️',
+                    label: 'Fix Group Codes',
+                    desc: 'Convert group_code names → numeric codes using mother_account table',
+                    color: '#3b82f6',
+                  },
+                  {
+                    value: 'fix_mother_code',
+                    icon: '👥',
+                    label: 'Fix Mother Codes',
+                    desc: 'Convert mother_code names → DS codes using sub_mother_account table',
+                    color: '#8b5cf6',
+                  },
+                  {
+                    value: 'fix_both',
+                    icon: '⚡',
+                    label: 'Arrange Both',
+                    desc: 'Fix Group Codes first, then Mother Codes (recommended)',
+                    color: '#f59e0b',
+                  },
+                  {
+                    value: 'fix_sub_mother_names',
+                    icon: '🔧',
+                    label: 'Fix Sub Mother Names',
+                    desc: 'Replace DS codes used as names in sub_mother_account with actual store names',
+                    color: '#ef4444',
+                  },
+                ].map(opt => (
+                  <div
+                    key={opt.value}
+                    onClick={() => setArrangeOption(opt.value)}
+                    style={{
+                      padding: '14px 16px', borderRadius: 10, marginBottom: 10,
+                      border: `2px solid ${arrangeOption === opt.value ? opt.color : '#e5e7eb'}`,
+                      background: arrangeOption === opt.value ? `${opt.color}10` : 'white',
+                      cursor: 'pointer', transition: 'all 0.2s',
+                      display: 'flex', alignItems: 'flex-start', gap: 12,
+                    }}
+                    onMouseEnter={e => {
+                      if (arrangeOption !== opt.value)
+                        e.currentTarget.style.background = '#f9fafb';
+                    }}
+                    onMouseLeave={e => {
+                      if (arrangeOption !== opt.value)
+                        e.currentTarget.style.background = 'white';
+                    }}
+                  >
+                    <span style={{ fontSize: 24, flexShrink: 0 }}>{opt.icon}</span>
+                    <div>
+                      <div style={{
+                        fontWeight: 600, fontSize: 15, color: '#111827',
+                        marginBottom: 2,
+                      }}>
+                        {opt.label}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.4 }}>
+                        {opt.desc}
+                      </div>
+                    </div>
+                    {arrangeOption === opt.value && (
+                      <span style={{
+                        marginLeft: 'auto', color: opt.color,
+                        fontSize: 20, flexShrink: 0,
+                      }}>✔</span>
+                    )}
+                  </div>
+                ))}
+
+                <p style={{ fontSize: 12, color: '#9ca3af', margin: '12px 0 0' }}>
+                  ⚡ Uses parallel batch processing — handles 100k+ records fast.
+                </p>
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: '16px 24px', borderTop: '1px solid #e5e7eb',
+                display: 'flex', justifyContent: 'flex-end', gap: 10,
+                background: '#f9fafb',
+              }}>
+                <button
+                  onClick={() => { setShowArrangeModal(false); setArrangeOption(''); }}
+                  style={{
+                    padding: '10px 20px', borderRadius: 8, border: 'none',
+                    background: '#e5e7eb', cursor: 'pointer', fontWeight: 500,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!arrangeOption}
+                  onClick={() => {
+                    setShowArrangeModal(false);
+                    if (arrangeOption === 'fix_sub_mother_names') {
+                      fixSubMotherNames();
+                    } else {
+                      runArrangeData(arrangeOption);
+                    }
+                    setArrangeOption('');
+                  }}
+                  style={{
+                    padding: '10px 20px', borderRadius: 8, border: 'none',
+                    background: arrangeOption ? '#f59e0b' : '#d1d5db',
+                    color: arrangeOption ? 'white' : '#9ca3af',
+                    cursor: arrangeOption ? 'pointer' : 'not-allowed',
+                    fontWeight: 600, fontSize: 15,
+                  }}
+                >
+                  ⚡ Run Now
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
 
         {/* Create New */}
@@ -3134,7 +4658,7 @@ useEffect(() => {
               distributor_code: '',
               mother_code: '',
               bp_code: '',
-              agent_code: '',
+              bp_name: '',
               group_code: '',
               status: true,
             });
@@ -3164,128 +4688,128 @@ useEffect(() => {
 
 
       {/* 🔍 Search with Dropdown Filter */}
-     <div style={{
-  display: 'flex',
-  gap: 10,
-  marginBottom: 15,
-  background: 'white',
-  padding: '15px',
-  borderRadius: 8,
-  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-}}>
+      <div style={{
+        display: 'flex',
+        gap: 10,
+        marginBottom: 15,
+        background: 'white',
+        padding: '15px',
+        borderRadius: 8,
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+      }}>
 
-{/* 🔥 ADD THIS DROPDOWN BEFORE THE SEARCH FIELD DROPDOWN */}
-<select
-  value={accountTypeFilter}
-  onChange={(e) => {
-    setAccountTypeFilter(e.target.value);
-    setCurrentPage(1); // Reset to page 1
-  }}
-  style={{
-    padding: '8px 12px',
-    border: '2px solid #10b981',
-    borderRadius: 6,
-    fontSize: 14,
-    fontWeight: 500,
-    cursor: 'pointer',
-    minWidth: 200,
-    backgroundColor: '#f0fdf4'
-  }}
->
-  <option value="all">📊 All Accounts</option>
-  <option value="mother_only">👥 Mother Account Only</option>
-  <option value="bp_only">📋 BP Account Only</option>
-  <option value="agent_only">👤 Agent Only</option>
-  <option value="distributor_only">🏢 Distributor Only</option>
-  <option value="group_only">🏷️ Group Only</option>
-</select>
+        {/* 🔥 ADD THIS DROPDOWN BEFORE THE SEARCH FIELD DROPDOWN */}
+        <select
+          value={accountTypeFilter}
+          onChange={(e) => {
+            setAccountTypeFilter(e.target.value);
+            setCurrentPage(1); // Reset to page 1
+          }}
+          style={{
+            padding: '8px 12px',
+            border: '2px solid #10b981',
+            borderRadius: 6,
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: 'pointer',
+            minWidth: 200,
+            backgroundColor: '#f0fdf4'
+          }}
+        >
+          <option value="all">📊 All Accounts</option>
+          <option value="mother_only">👥 Mother Account Only</option>
+          <option value="bp_only">📋 BP Account Only</option>
+          <option value="agent_only">👤 Agent Only</option>
+          <option value="distributor_only">🏢 Distributor Only</option>
+          <option value="group_only">🏷️ Group Only</option>
+        </select>
 
-  {/* SEARCH FIELD DROPDOWN */}
-  <select
-    value={searchField}
-    onChange={(e) => {
-      setSearchField(e.target.value);
-      setSearchTerm('');
-    }}
-    style={{
-      padding: '8px 12px',
-      border: '2px solid #2563eb',
-      borderRadius: 6,
-      fontSize: 14,
-      fontWeight: 500,
-      cursor: 'pointer',
-      minWidth: 180,
-      backgroundColor: '#f8fafc'
-    }}
-  >
-    <option value="all">🔍 Search All Fields</option>
-  </select>
+        {/* SEARCH FIELD DROPDOWN */}
+        <select
+          value={searchField}
+          onChange={(e) => {
+            setSearchField(e.target.value);
+            setSearchTerm('');
+          }}
+          style={{
+            padding: '8px 12px',
+            border: '2px solid #2563eb',
+            borderRadius: 6,
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: 'pointer',
+            minWidth: 180,
+            backgroundColor: '#f8fafc'
+          }}
+        >
+          <option value="all">🔍 Search All Fields</option>
+        </select>
 
-  {/* SEARCH INPUT */}
-  <input
-    type="text"
-    placeholder={
-      searchField === 'all' ? 'Search all fields...' :
-      searchField === 'distributor' ? 'Search distributor code or name...' :
-      searchField === 'mother' ? 'Search mother code or name...' :
-      searchField === 'bp_code' ? 'Search BP code...' :
-      searchField === 'bp_name' ? 'Search BP name...' :
-      searchField === 'agent' ? 'Search agent code or name...' :
-      'Search group code or name...'
-    }
-    value={searchTerm}
-    onChange={(e) => setSearchTerm(e.target.value)}
-    style={{
-      flex: 1,
-      padding: '8px 12px',
-      border: '2px solid #e5e7eb',
-      borderRadius: 6,
-      fontSize: 14,
-      outline: 'none',
-      transition: 'border-color 0.2s'
-    }}
-    onFocus={(e) => e.target.style.borderColor = '#2563eb'}
-    onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-  />
+        {/* SEARCH INPUT */}
+        <input
+          type="text"
+          placeholder={
+            searchField === 'all' ? 'Search all fields...' :
+              searchField === 'distributor' ? 'Search distributor code or name...' :
+                searchField === 'mother' ? 'Search mother code or name...' :
+                  searchField === 'bp_code' ? 'Search BP code...' :
+                    searchField === 'bp_name' ? 'Search BP name...' :
+                      searchField === 'agent' ? 'Search agent code or name...' :
+                        'Search group code or name...'
+          }
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            flex: 1,
+            padding: '8px 12px',
+            border: '2px solid #e5e7eb',
+            borderRadius: 6,
+            fontSize: 14,
+            outline: 'none',
+            transition: 'border-color 0.2s'
+          }}
+          onFocus={(e) => e.target.style.borderColor = '#2563eb'}
+          onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+        />
 
-  {searchTerm && (
-    <button
-      onClick={() => setSearchTerm('')}
-      style={{
-        padding: '8px 16px',
-        backgroundColor: '#ef4444',
-        color: '#fff',
-        border: 'none',
-        borderRadius: 6,
-        cursor: 'pointer',
-        fontSize: 14,
-        fontWeight: 500,
-        transition: 'background 0.2s'
-      }}
-      onMouseEnter={(e) => e.target.style.backgroundColor = '#dc2626'}
-      onMouseLeave={(e) => e.target.style.backgroundColor = '#ef4444'}
-    >
-      ✕ Clear
-    </button>
-  )}
+        {searchTerm && (
+          <button
+            onClick={() => setSearchTerm('')}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 500,
+              transition: 'background 0.2s'
+            }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#dc2626'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = '#ef4444'}
+          >
+            ✕ Clear
+          </button>
+        )}
 
-  <button
-    onClick={() => setShowAll(!showAll)}
-    style={{
-      padding: '8px 16px',
-      backgroundColor: showAll ? '#6c757d' : '#007bff',
-      color: '#fff',
-      border: 'none',
-      borderRadius: 6,
-      cursor: 'pointer',
-      fontSize: 14,
-      fontWeight: 500,
-      transition: 'background 0.2s'
-    }}
-  >
-    {showAll ? 'Paginate' : 'Show All'}
-  </button>
-</div>
+        <button
+          onClick={() => setShowAll(!showAll)}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: showAll ? '#6c757d' : '#007bff',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 500,
+            transition: 'background 0.2s'
+          }}
+        >
+          {showAll ? 'Paginate' : 'Show All'}
+        </button>
+      </div>
 
       {/* 🧾 Table */}
       <div
@@ -3315,7 +4839,6 @@ useEffect(() => {
               <th style={{ padding: '12px 15px' }}>Mother Code</th>
               <th style={{ padding: '12px 15px' }}>BP Code</th>
               <th style={{ padding: '12px 15px' }}>BP Name</th>
-              <th style={{ padding: '12px 15px' }}>Agent Code</th>
               <th style={{ padding: '12px 15px' }}>Group Code</th>
               <th style={{ padding: '12px 15px' }}>Status</th>
               <th style={{ padding: '12px 15px' }}>Actions</th>
@@ -3393,9 +4916,7 @@ useEffect(() => {
                   </td>
                   <td style={{ padding: '10px 15px' }}>{row.bp_code}</td>
                   <td style={{ padding: '10px 15px' }}>{row.bp_name}</td>
-                  <td style={{ padding: '10px 15px' }}>
-                    {agentMap[row.agent_code] || row.agent_code}
-                  </td>
+
                   <td style={{ padding: '10px 15px' }}>
                     {groupMap[row.group_code] || row.group_code}
                   </td>
@@ -3524,7 +5045,112 @@ useEffect(() => {
         )}
       </div>
 
+      {showExportByDistModal && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1050, padding: 16,
+          }}
+          onClick={() => { setShowExportByDistModal(false); setSelectedDistForExport(null); setExportDistSearch(''); }}
+        >
+          <div
+            style={{
+              background: 'white', borderRadius: 16, width: '100%', maxWidth: 600,
+              maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+              padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <h3 style={{ margin: 0, color: 'white', fontSize: 20, fontWeight: 600 }}>
+                📦 Export by Distributor
+              </h3>
+              <button
+                onClick={() => { setShowExportByDistModal(false); setSelectedDistForExport(null); setExportDistSearch(''); }}
+                style={{
+                  background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white',
+                  width: 32, height: 32, borderRadius: 8, cursor: 'pointer', fontSize: 22,
+                }}
+              >×</button>
+            </div>
 
+            {/* Search */}
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid #e5e7eb' }}>
+              <input
+                type="text"
+                placeholder="🔍 Search distributor..."
+                value={exportDistSearch}
+                onChange={e => setExportDistSearch(e.target.value)}
+                style={{
+                  width: '100%', padding: '10px 14px', border: '2px solid #e5e7eb',
+                  borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box',
+                }}
+                onFocus={e => e.target.style.borderColor = '#2563eb'}
+                onBlur={e => e.target.style.borderColor = '#e5e7eb'}
+              />
+            </div>
+
+            {/* Distributor List */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+              {distributors
+                .filter(d =>
+                  d.name?.toLowerCase().includes(exportDistSearch.toLowerCase()) ||
+                  d.code?.toLowerCase().includes(exportDistSearch.toLowerCase())
+                )
+                .map((dist, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => setSelectedDistForExport(dist)}
+                    style={{
+                      padding: '12px 16px', borderRadius: 8, cursor: 'pointer',
+                      marginBottom: 4, transition: 'all 0.2s',
+                      background: selectedDistForExport?.code === dist.code ? '#eff6ff' : 'white',
+                      border: selectedDistForExport?.code === dist.code ? '2px solid #2563eb' : '2px solid transparent',
+                    }}
+                    onMouseEnter={e => { if (selectedDistForExport?.code !== dist.code) e.currentTarget.style.background = '#f9fafb'; }}
+                    onMouseLeave={e => { if (selectedDistForExport?.code !== dist.code) e.currentTarget.style.background = 'white'; }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{dist.name}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>Code: {dist.code}</div>
+                  </div>
+                ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '16px 24px', borderTop: '1px solid #e5e7eb',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              background: '#f9fafb',
+            }}>
+              <span style={{ fontSize: 13, color: '#6b7280' }}>
+                {selectedDistForExport ? `Selected: ${selectedDistForExport.name}` : 'Select a distributor'}
+              </span>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => { setShowExportByDistModal(false); setSelectedDistForExport(null); setExportDistSearch(''); }}
+                  style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#e5e7eb', cursor: 'pointer' }}
+                >Cancel</button>
+                <button
+                  disabled={!selectedDistForExport}
+                  onClick={() => handleExportByDistributor(selectedDistForExport.code)}
+                  style={{
+                    padding: '10px 18px', borderRadius: 8, border: 'none',
+                    background: selectedDistForExport ? '#2563eb' : '#9ca3af',
+                    color: 'white', cursor: selectedDistForExport ? 'pointer' : 'not-allowed',
+                    fontWeight: 500,
+                  }}
+                >📥 Export</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {showModal && (
         <div
           style={{
@@ -3718,34 +5344,8 @@ useEffect(() => {
 
               {/* Agent Code */}
               <div>
-                <label style={{ display: 'block', marginBottom: 8 }}>Agent Code</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    name="agent_code"
-                    value={newRecord.agent_code || ''}
-                    onChange={handleTaggingChange}
-                    style={{
-                      flex: 1,
-                      padding: '10px 12px',
-                      border: '2px solid #e5e7eb',
-                      borderRadius: 8,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAgentModal(true)}
-                    style={{
-                      padding: '10px 14px',
-                      background: '#2563eb',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🔍
-                  </button>
-                </div>
+         
+                
               </div>
 
               {/* Group Code */}
@@ -3780,19 +5380,19 @@ useEffect(() => {
                   </button>
                 </div>
               </div>
-<div>
-        <label style={{ display: 'block', marginBottom: 8 }}>BP Code</label>
-        <BpSearchableDropdown
-          value={newRecord.bp_code || ''}
-          onSelect={(bp) => {
-            setNewRecord(prev => ({
-              ...prev,
-              bp_code: bp.bp_code,
-              bp_name: bp.bp_name
-            }));
-          }}
-        />
-      </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: 8 }}>BP Code</label>
+                <BpSearchableDropdown
+                  value={newRecord.bp_code || ''}
+                  onSelect={(bp) => {
+                    setNewRecord(prev => ({
+                      ...prev,
+                      bp_code: bp.bp_code,
+                      bp_name: bp.bp_name
+                    }));
+                  }}
+                />
+              </div>
               {/* BP Name (Disabled) */}
               <div>
                 <label style={{ display: 'block', marginBottom: 8 }}>BP Name</label>
@@ -4466,7 +6066,7 @@ function BpSearchableDropdown({ value, onSelect }) {
         .select('bp_name')
         .eq('bp_code', bpCode)
         .single();
-      
+
       if (!error && data) {
         setSelectedBpName(data.bp_name);
       }
@@ -4915,7 +6515,10 @@ function LookupModal({ title, columns, data, onSelect, onClose, fieldKeys }) {
           </div>
         </div>
       </div>
+
+
     </div>
+
   );
 }
 
