@@ -74,18 +74,21 @@ const buildOporRows = (filteredData, freshApprovalMap, distributorMap, userMap) 
 const buildPor1Rows = (filteredData, activityMap, accountBudgetMap, skuMap, separate = false) => {
     const rows = [];
     filteredData.forEach((r) => {
+        // NEW
         let customerList = [];
         if (r.branchType) {
             try {
                 const parsed = JSON.parse(r.branchType);
-                customerList = Array.isArray(parsed) ? parsed : [r.branchType];
+                customerList = Array.isArray(parsed) ? parsed.filter(c => c && c.toString().trim() !== "") : [r.branchType];
             } catch {
                 customerList = r.branchType.split(/[\n,;]/).map(c => c.trim()).filter(c => c.length > 0);
-                if (customerList.length === 0) customerList = [r.branchType];
             }
         } else {
-            customerList = ["-"];
+            customerList = [];
         }
+
+        // ✅ Failsafe: kung walang customer na napunta (empty/blank branchType), gawan pa rin ng 1 default row
+        if (customerList.length === 0) customerList = ["-"];
 
         const customers = separate ? customerList : [customerList.join(", ")];
 
