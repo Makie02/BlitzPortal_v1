@@ -1140,16 +1140,15 @@ const RegularVisaForm = () => {
       console.log("  - Agent Code:", loggedInUserId);
 
       // ✅ Filter by distributor_code AND group_code AND agent_code
+      // ✅ Filter by distributor_code AND group_code ONLY
       const filteredData = cachedData.filter((item) => {
         const itemDistributorCode = safeLower(item.distributor_code);
         const itemGroupCode = safeLower(item.group_code);
-        const itemAgentCode = String(item.agent_code || "").trim();
 
         const distributorMatch = itemDistributorCode === selectedDistributorCode;
         const groupMatch = itemGroupCode === selectedGroupCode;
-        const agentMatch = itemAgentCode === loggedInUserId; // 🔥 NEW: Agent filter
 
-        return distributorMatch && groupMatch && agentMatch; // ✅ All three must match
+        return distributorMatch && groupMatch;
       });
 
       console.log(`🔍 After filtering: ${filteredData.length} records for group_code "${mother.code}" and agent "${loggedInUserId}"`);
@@ -1260,15 +1259,13 @@ const RegularVisaForm = () => {
       const selectedGroupCode = safeLower(groupCode);
 
       // ✅ Filter by: mother_code + group_code + bp_code + agent_code
+      // ✅ Filter by: mother_code + group_code + bp_code ONLY
       const filteredData = cachedData.filter((item) => {
         const motherMatch = (item.mother_code || "").trim() === motherAccountCode.trim();
         const groupMatch = safeLower(item.group_code) === selectedGroupCode;
         const hasBpCode = item.bp_code && item.bp_code.trim() !== "";
 
-        // 🔥 NEW: Only show branches where agent_code matches logged-in user
-        const agentMatch = String(item.agent_code || "").trim() === loggedInUserId;
-
-        return motherMatch && groupMatch && hasBpCode && agentMatch;
+        return motherMatch && groupMatch && hasBpCode;
       });
 
       console.log(`🔍 Filtered ${filteredData.length} branches for agent ${loggedInUserId}`);
@@ -1350,36 +1347,42 @@ const RegularVisaForm = () => {
     if (!distributorCode) return [];
 
     const cachedData = accountsListCache[distributorCode];
-    if (!cachedData?.length) return [];
 
-    // Get logged-in user's ID
+    // ✅ If cache not yet loaded, show all accountTypes (fallback)
+    if (!cachedData?.length) {
+      console.log(`⚡ Cache not yet loaded for ${distributorCode}, showing all ${accountTypes.length} mother accounts`);
+      return accountTypes;
+    }
+
     const storedUser = localStorage.getItem("loggedInUser");
     const parsedUser = storedUser ? JSON.parse(storedUser) : null;
     const loggedInUserId = String(parsedUser?.UserID || parsedUser?.id || "");
 
     // Get unique group_codes where agent has access
+    // ✅ No agent filter — all group_codes in cache are accessible
     const accessibleGroupCodes = new Set(
       cachedData
-        .filter(item => String(item.agent_code || "").trim() === loggedInUserId)
         .map(item => item.group_code?.toString().trim())
         .filter(Boolean)
     );
 
     console.log(`📊 Agent ${loggedInUserId} has access to group_codes:`, Array.from(accessibleGroupCodes));
 
-    // Filter mother accounts to only show those with accessible group_codes
+    // ✅ If agent has no matching group_codes but cache is loaded, still show all (safety fallback)
+    if (accessibleGroupCodes.size === 0) {
+      console.warn(`⚠️ No group_codes found for agent ${loggedInUserId} in cache — showing all mother accounts as fallback`);
+      return accountTypes;
+    }
+
     const filteredMotherAccounts = accountTypes.filter(opt => {
       const hasAccess = accessibleGroupCodes.has(opt.code?.toString().trim());
-
       if (!hasAccess) {
         console.log(`🚫 Hiding "${opt.name}" (${opt.code}) - no branches assigned to this agent`);
       }
-
       return hasAccess;
     });
 
     console.log(`✅ Showing ${filteredMotherAccounts.length} out of ${accountTypes.length} mother accounts`);
-
     return filteredMotherAccounts;
   };
   const getFilteredBranchesWithExtras = () => {
@@ -1823,7 +1826,7 @@ const RegularVisaForm = () => {
 
   const [userDistributors, setUserDistributors] = useState([]);
   const [filteredDistributors, setFilteredDistributors] = useState([]);
-  const loggedInUserId = parsedUser?.id || parsedUser?.user_id || null;
+  const loggedInUserId = String(parsedUser?.UserID || parsedUser?.id || "");
   console.log("[DEBUG] Logged in user ID:", loggedInUserId);
 
   // ✅ Fetch distributors assigned to the logged-in agent
