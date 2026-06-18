@@ -1307,12 +1307,17 @@ const RegularVisaForm = () => {
       });
 
       setBpNamesMap(prev => ({ ...prev, ...bpMap }));
-
+      // Deduplicate by bp_code first
+      const seenBpCodes = new Set();
       let uniqueBranches = filteredData
+        .filter((row) => {
+          const bpCode = (row.bp_code || "").trim();
+          if (!bpCode || seenBpCodes.has(bpCode)) return false;
+          seenBpCodes.add(bpCode);
+          return true;
+        })
         .map((row) => {
           const bpCode = (row.bp_code || "").trim();
-          if (!bpCode) return null;
-
           const branchName = bpMap[bpCode];
 
           return {
