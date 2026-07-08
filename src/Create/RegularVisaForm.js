@@ -84,129 +84,94 @@ const RegularVisaForm = () => {
   // ---------------- Generate PREVIEW code (for UI display) ----------------
 
 
-  const generatePreviewCode = (existingCodes) => {
+// NEW
+const generatePreviewCode = (nextId) => {
     const year = new Date().getFullYear();
-    const prefix = `R${year}-`;
-
-    const codesForYear = existingCodes
-      .filter((code) => code?.startsWith(prefix))
-      .map((code) => parseInt(code.replace(prefix, ""), 10))
-      .filter((num) => !isNaN(num));
-
-    const nextNumber = (codesForYear.length ? Math.max(...codesForYear) : 0) + 1;
-    return `${prefix}${nextNumber}`;
+    return `R${year}-${nextId}`;
   };
 
-  const generateAndClaimCode = async (supabase) => {
-    const year = new Date().getFullYear();
-    const prefix = `R${year}-`;
-    const maxRetries = 5;
+  // ✅ Fetch current max id sa regular_pwp para malaman ang susunod na id
+  const fetchMaxId = async () => {
+    const { data, error } = await supabase
+      .from("regular_pwp")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1);
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`🔄 Attempt ${attempt}/${maxRetries}: Generating code...`);
-
-        // Add small random delay to reduce collision probability
-        if (attempt > 1) {
-          await new Promise(resolve => setTimeout(resolve, Math.random() * 300 + 100));
-        }
-
-        // 1️⃣ Get fresh max number from database
-        const { data, error } = await supabase
-          .from("regular_pwp")
-          .select("regularpwpcode")
-          .ilike("regularpwpcode", `${prefix}%`)
-          .order("created_at", { ascending: false });
-
-        if (error && error.code !== "PGRST116") throw error;
-
-        let maxNumber = 0;
-        if (data && data.length > 0) {
-          const numbers = data
-            .map(row => {
-              const numStr = row.regularpwpcode.replace(prefix, "");
-              return parseInt(numStr, 10);
-            })
-            .filter(num => !isNaN(num));
-
-          if (numbers.length > 0) {
-            maxNumber = Math.max(...numbers);
-          }
-        }
-
-        const newNumber = maxNumber + 1;
-        const generatedCode = `${prefix}${newNumber}`;
-
-        console.log(`🎯 Attempting to claim code: ${generatedCode}`);
-
-        // 2️⃣ Try to claim this code by inserting a minimal record
-        // This acts as a "reservation" - if it fails, code is taken
-        const { data: insertedData, error: insertError } = await supabase
-          .from("regular_pwp")
-          .insert([{
-            regularpwpcode: generatedCode,
-            pwptype: "Regular",
-            created_at: new Date().toISOString(),
-            // Placeholder values - will be updated later
-            credit_budget: 0,
-            remaining_balance: 0,
-          }])
-          .select()
-          .single();
-
-        if (insertError) {
-          // Check if it's a duplicate key error
-          if (insertError.message?.includes('duplicate') ||
-            insertError.message?.includes('regularpwpcode') ||
-            insertError.code === '23505') {
-            console.warn(`⚠️ Code ${generatedCode} was taken, retrying...`);
-            continue; // Retry with next attempt
-          }
-          throw insertError; // Other errors
-        }
-
-        // ✅ Success! We claimed this code
-        console.log(`✅ Successfully claimed code: ${generatedCode}`);
-        return { code: generatedCode, recordId: insertedData.id };
-
-      } catch (attemptError) {
-        console.error(`❌ Attempt ${attempt} failed:`, attemptError.message);
-
-        if (attempt === maxRetries) {
-          throw new Error("Failed to generate unique code after maximum retries");
-        }
-      }
+    if (error) {
+      console.error("❌ Error fetching max id:", error);
+      return 0;
     }
 
-    throw new Error("Failed to generate unique code");
+    return data && data.length > 0 ? data[0].id : 0;
   };
 
+// NEW
+const generateAndClaimCode = async (supabase) => {
+    const year = new Date().getFullYear();
+
+    try {
+      // 1️⃣ Insert placeholder record na may TEMPORARY code muna (hindi null, satisfies not-null constraint)
+      const tempCode = `TEMP-${Date.now()}`;
+
+      const { data: insertedData, error: insertError } = await supabase
+        .from("regular_pwp")
+        .insert([{
+          regularpwpcode: tempCode,
+          pwptype: "Regular",
+          created_at: new Date().toISOString(),
+          // Placeholder values - will be updated later
+          credit_budget: 0,
+          remaining_balance: 0,
+        }])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 2️⃣ Build FINAL code base sa DB id (guaranteed unique, walang race condition)
+      const generatedCode = `R${year}-${insertedData.id}`;
+
+      // 3️⃣ Update the same row, palitan yung temp code ng final code
+      const { error: updateError } = await supabase
+        .from("regular_pwp")
+        .update({ regularpwpcode: generatedCode })
+        .eq("id", insertedData.id);
+
+      if (updateError) throw updateError;
+
+      console.log(`✅ Successfully claimed code: ${generatedCode} (id: ${insertedData.id})`);
+      return { code: generatedCode, recordId: insertedData.id };
+
+    } catch (err) {
+      console.error("❌ Failed to generate code:", err.message);
+      throw new Error("Failed to generate unique code");
+    }
+  };
   // ---------------- Real-time subscription ----------------
   useEffect(() => {
     fetchRegularPwpCodes();
 
-    const subscription = supabase
+// NEW (2 occurrences)
+const subscription = supabase
       .channel("public:regular_pwp")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "regular_pwp" },
         (payload) => {
-          console.log("🔔 New PWP code inserted:", payload.new.regularpwpcode);
+          console.log("🔔 New row inserted, id:", payload.new.id);
 
-          setAllRegularPwpCodes((prev) => {
-            const updated = [...prev, payload.new.regularpwpcode];
+          // ✅ Update preview to next id real-time
+          const nextId = payload.new.id + 1;
+          const newPreview = generatePreviewCode(nextId);
 
-            // ✅ Update preview to next available
-            const newPreview = generatePreviewCode(updated);
-            setFormData((prevForm) => ({
-              ...prevForm,
-              regularpwpcode: newPreview,
-              isPreviewCode: true
-            }));
+          setFormData((prevForm) => ({
+            ...prevForm,
+            regularpwpcode: newPreview,
+            isPreviewCode: true
+          }));
 
-            console.log("📋 Updated preview:", newPreview);
-            return updated;
-          });
+          console.log("📋 Updated preview:", newPreview);
         }
       )
       .subscribe();
@@ -2670,29 +2635,25 @@ const RegularVisaForm = () => {
   // 📋 Real-time preview code updates (unchanged)
   // ============================================================
 
-  const fetchRegularPwpCodes = async () => {
+  // NEW
+const fetchRegularPwpCodes = async () => {
     try {
       setLoadingRegularPwpCodes(true);
-      const { data, error } = await supabase
-        .from("regular_pwp")
-        .select("regularpwpcode");
 
-      if (error) throw error;
+      const maxId = await fetchMaxId();
+      const nextId = maxId + 1;
 
-      const codes = data.map((row) => row.regularpwpcode).filter(Boolean);
-      setAllRegularPwpCodes(codes);
-
-      // ✅ Set initial preview code
-      const previewCode = generatePreviewCode(codes);
+      // ✅ Set initial preview code base sa susunod na id
+      const previewCode = generatePreviewCode(nextId);
       setFormData((prev) => ({
         ...prev,
         regularpwpcode: previewCode,
         isPreviewCode: true
       }));
 
-      console.log("📋 Preview code:", previewCode);
+      console.log("📋 Preview code:", previewCode, "(next id:", nextId, ")");
     } catch (err) {
-      console.error("❌ Error fetching codes:", err);
+      console.error("❌ Error fetching preview code:", err);
     } finally {
       setLoadingRegularPwpCodes(false);
     }
