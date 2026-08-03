@@ -20,6 +20,11 @@ const ApprovalList = () => {
   const [distributorMap, setDistributorMap] = useState({});
   const [activityMap, setActivityMap] = useState({});
 
+  // ── Remarks Modal ──────────────────────────────────────────
+  const [selectedRemarks, setSelectedRemarks] = useState(null);
+  const [showRemarksModal, setShowRemarksModal] = useState(false);
+  // ─────────────────────────────────────────────────────────
+
   // ── Accounting Access ─────────────────────────────────────────
   const [assignedDistributorCodes, setAssignedDistributorCodes] = useState(null);
   const [isAccessLoaded, setIsAccessLoaded] = useState(false);
@@ -326,6 +331,7 @@ const ApprovalList = () => {
         'Assigned By': getUserNameById(item.CreatedForm),
         'Created At': item.created_at
           ? new Date(item.created_at).toLocaleString() : '-',
+        'Remarks/Notes': item.RemarksNote || '-',
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -389,7 +395,7 @@ const ApprovalList = () => {
               <th>ID</th><th>PWP Code</th><th>PWP Type</th><th>Distributor</th>
               <th>Activity</th><th>Amount</th><th>Branch Type</th>
               <th>Activity From</th><th>Activity To</th>
-              <th>Response</th><th>Date Responded</th><th>Assigned By</th><th>Created At</th>
+              <th>Response</th><th>Date Responded</th><th>Assigned By</th><th>Created At</th><th>Remarks/Notes</th>
             </tr></thead>
             <tbody>
               ${filteredData.map(item => `
@@ -407,6 +413,7 @@ const ApprovalList = () => {
                   <td>${item.DateResponded ? new Date(item.DateResponded).toLocaleString() : '-'}</td>
                   <td>${getUserNameById(item.CreatedForm)}</td>
                   <td>${item.created_at ? new Date(item.created_at).toLocaleString() : '-'}</td>
+                  <td>${item.RemarksNote || '-'}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -592,7 +599,24 @@ const ApprovalList = () => {
                         <td style={tdStyle}>{getUserNameById(item.CreatedForm)}</td>
                         <td style={tdStyle}>{item.created_at ? new Date(item.created_at).toLocaleString() : '-'}</td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
-                          {item.Response === "Approved" && <FaCheckCircle color="#4caf50" size={18} title="Approved" />}
+                          {item.Response === "Approved" && (
+                            <button
+                              onClick={() => {
+                                setSelectedRemarks(item);
+                                setShowRemarksModal(true);
+                              }}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                padding: '6px 12px', backgroundColor: '#e8f5e8',
+                                color: '#2e7d32', border: '1px solid #4caf50',
+                                borderRadius: '6px', cursor: 'pointer',
+                                fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap'
+                              }}
+                            >
+                              <FaCheckCircle size={14} />
+                              View Remarks/Notes
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -636,6 +660,45 @@ const ApprovalList = () => {
           </div>
         </div>
       </div>
+
+      {/* Remarks/Notes Modal */}
+      {showRemarksModal && selectedRemarks && (
+        <div
+          onClick={() => setShowRemarksModal(false)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'white', borderRadius: '10px', padding: '24px',
+              width: '90%', maxWidth: '450px', boxShadow: '0 8px 30px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#111' }}>Remarks / Notes</h3>
+              <button
+                onClick={() => setShowRemarksModal(false)}
+                style={{ border: 'none', background: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ fontSize: '13px', color: '#888', marginBottom: '10px' }}>
+              PWP Code: <strong>{selectedRemarks.PwpCode}</strong>
+            </div>
+            <div style={{
+              backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0', borderRadius: '6px',
+              padding: '14px', fontSize: '14px', color: '#333', minHeight: '60px', whiteSpace: 'pre-wrap'
+            }}>
+              {selectedRemarks.RemarksNote || 'No remarks/notes available.'}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style dangerouslySetInnerHTML={{ __html: `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }` }} />
     </div>
