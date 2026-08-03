@@ -17,6 +17,10 @@ const RecordViewModal = ({ record, onClose }) => {
   const [activityMap, setActivityMap] = useState({});
   const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
 
+  // ── Remarks/Notes (from Approval_History) ─────────────────
+  const [remarksNote, setRemarksNote] = useState(null);
+  // ─────────────────────────────────────────────────────────
+
   const exportBudgetHistoryToExcel = () => {
     if (filteredBudgetHistory.length === 0) return;
 
@@ -50,6 +54,9 @@ const exportSingleRecordToExcel = () => {
   Object.entries(fullRecord).forEach(([key, value]) => {
     formattedRecord[formatColumnName(key)] = formatCellValue(value, key);
   });
+
+  // Include Remarks/Notes in export
+  formattedRecord["Remarks Notes"] = remarksNote || "-";
 
   // 🧩 Step 2: Create worksheet from array of one object
   const worksheet = XLSX.utils.json_to_sheet([formattedRecord]);
@@ -161,6 +168,33 @@ const exportSingleRecordToExcel = () => {
     }
   };
 
+  // ── Fetch Remarks/Notes from Approval_History ─────────────
+  const fetchRemarksNote = async () => {
+    try {
+      const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
+      if (!pwpCode) {
+        setRemarksNote(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("Approval_History")
+        .select("RemarksNote")
+        .eq("PwpCode", pwpCode)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      setRemarksNote(data?.RemarksNote || null);
+    } catch (err) {
+      console.error("❌ Failed to fetch remarks note:", err.message);
+      setRemarksNote(null);
+    }
+  };
+  // ─────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (record) {
       fetchFullRecord();
@@ -169,6 +203,7 @@ const exportSingleRecordToExcel = () => {
       fetchRemainingBudget();
       fetchRegularSkuData();
       fetchRegularAccountBudgetData();
+      fetchRemarksNote();
     }
   }, [record]);
 
@@ -607,45 +642,78 @@ const exportSingleRecordToExcel = () => {
 
               </div>
               {/* Footer Section */}
-              {/* Footer Section */}
               <div
                 style={{
                   padding: "16px 30px",
                   backgroundColor: "#f1f5f9",
                   borderTop: "1px solid #ddd",
                   display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "40px",
-                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "20px",
+                  alignItems: "flex-start",
+                  flexWrap: "wrap",
                 }}
               >
-                {/* Remaining Balance */}
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
-                    Remaining Balance
+                {/* Remarks / Notes */}
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: "280px",
+                    padding: "12px 16px",
+                    backgroundColor: "white",
+                    borderRadius: "8px",
+                    border: "1px solid #e0e0e0",
+                  }}
+                >
+                  <div style={{
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: "#666",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: "8px",
+                  }}>
+                    Remarks / Notes
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#0d6efd" }}>
-                    ₱{" "}
-                    {fullRecord?.remaining_balance
-                      ? Number(fullRecord.remaining_balance).toLocaleString("en-PH", {
-                        minimumFractionDigits: 2,
-                      })
-                      : "0.00"}
+                  <div style={{
+                    fontSize: "14px",
+                    color: "#333",
+                    lineHeight: "1.4",
+                    whiteSpace: "pre-wrap",
+                  }}>
+                    {remarksNote || "No remarks/notes available."}
                   </div>
                 </div>
 
-                {/* Credit Budget */}
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
-                    Credit Budget
+                <div style={{ display: "flex", gap: "40px", alignItems: "center" }}>
+                  {/* Remaining Balance */}
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
+                      Remaining Balance
+                    </div>
+                    <div style={{ fontSize: "18px", fontWeight: "700", color: "#0d6efd" }}>
+                      ₱{" "}
+                      {fullRecord?.remaining_balance
+                        ? Number(fullRecord.remaining_balance).toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                        })
+                        : "0.00"}
+                    </div>
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#16a34a" }}>
-                    ₱{" "}
-                    {fullRecord?.credit_budget
-                      ? Number(fullRecord.credit_budget).toLocaleString("en-PH", {
-                        minimumFractionDigits: 2,
-                      })
-                      : "0.00"}
+
+                  {/* Credit Budget */}
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
+                      Credit Budget
+                    </div>
+                    <div style={{ fontSize: "18px", fontWeight: "700", color: "#16a34a" }}>
+                      ₱{" "}
+                      {fullRecord?.credit_budget
+                        ? Number(fullRecord.credit_budget).toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                        })
+                        : "0.00"}
+                    </div>
                   </div>
                 </div>
               </div>
