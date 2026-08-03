@@ -15,7 +15,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
     const [skuListing, setSkuListing] = useState([]);
     const [isApproved, setIsApproved] = useState(false);
 
-
+    const [remarksNote, setRemarksNote] = useState('');
     const coverFieldNameMap = {
         cover_code: 'Cover Code',
         distributor_code: 'Distributor',
@@ -691,6 +691,8 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                 Type: userType,
                 Notication: false,
                 CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
+                RemarksNote: remarksNote,
+
             });
 
             // ------------------------------------------------------------------
@@ -792,6 +794,8 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     Type: userType || null,
                     Notication: false,
                     CreatedForm: data?.createForm || data?.CreatedForm || "unknown",
+                    RemarksNote: remarksNote,
+
                 });
 
             if (error) throw error;
@@ -1520,7 +1524,22 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
 
 
 
-                <div className="modal-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <div className="modal-footer" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <textarea
+                        value={remarksNote}
+                        onChange={(e) => setRemarksNote(e.target.value)}
+                        placeholder="Remarks / Notes (optional)"
+                        rows={2}
+                        style={{
+                            flex: 1,
+                            resize: 'none',
+                            padding: '10px 12px',
+                            fontSize: '14px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            fontFamily: 'inherit',
+                        }}
+                    />
                     <button
                         onClick={handleApprove}
                         disabled={isApproved}
