@@ -1323,47 +1323,64 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
 
 
                 </div>
-                {skuListing.length === 0 && accountsBudgetList.length > 0 && (
-                    <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
-                        <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>Accounts Budget</h4>
 
-                        <table
-                            style={{
-                                width: '100%',
-                                borderCollapse: 'collapse',
-                                fontSize: '14px',
-                                minWidth: '500px', // ensure horizontal scroll on small screens
-                                boxShadow: '0 0 5px rgba(0, 0, 0, 0.1)',
-                            }}
-                        >
-                            <thead>
-                                <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
-                                    <th style={{ padding: '10px' }}>Account Name</th>
-                                    <th style={{ padding: '10px' }}>Budget</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {accountsBudgetList.map((row) => (
-                                    <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
-                                        <td style={{ padding: '8px' }}>{row.account_name}</td>
-                                        <td style={{ padding: '8px' }}>{Number(row.budget).toLocaleString()}</td>
+                {skuListing.length === 0 && accountsBudgetList.length > 0 && (() => {
+                    // ✅ Only show a column if at least one row actually has a value for it
+                    const hasSku = accountsBudgetList.some((row) => row.sku && row.sku.trim() !== '');
+                    const hasPenalty = accountsBudgetList.some((row) => row.penalty && row.penalty.trim() !== '');
+                    const hasSupplies = accountsBudgetList.some((row) => row.suppliesme && row.suppliesme.trim() !== '');
+
+                    const extraColSpan = 1 + (hasSku ? 1 : 0) + (hasPenalty ? 1 : 0) + (hasSupplies ? 1 : 0);
+
+                    return (
+                        <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
+                            <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>Accounts Budget</h4>
+
+                            <table
+                                style={{
+                                    width: '100%',
+                                    borderCollapse: 'collapse',
+                                    fontSize: '14px',
+                                    minWidth: '500px', // ensure horizontal scroll on small screens
+                                    boxShadow: '0 0 5px rgba(0, 0, 0, 0.1)',
+                                }}
+                            >
+                                <thead>
+                                    <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
+                                        <th style={{ padding: '10px' }}>Account Name</th>
+                                        {hasSku && <th style={{ padding: '10px' }}>SKU</th>}
+                                        {hasPenalty && <th style={{ padding: '10px' }}>Penalty</th>}
+                                        {hasSupplies && <th style={{ padding: '10px' }}>Supplies/M.E</th>}
+                                        <th style={{ padding: '10px' }}>Budget</th>
                                     </tr>
-                                ))}
+                                </thead>
+                                <tbody>
+                                    {accountsBudgetList.map((row) => (
+                                        <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                            <td style={{ padding: '8px' }}>{row.account_name}</td>
+                                            {hasSku && <td style={{ padding: '8px' }}>{row.sku || '-'}</td>}
+                                            {hasPenalty && <td style={{ padding: '8px' }}>{row.penalty || '-'}</td>}
+                                            {hasSupplies && <td style={{ padding: '8px' }}>{row.suppliesme || '-'}</td>}
+                                            <td style={{ padding: '8px' }}>{Number(row.budget).toLocaleString()}</td>
+                                        </tr>
+                                    ))}
 
-                                {/* Total Row */}
-                                <tr style={{ fontWeight: 'bold', backgroundColor: '#f1f5fb' }}>
-                                    <td style={{ padding: '10px' }}>Total</td>
-                                    <td style={{ padding: '10px' }}>
-                                        {accountsBudgetList
-                                            .reduce((acc, row) => acc + parseFloat(row.budget || 0), 0)
-                                            .toLocaleString()}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                    {/* Total Row */}
+                                    <tr style={{ fontWeight: 'bold', backgroundColor: '#f1f5fb' }}>
+                                        <td style={{ padding: '10px' }} colSpan={extraColSpan}>Total</td>
+                                        <td style={{ padding: '10px' }}>
+                                            {accountsBudgetList
+                                                .reduce((acc, row) => acc + parseFloat(row.budget || 0), 0)
+                                                .toLocaleString()}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                })()}
 
+     
                 {type === 'Regular PWP' && skuListing.length > 0 && (
                     <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
                         <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>SKU Listing</h4>
@@ -1373,22 +1390,15 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                 width: '100%',
                                 borderCollapse: 'collapse',
                                 fontSize: '14px',
-                                minWidth: '600px',
+                                minWidth: '400px',
                                 boxShadow: '0 0 5px rgba(0, 0, 0, 0.1)',
                             }}
                         >
                             <thead>
                                 <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
                                     <th style={{ padding: '10px' }}>Accounts</th>
-
                                     <th style={{ padding: '10px' }}>SKU</th>
-                                    <th style={{ padding: '10px' }}>SRP</th>
-                                    <th style={{ padding: '10px' }}>Qty</th>
-                                    <th style={{ padding: '10px' }}>UOM</th>
                                     <th style={{ padding: '10px' }}>Total Amount</th>
-
-                                    <th style={{ padding: '10px' }}>Discount</th>
-                                    <th style={{ padding: '10px' }}>Total Billing Amount</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1401,16 +1411,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                             <td style={{ padding: '8px' }}>
                                                 {categoryMap[row.sku_code] || row.sku_code || '-'}
                                             </td>
-                                            <td style={{ padding: '8px' }}>
-                                                {row.srp != null ? Number(row.srp).toLocaleString() : '-'}
-                                            </td>
-                                            <td style={{ padding: '8px' }}>{row.qty ?? '-'}</td>
-                                            <td style={{ padding: '8px' }}>{row.uom || '-'}</td>
-                                            <td style={{ padding: '8px' }}>{row.billing_amount || '-'}</td>
 
-                                            <td style={{ padding: '8px' }}>
-                                                {row.discount != null ? `${row.discount}` : '-'}
-                                            </td>
                                             <td style={{ padding: '8px' }}>
                                                 {row.total_amount != null
                                                     ? Number(row.total_amount).toLocaleString()
@@ -1420,11 +1421,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                     ))}
                                 {/* Total Row */}
                                 <tr style={{ fontWeight: 'bold', backgroundColor: '#f1f5fb' }}>
-                                    <td style={{ padding: '10px' }} colSpan="5">Total</td>
-                                    <td ></td>
-                                    <td ></td>
-
-
+                                    <td style={{ padding: '10px' }} colSpan="2">Total</td>
                                     <td style={{ padding: '10px' }}>
                                         {skuListing
                                             .filter(row => row.sku_code !== 'Total:' && row.sku_code !== 'Total')
@@ -1436,7 +1433,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                         </table>
                     </div>
                 )}
-
 
                 {type === 'Claims PWP' && badOrderList.length > 0 && (
                     <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
