@@ -17,7 +17,9 @@ const RegularVisaForm = () => {
   const [showPack, setShowPack] = useState(true);
   const [showCase, setShowCase] = useState(true);
   const [manualSrp, setManualSrp] = useState(false);
-
+  const [activeBranchTabKey, setActiveBranchTabKey] = useState(null);
+  const [branchPage, setBranchPage] = useState(1);
+  const BRANCH_PAGE_SIZE = 15;
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -41,8 +43,6 @@ const RegularVisaForm = () => {
 
     fetchData();
   }, []);
-
-
 
   const [settings, setSettings] = useState({});
   const [motherAccount2List, setMotherAccount2List] = useState([]);
@@ -84,8 +84,8 @@ const RegularVisaForm = () => {
   // ---------------- Generate PREVIEW code (for UI display) ----------------
 
 
-// NEW
-const generatePreviewCode = (nextId) => {
+  // NEW
+  const generatePreviewCode = (nextId) => {
     const year = new Date().getFullYear();
     return `R${year}-${nextId}`;
   };
@@ -106,8 +106,8 @@ const generatePreviewCode = (nextId) => {
     return data && data.length > 0 ? data[0].id : 0;
   };
 
-// NEW
-const generateAndClaimCode = async (supabase) => {
+  // NEW
+  const generateAndClaimCode = async (supabase) => {
     const year = new Date().getFullYear();
 
     try {
@@ -152,8 +152,8 @@ const generateAndClaimCode = async (supabase) => {
   useEffect(() => {
     fetchRegularPwpCodes();
 
-// NEW (2 occurrences)
-const subscription = supabase
+    // NEW (2 occurrences)
+    const subscription = supabase
       .channel("public:regular_pwp")
       .on(
         "postgres_changes",
@@ -480,6 +480,12 @@ const subscription = supabase
           row.TOTAL_AMOUNT = 0;
           row.UOM = "";
         }
+      } else if (field === "TOTAL_AMOUNT") {
+        // ✅ Manual total amount input — skip auto-computation
+        row.TOTAL_AMOUNT = Number(value) || 0;
+        rows[index] = row;
+        updated[branchKey] = rows;
+        return updated;
       } else {
         // For numeric fields convert to number, otherwise just assign
         if (["SRP", "QTY", "DISCOUNT"].includes(field)) {
@@ -494,7 +500,10 @@ const subscription = supabase
       const discountAmount = Number(row.DISCOUNT || 0); // discount as fixed amount
 
       row.BILLING_AMOUNT = srp * qty;
-      row.TOTAL_AMOUNT = row.BILLING_AMOUNT - discountAmount;
+      // ✅ Don't overwrite a manually entered total
+      if (row.TOTAL_AMOUNT === undefined || row.TOTAL_AMOUNT === null) {
+        row.TOTAL_AMOUNT = row.BILLING_AMOUNT - discountAmount;
+      }
 
       // Just in case total goes negative, set minimum 0
       if (row.TOTAL_AMOUNT < 0) row.TOTAL_AMOUNT = 0;
@@ -505,7 +514,6 @@ const subscription = supabase
       return updated;
     });
   };
-
 
 
   const addSkuRowForBranch = (brandname) => {
@@ -562,7 +570,7 @@ const subscription = supabase
       totals.QTY += qty;
       totals.BILLING_AMOUNT += billing;
       totals.DISCOUNT += discountAmount;
-      totals.TOTAL_AMOUNT += (billing - discountAmount);
+      totals.TOTAL_AMOUNT += Number(row.TOTAL_AMOUNT || 0); // ✅ manual total
     });
 
     return totals;
@@ -579,16 +587,16 @@ const subscription = supabase
       const rows = accountSkuRows[branchName] || [];
 
       rows.forEach((row) => {
+
         const srp = Number(row.SRP || 0);
         const qty = Number(row.QTY || 0);
         const discount = Number(row.DISCOUNT || 0);
         const billingAmount = srp * qty;
-        const total = billingAmount - discount;
 
         totalQty += qty;
         totalBilling += billingAmount;
         totalDiscount += discount;
-        totalAmount += total;
+        totalAmount += Number(row.TOTAL_AMOUNT || 0); // ✅ manual total
       });
     });
 
@@ -707,7 +715,7 @@ const subscription = supabase
   const fetchSettings = async () => {
     const { data, error } = await supabase
       .from("activity_settings")
-      .select("category,activity_code, sku, accounts,amount_display,various,walk_in,mother1,VariousAccount,branch,MotherAccount2");
+      .select('category,activity_code,sku,accounts,amount_display,various,walk_in,mother1,"VariousAccount",branch,"MotherAccount2",sku_addional,"isPenalties","Supplies/M.E"');
     if (error) {
       console.error("❌ Error loading settings:", error);
       return;
@@ -725,6 +733,9 @@ const subscription = supabase
         various: setting.various === true,
         walk_in: setting.walk_in === true,
         MotherAccount2: setting.MotherAccount2 === true,
+        sku_addional: setting.sku_addional === true,
+        isPenalties: setting.isPenalties === true,
+        suppliesME: setting["Supplies/M.E"] === true,
 
       };
     });
@@ -741,6 +752,64 @@ const subscription = supabase
 
   const [distributors, setDistributors] = useState([]);
 
+
+
+  const fetchMotherAccountsList = async () => {
+    try {
+      const distributorCode = formData.distributor;
+      if (!distributorCode) return [];
+
+      const { data: distributor, error: distributorError } = await supabase
+        .from("distributors")
+        .select("id, name, code, mother_accounts_code")
+        .eq("code", distributorCode)
+        .single();
+
+      if (distributorError || !distributor) {
+        console.warn("⚠️ No distributor record found for:", distributorCode);
+        return [];
+      }
+
+      let motherCodes = [];
+      if (distributor.mother_accounts_code) {
+        if (Array.isArray(distributor.mother_accounts_code)) {
+          motherCodes = distributor.mother_accounts_code;
+        } else {
+          motherCodes = distributor.mother_accounts_code
+            .split(",")
+            .map((code) => code.replace(/[()]/g, "").trim())
+            .filter(Boolean);
+        }
+      }
+
+      if (motherCodes.length === 0) {
+        console.warn("⚠️ Distributor has no mother_accounts_code defined.");
+        return [];
+      }
+
+      const { data: motherAccounts, error: motherError } = await supabase
+        .from("mother_account")
+        .select("code, name")
+        .in("code", motherCodes.map(Number));
+
+      if (motherError) throw motherError;
+
+      const formattedData = motherCodes.map((code, index) => {
+        const matched = motherAccounts?.find((acc) => String(acc.code) === String(code));
+        return {
+          id: index + 1,
+          code,
+          name: matched ? matched.name : code,
+        };
+      });
+
+      setAccountTypes(formattedData); // keep state in sync too, harmless
+      return formattedData;
+    } catch (err) {
+      console.error("❌ Error fetching mother accounts list:", err.message);
+      return [];
+    }
+  };
   useEffect(() => {
     async function fetchDistributors() {
       const { data, error } = await supabase
@@ -1021,14 +1090,16 @@ const subscription = supabase
         const selectedActivity = activities.find((a) => a.code === value);
         newForm.activityName = selectedActivity?.name || "";
 
-        if (settingsMap[value]) {
-          newForm.sku = settingsMap[value].sku;
-          newForm.accounts = settingsMap[value].accounts;
-          newForm.amount_display = settingsMap[value].amount_display;
-          newForm.category = settingsMap[value].category;
-          newForm.various = settingsMap[value].various;
-          newForm.walk_in = settingsMap[value].walk_in;
-        }
+        const activitySetting = settingsMap[value] || {};
+        newForm.sku = activitySetting.sku === true;
+        newForm.accounts = activitySetting.accounts === true;
+        newForm.amount_display = activitySetting.amount_display === true;
+        newForm.category = activitySetting.category === true;
+        newForm.various = activitySetting.various === true;
+        newForm.walk_in = activitySetting.walk_in === true;
+        newForm.sku_addional = activitySetting.sku_addional === true;
+        newForm.isPenalties = activitySetting.isPenalties === true;
+        newForm.suppliesME = activitySetting.suppliesME === true;
       }
 
       console.log("📋 Updated formData:", newForm);
@@ -1311,6 +1382,19 @@ const subscription = supabase
       Swal.fire("Error", err.message, "error");
     }
   };
+
+
+  const SUPPLIES_ME_OPTIONS = [
+    "Supplies and Material Expense",
+    "Ballpen",
+    "Photocopy",
+    "Diser Uniform",
+    "Inventory Form",
+    "Shelf Tag",
+    "Barcode",
+    "Tape",
+    "BO Plastic",
+  ];
   // ✅ NEW: Filter mother accounts based on agent access
   const getAvailableMotherAccounts = () => {
     const distributorCode = selectedDistributor?.code;
@@ -1355,44 +1439,36 @@ const subscription = supabase
     console.log(`✅ Showing ${filteredMotherAccounts.length} out of ${accountTypes.length} mother accounts`);
     return filteredMotherAccounts;
   };
+  // ✅ Helper: kunin lahat ng chain branches sa LAHAT ng group, hindi lang last-clicked
+  const getAllBranchItemsFlat = () => {
+    return groupedBranches
+      .filter((g) => !g.isNonChain)
+      .flatMap((g) => g.items);
+  };
+
   const getFilteredBranchesWithExtras = () => {
-    let filtered = branchTypes
-      .filter((opt) =>
-        opt.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
-      )
-      .filter((opt) => {
-        if (!formData.distributor) return false;
+    const allItems = getAllBranchItemsFlat();
 
-        const distributorCodes = opt.distributor_code
-          ? opt.distributor_code.split(",").map((code) => code.trim()).filter(Boolean)
-          : [];
+    let filtered = allItems.filter((opt) =>
+      formData.branchType.includes(opt.name) && // ✅ dapat naka-select talaga
+      opt.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+    );
 
-        if (Array.isArray(formData.distributor)) {
-          return formData.distributor.some((d) => distributorCodes.includes(d));
-        }
-        return distributorCodes.includes(formData.distributor);
-      });
+    // dedupe kung may parehong pangalan sa magkaibang group
+    const seen = new Set();
+    filtered = filtered.filter((opt) => {
+      if (seen.has(opt.name)) return false;
+      seen.add(opt.name);
+      return true;
+    });
 
-    // ✅ Add "Various" and "Walk In" if enabled in formData
     if (formData.various) {
-      filtered.push({
-        id: "various",
-        name: "Various",
-        distributor_code: "N/A",
-        status: true, // ✅ Active status
-      });
+      filtered.push({ id: "various", name: "Various", distributor_code: "N/A", status: true });
     }
-
     if (formData.walk_in) {
-      filtered.push({
-        id: "walk_in",
-        name: "Walk In",
-        distributor_code: "N/A",
-        status: true, // ✅ Active status
-      });
+      filtered.push({ id: "walk_in", name: "Walk In", distributor_code: "N/A", status: true });
     }
 
-    // ✅ Sort alphabetically
     return filtered.sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
@@ -1442,6 +1518,37 @@ const subscription = supabase
 
   const UOM_OPTIONS = ["Case", "PC", "IBX"];
 
+  const PENALTY_OPTIONS = [
+    "Lacking of 1 item",
+    "Pilferage",
+    "Rat Bites",
+    "Lacking 1box upon delivery",
+    "Absent Merchandiser",
+    "Late Merchandiser",
+  ];
+
+  // Helper para sa SKU / Penalty / Budget updates sa rowsAccounts
+  const updateBranchRowField = (accountCode, field, value) => {
+    setRowsAccounts((prevRows) => {
+      const existingIndex = prevRows.findIndex((r) => r.account_code === accountCode);
+      if (existingIndex !== -1) {
+        const updated = [...prevRows];
+        updated[existingIndex] = { ...updated[existingIndex], [field]: value };
+        return updated;
+      }
+      const newRow = {
+        account_code: accountCode,
+        account_name: accountCode,
+        budget: 0,
+        sku: "",
+        penalty: "",
+        created_at: new Date().toISOString(),
+        [field]: value,
+      };
+      return [...prevRows, newRow];
+    });
+  };
+
   const [rows, setRows] = useState([]);
 
   const [totals, setTotals] = useState({
@@ -1473,6 +1580,37 @@ const subscription = supabase
 
   const [rowsAccounts, setRowsAccounts] = useState([]); // Account rows from database or imported data
   const [loadingAccounts, setLoadingAccounts] = useState(false); // Loading state
+
+  // ✅ Supplies / Material Expense fixed item list
+  const SUPPLIES_ITEMS = [
+    "Ballpen",
+    "Photocopy",
+    "Diser Uniform",
+    "Inventory Form",
+    "Shelf Tag",
+    "Barcode",
+    "Tape",
+    "BO Plastic",
+  ];
+
+  const [suppliesRows, setSuppliesRows] = useState(
+    SUPPLIES_ITEMS.map((item) => ({ item, amount: "" }))
+  );
+
+  const handleSuppliesAmountChange = (index, value) => {
+    setSuppliesRows((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], amount: value };
+      return updated;
+    });
+  };
+
+  const calculateSuppliesTotal = () => {
+    return suppliesRows.reduce(
+      (sum, row) => sum + (parseFloat(row.amount) || 0),
+      0
+    );
+  };
 
   // Fetch data from Supabase
   const fetchRowsAccounts = async () => {
@@ -1879,9 +2017,68 @@ const subscription = supabase
     fetchDistributorsByAgent();
   }, [loggedInUserId]);
 
+// ✅ NEW helper — ilagay malapit sa formatGroupLabelForDisplay
+const getGroupInnerLabel = (group) => {
+  const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
+  return `${bold}${rest}`;
+};
+
+// ✅ NEW helper — ginagamit ng parehong submit functions sa baba
+const buildConvertedAccountType = (accountTypeArray) => {
+  if (!Array.isArray(accountTypeArray)) return [];
+
+  const labels = accountTypeArray
+    .map((id) => {
+      // 1) chain sub-account groups
+      const chainGroup = groupedBranches.find(
+        (g) => !g.isNonChain && g.subAccountId === id
+      );
+      if (chainGroup) return getGroupInnerLabel(chainGroup);
+
+      // 2) ✅ NEW: NON-CHAIN items galing sa bagong Branch modal
+      for (const g of groupedBranches) {
+        if (g.isNonChain) {
+          const item = g.items.find((i) => i.id === id);
+          if (item) return item.name;
+        }
+      }
+
+      // 3) fallback: legacy subAccounts (lumang modal flow)
+      const legacy = Object.values(subAccounts).flat().find((s) => s.id === id);
+      return legacy?.name;
+    })
+    .filter(Boolean);
+
+  return [...new Set(labels)];
+};
+
 
   const [approvalList, setApprovalList] = useState([]);
+  const [penaltyOptions, setPenaltyOptions] = useState([]);
+  const [suppliesOptions, setSuppliesOptions] = useState([]);
 
+  useEffect(() => {
+    const fetchDynamicOptions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("activity_change_ps")
+          .select("*")
+          .eq("status", true)
+          .order("id", { ascending: true });
+
+        if (error) throw error;
+
+        setPenaltyOptions((data || []).filter((row) => row.option_type === "penalty"));
+        setSuppliesOptions((data || []).filter((row) => row.option_type === "supplies"));
+      } catch (err) {
+        console.error("❌ Error fetching activity_change_ps:", err.message);
+        setPenaltyOptions([]);
+        setSuppliesOptions([]);
+      }
+    };
+
+    fetchDynamicOptions();
+  }, []);
   useEffect(() => {
     const fetchApprovalData = async () => {
       try {
@@ -2573,16 +2770,7 @@ const subscription = supabase
       const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
       const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
 
-      let convertedAccountType = [];
-      if (Array.isArray(updatedFormData.accountType)) {
-        convertedAccountType = updatedFormData.accountType
-          .map((id) => Object.values(subAccounts).flat().find((s) => s.id === id)?.name)
-          .filter(Boolean);
-      } else if (updatedFormData.accountType) {
-        const name = Object.values(subAccounts).flat().find((s) => s.id === updatedFormData.accountType)?.name;
-        convertedAccountType = name ? [name] : [];
-      }
-
+   const convertedAccountType = buildConvertedAccountType(updatedFormData.accountType);
       let finalAccountType = convertedAccountType;
       if (updatedFormData.MotherAccount2) {
         finalAccountType = [updatedFormData.MotherAccount2];
@@ -2636,7 +2824,7 @@ const subscription = supabase
   // ============================================================
 
   // NEW
-const fetchRegularPwpCodes = async () => {
+  const fetchRegularPwpCodes = async () => {
     try {
       setLoadingRegularPwpCodes(true);
 
@@ -2909,8 +3097,336 @@ const fetchRegularPwpCodes = async () => {
 
   const [branchTypes, setBranchTypes] = useState([]);
   const [branchSearchTerm, setBranchSearchTerm] = useState("");
+  const [groupedBranches, setGroupedBranches] = useState([]);
+  const [loadingGroupedBranches, setLoadingGroupedBranches] = useState(false);
 
+  useEffect(() => {
+    setBranchPage(1);
+  }, [activeBranchTabKey, branchSearchTerm, showModal_Branch]);
+
+  // Kinukuha lang laman sa loob ng () at hinihiwalay ang unang part (Direct Mega/Direct Distributor) para gawing bold
+  const formatGroupLabelForDisplay = (label) => {
+    const match = label.match(/\(([^)]+)\)/); // kunin laman sa loob ng ()
+    const inner = match ? match[1] : label; // fallback sa buong label kung walang ()
+    const dashIndex = inner.indexOf(" - ");
+    if (dashIndex === -1) return { bold: inner, rest: "" };
+    return {
+      bold: inner.slice(0, dashIndex),
+      rest: inner.slice(dashIndex), // kasama yung " - ..."
+    };
+  };
+
+  // NEW - add after the existing fetchBranches function
+
+  // Pure version of fetchSubAccounts — returns data, walang side effects
+  const computeSubAccountsForMother = (mother) => {
+    const distributorCode = selectedDistributor?.code;
+    if (!distributorCode) return [];
+
+    const cachedData = accountsListCache[distributorCode];
+    if (!cachedData?.length) return [];
+
+    const safeLower = (val) =>
+      typeof val === "string" ? val.trim().toLowerCase() : String(val ?? "").toLowerCase();
+
+    const selectedDistributorCode = safeLower(distributorCode);
+    const selectedGroupCode = safeLower(mother.code);
+
+    const filteredData = cachedData.filter((item) => {
+      const itemDistributorCode = safeLower(item.distributor_code);
+      const itemGroupCode = safeLower(item.group_code);
+      return itemDistributorCode === selectedDistributorCode && itemGroupCode === selectedGroupCode;
+    });
+
+    if (filteredData.length === 0) return [];
+
+    const uniqueData = Array.from(
+      new Map(
+        filteredData.map((item) => {
+          const cleanCode = (item.mother_code || "").trim();
+          return [cleanCode.toLowerCase(), { ...item, mother_code: cleanCode }];
+        })
+      ).values()
+    );
+
+    return uniqueData.map((item) => {
+      const cleanCode = item.mother_code;
+      const displayName =
+        motherAccountNamesMap[cleanCode] || motherAccountNamesMap[cleanCode.toLowerCase()] || cleanCode;
+      return {
+        id: item.id,
+        name: displayName,
+        code: cleanCode,
+        group_code: item.group_code,
+      };
+    });
+  };
+
+  // Pure version of fetchBranches — returns data instead of setState
+  const fetchBranchesForSub = async (motherAccountCode, groupCode) => {
+    const distributorCode = selectedDistributor?.code;
+    if (!distributorCode) return [];
+
+    const cachedData = accountsListCache[distributorCode];
+    if (!cachedData || cachedData.length === 0) return [];
+
+    const safeLower = (val) =>
+      typeof val === "string" ? val.trim().toLowerCase() : String(val ?? "").toLowerCase();
+
+    const selectedGroupCode = safeLower(groupCode);
+
+    const filteredData = cachedData.filter((item) => {
+      const motherMatch = (item.mother_code || "").trim() === motherAccountCode.trim();
+      const groupMatch = safeLower(item.group_code) === selectedGroupCode;
+      const hasBpCode = item.bp_code && item.bp_code.trim() !== "";
+      return motherMatch && groupMatch && hasBpCode;
+    });
+
+    if (filteredData.length === 0) return [];
+
+    const allBpCodes = [...new Set(filteredData.map((row) => (row.bp_code || "").trim()).filter(Boolean))];
+    let allBpData = [];
+    const batchSize = 1000;
+
+    for (let i = 0; i < allBpCodes.length; i += batchSize) {
+      const batch = allBpCodes.slice(i, i + batchSize);
+      const { data: bpData, error: bpError } = await supabase
+        .from("Bp_Accounts")
+        .select("bp_code, bp_name")
+        .in("bp_code", batch);
+      if (bpError) {
+        console.error("❌ Failed to fetch Bp_Accounts batch:", bpError);
+        continue;
+      }
+      allBpData = [...allBpData, ...bpData];
+    }
+
+    const bpMap = {};
+    allBpData.forEach((bp) => {
+      if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name;
+    });
+    setBpNamesMap((prev) => ({ ...prev, ...bpMap }));
+
+    const seenBpCodes = new Set();
+    const uniqueBranches = filteredData
+      .filter((row) => {
+        const bpCode = (row.bp_code || "").trim();
+        if (!bpCode || seenBpCodes.has(bpCode)) return false;
+        seenBpCodes.add(bpCode);
+        return true;
+      })
+      .map((row) => {
+        const bpCode = (row.bp_code || "").trim();
+        const branchName = bpMap[bpCode];
+        return {
+          id: row.id,
+          name: branchName || bpCode,
+          code: bpCode,
+          status: row.status,
+          distributor_code: row.distributor_code,
+          mother_code: row.mother_code,
+          group_code: row.group_code,
+        };
+      });
+
+    uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
+    return uniqueBranches;
+  };
+
+  // Master builder: lahat ng mother accounts → sub-accounts → branches, naka-group
+  const fetchAllGroupedBranches = async () => {
+    if (!formData.distributor) return;
+    setLoadingGroupedBranches(true);
+
+    try {
+      let motherAccounts = await fetchMotherAccountsList();
+
+      // Filter by agent access, same logic as getAvailableMotherAccounts, but
+      // working off the freshly-fetched list instead of stale state
+      const distributorCode = selectedDistributor?.code;
+      const cachedData = accountsListCache[distributorCode];
+      if (cachedData?.length) {
+        const accessibleGroupCodes = new Set(
+          cachedData.map((item) => item.group_code?.toString().trim()).filter(Boolean)
+        );
+        if (accessibleGroupCodes.size > 0) {
+          motherAccounts = motherAccounts.filter((opt) =>
+            accessibleGroupCodes.has(opt.code?.toString().trim())
+          );
+        }
+      }
+
+      console.log("🏢 Mother accounts to build groups from:", motherAccounts);
+
+      const groups = [];
+
+      for (const mother of motherAccounts) {
+        const subs = computeSubAccountsForMother(mother);
+
+        if (mother.name === "NON-CHAIN") {
+          if (subs.length === 0) continue;
+          groups.push({
+            groupKey: `mother-${mother.id}`,
+            groupLabel: mother.name,
+            isNonChain: true,
+            motherId: mother.id,
+            motherCode: mother.code,
+            motherName: mother.name,
+            items: subs.map((s) => ({
+              id: s.id,
+              name: s.name,
+              code: s.code,
+              groupCode: s.group_code,
+            })),
+          });
+          continue;
+        }
+
+        for (const sub of subs) {
+          const branches = await fetchBranchesForSub(sub.code, sub.group_code);
+          if (branches.length === 0) continue;
+
+          groups.push({
+            groupKey: `sub-${sub.id}`,
+            groupLabel: `${sub.code} = (${mother.name} - ${sub.name})`,
+            isNonChain: false,
+            motherId: mother.id,
+            motherCode: mother.code,
+            motherName: mother.name,
+            subAccountId: sub.id,
+            subAccountCode: sub.code,
+            subAccountGroupCode: sub.group_code,
+            items: branches.map((b) => ({
+              id: b.id,
+              name: b.name,
+              code: b.code,
+              status: b.status,
+              distributor_code: b.distributor_code,
+            })),
+          });
+        }
+      }
+
+      setGroupedBranches(groups);
+    } catch (err) {
+      console.error("❌ Error building grouped branches:", err.message);
+      Swal.fire("Error", "Failed to load branches.", "error");
+    } finally {
+      setLoadingGroupedBranches(false);
+    }
+  };
+
+  // Toggle a branch/sub-account checkbox inside the unified modal
+  const toggleGroupedBranchItem = (group, item) => {
+    if (group.isNonChain) {
+      setSelectedMother({ id: group.motherId, name: "NON-CHAIN", code: group.motherCode });
+      setFormData((prev) => {
+        const current = Array.isArray(prev.accountType) ? prev.accountType : [];
+        const updated = current.includes(item.id)
+          ? current.filter((x) => x !== item.id)
+          : [...current, item.id];
+        return { ...prev, accountType: updated }; // ✅ branchType hindi na nag-cclear
+      });
+    } else {
+      setSelectedMother({ id: group.motherId, name: group.motherName, code: group.motherCode });
+      setFormData((prev) => {
+        const currentAccountTypes = Array.isArray(prev.accountType) ? prev.accountType : [];
+        const updatedAccountTypes = currentAccountTypes.includes(group.subAccountId)
+          ? currentAccountTypes
+          : [...currentAccountTypes, group.subAccountId]; // ✅ array na, accumulate
+
+        const currentBranchType = prev.branchType || []; // ✅ hindi na nire-reset
+        const updatedBranchType = currentBranchType.includes(item.name)
+          ? currentBranchType.filter((n) => n !== item.name)
+          : [...currentBranchType, item.name];
+
+        return { ...prev, accountType: updatedAccountTypes, branchType: updatedBranchType };
+      });
+    }
+    setShowBranchInput(true);
+  };
+
+  // ✅ Updated: checkbox state check regardless of active tab/group
+  const isGroupedItemChecked = (group, item) => {
+    if (group.isNonChain) {
+      return (formData.accountType || []).includes(item.id);
+    }
+    return (formData.branchType || []).includes(item.name);
+    // ✅ hindi na dependent sa "active" group — laging tama kahit anong tab
+  };
+  // Chips shown sa closed "Branch" field
+  const getSelectedBranchChips = () => {
+    const chips = [];
+
+    (formData.branchType || []).forEach((name) => {
+      chips.push({
+        key: `branch-${name}`,
+        label: name,
+        onRemove: () =>
+          setFormData((prev) => ({ ...prev, branchType: prev.branchType.filter((n) => n !== name) })),
+      });
+    });
+
+    if (Array.isArray(formData.accountType)) {
+      const nonChainGroup = groupedBranches.find((g) => g.isNonChain);
+      formData.accountType.forEach((id) => {
+        const item = nonChainGroup?.items.find((i) => i.id === id);
+        if (item) {
+          chips.push({
+            key: `sub-${id}`,
+            label: item.name,
+            onRemove: () =>
+              setFormData((prev) => ({
+                ...prev,
+                accountType: prev.accountType.filter((x) => x !== id),
+              })),
+          });
+        }
+      });
+    }
+
+    return chips.map((c) => (
+      <span
+        key={c.key}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          backgroundColor: "#0050a5ff",
+          color: "#fff",
+          padding: "3px 8px",
+          borderRadius: "5px",
+          fontSize: "14px",
+          marginRight: "5px",
+        }}
+      >
+        {c.label}
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            c.onRemove();
+          }}
+          style={{
+            marginLeft: "5px",
+            cursor: "pointer",
+            fontWeight: "bold",
+            color: "#fff",
+            backgroundColor: "#ff4d4f",
+            borderRadius: "5%",
+            width: "16px",
+            height: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "12px",
+          }}
+        >
+          ✖
+        </span>
+      </span>
+    ));
+  };
   // Fetch mother accounts when modal opens
+
   useEffect(() => {
     if (showModal_Account) fetchAccounts();
   }, [showModal_Account]);
@@ -3222,154 +3738,112 @@ const fetchRegularPwpCodes = async () => {
               </div>
               <div className="row g-3">
                 {/* Distributor */}
-                <div className="col-md-4" style={{ position: "relative" }}>
+                <div className="col-md-4">
                   <label>
                     Distributor<span style={{ color: "red" }}>*</span>
                   </label>
 
-                  <select
-                    name="distributor"
-                    className="form-control"
-                    value={formData.distributor}
-                    onChange={(e) => {
-                      handleFormChange(e); // keep your existing handler
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <select
+                      name="distributor"
+                      className="form-control"
+                      value={formData.distributor}
+                      onChange={(e) => {
+                        handleFormChange(e); // keep your existing handler
 
-                      const selected = filteredDistributors.find(
-                        (dist) => dist.code === e.target.value
-                      );
+                        const selected = filteredDistributors.find(
+                          (dist) => dist.code === e.target.value
+                        );
 
-                      if (selected) {
-                        console.log(`Code: ${selected.code}`);
-                        console.log(`Distributor: ${selected.name}`);
-                      } else {
-                        console.log("⚠️ No distributor selected or found.");
-                      }
+                        if (selected) {
+                          console.log(`Code: ${selected.code}`);
+                          console.log(`Distributor: ${selected.name}`);
+                        } else {
+                          console.log("⚠️ No distributor selected or found.");
+                        }
 
-                      // ✅ Reset related data when distributor changes
-                      setSelectedMother(null);
-                      setFormData((prev) => ({
-                        ...prev,
-                        accountType: selectedMother?.name === "NON-CHAIN" ? [] : null,
-                      }));
-                      setShowBranchInput(false);
-                      setSubAccounts({});
-                    }}
-                    style={{
-                      paddingRight: "30px",
-                      borderColor: formData.distributor ? "green" : "",
-                      transition: "border-color 0.3s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (formData.distributor)
-                        e.currentTarget.style.borderColor = "green";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (formData.distributor)
-                        e.currentTarget.style.borderColor = "green";
-                      else e.currentTarget.style.borderColor = "";
-                    }}
-                  >
-                    <option value="">Select Distributor</option>
-                    {filteredDistributors.map((dist) => (
-                      <option key={dist.id} value={dist.code}>
-                        {dist.name}
-                      </option>
-                    ))}
-                  </select>
-
-
-                  <span
-                    style={{
-                      position: "absolute",
-                      right: "20px",
-                      top: "70%",
-                      transform: "translateY(-50%)",
-                      pointerEvents: "none",
-                      color: "#555",
-                      fontSize: "14px",
-                      userSelect: "none",
-                    }}
-                  >
-                    ▼
-                  </span>
-
-                  {formData.distributor && (
-                    <span
+                        // ✅ Reset related data when distributor changes
+                        setSelectedMother(null);
+                        setFormData((prev) => ({
+                          ...prev,
+                          accountType: selectedMother?.name === "NON-CHAIN" ? [] : null,
+                          branchType: [],
+                        }));
+                        setShowBranchInput(false);
+                        setSubAccounts({});
+                        setGroupedBranches([]);
+                      }}
                       style={{
-                        position: "absolute",
-                        right: "40px",
-                        top: "50%",
-                        transform: "translateY(-20%)",
-                        color: "green",
-                        fontWeight: "bold",
-                        fontSize: "25px",
-                        pointerEvents: "none",
-                        userSelect: "none",
+                        flex: 1,
+                        minWidth: 0,
+                        borderColor: formData.distributor ? "green" : "",
+                        transition: "border-color 0.3s",
                       }}
                     >
-                      ✓
-                    </span>
-                  )}
+                      <option value="">Select Distributor</option>
+                      {filteredDistributors.map((dist) => (
+                        <option key={dist.id} value={dist.code}>
+                          {dist.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {formData.distributor && (
+                      <span
+                        style={{
+                          color: "green",
+                          fontWeight: "bold",
+                          fontSize: "22px",
+                          flexShrink: 0,
+                          userSelect: "none",
+                        }}
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Activity */}
-                <div className="col-md-4" style={{ position: "relative" }}>
+                <div className="col-md-4">
                   <label>
                     Activity <span style={{ color: "red" }}>*</span>
                   </label>
-                  <select
-                    name="activity"
-                    className="form-control"
-                    value={formData.activity}
-                    onChange={handleFormChange}
-                  >
-                    <option value="">Select Activity</option>
-                    {activities
-                      .filter(opt => {
-                        const setting = settings[opt.code] || {};
-                        return setting.regular === true; // ✅ Filter by 'regular' checkbox
-                      })
-                      .map((opt) => (
-                        <option key={opt.id} value={opt.code}>
-                          {opt.name}
-                        </option>
-                      ))}
-                  </select>
-
-                  {/* Dropdown arrow */}
-                  <span
-                    style={{
-                      position: "absolute",
-                      right: "20px",
-                      top: "70%",
-                      transform: "translateY(-50%)",
-                      pointerEvents: "none",
-                      color: "#555",
-                      fontSize: "14px",
-                      userSelect: "none",
-                    }}
-                  >
-                    ▼
-                  </span>
-
-                  {/* Checkmark */}
-                  {formData.activity && (
-                    <span
-                      style={{
-                        position: "absolute",
-                        right: "40px",
-                        top: "55%",
-                        transform: "translateY(-20%)",
-                        color: "green",
-                        fontWeight: "bold",
-                        fontSize: "25px",
-                        pointerEvents: "none",
-                        userSelect: "none",
-                      }}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <select
+                      name="activity"
+                      className="form-control"
+                      value={formData.activity}
+                      onChange={handleFormChange}
+                      style={{ flex: 1, minWidth: 0 }}
                     >
-                      ✓
-                    </span>
-                  )}
+                      <option value="">Select Activity</option>
+                      {activities
+                        .filter(opt => {
+                          const setting = settings[opt.code] || {};
+                          return setting.regular === true; // ✅ Filter by 'regular' checkbox
+                        })
+                        .map((opt) => (
+                          <option key={opt.id} value={opt.code}>
+                            {opt.name}
+                          </option>
+                        ))}
+                    </select>
+
+                    {formData.activity && (
+                      <span
+                        style={{
+                          color: "green",
+                          fontWeight: "bold",
+                          fontSize: "22px",
+                          flexShrink: 0,
+                          userSelect: "none",
+                        }}
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {shouldShowCategory() && (
                   <div className="col-md-4" style={{ position: "relative" }}>
@@ -3499,7 +3973,7 @@ const fetchRegularPwpCodes = async () => {
 
 
                 {/* Mother Account1 - Conditionally displayed */}
-                {formData.activity && settingsMap[formData.activity]?.mother1 ? (
+                {/* {formData.activity && settingsMap[formData.activity]?.mother1 ? (
                   <div className="col-md-4" style={{ position: "relative" }}>
                     <label>
                       Mother Account <span style={{ color: "red" }}>*</span>
@@ -3627,7 +4101,7 @@ const fetchRegularPwpCodes = async () => {
                       </span>
                     </div>
                   </div>
-                ) : null}
+                ) : null} */}
 
                 {/* Various Account  - Conditionally displayed */}
                 {formData.activity && settingsMap[formData.activity]?.VariousAccount ? (
@@ -3782,7 +4256,7 @@ const fetchRegularPwpCodes = async () => {
                   </div>
                 ) : null}
                 {/* Branch Selector - Conditionally displayed */}
-                {formData.activity && settingsMap[formData.activity]?.branch && showBranchInput ? (
+                {formData.activity && settingsMap[formData.activity]?.branch ? (
                   <div className="col-md-4" style={{ position: "relative" }}>
                     <label>
                       Branch <span style={{ color: "red" }}>*</span>
@@ -3790,21 +4264,8 @@ const fetchRegularPwpCodes = async () => {
                     <div
                       className="form-control"
                       onClick={() => {
-                        if (!formData.accountType) return alert("Select a Sub Account first");
-
-                        const selectedSub = subAccounts[selectedMother.id]?.find(
-                          (s) => s.id === formData.accountType
-                        );
-
-                        if (!selectedSub) return alert("Sub account not found!");
-
-                        console.log("🔍 Selected Sub Account:", selectedSub);
-                        console.log("📦 Mother Code:", selectedSub.code);
-                        console.log("🎯 Group Code:", selectedSub.group_code);
-                        console.log("🏢 Selected Mother:", selectedMother);
-
                         setShowModal_Branch(true);
-                        fetchBranches(selectedSub.code, selectedSub.group_code);
+                        fetchAllGroupedBranches();
                       }}
                       style={{
                         cursor: "pointer",
@@ -3814,7 +4275,11 @@ const fetchRegularPwpCodes = async () => {
                         gap: "5px",
                       }}
                     >
-                      {getBranchNames()}
+                      {getSelectedBranchChips().length > 0 ? (
+                        getSelectedBranchChips()
+                      ) : (
+                        <span style={{ color: "#888" }}>Select Branch</span>
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -4488,15 +4953,13 @@ const fetchRegularPwpCodes = async () => {
                 show={showModal_Branch}
                 onHide={() => {
                   setShowModal_Branch(false);
-                  setBranchSearchTerm(""); // ✅ Clear search when modal closes
+                  setBranchSearchTerm("");
                 }}
                 centered
-                size="lg"
+                size="xl"
+                dialogClassName="branch-select-modal"
               >
-                <Modal.Header
-                  closeButton
-                  style={{ background: "rgb(70, 137, 166)", color: "white" }}
-                >
+                <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
                   <Modal.Title style={{ width: "100%", textAlign: "center" }}>
                     Select Branch
                   </Modal.Title>
@@ -4504,7 +4967,7 @@ const fetchRegularPwpCodes = async () => {
 
                 <Modal.Body
                   style={{
-                    maxHeight: "400px",
+                    minHeight: "70vh",
                     display: "flex",
                     flexDirection: "column",
                     padding: "1rem",
@@ -4513,122 +4976,218 @@ const fetchRegularPwpCodes = async () => {
                   <input
                     type="text"
                     className="form-control mb-3"
-                    placeholder="Search branches..."
+                    placeholder="Search branches or accounts..."
                     value={branchSearchTerm}
                     onChange={(e) => setBranchSearchTerm(e.target.value)}
                     style={{ borderColor: "#007bff", flexShrink: 0 }}
                   />
 
-                  <div style={{ overflowY: "auto", flexGrow: 1 }}>
-                    {(() => {
-                      const filteredBranches = getFilteredBranchesWithExtras();
+                  {loadingGroupedBranches ? (
+                    <div className="text-center p-4">
+                      <Spinner animation="border" variant="primary" />
+                      <p className="text-muted mt-2">Loading branches...</p>
+                    </div>
+                  ) : (
+                    (() => {
+                      if (groupedBranches.length === 0) {
+                        return (
+                          <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+                            No branches found.
+                          </div>
+                        );
+                      }
+
+                      const currentKey =
+                        activeBranchTabKey &&
+                          (activeBranchTabKey === "ALL" || groupedBranches.some((g) => g.groupKey === activeBranchTabKey))
+                          ? activeBranchTabKey
+                          : "ALL";
+
+                      const isAllTab = currentKey === "ALL";
+                      const activeGroup = isAllTab ? null : groupedBranches.find((g) => g.groupKey === currentKey);
+
+                      const allFilteredItems = isAllTab
+                        ? groupedBranches.flatMap((group) =>
+                          group.items
+                            .filter((item) => item.name.toLowerCase().includes(branchSearchTerm.toLowerCase()))
+                            .map((item) => ({ item, group }))
+                        )
+                        : (activeGroup?.items || [])
+                          .filter((item) => item.name.toLowerCase().includes(branchSearchTerm.toLowerCase()))
+                          .map((item) => ({ item, group: activeGroup }));
+
+                      // ── Pagination ──
+                      const totalPages = Math.max(1, Math.ceil(allFilteredItems.length / BRANCH_PAGE_SIZE));
+                      const safePage = Math.min(branchPage, totalPages);
+                      const startIdx = (safePage - 1) * BRANCH_PAGE_SIZE;
+                      const pagedItems = allFilteredItems.slice(startIdx, startIdx + BRANCH_PAGE_SIZE);
 
                       return (
                         <>
-                          <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
-                            Showing {filteredBranches.length} branch
-                            {filteredBranches.length !== 1 ? "es" : ""}
-                          </p>
+                          <Nav
+                            variant="tabs"
+                            activeKey={currentKey}
+                            onSelect={(k) => setActiveBranchTabKey(k)}
+                            style={{ flexWrap: "nowrap", overflowX: "auto", marginBottom: "10px" }}
+                          >
+                            <Nav.Item style={{ whiteSpace: "nowrap" }}>
+                              <Nav.Link eventKey="ALL">All</Nav.Link>
+                            </Nav.Item>
+                            {groupedBranches.map((group) => {
+                              const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
+                              return (
+                                <Nav.Item key={group.groupKey} style={{ whiteSpace: "nowrap" }}>
+                                  <Nav.Link eventKey={group.groupKey}>
+                                    <strong>{bold}</strong>{rest}
+                                  </Nav.Link>
+                                </Nav.Item>
+                              );
+                            })}
+                          </Nav>
 
-                          {filteredBranches.map((opt) => (
+                          <div style={{ overflowY: "auto", flexGrow: 1 }}>
+                            {pagedItems.length === 0 ? (
+                              <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+                                No branches found.
+                              </div>
+                            ) : (
+                              pagedItems.map(({ item, group }) => (
+                                <div
+                                  key={`${group.groupKey}-${item.id}`}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "8px 10px",
+                                    borderBottom: "1px solid #eee",
+                                    gap: "8px",
+                                  }}
+                                >
+                                  <div style={{ display: "flex", alignItems: "center", minWidth: 0, flex: 1 }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isGroupedItemChecked(group, item)}
+                                      onChange={() => toggleGroupedBranchItem(group, item)}
+                                      id={`grouped-branch-${group.groupKey}-${item.id}`}
+                                      style={{
+                                        width: "20px",
+                                        height: "20px",
+                                        transform: "scale(1.3)",
+                                        cursor: "pointer",
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                    <label
+                                      htmlFor={`grouped-branch-${group.groupKey}-${item.id}`}
+                                      style={{
+                                        marginLeft: "8px",
+                                        cursor: "pointer",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {item.name}
+                                    </label>
+                                  </div>
+
+                                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                                    {isAllTab && (() => {
+                                      const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
+                                      return (
+                                        <span
+                                          style={{
+                                            backgroundColor: group.isNonChain ? "#fff3cd" : "#e7f1ff",
+                                            color: group.isNonChain ? "#92400e" : "#0050a5",
+                                            border: `1px solid ${group.isNonChain ? "#fbbf24" : "#bfdbfe"}`,
+                                            borderRadius: "999px",
+                                            padding: "2px 10px",
+                                            fontSize: "11px",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          <strong>{bold}</strong>
+                                          {rest}
+                                        </span>
+                                      );
+                                    })()}
+
+                                    {!group.isNonChain && (
+                                      <span
+                                        style={{
+                                          fontSize: "0.85rem",
+                                          fontWeight: 500,
+                                          color: item.status ? "#28a745" : "#dc3545",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {item.status ? "Active" : "Inactive ❌"}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          {/* Pagination controls */}
+                          {allFilteredItems.length > BRANCH_PAGE_SIZE && (
                             <div
-                              key={opt.id}
                               style={{
                                 display: "flex",
+                                justifyContent: "center",
                                 alignItems: "center",
-                                justifyContent: "space-between",
-                                padding: "6px 10px",
+                                gap: "10px",
+                                paddingTop: "10px",
+                                borderTop: "1px solid #eee",
+                                marginTop: "8px",
+                                flexShrink: 0,
                               }}
                             >
-                              <div style={{ display: "flex", alignItems: "center" }}>
-                                <input
-                                  type="checkbox"
-                                  checked={formData.branchType.includes(opt.name)}
-                                  onChange={() => toggleBranchType(opt.name)}
-                                  id={`branchType-${opt.id}`}
-                                  style={{
-                                    width: "20px",
-                                    height: "20px",
-                                    transform: "scale(1.3)",
-                                    cursor: "pointer",
-                                  }}
-                                />
-                                <label
-                                  htmlFor={`branchType-${opt.id}`}
-                                  style={{ marginLeft: "8px", cursor: "pointer" }}
-                                >
-                                  {opt.name}
-                                </label>
-                              </div>
-
-                              <span
-                                style={{
-                                  fontSize: "0.9rem",
-                                  fontWeight: 500,
-                                  color: opt.status ? "#28a745" : "#dc3545",
-                                }}
+                              <Button
+                                size="sm"
+                                variant="outline-secondary"
+                                disabled={safePage <= 1}
+                                onClick={() => setBranchPage((p) => Math.max(1, p - 1))}
                               >
-                                {opt.status ? "Active" : "Inactive ❌"}
+                                ← Prev
+                              </Button>
+                              <span style={{ fontSize: "13px", color: "#555" }}>
+                                Page {safePage} of {totalPages} ({allFilteredItems.length} items)
                               </span>
+                              <Button
+                                size="sm"
+                                variant="outline-secondary"
+                                disabled={safePage >= totalPages}
+                                onClick={() => setBranchPage((p) => Math.min(totalPages, p + 1))}
+                              >
+                                Next →
+                              </Button>
                             </div>
-                          ))}
+                          )}
                         </>
                       );
-                    })()}
-                  </div>
+                    })()
+                  )}
                 </Modal.Body>
 
-                <Modal.Footer
-                  style={{ display: "flex", justifyContent: "space-between" }}
-                >
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <Button
-                      variant="success"
-                      onClick={() => {
-                        const filteredBranches = branchTypes
-                          .filter((opt) =>
-                            opt.name
-                              .toLowerCase()
-                              .includes(branchSearchTerm.toLowerCase())
-                          )
-                          .filter((opt) => {
-                            if (!formData.distributor) return false;
-                            const distributorCodes = opt.distributor_code
-                              ? opt.distributor_code
-                                .split(",")
-                                .map((code) => code.trim())
-                                .filter((code) => code.length > 0)
-                              : [];
-                            if (Array.isArray(formData.distributor)) {
-                              return formData.distributor.some((d) =>
-                                distributorCodes.includes(d)
-                              );
-                            }
-                            return distributorCodes.includes(formData.distributor);
-                          });
-
-                        const allBranchNames = filteredBranches.map((opt) => opt.name);
-                        setFormData((prev) => ({ ...prev, branchType: allBranchNames }));
-                      }}
-                    >
-                      Select All
-                    </Button>
-
-                    <Button
-                      variant="warning"
-                      onClick={() => {
-                        setFormData((prev) => ({ ...prev, branchType: [] }));
-                      }}
-                    >
-                      Clear All
-                    </Button>
-                  </div>
+                <Modal.Footer style={{ display: "flex", justifyContent: "space-between" }}>
+                  <Button
+                    variant="warning"
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, branchType: [], accountType: null }));
+                      setSelectedMother(null);
+                      setShowBranchInput(false);
+                    }}
+                  >
+                    Clear All
+                  </Button>
 
                   <Button
                     variant="light"
                     onClick={() => {
                       setShowModal_Branch(false);
-                      setBranchSearchTerm(""); // ✅ Clear search when "Close" button clicked
+                      setBranchSearchTerm("");
                     }}
                   >
                     Close
@@ -5181,15 +5740,17 @@ const fetchRegularPwpCodes = async () => {
                     );
 
                     // ✅ Step navigation logic
+                    // ✅ Step navigation logic
+                    // ✅ Step navigation logic
                     if (formData.activityName === "BAD ORDER") {
                       setStep(4);
                       console.log("⛔ BAD ORDER selected → skipping SKU/accounts checks, going to Step 4");
                     } else if (setting?.sku) {
                       setStep(1);
                       console.log("🛒 SKU found → going to Step 1");
-                    } else if (setting?.accounts) {
+                    } else if (setting?.accounts || setting?.sku_addional || setting?.isPenalties || setting?.suppliesME) {
                       setStep(2);
-                      console.log("💼 Accounts found → going to Step 2");
+                      console.log("💼 Accounts/SKU Addional/Penalties/SuppliesME found → going to Step 2");
                     } else {
                       setStep(3);
                       console.log("📄 Default case → going to Step 3");
@@ -5402,16 +5963,15 @@ const fetchRegularPwpCodes = async () => {
                                 <thead className="table-primary text-white">
                                   <tr>
                                     <th>SKU</th>
-                                    <th>SRP</th>
-                                    <th>QTY</th>
-                                    <th>UOM</th>
-                                    <th>Billing Amount</th>
-                                    <th>Discount </th>
+                                    <th style={{ display: "none" }}>SRP</th>
+                                    <th style={{ display: "none" }}>QTY</th>
+                                    <th style={{ display: "none" }}>UOM</th>
+                                    <th style={{ display: "none" }}>Billing Amount</th>
+                                    <th style={{ display: "none" }}>Discount </th>
                                     <th>Total Amount</th>
                                     <th>Actions</th>
                                   </tr>
                                 </thead>
-
                                 <tbody>
                                   {rows.map((row, idx) => {
                                     const srp = Number(row.SRP || 0);
@@ -5458,7 +6018,7 @@ const fetchRegularPwpCodes = async () => {
                                           </button>
                                         </td>
 
-                                        <td>
+                                        <td style={{ display: "none" }}>
                                           <Form.Control
                                             type="number"
                                             step="0.01"
@@ -5470,7 +6030,7 @@ const fetchRegularPwpCodes = async () => {
                                           />
                                         </td>
 
-                                        <td>
+                                        <td style={{ display: "none" }}>
                                           <Form.Control
                                             type="number"
                                             value={row.QTY || 0}
@@ -5480,7 +6040,7 @@ const fetchRegularPwpCodes = async () => {
                                           />
                                         </td>
 
-                                        <td>
+                                        <td style={{ display: "none" }}>
                                           <Form.Select
                                             value={row.UOM || "PC"}
                                             onChange={(e) =>
@@ -5495,9 +6055,9 @@ const fetchRegularPwpCodes = async () => {
                                           </Form.Select>
                                         </td>
 
-                                        <td>{totalBeforeDiscount.toFixed(2)}</td>
+                                        <td style={{ display: "none" }}>{totalBeforeDiscount.toFixed(2)}</td>
 
-                                        <td>
+                                        <td style={{ display: "none" }}>
                                           <Form.Control
                                             type="number"
                                             step="0.01"
@@ -5508,7 +6068,16 @@ const fetchRegularPwpCodes = async () => {
                                           />
                                         </td>
 
-                                        <td>{totalAmount.toFixed(2)}</td>
+                                        <td>
+                                          <Form.Control
+                                            type="number"
+                                            step="0.01"
+                                            value={row.TOTAL_AMOUNT ?? 0}
+                                            onChange={(e) =>
+                                              handleChangeSkuForBranch(branchName, idx, "TOTAL_AMOUNT", e.target.value)
+                                            }
+                                          />
+                                        </td>
 
                                         <td>
                                           <Button
@@ -5527,11 +6096,11 @@ const fetchRegularPwpCodes = async () => {
                                 <tfoot className="table text-white">
                                   <tr>
                                     <td><strong>Total</strong></td>
-                                    <td>{totals.SRP.toFixed(2)}</td>
-                                    <td>{totals.QTY}</td>
-                                    <td></td>
-                                    <td>{totals.BILLING_AMOUNT.toFixed(2)}</td>
-                                    <td>{totals.DISCOUNT.toFixed(2)}</td>
+                                    <td style={{ display: "none" }}>{totals.SRP.toFixed(2)}</td>
+                                    <td style={{ display: "none" }}>{totals.QTY}</td>
+                                    <td style={{ display: "none" }}></td>
+                                    <td style={{ display: "none" }}>{totals.BILLING_AMOUNT.toFixed(2)}</td>
+                                    <td style={{ display: "none" }}>{totals.DISCOUNT.toFixed(2)}</td>
                                     <td>{totals.TOTAL_AMOUNT.toFixed(2)}</td>
                                     <td>-</td>
                                   </tr>
@@ -5605,34 +6174,6 @@ const fetchRegularPwpCodes = async () => {
                         alignItems: "center",
                       }}
                     >
-                      <label style={{ fontSize: "16px", fontWeight: "500", cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={showPack}
-                          onChange={() => setShowPack(!showPack)}
-                          style={{
-                            transform: "scale(1.5)", // ✅ Make checkbox larger
-                            marginRight: "8px",
-                            cursor: "pointer",
-                          }}
-                        />
-                        SRP Pack
-                      </label>
-
-                      <label style={{ fontSize: "16px", fontWeight: "500", cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={showCase}
-                          onChange={() => setShowCase(!showCase)}
-                          style={{
-                            transform: "scale(1.5)",
-                            marginRight: "8px",
-                            cursor: "pointer",
-                          }}
-                        />
-                        SRP Case
-                      </label>
-
                       <label style={{ fontSize: "16px", fontWeight: "500", cursor: "pointer" }}>
                         <input
                           type="checkbox"
@@ -5734,23 +6275,10 @@ const fetchRegularPwpCodes = async () => {
                                         sku.sku_code
                                       );
 
-                                      if (!manualSrp) {
-                                        if (showPack && Number(sku.pack || 0) > 0) {
-                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.pack);
-                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "PACK");
-                                        } else if (showCase && Number(sku.case || 0) > 0) {
-                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.case);
-                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", "CASE");
-                                        } else {
-                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "SRP", sku.default_srp || 0);
-                                          handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "UOM", sku.default_uom || "PC");
-                                        }
-                                        handleChangeSkuForBranch(selectedBranchName, selectedRowIndex, "QTY", sku.default_qty || 1);
-                                      }
-
                                       setShowSkuModal(false);
                                     }
                                   }}
+
                                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f5f5f5")}
                                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                                 >
@@ -5758,42 +6286,6 @@ const fetchRegularPwpCodes = async () => {
                                     <strong>{sku.sku_code}</strong> – {sku.name}
                                   </div>
                                   <small style={{ color: "#666" }}>{sku.description || "No description"}</small>
-                                  <div
-                                    style={{
-                                      marginTop: "6px",
-                                      fontSize: "13px",
-                                      color: "#333",
-                                      display: "flex",
-                                      gap: "16px",
-                                      flexWrap: "wrap",
-                                    }}
-                                  >
-                                    <strong>SRP:</strong>
-                                    {showPack && (
-                                      <span>
-                                        🟦 Pack:{" "}
-                                        <strong>
-                                          ₱
-                                          {Number(sku.pack || 0).toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                          })}
-                                        </strong>
-                                      </span>
-                                    )}
-                                    {showCase && (
-                                      <span>
-                                        🟩 Case:{" "}
-                                        <strong>
-                                          ₱
-                                          {Number(sku.case || 0).toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                          })}
-                                        </strong>
-                                      </span>
-                                    )}
-                                  </div>
                                 </div>
                               ))
                             ) : (
@@ -5975,6 +6467,9 @@ const fetchRegularPwpCodes = async () => {
               })()}
 
             {/* Budget Table */}
+
+
+            {/* Budget Table */}
             <Card border="primary" className="shadow mb-3">
               <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
                 <h4 className="mb-0"> Regular Branch Budget List</h4>
@@ -6025,6 +6520,9 @@ const fetchRegularPwpCodes = async () => {
                       <thead className="bg-primary text-white">
                         <tr>
                           <th>Branch Name</th>
+                          {formData.sku_addional && <th>SKU</th>}
+                          {formData.isPenalties && <th>Penalties</th>}
+                          {formData.suppliesME && <th>Supplies/M.E</th>}
                           <th>Budget</th>
                         </tr>
                       </thead>
@@ -6073,6 +6571,48 @@ const fetchRegularPwpCodes = async () => {
                                 <td>
                                   <Form.Control value={branch.name} disabled />
                                 </td>
+                                {formData.sku_addional && (
+                                  <td>
+                                    <Form.Control
+                                      value={existingRow.sku || ""}
+                                      onChange={(e) =>
+                                        updateBranchRowField(branch.name, "sku", e.target.value)
+                                      }
+                                      placeholder="Enter SKU"
+                                    />
+                                  </td>
+                                )}
+                                {formData.isPenalties && (
+                                  <td>
+                                    <Form.Select
+                                      value={existingRow.penalty || ""}
+                                      onChange={(e) =>
+                                        updateBranchRowField(branch.name, "penalty", e.target.value)
+                                      }
+                                    >
+                                      <option value="">Select Penalty</option>
+                                      {penaltyOptions.map((p) => (
+                                        <option key={p.id} value={p.label}>{p.label}</option>
+                                      ))}
+                                    </Form.Select>
+                                  </td>
+                                )}
+                                {formData.suppliesME && (
+                                  <td>
+                                    <Form.Select
+                                      value={existingRow.suppliesme || ""}
+                                      onChange={(e) =>
+                                        updateBranchRowField(branch.name, "suppliesme", e.target.value)
+                                      }
+                                    >
+                                      <option value="">Select Item</option>
+                                      <option value="">Select Item</option>
+                                      {suppliesOptions.map((item) => (
+                                        <option key={item.id} value={item.label}>{item.label}</option>
+                                      ))}
+                                    </Form.Select>
+                                  </td>
+                                )}
                                 <td>
                                   <Form.Control
                                     type="number"
@@ -6130,9 +6670,9 @@ const fetchRegularPwpCodes = async () => {
 
                         {/* NON-CHAIN: render multiple sub-accounts if selected */}
                         {(() => {
-                          if (selectedMother?.name !== "NON-CHAIN") {
-                            console.log('Skipping NON-CHAIN section - mother is:', selectedMother?.name);
-                            return null;
+
+                          if (!Array.isArray(formData.accountType) || formData.accountType.length === 0) {
+                            return null; // ✅ hindi na dependent sa "active" mother
                           }
 
                           console.log('=== NON-CHAIN RENDERING ===');
@@ -6167,6 +6707,47 @@ const fetchRegularPwpCodes = async () => {
                                 <td>
                                   <Form.Control value={sub.name} disabled />
                                 </td>
+                                {formData.sku_addional && (
+                                  <td>
+                                    <Form.Control
+                                      value={existingRow.sku || ""}
+                                      onChange={(e) =>
+                                        updateBranchRowField(sub.id, "sku", e.target.value)
+                                      }
+                                      placeholder="Enter SKU"
+                                    />
+                                  </td>
+                                )}
+                                {formData.isPenalties && (
+                                  <td>
+                                    <Form.Select
+                                      value={existingRow.penalty || ""}
+                                      onChange={(e) =>
+                                        updateBranchRowField(sub.id, "penalty", e.target.value)
+                                      }
+                                    >
+                                      <option value="">Select Penalty</option>
+                                      {PENALTY_OPTIONS.map((p) => (
+                                        <option key={p} value={p}>{p}</option>
+                                      ))}
+                                    </Form.Select>
+                                  </td>
+                                )}
+                                {formData.suppliesME && (
+                                  <td>
+                                    <Form.Select
+                                      value={existingRow.suppliesme || ""}
+                                      onChange={(e) =>
+                                        updateBranchRowField(sub.id, "suppliesme", e.target.value)
+                                      }
+                                    >
+                                      <option value="">Select Item</option>
+                                      {SUPPLIES_ME_OPTIONS.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                      ))}
+                                    </Form.Select>
+                                  </td>
+                                )}
                                 <td>
                                   <Form.Control
                                     type="number"
@@ -6219,7 +6800,17 @@ const fetchRegularPwpCodes = async () => {
 
                         {/* Total Row */}
                         <tr>
-                          <td style={{ fontWeight: "bold", textAlign: "right" }}>Total</td>
+                          <td
+                            colSpan={
+                              1 +
+                              (formData.sku_addional ? 1 : 0) +
+                              (formData.isPenalties ? 1 : 0) +
+                              (formData.suppliesME ? 1 : 0)
+                            }
+                            style={{ fontWeight: "bold", textAlign: "right" }}
+                          >
+                            Total
+                          </td>
                           <td style={{ fontWeight: "bold" }}>
                             {(() => {
                               console.log('=== CALCULATING TOTAL ===');
@@ -6228,14 +6819,10 @@ const fetchRegularPwpCodes = async () => {
                               console.log('formData.branchType:', formData.branchType);
                               console.log('rowsAccounts:', rowsAccounts);
 
-                              const filteredRows = rowsAccounts.filter((row) => {
-                                const isIncluded = selectedMother?.name === "NON-CHAIN"
-                                  ? (formData.accountType || []).includes(row.account_code)
-                                  : formData.branchType.includes(row.account_code);
-
-                                console.log('Total filter - row:', row.account_code, 'included:', isIncluded);
-                                return isIncluded;
-                              });
+                              const filteredRows = rowsAccounts.filter((row) =>
+                                (formData.accountType || []).includes(row.account_code) ||
+                                formData.branchType.includes(row.account_code) // ✅ pareho pwedeng kasama
+                              );
 
                               console.log('Filtered rows for total:', filteredRows);
 
