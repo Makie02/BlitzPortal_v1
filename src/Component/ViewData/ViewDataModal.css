@@ -71,6 +71,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+  align-items: start;
 }
 
 /* Optional: make labels and values look better in smaller widths */
@@ -320,5 +321,36 @@
 
   .table-wrapper h4 {
     font-size: 1rem;
+  }
+}
+
+.field-group-box {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 4px;
+  align-self: start;
+}
+
+@media (max-width: 600px) {
+  .field-group-box {
+    grid-template-columns: 1fr;
+  }
+}.field-group-row {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.field-group-row .field-group-box {
+  flex: 1;
+}
+
+@media (max-width: 600px) {
+  .field-group-row {
+    flex-direction: column;
   }
 }
