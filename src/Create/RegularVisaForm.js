@@ -516,25 +516,25 @@ const RegularVisaForm = () => {
   };
 
 
-  const addSkuRowForBranch = (brandname) => {
-    if (brandname === "ALL_BRANCHES") {
-      setAccountSkuRows((prev) => ({
-        ...prev,
-        ALL_BRANCHES: [
-          ...(prev.ALL_BRANCHES || []),
-          { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0 },
-        ],
-      }));
-    } else {
-      setAccountSkuRows((prev) => ({
-        ...prev,
-        [brandname]: [
-          ...(prev[brandname] || []),
-          { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0 },
-        ],
-      }));
-    }
-  };
+const addSkuRowForBranch = (brandname) => {
+  if (brandname === "ALL_BRANCHES") {
+    setAccountSkuRows((prev) => ({
+      ...prev,
+      ALL_BRANCHES: [
+        ...(prev.ALL_BRANCHES || []),
+        { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0, TOTAL_AMOUNT: 0 },
+      ],
+    }));
+  } else {
+    setAccountSkuRows((prev) => ({
+      ...prev,
+      [brandname]: [
+        ...(prev[brandname] || []),
+        { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0, TOTAL_AMOUNT: 0 },
+      ],
+    }));
+  }
+};
 
   const removeSkuRowForBranch = (brandname, index) => {
     setAccountSkuRows((prev) => ({
@@ -2325,73 +2325,65 @@ const RegularVisaForm = () => {
     return Number(val) || 0;
   };
 
-  const handleSku = async (generatedCode) => {
-    setLoading(true);
-    setMessage("");
+// NEW
+const handleSku = async (generatedCode) => {
+  setLoading(true);
+  setMessage("");
 
-    try {
-      const allRows = Object.keys(accountSkuRows).flatMap((accountCode) =>
-        (accountSkuRows[accountCode] || []).map((row) => {
-          const account = accountTypes.find((acc) => acc.code === accountCode);
-          const srp = toNumber(row.SRP);
-          const qty = toNumber(row.QTY);
-          const discountValue = toNumber(row.DISCOUNT);
-          const billingAmount = srp * qty;
-          const totalAmount = billingAmount - discountValue;
+  try {
+    // ✅ Diretso na lang kunin ang TOTAL_AMOUNT, walang SRP/QTY/DISCOUNT computation
+    const allRows = Object.keys(accountSkuRows).flatMap((accountCode) =>
+      (accountSkuRows[accountCode] || []).map((row) => {
+        const account = accountTypes.find((acc) => acc.code === accountCode);
+        const totalAmount = toNumber(row.TOTAL_AMOUNT);
 
-          return {
-            account_name: account?.name || accountCode,
-            sku_code: row.SKUITEM ?? null,
-            srp,
-            qty,
-            uom: row.UOM?.trim() ? row.UOM : "pc",
-            billing_amount: billingAmount,
-            discount: discountValue,
-            total_amount: totalAmount,
-            remaining_balance: 0,
-            regular_code: generatedCode,
-            created_at: new Date().toISOString(),
-          };
-        })
-      );
+        return {
+          account_name: account?.name || accountCode,
+          sku_code: row.SKUITEM ?? null,
+          uom: row.UOM?.trim() ? row.UOM : "pc",
+          total_amount: totalAmount,
+          remaining_balance: 0,
+          regular_code: generatedCode,
+          created_at: new Date().toISOString(),
+        };
+      })
+    );
 
-      if (!allRows.length) {
-        setMessage("⚠️ No SKUs to submit.");
-        setLoading(false);
-        return;
-      }
-
-      const totalBilling = allRows.reduce((sum, r) => sum + r.billing_amount, 0);
-      const totalDiscount = allRows.reduce((sum, r) => sum + r.discount, 0);
-      const grandTotal = totalBilling - totalDiscount;
-
-      const selected = parseFloat(selectedBalance || 0);
-      const creditBudget = parseFloat(formData?.amountbadget || 0);
-      const remainingSkuBudget = selected - grandTotal - creditBudget;
-
-      const rowsWithTotals = allRows.map((r) => ({
-        ...r,
-        remaining_balance: remainingSkuBudget,
-      }));
-
-      const { error: insertError } = await supabase
-        .from("regular_sku")
-        .insert(rowsWithTotals);
-
-      if (insertError) throw insertError;
-
-      console.log("✅ SKUs inserted:", rowsWithTotals.length);
-
-      await upsertRegularPwp(supabase, generatedCode, remainingSkuBudget, grandTotal);
-
-      setMessage("✅ SKUs submitted successfully!");
-    } catch (err) {
-      console.error("❌ SKU submit error:", err.message);
-      setMessage(`❌ Error: ${err.message}`);
-    } finally {
+    if (!allRows.length) {
+      setMessage("⚠️ No SKUs to submit.");
       setLoading(false);
+      return;
     }
-  };
+
+    const grandTotal = allRows.reduce((sum, r) => sum + r.total_amount, 0);
+
+    const selected = parseFloat(selectedBalance || 0);
+    const creditBudget = parseFloat(formData?.amountbadget || 0);
+    const remainingSkuBudget = selected - grandTotal - creditBudget;
+
+    const rowsWithTotals = allRows.map((r) => ({
+      ...r,
+      remaining_balance: remainingSkuBudget,
+    }));
+
+    const { error: insertError } = await supabase
+      .from("regular_sku")
+      .insert(rowsWithTotals);
+
+    if (insertError) throw insertError;
+
+    console.log("✅ SKUs inserted:", rowsWithTotals.length);
+
+    await upsertRegularPwp(supabase, generatedCode, remainingSkuBudget, grandTotal);
+
+    setMessage("✅ SKUs submitted successfully!");
+  } catch (err) {
+    console.error("❌ SKU submit error:", err.message);
+    setMessage(`❌ Error: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   async function upsertRegularPwp(supabase, regularpwpcode, remainingSkuBudget, totalAmount) {
     try {
@@ -2655,6 +2647,9 @@ const RegularVisaForm = () => {
           regularcode: generatedCode,
           account_name: row.account_name,
           budget: row.budget || 0,
+          sku: row.sku || null,
+          penalty: row.penalty || null,
+          suppliesme: row.suppliesme || null,
           created_at: row.created_at || new Date().toISOString(),
           createform: createdBy,
           total_budget: totalBudget,
@@ -4467,28 +4462,27 @@ const RegularVisaForm = () => {
                 <div className="card-body">
                   <div className="row g-3">
                     {/* Activity Duration From */}
-                    {/* Activity Duration To */}
                     <div className="col-md-3" style={{ position: "relative" }}>
                       <label
-                        htmlFor="activityDurationTo"
+                        htmlFor="activityDurationFrom"
                         className="form-label"
                       >
-                        Activity Duration To
+                        Activity Duration From
                       </label>
                       <input
                         type="date"
-                        id="activityDurationTo"
-                        name="activityDurationTo"
+                        id="activityDurationFrom"
+                        name="activityDurationFrom"
                         className="form-control"
-                        value={formData.activityDurationTo}
-                        min={formData.activityDurationFrom || undefined} // ✅ block dates earlier than "From"
+                        value={formData.activityDurationFrom}
+                        max={formData.activityDurationTo || undefined} // ✅ block "From" dates later than "To"
                         onChange={(e) => {
-                          const newTo = e.target.value;
-                          if (formData.activityDurationFrom && newTo < formData.activityDurationFrom) {
+                          const newFrom = e.target.value;
+                          if (formData.activityDurationTo && newFrom > formData.activityDurationTo) {
                             Swal.fire({
                               icon: "warning",
                               title: "Invalid Date",
-                              text: "Activity Duration To cannot be earlier than Activity Duration From.",
+                              text: "Activity Duration From cannot be later than Activity Duration To.",
                               confirmButtonColor: "#0d6efd",
                             });
                             return; // ✅ reject the change
@@ -4530,7 +4524,21 @@ const RegularVisaForm = () => {
                         name="activityDurationTo"
                         className="form-control"
                         value={formData.activityDurationTo}
-                        onChange={handleFormChange}
+                        min={formData.activityDurationFrom || `${new Date().getFullYear()}-01-01`} // ✅ lock to Jan 1 of current year (or "From" date)
+                        max={`${new Date().getFullYear()}-12-31`} // ✅ lock to Dec 31 of current year
+                        onChange={(e) => {
+                          const newTo = e.target.value;
+                          if (formData.activityDurationFrom && newTo < formData.activityDurationFrom) {
+                            Swal.fire({
+                              icon: "warning",
+                              title: "Invalid Date",
+                              text: "Activity Duration To cannot be earlier than Activity Duration From.",
+                              confirmButtonColor: "#0d6efd",
+                            });
+                            return; // ✅ reject the change
+                          }
+                          handleFormChange(e);
+                        }}
                         style={{ paddingRight: "35px" }}
                       />
                       {formData.activityDurationTo && (
@@ -6610,9 +6618,12 @@ const RegularVisaForm = () => {
                                   <td>
                                     <Form.Select
                                       value={existingRow.penalty || ""}
-                                      onChange={(e) =>
-                                        updateBranchRowField(branch.name, "penalty", e.target.value)
-                                      }
+                                      onChange={(e) => {
+                                        updateBranchRowField(branch.name, "penalty", e.target.value);
+                                        if (e.target.value) {
+                                          updateBranchRowField(branch.name, "suppliesme", ""); // ✅ clear supplies kapag may napiling penalty
+                                        }
+                                      }}
                                     >
                                       <option value="">Select Penalty</option>
                                       {penaltyOptions.map((p) => (
@@ -6625,11 +6636,13 @@ const RegularVisaForm = () => {
                                   <td>
                                     <Form.Select
                                       value={existingRow.suppliesme || ""}
-                                      onChange={(e) =>
-                                        updateBranchRowField(branch.name, "suppliesme", e.target.value)
-                                      }
+                                      onChange={(e) => {
+                                        updateBranchRowField(branch.name, "suppliesme", e.target.value);
+                                        if (e.target.value) {
+                                          updateBranchRowField(branch.name, "penalty", ""); // ✅ clear penalty kapag may napiling supplies
+                                        }
+                                      }}
                                     >
-                                      <option value="">Select Item</option>
                                       <option value="">Select Item</option>
                                       {suppliesOptions.map((item) => (
                                         <option key={item.id} value={item.label}>{item.label}</option>
@@ -6746,9 +6759,12 @@ const RegularVisaForm = () => {
                                   <td>
                                     <Form.Select
                                       value={existingRow.penalty || ""}
-                                      onChange={(e) =>
-                                        updateBranchRowField(sub.id, "penalty", e.target.value)
-                                      }
+                                      onChange={(e) => {
+                                        updateBranchRowField(sub.id, "penalty", e.target.value);
+                                        if (e.target.value) {
+                                          updateBranchRowField(sub.id, "suppliesme", ""); // ✅ clear supplies
+                                        }
+                                      }}
                                     >
                                       <option value="">Select Penalty</option>
                                       {PENALTY_OPTIONS.map((p) => (
@@ -6761,9 +6777,12 @@ const RegularVisaForm = () => {
                                   <td>
                                     <Form.Select
                                       value={existingRow.suppliesme || ""}
-                                      onChange={(e) =>
-                                        updateBranchRowField(sub.id, "suppliesme", e.target.value)
-                                      }
+                                      onChange={(e) => {
+                                        updateBranchRowField(sub.id, "suppliesme", e.target.value);
+                                        if (e.target.value) {
+                                          updateBranchRowField(sub.id, "penalty", ""); // ✅ clear penalty
+                                        }
+                                      }}
                                     >
                                       <option value="">Select Item</option>
                                       {SUPPLIES_ME_OPTIONS.map((item) => (
