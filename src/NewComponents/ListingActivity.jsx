@@ -7,7 +7,7 @@ export default function ListingActivity() {
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const exclusiveFields = ['accounts', 'amount_display', 'sku'];
+  const exclusiveFields = ['accounts', 'amount_display', 'sku', 'sku_addional', 'isPenalties', 'Supplies/M.E'];
   const accountTypeFields = ['mother1', 'VariousAccount', 'MotherAccount2'];
   const otherFields = [
     'branch',
@@ -16,7 +16,8 @@ export default function ListingActivity() {
     'distributor',
     'regular',
     'various',
-    'walk_in'
+    'walk_in',
+   
   ];
 
   const fetchData = async () => {
@@ -97,7 +98,7 @@ export default function ListingActivity() {
 
     const updates = {};
     const fieldsToReset = fieldType === 'exclusive' ? exclusiveFields : accountTypeFields;
-    
+
     fieldsToReset.forEach(f => {
       updates[f] = false;
     });
@@ -135,6 +136,8 @@ export default function ListingActivity() {
       'accounts': 'Accounts',
       'amount_display': 'Amount Display',
       'sku': 'SKU',
+      'sku_addional': 'SKU Additional',
+      'isPenalties': 'Is Penalties',
       'mother1': 'Mother 1',
       'VariousAccount': 'Various Account',
       'MotherAccount2': 'Mother Account 2',
@@ -150,13 +153,13 @@ export default function ListingActivity() {
   };
 
   return (
-    <div style={{ width: '100%', minHeight: '100vh',  padding: '24px' }}>
+    <div style={{ width: '100%', minHeight: '100vh', padding: '24px' }}>
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
         {/* Header Card */}
-        <div style={{ 
-          background: 'white', 
-          borderRadius: '12px', 
-          padding: '24px', 
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
+          padding: '24px',
           marginBottom: '24px',
           boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
         }}>
@@ -190,9 +193,9 @@ export default function ListingActivity() {
         </div>
 
         {/* Main Table Card */}
-        <div style={{ 
-          background: 'white', 
-          borderRadius: '12px', 
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
           overflow: 'hidden',
           boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
         }}>
@@ -214,9 +217,9 @@ export default function ListingActivity() {
             </div>
           ) : (
             <div style={{ overflowX: 'auto', width: '100%' }}>
-              <table style={{ 
-                width: 'max-content', 
-                minWidth: '100%', 
+              <table style={{
+                width: 'max-content',
+                minWidth: '100%',
                 borderCollapse: 'collapse'
               }}>
                 <thead>
@@ -236,7 +239,7 @@ export default function ListingActivity() {
                     }}>
                       ACTIVITY NAME
                     </th>
-                    
+
                     {/* Exclusive Group Header */}
                     <th colSpan={exclusiveFields.length} style={{
                       padding: '12px',
@@ -291,7 +294,7 @@ export default function ListingActivity() {
                       </div>
                     </th>
                   </tr>
-                  
+
                   {/* Sub headers */}
                   <tr style={{ background: '#f7fafc' }}>
                     <th style={{
@@ -301,7 +304,7 @@ export default function ListingActivity() {
                       padding: '0',
                       zIndex: 2
                     }}></th>
-                    
+
                     {exclusiveFields.map((field) => (
                       <th key={field} style={{
                         padding: '12px 16px',
@@ -351,7 +354,7 @@ export default function ListingActivity() {
                   {activities.map((activity, idx) => {
                     const setting = settings[activity.code] || {};
                     return (
-                      <tr 
+                      <tr
                         key={activity.code}
                         style={{
                           background: idx % 2 === 0 ? 'white' : '#f7fafc',
@@ -380,9 +383,9 @@ export default function ListingActivity() {
                           const disableCheckbox = isOtherExclusiveChecked(setting, field, exclusiveFields);
                           return (
                             <td key={field} style={{ padding: '12px 16px', textAlign: 'center', borderRight: '1px solid #e2e8f0' }}>
-                              <div style={{ 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
+                              <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
                                 justifyContent: 'center',
                                 position: 'relative'
                               }}>
@@ -428,15 +431,15 @@ export default function ListingActivity() {
                         {accountTypeFields.map((field) => {
                           const disableCheckbox = isOtherExclusiveChecked(setting, field, accountTypeFields);
                           return (
-                            <td key={field} style={{ 
-                              padding: '12px 16px', 
-                              textAlign: 'center', 
+                            <td key={field} style={{
+                              padding: '12px 16px',
+                              textAlign: 'center',
                               borderRight: '1px solid #e2e8f0',
                               background: idx % 2 === 0 ? '#fffbf0' : '#fef5e7'
                             }}>
-                              <div style={{ 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
+                              <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
                                 justifyContent: 'center',
                                 position: 'relative'
                               }}>
