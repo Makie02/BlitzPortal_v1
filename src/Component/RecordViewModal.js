@@ -94,8 +94,8 @@ const RecordViewModal = ({ record, onClose }) => {
 
       while (moreData) {
         const { data, error } = await supabase
-          .from("categorydetails")
-          .select("code, name")
+          .from("category_listing")
+          .select("sku_code, name")
           .range(from, from + chunkSize - 1);
 
         if (error) throw error;
@@ -110,7 +110,7 @@ const RecordViewModal = ({ record, onClose }) => {
 
       const map = {};
       allData.forEach((item) => {
-        map[String(item.code).trim()] = item.name;
+        map[String(item.sku_code).trim()] = item.name;
       });
 
       setCategoryMap(map);
@@ -309,6 +309,7 @@ const RecordViewModal = ({ record, onClose }) => {
 
       if (error) throw error;
 
+      console.log("[DEBUG regular_sku row]", data?.[0]);
       setRegularSkuData(data || []);
     } catch (err) {
       console.error("❌ Failed to fetch regular_sku:", err.message);
@@ -891,9 +892,9 @@ const RecordViewModal = ({ record, onClose }) => {
                     }}
                   >
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                         <tr>
-                          {["id", "regular_code", "account_name", "total_amount"].map((col) => (
+                          {["id", "account_name", "sku_code", "total_amount"].map((col) => (
                             <th
                               key={col}
                               style={{
@@ -901,7 +902,7 @@ const RecordViewModal = ({ record, onClose }) => {
                                 textAlign: col === "total_amount" ? "right" : "left",
                               }}
                             >
-                              {formatColumnName(col)}
+                              {col === "sku_code" ? "SKU" : formatColumnName(col)}
                             </th>
                           ))}
                         </tr>
@@ -911,8 +912,8 @@ const RecordViewModal = ({ record, onClose }) => {
                         {regularSkuData.map((row, index) => (
                           <tr key={row.id || index} style={{ backgroundColor: index % 2 === 0 ? colors.surface : colors.bg }}>
                             <td style={tdStyle}>{row.id}</td>
-                            <td style={tdStyle}>{row.regular_code}</td>
                             <td style={tdStyle}>{row.account_name}</td>
+                            <td style={tdStyle}>{categoryMap[String(row.sku_code).trim()] || row.sku_code || "-"}</td>
                             <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600 }}>
                               {row.total_amount
                                 ? `₱${Number(row.total_amount).toLocaleString("en-PH", {
@@ -924,8 +925,8 @@ const RecordViewModal = ({ record, onClose }) => {
                           </tr>
                         ))}
                       </tbody>
-
                       <tfoot>
+
                         <tr style={{ backgroundColor: colors.primarySoft }}>
                           <td
                             colSpan="3"
