@@ -2017,40 +2017,40 @@ const RegularVisaForm = () => {
     fetchDistributorsByAgent();
   }, [loggedInUserId]);
 
-// ✅ NEW helper — ilagay malapit sa formatGroupLabelForDisplay
-const getGroupInnerLabel = (group) => {
-  const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
-  return `${bold}${rest}`;
-};
+  // ✅ NEW helper — ilagay malapit sa formatGroupLabelForDisplay
+  const getGroupInnerLabel = (group) => {
+    const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
+    return `${bold}${rest}`;
+  };
 
-// ✅ NEW helper — ginagamit ng parehong submit functions sa baba
-const buildConvertedAccountType = (accountTypeArray) => {
-  if (!Array.isArray(accountTypeArray)) return [];
+  // ✅ NEW helper — ginagamit ng parehong submit functions sa baba
+  const buildConvertedAccountType = (accountTypeArray) => {
+    if (!Array.isArray(accountTypeArray)) return [];
 
-  const labels = accountTypeArray
-    .map((id) => {
-      // 1) chain sub-account groups
-      const chainGroup = groupedBranches.find(
-        (g) => !g.isNonChain && g.subAccountId === id
-      );
-      if (chainGroup) return getGroupInnerLabel(chainGroup);
+    const labels = accountTypeArray
+      .map((id) => {
+        // 1) chain sub-account groups
+        const chainGroup = groupedBranches.find(
+          (g) => !g.isNonChain && g.subAccountId === id
+        );
+        if (chainGroup) return getGroupInnerLabel(chainGroup);
 
-      // 2) ✅ NEW: NON-CHAIN items galing sa bagong Branch modal
-      for (const g of groupedBranches) {
-        if (g.isNonChain) {
-          const item = g.items.find((i) => i.id === id);
-          if (item) return item.name;
+        // 2) ✅ NEW: NON-CHAIN items galing sa bagong Branch modal
+        for (const g of groupedBranches) {
+          if (g.isNonChain) {
+            const item = g.items.find((i) => i.id === id);
+            if (item) return item.name;
+          }
         }
-      }
 
-      // 3) fallback: legacy subAccounts (lumang modal flow)
-      const legacy = Object.values(subAccounts).flat().find((s) => s.id === id);
-      return legacy?.name;
-    })
-    .filter(Boolean);
+        // 3) fallback: legacy subAccounts (lumang modal flow)
+        const legacy = Object.values(subAccounts).flat().find((s) => s.id === id);
+        return legacy?.name;
+      })
+      .filter(Boolean);
 
-  return [...new Set(labels)];
-};
+    return [...new Set(labels)];
+  };
 
 
   const [approvalList, setApprovalList] = useState([]);
@@ -2770,7 +2770,7 @@ const buildConvertedAccountType = (accountTypeArray) => {
       const creditBudget = amountBudget || billingAmountSKU || totalAllocatedFromAccounts;
       const remainingBalance = selectedBalance !== null ? selectedBalance - creditBudget : null;
 
-   const convertedAccountType = buildConvertedAccountType(updatedFormData.accountType);
+      const convertedAccountType = buildConvertedAccountType(updatedFormData.accountType);
       let finalAccountType = convertedAccountType;
       if (updatedFormData.MotherAccount2) {
         finalAccountType = [updatedFormData.MotherAccount2];
@@ -3308,6 +3308,17 @@ const buildConvertedAccountType = (accountTypeArray) => {
       }
 
       setGroupedBranches(groups);
+
+      // ✅ NEW: keep branchTypes in sync so Step 1 (SKU Listing) can find them
+      const flatBranches = groups
+        .filter((g) => !g.isNonChain)
+        .flatMap((g) => g.items);
+
+      const uniqueFlatBranches = Array.from(
+        new Map(flatBranches.map((b) => [b.code, b])).values()
+      );
+
+      setBranchTypes(uniqueFlatBranches);
     } catch (err) {
       console.error("❌ Error building grouped branches:", err.message);
       Swal.fire("Error", "Failed to load branches.", "error");
@@ -3315,7 +3326,6 @@ const buildConvertedAccountType = (accountTypeArray) => {
       setLoadingGroupedBranches(false);
     }
   };
-
   // Toggle a branch/sub-account checkbox inside the unified modal
   const toggleGroupedBranchItem = (group, item) => {
     if (group.isNonChain) {
@@ -4457,20 +4467,34 @@ const buildConvertedAccountType = (accountTypeArray) => {
                 <div className="card-body">
                   <div className="row g-3">
                     {/* Activity Duration From */}
+                    {/* Activity Duration To */}
                     <div className="col-md-3" style={{ position: "relative" }}>
                       <label
-                        htmlFor="activityDurationFrom"
+                        htmlFor="activityDurationTo"
                         className="form-label"
                       >
-                        Activity Duration From
+                        Activity Duration To
                       </label>
                       <input
                         type="date"
-                        id="activityDurationFrom"
-                        name="activityDurationFrom"
+                        id="activityDurationTo"
+                        name="activityDurationTo"
                         className="form-control"
-                        value={formData.activityDurationFrom}
-                        onChange={handleFormChange}
+                        value={formData.activityDurationTo}
+                        min={formData.activityDurationFrom || undefined} // ✅ block dates earlier than "From"
+                        onChange={(e) => {
+                          const newTo = e.target.value;
+                          if (formData.activityDurationFrom && newTo < formData.activityDurationFrom) {
+                            Swal.fire({
+                              icon: "warning",
+                              title: "Invalid Date",
+                              text: "Activity Duration To cannot be earlier than Activity Duration From.",
+                              confirmButtonColor: "#0d6efd",
+                            });
+                            return; // ✅ reject the change
+                          }
+                          handleFormChange(e);
+                        }}
                         style={{ paddingRight: "35px" }}
                       />
                       {formData.activityDurationFrom && (
@@ -5920,7 +5944,7 @@ const buildConvertedAccountType = (accountTypeArray) => {
                                   Array.isArray(formData.branchType) &&
                                   formData.branchType.includes(branch.name) // ✅ Compare by branch name
                               )
-                              : branchTypes.filter((branch) => branch.name === selectedBranchForSku) // ✅ Compare by name
+                              : branchTypes.filter((branch) => branch.code === selectedBranchForSku) // ✅ FIXED: compare by code, matches <option value={branch.code}>
                             : []
 
                       ).map((branchOrSub) => {
