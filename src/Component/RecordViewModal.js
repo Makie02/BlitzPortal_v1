@@ -893,18 +893,7 @@ const RecordViewModal = ({ record, onClose }) => {
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                         <tr>
-                          {[
-                            "id",
-                            "regular_code",
-                            "account_name",
-                            "sku_code",
-                            "srp",
-                            "qty",
-                            "uom",
-                            "billing_amount",
-                            "discount",
-                            "total_amount",
-                          ].map((col) => (
+                          {["id", "regular_code", "account_name", "total_amount"].map((col) => (
                             <th
                               key={col}
                               style={{
@@ -924,33 +913,6 @@ const RecordViewModal = ({ record, onClose }) => {
                             <td style={tdStyle}>{row.id}</td>
                             <td style={tdStyle}>{row.regular_code}</td>
                             <td style={tdStyle}>{row.account_name}</td>
-                            <td style={tdStyle}>{row.sku_code || "-"}</td>
-                            <td style={tdStyle}>
-                              {row.srp
-                                ? `₱${Number(row.srp).toLocaleString("en-PH", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}`
-                                : "-"}
-                            </td>
-                            <td style={tdStyle}>{row.qty || 0}</td>
-                            <td style={tdStyle}>{row.uom}</td>
-                            <td style={tdStyle}>
-                              {row.billing_amount
-                                ? `₱${Number(row.billing_amount).toLocaleString("en-PH", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}`
-                                : "-"}
-                            </td>
-                            <td style={tdStyle}>
-                              {row.discount
-                                ? `₱${Number(row.discount).toLocaleString("en-PH", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}`
-                                : "-"}
-                            </td>
                             <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600 }}>
                               {row.total_amount
                                 ? `₱${Number(row.total_amount).toLocaleString("en-PH", {
@@ -966,7 +928,7 @@ const RecordViewModal = ({ record, onClose }) => {
                       <tfoot>
                         <tr style={{ backgroundColor: colors.primarySoft }}>
                           <td
-                            colSpan="9"
+                            colSpan="3"
                             style={{
                               padding: "14px 16px",
                               borderTop: `2px solid ${colors.primary}`,
@@ -1017,75 +979,103 @@ const RecordViewModal = ({ record, onClose }) => {
                       backgroundColor: colors.surface,
                     }}
                   >
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
-                        <tr>
-                          {["account_name", "budget"].map((col) => (
-                            <th
-                              key={col}
-                              style={{
-                                ...thStyle,
-                                textAlign: col === "budget" ? "right" : "left",
-                              }}
-                            >
-                              {formatColumnName(col)}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
+                    {(() => {
+                      // ✅ NEW: dynamic columns — only show SKU/Penalty/Supplies if at least one row has a value
+                      const hasSku = regularAccountBudgetData.some((r) => r.sku && String(r.sku).trim() !== "");
+                      const hasPenalty = regularAccountBudgetData.some((r) => r.penalty && String(r.penalty).trim() !== "");
+                      const hasSupplies = regularAccountBudgetData.some((r) => r.suppliesme && String(r.suppliesme).trim() !== "");
 
-                      <tbody>
-                        {regularAccountBudgetData.map((row, index) => (
-                          <tr key={row.id || index} style={{ backgroundColor: index % 2 === 0 ? colors.surface : colors.bg }}>
-                            <td style={tdStyle}>{row.account_name}</td>
-                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600 }}>
-                              {row.budget
-                                ? `₱${Number(row.budget).toLocaleString("en-PH", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}`
-                                : "-"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
+                      const columns = [
+                        "account_name",
+                        ...(hasSku ? ["sku"] : []),
+                        ...(hasPenalty ? ["penalty"] : []),
+                        ...(hasSupplies ? ["suppliesme"] : []),
+                        "budget",
+                      ];
 
-                      <tfoot>
-                        <tr style={{ backgroundColor: colors.primarySoft }}>
-                          <td
-                            style={{
-                              padding: "14px 16px",
-                              borderTop: `2px solid ${colors.primary}`,
-                              fontSize: "13px",
-                              fontWeight: 700,
-                              textAlign: "right",
-                              color: colors.textPrimary,
-                            }}
-                          >
-                            Total Budget:
-                          </td>
-                          <td
-                            style={{
-                              padding: "14px 16px",
-                              borderTop: `2px solid ${colors.primary}`,
-                              fontSize: "14px",
-                              fontWeight: 800,
-                              textAlign: "right",
-                              color: colors.primaryDark,
-                            }}
-                          >
-                            {regularAccountBudgetData.length > 0
-                              ? `₱${regularAccountBudgetData
-                                .reduce((sum, row) => sum + (Number(row.budget) || 0), 0)
-                                .toLocaleString("en-PH", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}`
-                              : "-"}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                      return (
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                            <tr>
+                              {columns.map((col) => (
+                                <th
+                                  key={col}
+                                  style={{
+                                    ...thStyle,
+                                    textAlign: col === "budget" ? "right" : "left",
+                                  }}
+                                >
+                                  {col === "suppliesme" ? "Supplies/M.E" : formatColumnName(col)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {regularAccountBudgetData.map((row, index) => (
+                              <tr key={row.id || index} style={{ backgroundColor: index % 2 === 0 ? colors.surface : colors.bg }}>
+                                {columns.map((col) => {
+                                  if (col === "budget") {
+                                    return (
+                                      <td key={col} style={{ ...tdStyle, textAlign: "right", fontWeight: 600 }}>
+                                        {row.budget
+                                          ? `₱${Number(row.budget).toLocaleString("en-PH", {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}`
+                                          : "-"}
+                                      </td>
+                                    );
+                                  }
+                                  return (
+                                    <td key={col} style={tdStyle}>
+                                      {row[col] && String(row[col]).trim() !== "" ? row[col] : "-"}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+
+                          <tfoot>
+                            <tr style={{ backgroundColor: colors.primarySoft }}>
+                              <td
+                                colSpan={columns.length - 1}
+                                style={{
+                                  padding: "14px 16px",
+                                  borderTop: `2px solid ${colors.primary}`,
+                                  fontSize: "13px",
+                                  fontWeight: 700,
+                                  textAlign: "right",
+                                  color: colors.textPrimary,
+                                }}
+                              >
+                                Total Budget:
+                              </td>
+                              <td
+                                style={{
+                                  padding: "14px 16px",
+                                  borderTop: `2px solid ${colors.primary}`,
+                                  fontSize: "14px",
+                                  fontWeight: 800,
+                                  textAlign: "right",
+                                  color: colors.primaryDark,
+                                }}
+                              >
+                                {regularAccountBudgetData.length > 0
+                                  ? `₱${regularAccountBudgetData
+                                    .reduce((sum, row) => sum + (Number(row.budget) || 0), 0)
+                                    .toLocaleString("en-PH", {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}`
+                                  : "-"}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
