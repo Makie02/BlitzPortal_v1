@@ -963,8 +963,13 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
         <div className="modal-overlay">
             <div className="modal-container">
                 <div className="modal-header">
-                    <h2>
-                        View {type} - {visaCode}
+                    <h2 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <span>View {type} - {visaCode}</span>
+                        {type === 'Regular PWP' && data?.distributor && (
+                            <span style={{ fontSize: '15px', color: '#555', marginLeft: '12px', marginRight: '20px' }}>
+                                <strong style={{ color: '#007bff', fontSize: '18px' }}>Distributor:</strong> {formatValue(data.distributor, 'distributor')}
+                            </span>
+                        )}
                     </h2>
                     <button
                         onClick={onClose}
@@ -1004,51 +1009,70 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                 <div className="modal-content-scrollable">
                     <div className="modal-form-content">
                         {/* ✅ Custom Field Order for Regular PWP */}
-                        {type === 'Regular PWP' ? (
-                            [
-                                'distributor',
-                                'activity',
-                                'accountType',
-                                'branchType',
-                                'objective',
-                                'promoScheme',
-                                'activityDurationFrom',
-                                'activityDurationTo',
-                                'isPartOfCoverPwp',
-                                'coverPwpCode',
-                                'accounts',
-                                'created_at',
-                                'createForm',
+                        {type === 'Regular PWP' ? (() => {
+                            const getVisibleKeys = (keys) => keys.filter((key) => {
+                                const value = data[key];
+                                if (value === null || value === undefined) return false;
+                                if (typeof value === 'string' && value.trim() === '') return false;
+                                if (value === '-') return false;
+                                if (Array.isArray(value) && value.length === 0) return false;
+                                const formatted = formatValue(value, key);
+                                if (formatted === '[ ]' || formatted === '[]' || formatted.trim() === '') return false;
+                                if (key.toLowerCase() === 'accounts' && accountsBudgetList.length > 0) return false;
+                                if (key.toLowerCase() === 'sku' && skuListing.length > 0) return false;
+                                return true;
+                            });
 
-                            ]
-                                .filter((key) => {
-                                    const value = data[key];
+                            const renderBox = (keys, key) => {
+                                const visibleKeys = getVisibleKeys(keys);
+                                if (visibleKeys.length === 0) return null;
+                                return (
+                                    <div className="field-group-box" key={key}>
+                                        {visibleKeys.map((k) => (
+                                            <div className="form-group" key={k}>
+                                                <label>{formatFieldName(k)}</label>
+                                                <div className="readonly-box">{formatValue(data[k], k)}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            };
 
-                                    // ✅ Hide null/undefined/empty values
-                                    if (value === null || value === undefined) return false;
-                                    if (typeof value === 'string' && value.trim() === '') return false;
-                                    if (value === '-') return false;
-                                    if (Array.isArray(value) && value.length === 0) return false;
+                            const restGroups = [
+                                { keys: ['activity', 'activityDurationFrom', 'activityDurationTo', 'created_at', 'coverPwpCode', 'createForm', 'isPartOfCoverPwp'], span: 4 },
+                                { keys: ['objective'], span: 2 },
+                                { keys: ['promoScheme'], span: 2 },
+                                { keys: ['accounts'], span: 4 },
+                            ];
 
-                                    const formatted = formatValue(value, key);
-                                    if (formatted === '[ ]' || formatted === '[]' || formatted.trim() === '') return false;
+                            return (
+                                <>
+                                    <div className="field-group-row" style={{ gridColumn: 'span 4' }}>
 
-                                    // ✅ Special conditions
-                                    if (key.toLowerCase() === 'accounts' && accountsBudgetList.length > 0) return false;
-                                    if (key.toLowerCase() === 'sku' && skuListing.length > 0) return false;
-
-                                    return true;
-                                })
-                                .map((key) => {
-                                    const value = data[key];
-                                    return (
-                                        <div className="form-group" key={key}>
-                                            <label>{formatFieldName(key)}</label>
-                                            <div className="readonly-box">{formatValue(value, key)}</div>
-                                        </div>
-                                    );
-                                })
-                        ) : (
+                                        {renderBox(['accountType'], 'accountType')}
+                                        {renderBox(['branchType'], 'branchType')}
+                                    </div>
+                                    {restGroups.map((group, idx) => {
+                                        const visibleKeys = getVisibleKeys(group.keys);
+                                        if (visibleKeys.length === 0) return null;
+                                        return (
+                                            <div
+                                                className="field-group-box"
+                                                key={idx}
+                                                style={{ gridColumn: `span ${group.span}` }}
+                                            >
+                                                {visibleKeys.map((key) => (
+                                                    <div className="form-group" key={key}>
+                                                        <label>{formatFieldName(key)}</label>
+                                                        <div className="readonly-box">{formatValue(data[key], key)}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            );
+                        })() : (
                             // ✅ ELSE condition: For other form types
                             Object.entries(data)
                                 .filter(([key, value]) => {
