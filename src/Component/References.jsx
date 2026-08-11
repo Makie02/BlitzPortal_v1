@@ -31,6 +31,8 @@ import MasterDataBranch from '../NewComponents/MasterdataBranch.jsx';
 import Bp_Account from '../NewComponents/Bp_Account.jsx';
 import Year from '../NewComponents/Year.jsx';
 import AccountingModule from './AccountingModule.jsx';
+
+import ActivityChangePS from '../NewComponents/ActivityChangePS.jsx';
 const References = ({ setCurrentView }) => {
   const [view, setView] = useState(null);
   const [user, setUser] = useState(null);
@@ -62,9 +64,10 @@ const References = ({ setCurrentView }) => {
     { id: 23, title: "LIST-BP_ACCOUNT", flag: 'masterDataBranch', category: 'accounts', requirePassword: false },
     { id: 24, title: "Year", flag: 'Year', category: 'Year', requirePassword: false },
 
-    { id: 24, title: "Accounting Rules", flag: 'Year', category: 'Year', requirePassword: false },
+    { id: 25, title: "Accounting Rules", flag: 'Year', category: 'Year', requirePassword: false },
 
-    
+    { id: 26, title: "Activity Change P-S", flag: 'activity_change_ps', category: 'settings', requirePassword: false },
+
   ];
 
   useEffect(() => {
@@ -179,7 +182,7 @@ const References = ({ setCurrentView }) => {
   // Filter cards based on sort option
   const getFilteredCards = () => {
     let filtered = cards.filter(card => userPermissions[card.flag]);
-    
+
     if (sortOption === 'all') {
       return filtered;
     } else if (sortOption === 'alphabetical') {
@@ -249,20 +252,20 @@ const References = ({ setCurrentView }) => {
 
         {view === 'Year' && <Year />}
         {view === 'Accounting Rules' && <AccountingModule />}
-        
+        {view === 'Activity Change P-S' && <ActivityChangePS />}
+
       </div>
     );
   }
-
   const filteredCards = getFilteredCards();
 
   return (
     <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header with Sort Dropdown */}
-      <div style={{ 
-        marginBottom: '30px', 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <div style={{
+        marginBottom: '30px',
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: '15px'
@@ -270,7 +273,7 @@ const References = ({ setCurrentView }) => {
         <h1 style={{ margin: 0, color: '#333', fontSize: '28px', fontWeight: '700' }}>
           Reference Modules
         </h1>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label style={{ fontWeight: '600', color: '#555', fontSize: '14px' }}>
             Sort by:
@@ -317,8 +320,8 @@ const References = ({ setCurrentView }) => {
             className="card-button"
             onClick={() => handleClick(card)}
             style={{
-              background: card.requirePassword 
-                ? 'linear-gradient(to bottom right, #fff3cd, #ffeaa7)' 
+              background: card.requirePassword
+                ? 'linear-gradient(to bottom right, #fff3cd, #ffeaa7)'
                 : 'linear-gradient(to bottom right, #ffffff, #f0f0f0)',
               border: card.requirePassword ? '1px solid #ffc107' : '1px solid #ccc',
               borderRadius: '12px',
