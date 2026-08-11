@@ -16,10 +16,30 @@ const RecordViewModal = ({ record, onClose }) => {
   const [distributorMap, setDistributorMap] = useState({});
   const [activityMap, setActivityMap] = useState({});
   const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
-
-  // ── Remarks/Notes (from Approval_History) ─────────────────
   const [remarksNote, setRemarksNote] = useState(null);
-  // ─────────────────────────────────────────────────────────
+
+  // ============================================================
+  // 🎨 DESIGN TOKENS
+  // ============================================================
+  const colors = {
+    bg: "#f8fafc",
+    surface: "#ffffff",
+    border: "#e5e9f0",
+    borderSoft: "#eef1f5",
+    textPrimary: "#0f172a",
+    textSecondary: "#64748b",
+    textMuted: "#94a3b8",
+    primary: "#4f46e5",
+    primaryDark: "#4338ca",
+    primarySoft: "#eef2ff",
+    success: "#16a34a",
+    successSoft: "#ecfdf5",
+    danger: "#dc2626",
+    accentGradient: "linear-gradient(135deg, #4338ca 0%, #6366f1 45%, #3b82f6 100%)",
+  };
+
+  const fontStack =
+    "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
   const exportBudgetHistoryToExcel = () => {
     if (filteredBudgetHistory.length === 0) return;
@@ -46,30 +66,24 @@ const RecordViewModal = ({ record, onClose }) => {
     saveAs(blob, "BudgetHistory.xlsx");
   };
 
-const exportSingleRecordToExcel = () => {
-  if (!fullRecord) return;
+  const exportSingleRecordToExcel = () => {
+    if (!fullRecord) return;
 
-  // 🧩 Step 1: Prepare one-row data
-  const formattedRecord = {};
-  Object.entries(fullRecord).forEach(([key, value]) => {
-    formattedRecord[formatColumnName(key)] = formatCellValue(value, key);
-  });
+    const formattedRecord = {};
+    Object.entries(fullRecord).forEach(([key, value]) => {
+      formattedRecord[formatColumnName(key)] = formatCellValue(value, key);
+    });
 
-  // Include Remarks/Notes in export
-  formattedRecord["Remarks Notes"] = remarksNote || "-";
+    formattedRecord["Remarks Notes"] = remarksNote || "-";
 
-  // 🧩 Step 2: Create worksheet from array of one object
-  const worksheet = XLSX.utils.json_to_sheet([formattedRecord]);
+    const worksheet = XLSX.utils.json_to_sheet([formattedRecord]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "RecordDetails");
 
-  // 🧩 Step 3: Build and save workbook
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "RecordDetails");
-
-  const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-  const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-  saveAs(blob, "RecordDetails.xlsx");
-};
-
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+    saveAs(blob, "RecordDetails.xlsx");
+  };
 
   const fetchCategoryMap = async () => {
     try {
@@ -93,8 +107,6 @@ const exportSingleRecordToExcel = () => {
           moreData = false;
         }
       }
-
-      console.log(`✅ categorydetails raw data: ${allData.length} rows loaded`);
 
       const map = {};
       allData.forEach((item) => {
@@ -125,7 +137,6 @@ const exportSingleRecordToExcel = () => {
     const converted = codes.map((code) => {
       const strCode = String(code).trim();
       const name = categoryMap[strCode];
-      console.log("👉 Converting account_type:", strCode, "=>", name || "NOT FOUND");
       return name || strCode;
     });
 
@@ -155,8 +166,6 @@ const exportSingleRecordToExcel = () => {
         }
       }
 
-      console.log(`✅ activity raw data: ${allData.length} rows loaded`);
-
       const map = {};
       allData.forEach((item) => {
         map[String(item.code).trim()] = item.name;
@@ -168,7 +177,6 @@ const exportSingleRecordToExcel = () => {
     }
   };
 
-  // ── Fetch Remarks/Notes from Approval_History ─────────────
   const fetchRemarksNote = async () => {
     try {
       const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
@@ -193,7 +201,6 @@ const exportSingleRecordToExcel = () => {
       setRemarksNote(null);
     }
   };
-  // ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (record) {
@@ -209,9 +216,7 @@ const exportSingleRecordToExcel = () => {
 
   useEffect(() => {
     const fetchDistributorMap = async () => {
-      const { data, error } = await supabase
-        .from("distributors")
-        .select("code, name");
+      const { data, error } = await supabase.from("distributors").select("code, name");
 
       if (error) {
         console.error("❌ Error fetching distributors:", error);
@@ -340,9 +345,7 @@ const exportSingleRecordToExcel = () => {
       }
 
       const filtered = budgetHistory.filter(
-        (b) =>
-          b["Cover PWP Code"] === record.cover_code ||
-          b["PWP Code"] === record.regularpwpcode
+        (b) => b["Cover PWP Code"] === record.cover_code || b["PWP Code"] === record.regularpwpcode
       );
       setFilteredBudgetHistory(filtered);
     }
@@ -356,30 +359,28 @@ const exportSingleRecordToExcel = () => {
       .replace("Id", "ID");
   };
 
+  // NEW
   const formatCellValue = (value, colName) => {
     if (!value && value !== 0) return "-";
 
-    console.log("🔍 formatCellValue:", colName, value);
+    // ✅ Booleans -> Yes/No, hindi "true"/"false"
+    if (typeof value === "boolean") {
+      return value ? "Yes" : "No";
+    }
 
-    if (
-      colName === "account_type" ||
-      colName === "account_types" ||
-      colName === "accountType"
-    ) {
+    if (colName === "account_type" || colName === "account_types" || colName === "accountType") {
       return convertCodesToNames(value);
     }
 
     if (colName === "distributor" || colName === "distributor_code") {
       const strCode = String(value).trim();
       const name = distributorMap[strCode];
-      console.log("👉 Converting distributor:", strCode, "=>", name || "NOT FOUND");
       return name || strCode;
     }
 
     if (colName === "activity" || colName === "activity_code") {
       const strCode = String(value).trim();
       const name = activityMap[strCode];
-      console.log("👉 Converting activity:", strCode, "=>", name || "NOT FOUND");
       return name || strCode;
     }
 
@@ -388,6 +389,21 @@ const exportSingleRecordToExcel = () => {
         return new Date(value).toLocaleString();
       } catch {
         return value;
+      }
+    }
+
+    // ✅ Array -> clean comma-separated (no brackets/quotes)
+    if (Array.isArray(value)) {
+      return value.length > 0 ? value.join(", ") : "-";
+    }
+
+    // ✅ String na naka-JSON array pero hindi na-detect (e.g. "[\"a\",\"b\"]")
+    if (typeof value === "string" && value.trim().startsWith("[") && value.trim().endsWith("]")) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed.join(", ");
+      } catch {
+        // fallthrough, treat as plain string
       }
     }
 
@@ -400,6 +416,107 @@ const exportSingleRecordToExcel = () => {
 
   if (!record) return null;
 
+  const pwpCodeDisplay =
+    record?.source === "cover_pwp" ? record?.cover_code || "-" : record?.regularpwpcode || "-";
+
+  // ============================================================
+  // 🧩 Reusable sub-components (inline for single-file drop-in)
+  // ============================================================
+  const InfoCard = ({ label, children, wide }) => (
+    <div
+      style={{
+        padding: "16px 18px",
+        backgroundColor: colors.surface,
+        borderRadius: "12px",
+        border: `1px solid ${colors.border}`,
+        transition: "box-shadow 0.15s ease, transform 0.15s ease",
+        gridColumn: wide ? "span 2" : "span 1", // ✅ mag-expand kung mahaba laman
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = "0 4px 14px rgba(15, 23, 42, 0.06)";
+        e.currentTarget.style.transform = "translateY(-1px)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = "none";
+        e.currentTarget.style.transform = "translateY(0)";
+      }}
+    >
+      <div
+        style={{
+          fontSize: "11px",
+          fontWeight: 700,
+          color: colors.textMuted,
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          marginBottom: "8px",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: "14.5px",
+          color: colors.textPrimary,
+          lineHeight: 1.5,
+          wordBreak: "break-word",
+          fontWeight: 500,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+
+  const SectionTitle = ({ icon, children }) => (
+    <h3
+      style={{
+        margin: "0 0 16px",
+        color: colors.textPrimary,
+        fontSize: "17px",
+        fontWeight: 700,
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "30px",
+          height: "30px",
+          borderRadius: "8px",
+          backgroundColor: colors.primarySoft,
+          fontSize: "15px",
+        }}
+      >
+        {icon}
+      </span>
+      {children}
+    </h3>
+  );
+
+  const thStyle = {
+    padding: "12px 16px",
+    textAlign: "left",
+    borderBottom: `1px solid ${colors.border}`,
+    fontSize: "11px",
+    fontWeight: 700,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    backgroundColor: "#f9fafc",
+    whiteSpace: "nowrap",
+  };
+
+  const tdStyle = {
+    padding: "12px 16px",
+    borderBottom: `1px solid ${colors.borderSoft}`,
+    fontSize: "13px",
+    color: colors.textPrimary,
+  };
+
   return (
     <div
       style={{
@@ -408,116 +525,123 @@ const exportSingleRecordToExcel = () => {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.7)",
+        backgroundColor: "rgba(15, 23, 42, 0.55)",
+        backdropFilter: "blur(2px)",
         zIndex: 1000,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: "20px",
+        fontFamily: fontStack,
       }}
     >
       <div
         style={{
-          backgroundColor: "white",
-          borderRadius: "12px",
-          maxWidth: "95vw",
-          maxHeight: "90vh",
+          backgroundColor: colors.bg,
+          borderRadius: "18px",
+          maxWidth: "1100px",
           width: "100%",
+          maxHeight: "92vh",
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 10px 40px rgba(0,0,0,0.3)",
+          boxShadow: "0 25px 70px rgba(15, 23, 42, 0.35)",
+          overflow: "hidden",
         }}
       >
         {/* Header */}
         <div
           style={{
-            padding: "24px 30px",
-            backgroundColor: "#0080ffff",
+            padding: "26px 32px",
+            background: colors.accentGradient,
             color: "white",
-            borderRadius: "12px 12px 0 0",
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-start",
+            position: "relative",
           }}
         >
           <div>
-            <h2 style={{ margin: "0 0 8px", fontSize: "30px", color: "#ffff" }}>
+            <div
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                opacity: 0.75,
+                marginBottom: "6px",
+              }}
+            >
               Record Details
-            </h2>
-            <div style={{ marginBottom: "8px" }}>
-              {remainingBudget !== null && (
-                <div style={{
-                  fontSize: "16px",
-                  fontWeight: "600",
-                  color: "#1e58a3",
-                  backgroundColor: "#e3f2fd",
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  display: "inline-block",
-                  marginBottom: "4px",
-                }}>
-                  Remaining Budget: {remainingBudget.toLocaleString(undefined, { style: 'currency', currency: 'PHP' })}
-                </div>
-              )}
-              <div
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <span
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  background: "linear-gradient(90deg, #004aad, #007bff)",
-                  color: "white",
-                  padding: "10px 18px",
-                  borderRadius: "8px",
-                  fontSize: "16px",
-                  fontWeight: "600",
-                  letterSpacing: "0.5px",
-                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)",
+                  backgroundColor: "rgba(255,255,255,0.16)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  padding: "6px 14px",
+                  borderRadius: "999px",
+                  fontSize: "13px",
+                  fontWeight: 600,
                 }}
               >
-                <span
-                  style={{
-                    backgroundColor: "rgba(255,255,255,0.2)",
-                    padding: "4px 10px",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    fontWeight: "500",
-                  }}
-                >
-                  {record?.source === "cover_pwp" ? "Cover PWP Record" : "Regular PWP Record"}
-                </span>
-                <span
-                  style={{
-                    fontSize: "18px",
-                    fontWeight: "700",
-                    backgroundColor: "#ffffff",
-                    color: "#004aad",
-                    padding: "4px 12px",
-                    borderRadius: "6px",
-                  }}
-                >
-                  {record?.source === "cover_pwp"
-                    ? record?.cover_code || "-"
-                    : record?.regularpwpcode || "-"}
-                </span>
-              </div>
+                {record?.source === "cover_pwp" ? "Cover PWP" : "Regular PWP"}
+              </span>
 
+              <span
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 800,
+                  backgroundColor: "white",
+                  color: colors.primaryDark,
+                  padding: "6px 16px",
+                  borderRadius: "10px",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {pwpCodeDisplay}
+              </span>
+
+              {remainingBudget !== null && (
+                <span
+                  style={{
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    backgroundColor: "rgba(255,255,255,0.16)",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    padding: "6px 14px",
+                    borderRadius: "999px",
+                  }}
+                >
+                  Remaining:{" "}
+                  {remainingBudget.toLocaleString(undefined, {
+                    style: "currency",
+                    currency: "PHP",
+                  })}
+                </span>
+              )}
             </div>
           </div>
+
           <button
             onClick={onClose}
             style={{
-              backgroundColor: "rgba(255,255,255,0.2)",
+              backgroundColor: "rgba(255,255,255,0.18)",
               color: "white",
               border: "none",
-              borderRadius: "50%",
-              width: "40px",
-              height: "40px",
+              borderRadius: "10px",
+              width: "36px",
+              height: "36px",
               cursor: "pointer",
               fontSize: "18px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              transition: "background-color 0.15s ease",
+              flexShrink: 0,
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.3)")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.18)")}
           >
             ×
           </button>
@@ -525,60 +649,92 @@ const exportSingleRecordToExcel = () => {
 
         {/* Export Button */}
         {fullRecord && (
-          <div style={{ padding: "16px", textAlign: "right" }}>
+          <div
+            style={{
+              padding: "14px 32px",
+              backgroundColor: colors.surface,
+              borderBottom: `1px solid ${colors.border}`,
+              textAlign: "right",
+            }}
+          >
             <button
               onClick={exportSingleRecordToExcel}
               style={{
-                padding: "10px 20px",
-                backgroundColor: "#0aac12ff",
+                padding: "9px 18px",
+                backgroundColor: colors.success,
                 color: "white",
                 border: "none",
-                borderRadius: "6px",
+                borderRadius: "8px",
                 cursor: "pointer",
-                fontWeight: "500",
+                fontWeight: 600,
+                fontSize: "13px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 2px 8px rgba(22, 163, 74, 0.25)",
+                transition: "transform 0.1s ease",
               }}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-1px)")}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
             >
-              Export Single Record to Excel
+              ⬇ Export Single Record to Excel
             </button>
           </div>
         )}
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
           {loading ? (
-            <div style={{ textAlign: "center", padding: "40px" }}>
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
               <div
                 style={{
-                  width: "40px",
-                  height: "40px",
-                  border: "4px solid #e3f2fd",
-                  borderTop: "4px solid #1976d2",
+                  width: "36px",
+                  height: "36px",
+                  border: `3px solid ${colors.primarySoft}`,
+                  borderTop: `3px solid ${colors.primary}`,
                   borderRadius: "50%",
-                  animation: "spin 1s linear infinite",
-                  margin: "0 auto 20px",
+                  animation: "spin 0.8s linear infinite",
+                  margin: "0 auto 16px",
                 }}
               ></div>
-              <p>Loading...</p>
+              <p style={{ color: colors.textSecondary, fontSize: "14px" }}>Loading...</p>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
           ) : error ? (
-            <div style={{ textAlign: "center", color: "#d32f2f" }}>
-              <p>{error}</p>
+            <div
+              style={{
+                textAlign: "center",
+                color: colors.danger,
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "10px",
+                padding: "20px",
+              }}
+            >
+              <p style={{ margin: 0, fontSize: "14px" }}>{error}</p>
             </div>
           ) : fullRecord ? (
             <div>
-              {/* Single Record Details */}
+              {/* Field Cards */}
               <div
                 style={{
                   display: "grid",
-                  gap: "20px",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-                  marginBottom: "30px",
+                  gap: "14px",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gridAutoFlow: "dense", // ✅ para tumapat ang maiiksing cards sa gaps
+                  marginBottom: "24px",
                 }}
               >
                 {Object.entries(fullRecord)
                   .filter(([key, value]) => {
-                    // Hide specific columns
-                    const hiddenFields = ["id", "regularpwpcode", "pwptype", "remaining_balance", "credit_budget", 'amountbadget'];
+                    const hiddenFields = [
+                      "id",
+                      "regularpwpcode",
+                      "pwptype",
+                      "remaining_balance",
+                      "credit_budget",
+                      "amountbadget",
+                    ];
                     if (hiddenFields.includes(key.toLowerCase())) return false;
 
                     if (value === null || value === undefined || value === false) return false;
@@ -596,102 +752,97 @@ const exportSingleRecordToExcel = () => {
                   })
                   .map(([key, value]) => {
                     const displayValue =
-                      (key === "accountType" || key === "account_type") &&
-                        Object.keys(categoryMap).length > 0
+                      (key === "accountType" || key === "account_type") && Object.keys(categoryMap).length > 0
                         ? convertCodesToNames(value)
                         : formatCellValue(value, key);
 
+
+                    const isLong = typeof displayValue === "string" && displayValue.length > 60;
+
                     return (
-                      <div
-                        key={key}
-                        style={{
-                          padding: "16px",
-                          backgroundColor: "#f8f9fa",
-                          borderRadius: "8px",
-                          border: "1px solid #e0e0e0",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        <div
+                      <InfoCard key={key} label={formatColumnName(key)} wide={isLong}>
+                        <span
                           style={{
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#666",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                            marginBottom: "8px",
-                          }}
-                        >
-                          {formatColumnName(key)}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#333",
-                            lineHeight: "1.4",
-                            wordBreak: "break-word",
-                            whiteSpace: typeof value === "object" ? "pre-wrap" : "normal",
-                            fontFamily: typeof value === "object" ? "monospace" : "inherit",
+                            whiteSpace: "normal", // ✅ hindi na kailangan ng pre-wrap kasi malinis na ang laman
+                            fontWeight: 500,
                           }}
                         >
                           {displayValue}
-                        </div>
-                      </div>
+                        </span>
+                      </InfoCard>
                     );
                   })}
-
               </div>
-              {/* Footer Section */}
+
+              {/* Footer Summary Section */}
               <div
                 style={{
-                  padding: "16px 30px",
-                  backgroundColor: "#f1f5f9",
-                  borderTop: "1px solid #ddd",
+                  padding: "18px 22px",
+                  backgroundColor: colors.surface,
+                  borderRadius: "14px",
+                  border: `1px solid ${colors.border}`,
                   display: "flex",
                   justifyContent: "space-between",
                   gap: "20px",
-                  alignItems: "flex-start",
+                  alignItems: "stretch",
                   flexWrap: "wrap",
+                  marginBottom: "28px",
                 }}
               >
                 {/* Remarks / Notes */}
                 <div
                   style={{
                     flex: 1,
-                    minWidth: "280px",
-                    padding: "12px 16px",
-                    backgroundColor: "white",
-                    borderRadius: "8px",
-                    border: "1px solid #e0e0e0",
+                    minWidth: "260px",
+                    padding: "14px 16px",
+                    backgroundColor: colors.bg,
+                    borderRadius: "10px",
+                    border: `1px solid ${colors.borderSoft}`,
                   }}
                 >
-                  <div style={{
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#666",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    marginBottom: "8px",
-                  }}>
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: colors.textMuted,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: "6px",
+                    }}
+                  >
                     Remarks / Notes
                   </div>
-                  <div style={{
-                    fontSize: "14px",
-                    color: "#333",
-                    lineHeight: "1.4",
-                    whiteSpace: "pre-wrap",
-                  }}>
-                    {remarksNote || "No remarks/notes available."}
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      color: colors.textPrimary,
+                      lineHeight: 1.5,
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {remarksNote || (
+                      <span style={{ color: colors.textMuted, fontStyle: "italic" }}>
+                        No remarks/notes available.
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: "40px", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "14px", alignItems: "stretch" }}>
                   {/* Remaining Balance */}
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
+                  <div
+                    style={{
+                      padding: "14px 20px",
+                      backgroundColor: colors.primarySoft,
+                      borderRadius: "10px",
+                      textAlign: "right",
+                      minWidth: "160px",
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: colors.primaryDark, opacity: 0.8 }}>
                       Remaining Balance
                     </div>
-                    <div style={{ fontSize: "18px", fontWeight: "700", color: "#0d6efd" }}>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: colors.primaryDark, marginTop: "4px" }}>
                       ₱{" "}
                       {fullRecord?.remaining_balance
                         ? Number(fullRecord.remaining_balance).toLocaleString("en-PH", {
@@ -702,11 +853,19 @@ const exportSingleRecordToExcel = () => {
                   </div>
 
                   {/* Credit Budget */}
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "14px", fontWeight: "600", color: "#555" }}>
+                  <div
+                    style={{
+                      padding: "14px 20px",
+                      backgroundColor: colors.successSoft,
+                      borderRadius: "10px",
+                      textAlign: "right",
+                      minWidth: "160px",
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: colors.success, opacity: 0.85 }}>
                       Credit Budget
                     </div>
-                    <div style={{ fontSize: "18px", fontWeight: "700", color: "#16a34a" }}>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: colors.success, marginTop: "4px" }}>
                       ₱{" "}
                       {fullRecord?.credit_budget
                         ? Number(fullRecord.credit_budget).toLocaleString("en-PH", {
@@ -718,30 +877,21 @@ const exportSingleRecordToExcel = () => {
                 </div>
               </div>
 
-
-              {/* SKU Table - Only show if data exists */}
+              {/* SKU Table */}
               {regularSkuData.length > 0 && (
-                <div style={{ marginBottom: "30px" }}>
-                  <h3 style={{
-                    marginBottom: "16px",
-                    color: "#0080ffff",
-                    fontSize: "20px",
-                    fontWeight: "600",
-                    borderBottom: "2px solid #0080ffff",
-                    paddingBottom: "8px"
-                  }}>
-                    📦 SKU Data
-                  </h3>
-                  <div style={{ overflowX: "auto", maxHeight: "500px" }}>
+                <div style={{ marginBottom: "28px" }}>
+                  <SectionTitle icon="📦">SKU Data</SectionTitle>
+                  <div
+                    style={{
+                      overflowX: "auto",
+                      maxHeight: "480px",
+                      borderRadius: "12px",
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.surface,
+                    }}
+                  >
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead
-                        style={{
-                          position: "sticky",
-                          top: 0,
-                          backgroundColor: "#f5f5f5",
-                          zIndex: 1,
-                        }}
-                      >
+                      <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                         <tr>
                           {[
                             "id",
@@ -758,13 +908,8 @@ const exportSingleRecordToExcel = () => {
                             <th
                               key={col}
                               style={{
-                                padding: "12px 16px",
+                                ...thStyle,
                                 textAlign: col === "total_amount" ? "right" : "left",
-                                borderBottom: "2px solid #ddd",
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                backgroundColor: "#f5f5f5",
-                                whiteSpace: "nowrap",
                               }}
                             >
                               {formatColumnName(col)}
@@ -775,25 +920,12 @@ const exportSingleRecordToExcel = () => {
 
                       <tbody>
                         {regularSkuData.map((row, index) => (
-                          <tr
-                            key={row.id || index}
-                            style={{
-                              backgroundColor: index % 2 === 0 ? "white" : "#fafafa",
-                            }}
-                          >
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
-                              {row.id}
-                            </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
-                              {row.regular_code}
-                            </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
-                              {row.account_name}
-                            </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
-                              {row.sku_code || "-"}
-                            </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                          <tr key={row.id || index} style={{ backgroundColor: index % 2 === 0 ? colors.surface : colors.bg }}>
+                            <td style={tdStyle}>{row.id}</td>
+                            <td style={tdStyle}>{row.regular_code}</td>
+                            <td style={tdStyle}>{row.account_name}</td>
+                            <td style={tdStyle}>{row.sku_code || "-"}</td>
+                            <td style={tdStyle}>
                               {row.srp
                                 ? `₱${Number(row.srp).toLocaleString("en-PH", {
                                   minimumFractionDigits: 2,
@@ -801,13 +933,9 @@ const exportSingleRecordToExcel = () => {
                                 })}`
                                 : "-"}
                             </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
-                              {row.qty || 0}
-                            </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
-                              {row.uom}
-                            </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                            <td style={tdStyle}>{row.qty || 0}</td>
+                            <td style={tdStyle}>{row.uom}</td>
+                            <td style={tdStyle}>
                               {row.billing_amount
                                 ? `₱${Number(row.billing_amount).toLocaleString("en-PH", {
                                   minimumFractionDigits: 2,
@@ -815,7 +943,7 @@ const exportSingleRecordToExcel = () => {
                                 })}`
                                 : "-"}
                             </td>
-                            <td style={{ padding: "12px 16px", borderBottom: "1px solid #eee", fontSize: "12px" }}>
+                            <td style={tdStyle}>
                               {row.discount
                                 ? `₱${Number(row.discount).toLocaleString("en-PH", {
                                   minimumFractionDigits: 2,
@@ -823,14 +951,7 @@ const exportSingleRecordToExcel = () => {
                                 })}`
                                 : "-"}
                             </td>
-                            <td
-                              style={{
-                                padding: "12px 16px",
-                                borderBottom: "1px solid #eee",
-                                fontSize: "12px",
-                                textAlign: "right",
-                              }}
-                            >
+                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600 }}>
                               {row.total_amount
                                 ? `₱${Number(row.total_amount).toLocaleString("en-PH", {
                                   minimumFractionDigits: 2,
@@ -842,27 +963,29 @@ const exportSingleRecordToExcel = () => {
                         ))}
                       </tbody>
 
-                      {/* ✅ TOTAL FOOTER ROW */}
                       <tfoot>
-                        <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "600" }}>
+                        <tr style={{ backgroundColor: colors.primarySoft }}>
                           <td
                             colSpan="9"
                             style={{
-                              padding: "12px 16px",
-                              borderTop: "2px solid #0080ff",
-                              fontSize: "14px",
+                              padding: "14px 16px",
+                              borderTop: `2px solid ${colors.primary}`,
+                              fontSize: "13px",
+                              fontWeight: 700,
                               textAlign: "right",
+                              color: colors.textPrimary,
                             }}
                           >
                             Total Amount:
                           </td>
                           <td
                             style={{
-                              padding: "12px 16px",
-                              borderTop: "2px solid #0080ff",
+                              padding: "14px 16px",
+                              borderTop: `2px solid ${colors.primary}`,
                               fontSize: "14px",
+                              fontWeight: 800,
                               textAlign: "right",
-                              color: "#0080ff",
+                              color: colors.primaryDark,
                             }}
                           >
                             {regularSkuData.length > 0
@@ -877,46 +1000,32 @@ const exportSingleRecordToExcel = () => {
                         </tr>
                       </tfoot>
                     </table>
-
                   </div>
                 </div>
               )}
 
-              {/* Account Budget Table - Only show if data exists */}
+              {/* Account Budget Table */}
               {regularAccountBudgetData.length > 0 && (
-                <div style={{ marginBottom: "30px" }}>
-                  <h3 style={{
-                    marginBottom: "16px",
-                    color: "#0080ffff",
-                    fontSize: "20px",
-                    fontWeight: "600",
-                    borderBottom: "2px solid #0080ffff",
-                    paddingBottom: "8px"
-                  }}>
-                    💰 Account Budget
-                  </h3>
-                  <div style={{ overflowX: "auto", maxHeight: "500px" }}>
+                <div style={{ marginBottom: "12px" }}>
+                  <SectionTitle icon="💰">Account Budget</SectionTitle>
+                  <div
+                    style={{
+                      overflowX: "auto",
+                      maxHeight: "480px",
+                      borderRadius: "12px",
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.surface,
+                    }}
+                  >
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead
-                        style={{
-                          position: "sticky",
-                          top: 0,
-                          backgroundColor: "#f5f5f5",
-                          zIndex: 1,
-                        }}
-                      >
+                      <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                         <tr>
                           {["account_name", "budget"].map((col) => (
                             <th
                               key={col}
                               style={{
-                                padding: "12px 16px",
+                                ...thStyle,
                                 textAlign: col === "budget" ? "right" : "left",
-                                borderBottom: "2px solid #ddd",
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                backgroundColor: "#f5f5f5",
-                                whiteSpace: "nowrap",
                               }}
                             >
                               {formatColumnName(col)}
@@ -927,30 +1036,9 @@ const exportSingleRecordToExcel = () => {
 
                       <tbody>
                         {regularAccountBudgetData.map((row, index) => (
-                          <tr
-                            key={row.id || index}
-                            style={{
-                              backgroundColor: index % 2 === 0 ? "white" : "#fafafa",
-                            }}
-                          >
-                            <td
-                              style={{
-                                padding: "12px 16px",
-                                borderBottom: "1px solid #eee",
-                                fontSize: "12px",
-                                textAlign: "left",
-                              }}
-                            >
-                              {row.account_name}
-                            </td>
-                            <td
-                              style={{
-                                padding: "12px 16px",
-                                borderBottom: "1px solid #eee",
-                                fontSize: "12px",
-                                textAlign: "right",
-                              }}
-                            >
+                          <tr key={row.id || index} style={{ backgroundColor: index % 2 === 0 ? colors.surface : colors.bg }}>
+                            <td style={tdStyle}>{row.account_name}</td>
+                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600 }}>
                               {row.budget
                                 ? `₱${Number(row.budget).toLocaleString("en-PH", {
                                   minimumFractionDigits: 2,
@@ -963,24 +1051,27 @@ const exportSingleRecordToExcel = () => {
                       </tbody>
 
                       <tfoot>
-                        <tr style={{ backgroundColor: "#e3f2fd", fontWeight: "600" }}>
+                        <tr style={{ backgroundColor: colors.primarySoft }}>
                           <td
                             style={{
-                              padding: "12px 16px",
-                              borderTop: "2px solid #0080ff",
-                              fontSize: "14px",
+                              padding: "14px 16px",
+                              borderTop: `2px solid ${colors.primary}`,
+                              fontSize: "13px",
+                              fontWeight: 700,
                               textAlign: "right",
+                              color: colors.textPrimary,
                             }}
                           >
                             Total Budget:
                           </td>
                           <td
                             style={{
-                              padding: "12px 16px",
-                              borderTop: "2px solid #0080ff",
+                              padding: "14px 16px",
+                              borderTop: `2px solid ${colors.primary}`,
                               fontSize: "14px",
+                              fontWeight: 800,
                               textAlign: "right",
-                              color: "#0080ff",
+                              color: colors.primaryDark,
                             }}
                           >
                             {regularAccountBudgetData.length > 0
@@ -995,7 +1086,6 @@ const exportSingleRecordToExcel = () => {
                         </tr>
                       </tfoot>
                     </table>
-
                   </div>
                 </div>
               )}
