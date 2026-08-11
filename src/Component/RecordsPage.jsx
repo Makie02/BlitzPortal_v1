@@ -110,10 +110,11 @@ function RecordsPage() {
       for (let i = 0; i < pwpCodes.length; i += batchSize) {
         const batch = pwpCodes.slice(i, i + batchSize);
 
-        const { data: approvalData, error } = await supabase
+  const { data: approvalData, error } = await supabase
           .from("Approval_History")
           .select("PwpCode, Response, DateResponded, created_at")
-          .in("PwpCode", batch);
+          .in("PwpCode", batch)
+          .order("created_at", { ascending: false });
 
         if (error) {
           console.error("Error fetching approval status:", error);
@@ -127,11 +128,14 @@ function RecordsPage() {
 
       const approvalMap = {};
       allApprovalData?.forEach(approval => {
-        approvalMap[approval.PwpCode] = {
-          status: approval.Response || 'Pending',
-          date_responded: approval.DateResponded,
-          approval_created: approval.created_at
-        };
+        // Descending order na yung data — huwag na i-overwrite kung may na-set na (unang nakita = pinakabago)
+        if (!approvalMap[approval.PwpCode]) {
+          approvalMap[approval.PwpCode] = {
+            status: approval.Response || 'Pending',
+            date_responded: approval.DateResponded,
+            approval_created: approval.created_at
+          };
+        }
       });
 
       return approvalMap;
@@ -313,10 +317,11 @@ function RecordsPage() {
       for (let i = 0; i < allPwpCodes.length; i += batchSize) {
         const batch = allPwpCodes.slice(i, i + batchSize);
 
-        const { data: approvalHistoryData, error: approvalHistoryError } = await supabase
+    const { data: approvalHistoryData, error: approvalHistoryError } = await supabase
           .from("Approval_History")
           .select("PwpCode, DateResponded")
-          .in("PwpCode", batch);
+          .in("PwpCode", batch)
+          .order("created_at", { ascending: false });
 
         if (approvalHistoryError) throw approvalHistoryError;
 
@@ -854,7 +859,7 @@ function RecordsPage() {
                   <option value="approved">✅ Approved</option>
                   <option value="pending">⏳ Pending</option>
                   <option value="cancelled">❌ Cancelled</option>
-                  <option value="disapprove">🚫 Disapproved</option>
+                  <option value="disapproved">🚫 Disapproved</option>
                 </select>
 
                 {/* ✅ NEW DISTRIBUTOR FILTER */}
