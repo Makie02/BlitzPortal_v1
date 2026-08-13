@@ -516,25 +516,25 @@ const RegularVisaForm = () => {
   };
 
 
-const addSkuRowForBranch = (brandname) => {
-  if (brandname === "ALL_BRANCHES") {
-    setAccountSkuRows((prev) => ({
-      ...prev,
-      ALL_BRANCHES: [
-        ...(prev.ALL_BRANCHES || []),
-        { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0, TOTAL_AMOUNT: 0 },
-      ],
-    }));
-  } else {
-    setAccountSkuRows((prev) => ({
-      ...prev,
-      [brandname]: [
-        ...(prev[brandname] || []),
-        { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0, TOTAL_AMOUNT: 0 },
-      ],
-    }));
-  }
-};
+  const addSkuRowForBranch = (brandname) => {
+    if (brandname === "ALL_BRANCHES") {
+      setAccountSkuRows((prev) => ({
+        ...prev,
+        ALL_BRANCHES: [
+          ...(prev.ALL_BRANCHES || []),
+          { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0, TOTAL_AMOUNT: 0 },
+        ],
+      }));
+    } else {
+      setAccountSkuRows((prev) => ({
+        ...prev,
+        [brandname]: [
+          ...(prev[brandname] || []),
+          { SKUITEM: "", SRP: 0, QTY: 0, UOM: "Case", DISCOUNT: 0, TOTAL_AMOUNT: 0 },
+        ],
+      }));
+    }
+  };
 
   const removeSkuRowForBranch = (brandname, index) => {
     setAccountSkuRows((prev) => ({
@@ -2325,65 +2325,188 @@ const addSkuRowForBranch = (brandname) => {
     return Number(val) || 0;
   };
 
-// NEW
-const handleSku = async (generatedCode) => {
-  setLoading(true);
-  setMessage("");
+  const MultiSelectDropdown = ({ options, selected = [], onChange, placeholder }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
 
-  try {
-    // ✅ Diretso na lang kunin ang TOTAL_AMOUNT, walang SRP/QTY/DISCOUNT computation
-    const allRows = Object.keys(accountSkuRows).flatMap((accountCode) =>
-      (accountSkuRows[accountCode] || []).map((row) => {
-        const account = accountTypes.find((acc) => acc.code === accountCode);
-        const totalAmount = toNumber(row.TOTAL_AMOUNT);
+    useEffect(() => {
+      const handleClickOutside = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
-        return {
-          account_name: account?.name || accountCode,
-          sku_code: row.SKUITEM ?? null,
-          uom: row.UOM?.trim() ? row.UOM : "pc",
-          total_amount: totalAmount,
-          remaining_balance: 0,
-          regular_code: generatedCode,
-          created_at: new Date().toISOString(),
-        };
-      })
+    const toggleOption = (label) => {
+      const updated = selected.includes(label)
+        ? selected.filter((s) => s !== label)
+        : [...selected, label];
+      onChange(updated);
+    };
+
+    return (
+      <div ref={ref} style={{ position: "relative", minWidth: "180px" }}>
+        <div
+          onClick={() => setOpen((o) => !o)}
+          className="form-control"
+          style={{
+            cursor: "pointer",
+            minHeight: "38px",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          {selected.length > 0 ? (
+            selected.map((label) => (
+              <span
+                key={label}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  backgroundColor: "#0050a5ff",
+                  color: "#fff",
+                  padding: "2px 6px",
+                  borderRadius: "5px",
+                  fontSize: "12px",
+                }}
+              >
+                {label}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleOption(label);
+                  }}
+                  style={{
+                    marginLeft: "4px",
+                    cursor: "pointer",
+                    fontWeight: "bold",
+                    color: "#fff",
+                    backgroundColor: "#ff4d4f",
+                    borderRadius: "5%",
+                    width: "14px",
+                    height: "14px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "10px",
+                  }}
+                >
+                  ✖
+                </span>
+              </span>
+            ))
+          ) : (
+            <span style={{ color: "#999" }}>{placeholder}</span>
+          )}
+        </div>
+
+        {open && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              zIndex: 1000,
+              background: "#fff",
+              border: "1px solid #ccc",
+              borderRadius: "6px",
+              width: "100%",
+              maxHeight: "220px",
+              overflowY: "auto",
+              boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+            }}
+          >
+            {options.length === 0 ? (
+              <div style={{ padding: "8px", color: "#888" }}>No options</div>
+            ) : (
+              options.map((opt) => {
+                const label = opt.label ?? opt;
+                const key = opt.id ?? opt;
+                const checked = selected.includes(label);
+                return (
+                  <label
+                    key={key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "6px 10px",
+                      cursor: "pointer",
+                      borderBottom: "1px solid #f0f0f0",
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} onChange={() => toggleOption(label)} />
+                    {label}
+                  </label>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
     );
+  };
+  // NEW
+  const handleSku = async (generatedCode) => {
+    setLoading(true);
+    setMessage("");
 
-    if (!allRows.length) {
-      setMessage("⚠️ No SKUs to submit.");
+    try {
+      // ✅ Diretso na lang kunin ang TOTAL_AMOUNT, walang SRP/QTY/DISCOUNT computation
+      const allRows = Object.keys(accountSkuRows).flatMap((accountCode) =>
+        (accountSkuRows[accountCode] || []).map((row) => {
+          const account = accountTypes.find((acc) => acc.code === accountCode);
+          const totalAmount = toNumber(row.TOTAL_AMOUNT);
+
+          return {
+            account_name: account?.name || accountCode,
+            sku_code: row.SKUITEM ?? null,
+            uom: row.UOM?.trim() ? row.UOM : "pc",
+            total_amount: totalAmount,
+            remaining_balance: 0,
+            regular_code: generatedCode,
+            created_at: new Date().toISOString(),
+          };
+        })
+      );
+
+      if (!allRows.length) {
+        setMessage("⚠️ No SKUs to submit.");
+        setLoading(false);
+        return;
+      }
+
+      const grandTotal = allRows.reduce((sum, r) => sum + r.total_amount, 0);
+
+      const selected = parseFloat(selectedBalance || 0);
+      const creditBudget = parseFloat(formData?.amountbadget || 0);
+      const remainingSkuBudget = selected - grandTotal - creditBudget;
+
+      const rowsWithTotals = allRows.map((r) => ({
+        ...r,
+        remaining_balance: remainingSkuBudget,
+      }));
+
+      const { error: insertError } = await supabase
+        .from("regular_sku")
+        .insert(rowsWithTotals);
+
+      if (insertError) throw insertError;
+
+      console.log("✅ SKUs inserted:", rowsWithTotals.length);
+
+      await upsertRegularPwp(supabase, generatedCode, remainingSkuBudget, grandTotal);
+
+      setMessage("✅ SKUs submitted successfully!");
+    } catch (err) {
+      console.error("❌ SKU submit error:", err.message);
+      setMessage(`❌ Error: ${err.message}`);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const grandTotal = allRows.reduce((sum, r) => sum + r.total_amount, 0);
-
-    const selected = parseFloat(selectedBalance || 0);
-    const creditBudget = parseFloat(formData?.amountbadget || 0);
-    const remainingSkuBudget = selected - grandTotal - creditBudget;
-
-    const rowsWithTotals = allRows.map((r) => ({
-      ...r,
-      remaining_balance: remainingSkuBudget,
-    }));
-
-    const { error: insertError } = await supabase
-      .from("regular_sku")
-      .insert(rowsWithTotals);
-
-    if (insertError) throw insertError;
-
-    console.log("✅ SKUs inserted:", rowsWithTotals.length);
-
-    await upsertRegularPwp(supabase, generatedCode, remainingSkuBudget, grandTotal);
-
-    setMessage("✅ SKUs submitted successfully!");
-  } catch (err) {
-    console.error("❌ SKU submit error:", err.message);
-    setMessage(`❌ Error: ${err.message}`);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   async function upsertRegularPwp(supabase, regularpwpcode, remainingSkuBudget, totalAmount) {
     try {
@@ -6616,38 +6739,32 @@ const handleSku = async (generatedCode) => {
                                 )}
                                 {formData.isPenalties && (
                                   <td>
-                                    <Form.Select
-                                      value={existingRow.penalty || ""}
-                                      onChange={(e) => {
-                                        updateBranchRowField(branch.name, "penalty", e.target.value);
-                                        if (e.target.value) {
-                                          updateBranchRowField(branch.name, "suppliesme", ""); // ✅ clear supplies kapag may napiling penalty
+                                    <MultiSelectDropdown
+                                      options={penaltyOptions}
+                                      selected={Array.isArray(existingRow.penalty) ? existingRow.penalty : existingRow.penalty ? [existingRow.penalty] : []}
+                                      placeholder="Select Penalty"
+                                      onChange={(updated) => {
+                                        updateBranchRowField(branch.name, "penalty", updated);
+                                        if (updated.length > 0) {
+                                          updateBranchRowField(branch.name, "suppliesme", []);
                                         }
                                       }}
-                                    >
-                                      <option value="">Select Penalty</option>
-                                      {penaltyOptions.map((p) => (
-                                        <option key={p.id} value={p.label}>{p.label}</option>
-                                      ))}
-                                    </Form.Select>
+                                    />
                                   </td>
                                 )}
                                 {formData.suppliesME && (
                                   <td>
-                                    <Form.Select
-                                      value={existingRow.suppliesme || ""}
-                                      onChange={(e) => {
-                                        updateBranchRowField(branch.name, "suppliesme", e.target.value);
-                                        if (e.target.value) {
-                                          updateBranchRowField(branch.name, "penalty", ""); // ✅ clear penalty kapag may napiling supplies
+                                    <MultiSelectDropdown
+                                      options={suppliesOptions}
+                                      selected={Array.isArray(existingRow.suppliesme) ? existingRow.suppliesme : existingRow.suppliesme ? [existingRow.suppliesme] : []}
+                                      placeholder="Select Item"
+                                      onChange={(updated) => {
+                                        updateBranchRowField(branch.name, "suppliesme", updated);
+                                        if (updated.length > 0) {
+                                          updateBranchRowField(branch.name, "penalty", []);
                                         }
                                       }}
-                                    >
-                                      <option value="">Select Item</option>
-                                      {suppliesOptions.map((item) => (
-                                        <option key={item.id} value={item.label}>{item.label}</option>
-                                      ))}
-                                    </Form.Select>
+                                    />
                                   </td>
                                 )}
                                 <td>
@@ -6757,38 +6874,32 @@ const handleSku = async (generatedCode) => {
                                 )}
                                 {formData.isPenalties && (
                                   <td>
-                                    <Form.Select
-                                      value={existingRow.penalty || ""}
-                                      onChange={(e) => {
-                                        updateBranchRowField(sub.id, "penalty", e.target.value);
-                                        if (e.target.value) {
-                                          updateBranchRowField(sub.id, "suppliesme", ""); // ✅ clear supplies
+                                    <MultiSelectDropdown
+                                      options={PENALTY_OPTIONS}
+                                      selected={Array.isArray(existingRow.penalty) ? existingRow.penalty : existingRow.penalty ? [existingRow.penalty] : []}
+                                      placeholder="Select Penalty"
+                                      onChange={(updated) => {
+                                        updateBranchRowField(sub.id, "penalty", updated);
+                                        if (updated.length > 0) {
+                                          updateBranchRowField(sub.id, "suppliesme", []);
                                         }
                                       }}
-                                    >
-                                      <option value="">Select Penalty</option>
-                                      {PENALTY_OPTIONS.map((p) => (
-                                        <option key={p} value={p}>{p}</option>
-                                      ))}
-                                    </Form.Select>
+                                    />
                                   </td>
                                 )}
                                 {formData.suppliesME && (
                                   <td>
-                                    <Form.Select
-                                      value={existingRow.suppliesme || ""}
-                                      onChange={(e) => {
-                                        updateBranchRowField(sub.id, "suppliesme", e.target.value);
-                                        if (e.target.value) {
-                                          updateBranchRowField(sub.id, "penalty", ""); // ✅ clear penalty
+                                    <MultiSelectDropdown
+                                      options={SUPPLIES_ME_OPTIONS}
+                                      selected={Array.isArray(existingRow.suppliesme) ? existingRow.suppliesme : existingRow.suppliesme ? [existingRow.suppliesme] : []}
+                                      placeholder="Select Item"
+                                      onChange={(updated) => {
+                                        updateBranchRowField(sub.id, "suppliesme", updated);
+                                        if (updated.length > 0) {
+                                          updateBranchRowField(sub.id, "penalty", []);
                                         }
                                       }}
-                                    >
-                                      <option value="">Select Item</option>
-                                      {SUPPLIES_ME_OPTIONS.map((item) => (
-                                        <option key={item} value={item}>{item}</option>
-                                      ))}
-                                    </Form.Select>
+                                    />
                                   </td>
                                 )}
                                 <td>
