@@ -41,6 +41,42 @@ const RecordViewModal = ({ record, onClose }) => {
   const fontStack =
     "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
+  // ✅ NEW: normalize array / JSON-array-string / plain string values coming
+  // from columns like sku, penalty, suppliesme. Returns `null` kapag walang
+  // talagang laman ("[]", "{}", "", empty array, etc.) para magamit natin
+  // 'to both sa "may laman ba 'to para ipakita ang column" check, AT sa
+  // pag-display ng cell (comma-separated, walang brackets/quotes).
+  const formatListCell = (val) => {
+    if (val === null || val === undefined) return null;
+
+    let arr = null;
+
+    if (Array.isArray(val)) {
+      arr = val;
+    } else if (typeof val === "string") {
+      const trimmed = val.trim();
+      if (trimmed === "" || trimmed === "[]" || trimmed === "{}") return null;
+
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) arr = parsed;
+        } catch {
+          // hindi valid JSON, ituturing na lang na plain string sa baba
+        }
+      }
+
+      if (arr === null) {
+        return trimmed === "" ? null : trimmed;
+      }
+    } else {
+      return String(val);
+    }
+
+    const cleaned = arr.map((item) => String(item).trim()).filter(Boolean);
+    return cleaned.length > 0 ? cleaned.join(", ") : null;
+  };
+
   const exportBudgetHistoryToExcel = () => {
     if (filteredBudgetHistory.length === 0) return;
 
@@ -981,10 +1017,13 @@ const RecordViewModal = ({ record, onClose }) => {
                     }}
                   >
                     {(() => {
-                      // ✅ NEW: dynamic columns — only show SKU/Penalty/Supplies if at least one row has a value
-                      const hasSku = regularAccountBudgetData.some((r) => r.sku && String(r.sku).trim() !== "");
-                      const hasPenalty = regularAccountBudgetData.some((r) => r.penalty && String(r.penalty).trim() !== "");
-                      const hasSupplies = regularAccountBudgetData.some((r) => r.suppliesme && String(r.suppliesme).trim() !== "");
+                      // ✅ dynamic columns — only show SKU/Penalty/Supplies if
+                      // at least one row has a REAL value (hindi lang "[]"/"{}"/
+                      // empty array). Gamit ang formatListCell para tama ang
+                      // pagkilala kung ano ba talaga ang "may laman".
+                      const hasSku = regularAccountBudgetData.some((r) => formatListCell(r.sku) !== null);
+                      const hasPenalty = regularAccountBudgetData.some((r) => formatListCell(r.penalty) !== null);
+                      const hasSupplies = regularAccountBudgetData.some((r) => formatListCell(r.suppliesme) !== null);
 
                       const columns = [
                         "account_name",
@@ -1025,6 +1064,13 @@ const RecordViewModal = ({ record, onClose }) => {
                                             maximumFractionDigits: 2,
                                           })}`
                                           : "-"}
+                                      </td>
+                                    );
+                                  }
+                                  if (col === "sku" || col === "penalty" || col === "suppliesme") {
+                                    return (
+                                      <td key={col} style={tdStyle}>
+                                        {formatListCell(row[col]) ?? "-"}
                                       </td>
                                     );
                                   }
