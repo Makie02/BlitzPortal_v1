@@ -1326,9 +1326,15 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
 
                 {skuListing.length === 0 && accountsBudgetList.length > 0 && (() => {
                     // ✅ Only show a column if at least one row actually has a value for it
-                    const hasSku = accountsBudgetList.some((row) => row.sku && row.sku.trim() !== '');
-                    const hasPenalty = accountsBudgetList.some((row) => row.penalty && row.penalty.trim() !== '');
-                    const hasSupplies = accountsBudgetList.some((row) => row.suppliesme && row.suppliesme.trim() !== '');
+                    const isEmptyArrayLike = (val) => {
+                        if (!val) return true;
+                        const trimmed = String(val).trim();
+                        return trimmed === '' || trimmed === '[]' || trimmed === '[ ]';
+                    };
+
+                    const hasSku = accountsBudgetList.some((row) => !isEmptyArrayLike(row.sku));
+                    const hasPenalty = accountsBudgetList.some((row) => !isEmptyArrayLike(row.penalty));
+                    const hasSupplies = accountsBudgetList.some((row) => !isEmptyArrayLike(row.suppliesme));
 
                     const extraColSpan = 1 + (hasSku ? 1 : 0) + (hasPenalty ? 1 : 0) + (hasSupplies ? 1 : 0);
 
@@ -1358,9 +1364,9 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                     {accountsBudgetList.map((row) => (
                                         <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
                                             <td style={{ padding: '8px' }}>{row.account_name}</td>
-                                            {hasSku && <td style={{ padding: '8px' }}>{row.sku || '-'}</td>}
-                                            {hasPenalty && <td style={{ padding: '8px' }}>{row.penalty || '-'}</td>}
-                                            {hasSupplies && <td style={{ padding: '8px' }}>{row.suppliesme || '-'}</td>}
+                                            {hasSku && <td style={{ padding: '8px' }}>{isEmptyArrayLike(row.sku) ? '-' : row.sku}</td>}
+                                            {hasPenalty && <td style={{ padding: '8px' }}>{isEmptyArrayLike(row.penalty) ? '-' : row.penalty}</td>}
+                                            {hasSupplies && <td style={{ padding: '8px' }}>{isEmptyArrayLike(row.suppliesme) ? '-' : row.suppliesme}</td>}
                                             <td style={{ padding: '8px' }}>{Number(row.budget).toLocaleString()}</td>
                                         </tr>
                                     ))}
@@ -1380,7 +1386,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     );
                 })()}
 
-     
+
                 {type === 'Regular PWP' && skuListing.length > 0 && (
                     <div className="table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
                         <h4 style={{ color: '#2575fc', marginBottom: '0.5rem' }}>SKU Listing</h4>
@@ -1395,6 +1401,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                             }}
                         >
                             <thead>
+
                                 <tr style={{ backgroundColor: '#2575fc', color: '#ffffff', textAlign: 'left' }}>
                                     <th style={{ padding: '10px' }}>Accounts</th>
                                     <th style={{ padding: '10px' }}>SKU</th>
