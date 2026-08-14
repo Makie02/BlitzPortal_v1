@@ -42,6 +42,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
         regularpwpcode: 'Regular PWP Code',
         account_type: 'Account Type',
         activity: 'Activity',
+        expenseType: 'Expense Type',
         pwptype: 'PWP Type',
         activityDurationFrom: 'Activity From',
         activityDurationTo: 'Activity To',
@@ -276,6 +277,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
     };
 
     const [activityNameCache, setActivityNameCache] = useState({});
+    const [activityExpenseTypeCache, setActivityExpenseTypeCache] = useState({});
 
 
     const [accountTypeNameCache, setAccountTypeNameCache] = useState({});
@@ -285,7 +287,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
         try {
             const { data, error } = await supabase
                 .from('activity')
-                .select('code, name')
+                .select('code, name, expense_type')
                 .eq('code', code)
                 .single();
 
@@ -294,10 +296,19 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     ...prev,
                     [code]: data.name,
                 }));
+                setActivityExpenseTypeCache(prev => ({
+                    ...prev,
+                    [code]: data.expense_type,
+                }));
             }
         } catch (err) {
             console.error('Error fetching activity name:', err.message);
         }
+    };
+    const getExpenseTypeDisplay = () => {
+        const code = String(data?.activity || '').trim();
+        if (!code) return null;
+        return activityExpenseTypeCache[code] || null;
     };
     const getUserNameById = (userId) => {
         return userNames[userId] || userNames[String(userId)] || userNames[Number(userId)] || `User ${userId}`;
@@ -1010,7 +1021,13 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     <div className="modal-form-content">
                         {/* ✅ Custom Field Order for Regular PWP */}
                         {type === 'Regular PWP' ? (() => {
+// ✅ NEW: 'expenseType' is a virtual key (hindi galing sa `data`,
+                            // kundi resolved via activityExpenseTypeCache), kaya special-case
+                            // siya sa visibility check at sa pag-render ng value.
                             const getVisibleKeys = (keys) => keys.filter((key) => {
+                                if (key === 'expenseType') {
+                                    return !!getExpenseTypeDisplay();
+                                }
                                 const value = data[key];
                                 if (value === null || value === undefined) return false;
                                 if (typeof value === 'string' && value.trim() === '') return false;
@@ -1031,7 +1048,9 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                         {visibleKeys.map((k) => (
                                             <div className="form-group" key={k}>
                                                 <label>{formatFieldName(k)}</label>
-                                                <div className="readonly-box">{formatValue(data[k], k)}</div>
+                                                <div className="readonly-box">
+                                                    {k === 'expenseType' ? getExpenseTypeDisplay() : formatValue(data[k], k)}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -1039,7 +1058,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                             };
 
                             const restGroups = [
-                                { keys: ['activity', 'activityDurationFrom', 'activityDurationTo', 'created_at', 'coverPwpCode', 'createForm', 'isPartOfCoverPwp'], span: 4 },
+                                { keys: ['activity', 'expenseType', 'activityDurationFrom', 'activityDurationTo', 'created_at', 'coverPwpCode', 'createForm', 'isPartOfCoverPwp'], span: 4 },
                                 { keys: ['objective'], span: 2 },
                                 { keys: ['promoScheme'], span: 2 },
                                 { keys: ['accounts'], span: 4 },
@@ -1052,7 +1071,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                         {renderBox(['accountType'], 'accountType')}
                                         {renderBox(['branchType'], 'branchType')}
                                     </div>
-                                    {restGroups.map((group, idx) => {
+                            {restGroups.map((group, idx) => {
                                         const visibleKeys = getVisibleKeys(group.keys);
                                         if (visibleKeys.length === 0) return null;
                                         return (
@@ -1064,12 +1083,15 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                                 {visibleKeys.map((key) => (
                                                     <div className="form-group" key={key}>
                                                         <label>{formatFieldName(key)}</label>
-                                                        <div className="readonly-box">{formatValue(data[key], key)}</div>
+                                                        <div className="readonly-box">
+                                                            {key === 'expenseType' ? getExpenseTypeDisplay() : formatValue(data[key], key)}
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
                                         );
                                     })}
+                                 
                                 </>
                             );
                         })() : (
