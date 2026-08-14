@@ -15,6 +15,7 @@ const RecordViewModal = ({ record, onClose }) => {
   const [categoryMap, setCategoryMap] = useState({});
   const [distributorMap, setDistributorMap] = useState({});
   const [activityMap, setActivityMap] = useState({});
+  const [activityExpenseTypeMap, setActivityExpenseTypeMap] = useState({});
   const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
   const [remarksNote, setRemarksNote] = useState(null);
 
@@ -189,7 +190,7 @@ const RecordViewModal = ({ record, onClose }) => {
       while (moreData) {
         const { data, error } = await supabase
           .from("activity")
-          .select("code, name")
+          .select("code, name, expense_type")
           .range(from, from + chunkSize - 1);
 
         if (error) throw error;
@@ -203,16 +204,24 @@ const RecordViewModal = ({ record, onClose }) => {
       }
 
       const map = {};
+      const expenseTypeMap = {};
       allData.forEach((item) => {
-        map[String(item.code).trim()] = item.name;
+        const codeKey = String(item.code).trim();
+        map[codeKey] = item.name;
+        expenseTypeMap[codeKey] = item.expense_type;
       });
 
       setActivityMap(map);
+      setActivityExpenseTypeMap(expenseTypeMap);
     } catch (err) {
       console.error("❌ Failed to fetch activity:", err.message);
     }
   };
-
+  const getExpenseTypeForActivity = (activityValue) => {
+    if (!activityValue) return null;
+    const strCode = String(activityValue).trim();
+    return activityExpenseTypeMap[strCode] || null;
+  };
   const fetchRemarksNote = async () => {
     try {
       const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
@@ -787,7 +796,7 @@ const RecordViewModal = ({ record, onClose }) => {
 
                     return true;
                   })
-                  .map(([key, value]) => {
+                  .flatMap(([key, value]) => {
                     const displayValue =
                       (key === "accountType" || key === "account_type") && Object.keys(categoryMap).length > 0
                         ? convertCodesToNames(value)
@@ -796,7 +805,7 @@ const RecordViewModal = ({ record, onClose }) => {
 
                     const isLong = typeof displayValue === "string" && displayValue.length > 60;
 
-                    return (
+                    const cards = [
                       <InfoCard key={key} label={formatColumnName(key)} wide={isLong}>
                         <span
                           style={{
@@ -806,8 +815,24 @@ const RecordViewModal = ({ record, onClose }) => {
                         >
                           {displayValue}
                         </span>
-                      </InfoCard>
-                    );
+                      </InfoCard>,
+                    ];
+
+                    // ✅ NEW: kapag activity ang column, isabay ang Expense Type card
+                    if (key === "activity" || key === "activity_code") {
+                      const expenseType = getExpenseTypeForActivity(value);
+                      if (expenseType) {
+                        cards.push(
+                          <InfoCard key={`${key}_expense_type`} label="Expense Type">
+                            <span style={{ whiteSpace: "normal", fontWeight: 500 }}>
+                              {expenseType}
+                            </span>
+                          </InfoCard>
+                        );
+                      }
+                    }
+
+                    return cards;
                   })}
               </div>
 
