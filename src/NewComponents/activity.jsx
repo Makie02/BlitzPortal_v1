@@ -4,11 +4,20 @@ import Swal from 'sweetalert2';
 
 const ROW_OPTIONS = [5, 10, 20];
 
+const EXPENSE_TYPES = [
+  'DISPLAY ALLOWANCE',
+  'MARKETING SUPPORT / SPONSORSHIP',
+  'LISTING FEE',
+  'DISCOUNT',
+  'BUNDLING / TIE-UP',
+  'DISTRIBUTION'
+];
+
 const Activity = () => {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: null, code: '', name: '', description: '', glcode: '' });
+  const [form, setForm] = useState({ id: null, code: '', name: '', description: '', glcode: '', expense_type: '' });
   const [isEditing, setIsEditing] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,14 +54,19 @@ const Activity = () => {
   };
 
   const openAddModal = () => {
-    setForm({ id: null, code: generateNextCode(), name: '', description: '', glcode: '' });
+    setForm({ id: null, code: generateNextCode(), name: '', description: '', glcode: '', expense_type: '' });
     setIsEditing(false);
     setModalOpen(true);
   };
 
   const openEditModal = (activity) => {
     setForm({
-      id: activity.id, code: activity.code, name: activity.name, description: activity.description, glcode: activity.glcode || ''
+      id: activity.id,
+      code: activity.code,
+      name: activity.name,
+      description: activity.description,
+      glcode: activity.glcode || '',
+      expense_type: activity.expense_type || ''
     });
     setIsEditing(true);
     setModalOpen(true);
@@ -74,7 +88,10 @@ const Activity = () => {
       const { error } = await supabase
         .from('activity')
         .update({
-          name: form.name, description: form.description || null, glcode: form.glcode || null
+          name: form.name,
+          description: form.description || null,
+          glcode: form.glcode || null,
+          expense_type: form.expense_type || null
         })
         .eq('id', form.id);
 
@@ -89,7 +106,11 @@ const Activity = () => {
       const { error } = await supabase
         .from('activity')
         .insert([{
-          code: form.code, name: form.name, description: form.description || null, glcode: form.glcode || null
+          code: form.code,
+          name: form.name,
+          description: form.description || null,
+          glcode: form.glcode || null,
+          expense_type: form.expense_type || null
         }]);
 
       if (error) {
@@ -133,7 +154,8 @@ const Activity = () => {
     return (
       act.name.toLowerCase().includes(term) ||
       act.code.toLowerCase().includes(term) ||
-      (act.description && act.description.toLowerCase().includes(term))
+      (act.description && act.description.toLowerCase().includes(term)) ||
+      (act.expense_type && act.expense_type.toLowerCase().includes(term))
     );
   });
 
@@ -164,7 +186,7 @@ const Activity = () => {
         <div style={searchWrapperStyle}>
           <input
             type="text"
-            placeholder="Search by code, name, description..."
+            placeholder="Search by code, name, description, expense type..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -184,7 +206,7 @@ const Activity = () => {
                   <th style={thStyle}>ID</th>
                   <th style={thStyle}>Code</th>
                   <th style={thStyle}>GL Code</th>
-
+                  <th style={thStyle}>Expense Type</th>
                   <th style={thStyle}>Name</th>
                   <th style={thStyle}>Description</th>
                   <th style={thStyle}>Actions</th>
@@ -193,14 +215,14 @@ const Activity = () => {
               <tbody>
                 {currentItems.length === 0 ? (
                   <tr>
-                    <td colSpan="5" style={{ padding: 12, textAlign: 'center' }}>No activities found.</td>
+                    <td colSpan="7" style={{ padding: 12, textAlign: 'center' }}>No activities found.</td>
                   </tr>
                 ) : currentItems.map(act => (
                   <tr key={act.id} style={{ borderBottom: '1px solid #ddd' }}>
                     <td style={tdStyle}>{act.id}</td>
                     <td style={tdStyle}>{act.code}</td>
                     <td style={tdStyle}>{act.glcode || '-'}</td>
-
+                    <td style={tdStyle}>{act.expense_type || '-'}</td>
                     <td style={tdStyle}>{act.name}</td>
                     <td style={tdStyle}>{act.description || '-'}</td>
                     <td style={tdStyle}>
@@ -289,7 +311,20 @@ const Activity = () => {
                   placeholder="Enter GL Code"
                 />
               </div>
-
+              <div style={{ marginBottom: '12px' }}>
+                <label>Expense Type:</label>
+                <select
+                  name="expense_type"
+                  value={form.expense_type}
+                  onChange={handleChange}
+                  style={inputStyle}
+                >
+                  <option value="">-- Select Expense Type --</option>
+                  {EXPENSE_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
               <div style={{ marginBottom: '12px' }}>
                 <label>Name: *</label>
                 <input
@@ -453,7 +488,6 @@ const selectStyle = {
   border: '1px solid #ccc',
   cursor: 'pointer'
 };
-
 
 const activePageButtonStyle = {
   ...pageButtonStyle,
