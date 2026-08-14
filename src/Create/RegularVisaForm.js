@@ -2865,7 +2865,31 @@ const RegularVisaForm = () => {
   // ============================================================
   // 🔄 Helper: Update the placeholder record with full data
   // ============================================================
+  const [selectedExpenseType, setSelectedExpenseType] = useState("");
 
+  const getUniqueExpenseTypes = () => {
+    const filteredActivities = activities.filter(opt => {
+      const setting = settings[opt.code] || {};
+      return setting.regular === true;
+    });
+
+    const types = [...new Set(
+      filteredActivities.map(opt => opt.expense_type || "UNGROUPED")
+    )];
+
+    return types.sort((a, b) => a.localeCompare(b));
+  };
+
+  const getActivitiesForExpenseType = () => {
+    if (!selectedExpenseType) return [];
+
+    return activities.filter(opt => {
+      const setting = settings[opt.code] || {};
+      const isRegular = setting.regular === true;
+      const matchesType = (opt.expense_type || "UNGROUPED") === selectedExpenseType;
+      return isRegular && matchesType;
+    });
+  };
   const updateRegularPwpRecord = async (recordId, updatedFormData) => {
     try {
       let distributorCode = updatedFormData.distributor?.trim() || null;
@@ -3444,6 +3468,38 @@ const RegularVisaForm = () => {
       setLoadingGroupedBranches(false);
     }
   };
+
+
+  useEffect(() => {
+    if (step === 1 && !selectedMother && groupedBranches.length > 0) {
+      if (Array.isArray(formData.accountType) && formData.accountType.length > 0) {
+        const nonChainGroup = groupedBranches.find((g) => g.isNonChain);
+        if (nonChainGroup) {
+          setSelectedMother({
+            id: nonChainGroup.motherId,
+            name: "NON-CHAIN",
+            code: nonChainGroup.motherCode,
+          });
+        }
+      } else if (Array.isArray(formData.branchType) && formData.branchType.length > 0) {
+        const chainGroup = groupedBranches.find((g) => !g.isNonChain);
+        if (chainGroup) {
+          setSelectedMother({
+            id: chainGroup.motherId,
+            name: chainGroup.motherName,
+            code: chainGroup.motherCode,
+          });
+        }
+      }
+    }
+  }, [step, formData.accountType, formData.branchType, groupedBranches, selectedMother]);
+
+  // NEW
+  useEffect(() => {
+    if (step === 1 && groupedBranches.length === 0 && formData.distributor) {
+      fetchAllGroupedBranches();
+    }
+  }, [step]);
   // Toggle a branch/sub-account checkbox inside the unified modal
   const toggleGroupedBranchItem = (group, item) => {
     if (group.isNonChain) {
@@ -3932,6 +3988,47 @@ const RegularVisaForm = () => {
                   </div>
                 </div>
 
+                {/* Expense Type */}
+                <div className="col-md-4">
+                  <label>
+                    Expense Type <span style={{ color: "red" }}>*</span>
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <select
+                      name="expenseType"
+                      className="form-control"
+                      value={selectedExpenseType}
+                      onChange={(e) => {
+                        setSelectedExpenseType(e.target.value);
+                        // ✅ Reset activity kapag nagbago ang expense type
+                        setFormData((prev) => ({
+                          ...prev,
+                          activity: "",
+                          activityName: "",
+                          sku: false,
+                          accounts: false,
+                          amount_display: false,
+                          category: false,
+                        }));
+                      }}
+                      style={{ flex: 1, minWidth: 0 }}
+                    >
+                      <option value="">Select Expense Type</option>
+                      {getUniqueExpenseTypes().map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedExpenseType && (
+                      <span style={{ color: "green", fontWeight: "bold", fontSize: "22px", flexShrink: 0 }}>
+                        ✓
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 {/* Activity */}
                 <div className="col-md-4">
                   <label>
@@ -3943,31 +4040,21 @@ const RegularVisaForm = () => {
                       className="form-control"
                       value={formData.activity}
                       onChange={handleFormChange}
+                      disabled={!selectedExpenseType}
                       style={{ flex: 1, minWidth: 0 }}
                     >
-                      <option value="">Select Activity</option>
-                      {activities
-                        .filter(opt => {
-                          const setting = settings[opt.code] || {};
-                          return setting.regular === true; // ✅ Filter by 'regular' checkbox
-                        })
-                        .map((opt) => (
-                          <option key={opt.id} value={opt.code}>
-                            {opt.name}
-                          </option>
-                        ))}
+                      <option value="">
+                        {selectedExpenseType ? "Select Activity" : "Select Expense Type first"}
+                      </option>
+                      {getActivitiesForExpenseType().map((opt) => (
+                        <option key={opt.id} value={opt.code}>
+                          {opt.name}
+                        </option>
+                      ))}
                     </select>
 
                     {formData.activity && (
-                      <span
-                        style={{
-                          color: "green",
-                          fontWeight: "bold",
-                          fontSize: "22px",
-                          flexShrink: 0,
-                          userSelect: "none",
-                        }}
-                      >
+                      <span style={{ color: "green", fontWeight: "bold", fontSize: "22px", flexShrink: 0 }}>
                         ✓
                       </span>
                     )}
@@ -3979,7 +4066,7 @@ const RegularVisaForm = () => {
                       Category <span style={{ color: "red" }}>*</span>
                     </label>
 
-                    <div
+               <div
                       onClick={() => setShowModal(true)}
                       style={{
                         cursor: "pointer",
@@ -3987,117 +4074,117 @@ const RegularVisaForm = () => {
                         border: "1px solid",
                         borderColor: formData.categoryName?.length > 0 ? "green" : "#ffffffff",
                         borderRadius: "4px",
-                        padding: "5px 35px 5px 8px",
-                        overflowX: "auto",
-                        whiteSpace: "nowrap",
+                        padding: "5px 8px",
                         display: "flex",
                         alignItems: "center",
-                        gap: "6px",
+                        gap: "8px",
                         transition: "border-color 0.3s",
-                        scrollbarWidth: "none", // Firefox
-                        msOverflowStyle: "none", // IE 10+
-                        backgroundColor: "#fff",  // <-- Added white background
-                      }}
-                      onWheel={(e) => {
-                        // enable horizontal scroll with mouse wheel
-                        const container = e.currentTarget;
-                        container.scrollLeft += e.deltaY;
+                        backgroundColor: "#fff",
                       }}
                     >
-                      {/* Tags */}
-                      {formData.categoryName?.length > 0 ? (
-                        formData.categoryName.map((name, idx) => (
-                          <span
-                            key={name}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              backgroundColor: "#0050a5ff",
-                              color: "#fff",
-                              padding: "3px 8px",
-                              borderRadius: "5px",
-                              fontSize: "14px",
-                              flexShrink: 0,
-                            }}
-                          >
-                            {name}
+                      {/* Tags - sariling scrollable area na, di na kasama ang icons sa overflow */}
+                      <div
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          overflowX: "auto",
+                          whiteSpace: "nowrap",
+                          scrollbarWidth: "none",
+                          msOverflowStyle: "none",
+                        }}
+                        onWheel={(e) => {
+                          const container = e.currentTarget;
+                          container.scrollLeft += e.deltaY;
+                        }}
+                      >
+                        {formData.categoryName?.length > 0 ? (
+                          formData.categoryName.map((name, idx) => (
                             <span
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const updatedNames = [...formData.categoryName];
-                                const updatedCodes = [...formData.categoryCode];
-                                updatedNames.splice(idx, 1);
-                                updatedCodes.splice(idx, 1);
-
-                                setFormData({
-                                  ...formData,
-                                  categoryName: updatedNames,
-                                  categoryCode: updatedCodes,
-                                });
-                              }}
+                              key={name}
                               style={{
-                                marginLeft: "5px",
-                                cursor: "pointer",
-                                fontWeight: "bold",
-                                color: "#fff",
-                                backgroundColor: "#ff4d4f",
-                                borderRadius: "5%",
-                                width: "16px",
-                                height: "16px",
-                                display: "flex",
+                                display: "inline-flex",
                                 alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "12px",
+                                backgroundColor: "#0050a5ff",
+                                color: "#fff",
+                                padding: "3px 8px",
+                                borderRadius: "5px",
+                                fontSize: "14px",
+                                flexShrink: 0,
                               }}
                             >
-                              ✖
+                              {name}
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const updatedNames = [...formData.categoryName];
+                                  const updatedCodes = [...formData.categoryCode];
+                                  updatedNames.splice(idx, 1);
+                                  updatedCodes.splice(idx, 1);
+
+                                  setFormData({
+                                    ...formData,
+                                    categoryName: updatedNames,
+                                    categoryCode: updatedCodes,
+                                  });
+                                }}
+                                style={{
+                                  marginLeft: "5px",
+                                  cursor: "pointer",
+                                  fontWeight: "bold",
+                                  color: "#fff",
+                                  backgroundColor: "#ff4d4f",
+                                  borderRadius: "5%",
+                                  width: "16px",
+                                  height: "16px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                ✖
+                              </span>
                             </span>
-                          </span>
-                        ))
-                      ) : (
-                        <span style={{ color: "#999" }}>Select Categories</span>
-                      )}
-                    </div>
+                          ))
+                        ) : (
+                          <span style={{ color: "#999" }}>Select Categories</span>
+                        )}
+                      </div>
 
-
-                    {/* 🔍 Magnifying Glass */}
-                    <span
-                      style={{
-                        position: "absolute",
-                        right: "10px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        pointerEvents: "none",
-                        color: "#555",
-                        fontSize: "18px",
-                        userSelect: "none",
-                      }}
-                    >
-                      🔍
-                    </span>
-
-                    {/* ✓ Checkmark */}
-                    {formData.categoryName?.length > 0 && (
-                      <span
+                      {/* ✓ Checkmark + 🔍 Magnifying Glass - fixed sa dulo, hindi na overlapping */}
+                      <div
                         style={{
-                          position: "absolute",
-                          right: "35px",
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          color: "green",
-                          fontWeight: "bold",
-                          fontSize: "22px",
+                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
                           pointerEvents: "none",
                           userSelect: "none",
                         }}
                       >
-                        ✓
-                      </span>
-                    )}
-
-
+                        {formData.categoryName?.length > 0 && (
+                          <span
+                            style={{
+                              color: "green",
+                              fontWeight: "bold",
+                              fontSize: "18px",
+                              lineHeight: 1,
+                            }}
+                          >
+                            ✓
+                          </span>
+                        )}
+                        <span style={{ color: "#555", fontSize: "16px", lineHeight: 1 }}>
+                          🔍
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
+              
 
 
                 {/* Mother Account1 - Conditionally displayed */}
