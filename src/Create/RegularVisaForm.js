@@ -461,7 +461,13 @@ const RegularVisaForm = () => {
       const rows = [...(updated[branchKey] || [])];
       const row = { ...rows[index] };
 
-      if (field === "SKUITEM") {
+      if (field === "SKU_NOTES") {
+        // ✅ manual text lang, walang lookup, hindi nire-reset ang Total Amount
+        row.SKUITEM = value;
+        rows[index] = row;
+        updated[branchKey] = rows;
+        return updated;
+      } else if (field === "SKUITEM") {
         row.SKUITEM = value;
         const skuData = categoryListing.find((sku) => sku.sku_code === value);
 
@@ -883,10 +889,12 @@ const RegularVisaForm = () => {
       (act) => act.code === formData.activity
     );
 
+    // NEW
     if (
       selectedActivity &&
       (selectedActivity.name?.toUpperCase().includes("BAD ORDER") ||
-        selectedActivity.code === 10007)
+        selectedActivity.code === 10007 ||
+        selectedActivity.name?.toUpperCase().includes("LISTING FEE"))
     ) {
       return false;
     }
@@ -2865,31 +2873,7 @@ const RegularVisaForm = () => {
   // ============================================================
   // 🔄 Helper: Update the placeholder record with full data
   // ============================================================
-  const [selectedExpenseType, setSelectedExpenseType] = useState("");
 
-  const getUniqueExpenseTypes = () => {
-    const filteredActivities = activities.filter(opt => {
-      const setting = settings[opt.code] || {};
-      return setting.regular === true;
-    });
-
-    const types = [...new Set(
-      filteredActivities.map(opt => opt.expense_type || "UNGROUPED")
-    )];
-
-    return types.sort((a, b) => a.localeCompare(b));
-  };
-
-  const getActivitiesForExpenseType = () => {
-    if (!selectedExpenseType) return [];
-
-    return activities.filter(opt => {
-      const setting = settings[opt.code] || {};
-      const isRegular = setting.regular === true;
-      const matchesType = (opt.expense_type || "UNGROUPED") === selectedExpenseType;
-      return isRegular && matchesType;
-    });
-  };
   const updateRegularPwpRecord = async (recordId, updatedFormData) => {
     try {
       let distributorCode = updatedFormData.distributor?.trim() || null;
@@ -3468,38 +3452,6 @@ const RegularVisaForm = () => {
       setLoadingGroupedBranches(false);
     }
   };
-
-
-  useEffect(() => {
-    if (step === 1 && !selectedMother && groupedBranches.length > 0) {
-      if (Array.isArray(formData.accountType) && formData.accountType.length > 0) {
-        const nonChainGroup = groupedBranches.find((g) => g.isNonChain);
-        if (nonChainGroup) {
-          setSelectedMother({
-            id: nonChainGroup.motherId,
-            name: "NON-CHAIN",
-            code: nonChainGroup.motherCode,
-          });
-        }
-      } else if (Array.isArray(formData.branchType) && formData.branchType.length > 0) {
-        const chainGroup = groupedBranches.find((g) => !g.isNonChain);
-        if (chainGroup) {
-          setSelectedMother({
-            id: chainGroup.motherId,
-            name: chainGroup.motherName,
-            code: chainGroup.motherCode,
-          });
-        }
-      }
-    }
-  }, [step, formData.accountType, formData.branchType, groupedBranches, selectedMother]);
-
-  // NEW
-  useEffect(() => {
-    if (step === 1 && groupedBranches.length === 0 && formData.distributor) {
-      fetchAllGroupedBranches();
-    }
-  }, [step]);
   // Toggle a branch/sub-account checkbox inside the unified modal
   const toggleGroupedBranchItem = (group, item) => {
     if (group.isNonChain) {
@@ -3988,47 +3940,6 @@ const RegularVisaForm = () => {
                   </div>
                 </div>
 
-                {/* Expense Type */}
-                <div className="col-md-4">
-                  <label>
-                    Expense Type <span style={{ color: "red" }}>*</span>
-                  </label>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <select
-                      name="expenseType"
-                      className="form-control"
-                      value={selectedExpenseType}
-                      onChange={(e) => {
-                        setSelectedExpenseType(e.target.value);
-                        // ✅ Reset activity kapag nagbago ang expense type
-                        setFormData((prev) => ({
-                          ...prev,
-                          activity: "",
-                          activityName: "",
-                          sku: false,
-                          accounts: false,
-                          amount_display: false,
-                          category: false,
-                        }));
-                      }}
-                      style={{ flex: 1, minWidth: 0 }}
-                    >
-                      <option value="">Select Expense Type</option>
-                      {getUniqueExpenseTypes().map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
-
-                    {selectedExpenseType && (
-                      <span style={{ color: "green", fontWeight: "bold", fontSize: "22px", flexShrink: 0 }}>
-                        ✓
-                      </span>
-                    )}
-                  </div>
-                </div>
-
                 {/* Activity */}
                 <div className="col-md-4">
                   <label>
@@ -4040,21 +3951,31 @@ const RegularVisaForm = () => {
                       className="form-control"
                       value={formData.activity}
                       onChange={handleFormChange}
-                      disabled={!selectedExpenseType}
                       style={{ flex: 1, minWidth: 0 }}
                     >
-                      <option value="">
-                        {selectedExpenseType ? "Select Activity" : "Select Expense Type first"}
-                      </option>
-                      {getActivitiesForExpenseType().map((opt) => (
-                        <option key={opt.id} value={opt.code}>
-                          {opt.name}
-                        </option>
-                      ))}
+                      <option value="">Select Activity</option>
+                      {activities
+                        .filter(opt => {
+                          const setting = settings[opt.code] || {};
+                          return setting.regular === true; // ✅ Filter by 'regular' checkbox
+                        })
+                        .map((opt) => (
+                          <option key={opt.id} value={opt.code}>
+                            {opt.name}
+                          </option>
+                        ))}
                     </select>
 
                     {formData.activity && (
-                      <span style={{ color: "green", fontWeight: "bold", fontSize: "22px", flexShrink: 0 }}>
+                      <span
+                        style={{
+                          color: "green",
+                          fontWeight: "bold",
+                          fontSize: "22px",
+                          flexShrink: 0,
+                          userSelect: "none",
+                        }}
+                      >
                         ✓
                       </span>
                     )}
@@ -4066,7 +3987,7 @@ const RegularVisaForm = () => {
                       Category <span style={{ color: "red" }}>*</span>
                     </label>
 
-               <div
+                    <div
                       onClick={() => setShowModal(true)}
                       style={{
                         cursor: "pointer",
@@ -4074,117 +3995,117 @@ const RegularVisaForm = () => {
                         border: "1px solid",
                         borderColor: formData.categoryName?.length > 0 ? "green" : "#ffffffff",
                         borderRadius: "4px",
-                        padding: "5px 8px",
+                        padding: "5px 35px 5px 8px",
+                        overflowX: "auto",
+                        whiteSpace: "nowrap",
                         display: "flex",
                         alignItems: "center",
-                        gap: "8px",
+                        gap: "6px",
                         transition: "border-color 0.3s",
-                        backgroundColor: "#fff",
+                        scrollbarWidth: "none", // Firefox
+                        msOverflowStyle: "none", // IE 10+
+                        backgroundColor: "#fff",  // <-- Added white background
+                      }}
+                      onWheel={(e) => {
+                        // enable horizontal scroll with mouse wheel
+                        const container = e.currentTarget;
+                        container.scrollLeft += e.deltaY;
                       }}
                     >
-                      {/* Tags - sariling scrollable area na, di na kasama ang icons sa overflow */}
-                      <div
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          overflowX: "auto",
-                          whiteSpace: "nowrap",
-                          scrollbarWidth: "none",
-                          msOverflowStyle: "none",
-                        }}
-                        onWheel={(e) => {
-                          const container = e.currentTarget;
-                          container.scrollLeft += e.deltaY;
-                        }}
-                      >
-                        {formData.categoryName?.length > 0 ? (
-                          formData.categoryName.map((name, idx) => (
+                      {/* Tags */}
+                      {formData.categoryName?.length > 0 ? (
+                        formData.categoryName.map((name, idx) => (
+                          <span
+                            key={name}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              backgroundColor: "#0050a5ff",
+                              color: "#fff",
+                              padding: "3px 8px",
+                              borderRadius: "5px",
+                              fontSize: "14px",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {name}
                             <span
-                              key={name}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const updatedNames = [...formData.categoryName];
+                                const updatedCodes = [...formData.categoryCode];
+                                updatedNames.splice(idx, 1);
+                                updatedCodes.splice(idx, 1);
+
+                                setFormData({
+                                  ...formData,
+                                  categoryName: updatedNames,
+                                  categoryCode: updatedCodes,
+                                });
+                              }}
                               style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                backgroundColor: "#0050a5ff",
+                                marginLeft: "5px",
+                                cursor: "pointer",
+                                fontWeight: "bold",
                                 color: "#fff",
-                                padding: "3px 8px",
-                                borderRadius: "5px",
-                                fontSize: "14px",
-                                flexShrink: 0,
+                                backgroundColor: "#ff4d4f",
+                                borderRadius: "5%",
+                                width: "16px",
+                                height: "16px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "12px",
                               }}
                             >
-                              {name}
-                              <span
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const updatedNames = [...formData.categoryName];
-                                  const updatedCodes = [...formData.categoryCode];
-                                  updatedNames.splice(idx, 1);
-                                  updatedCodes.splice(idx, 1);
-
-                                  setFormData({
-                                    ...formData,
-                                    categoryName: updatedNames,
-                                    categoryCode: updatedCodes,
-                                  });
-                                }}
-                                style={{
-                                  marginLeft: "5px",
-                                  cursor: "pointer",
-                                  fontWeight: "bold",
-                                  color: "#fff",
-                                  backgroundColor: "#ff4d4f",
-                                  borderRadius: "5%",
-                                  width: "16px",
-                                  height: "16px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontSize: "12px",
-                                }}
-                              >
-                                ✖
-                              </span>
+                              ✖
                             </span>
-                          ))
-                        ) : (
-                          <span style={{ color: "#999" }}>Select Categories</span>
-                        )}
-                      </div>
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ color: "#999" }}>Select Categories</span>
+                      )}
+                    </div>
 
-                      {/* ✓ Checkmark + 🔍 Magnifying Glass - fixed sa dulo, hindi na overlapping */}
-                      <div
+
+                    {/* 🔍 Magnifying Glass */}
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: "10px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        pointerEvents: "none",
+                        color: "#555",
+                        fontSize: "18px",
+                        userSelect: "none",
+                      }}
+                    >
+                      🔍
+                    </span>
+
+                    {/* ✓ Checkmark */}
+                    {formData.categoryName?.length > 0 && (
+                      <span
                         style={{
-                          flexShrink: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
+                          position: "absolute",
+                          right: "35px",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          color: "green",
+                          fontWeight: "bold",
+                          fontSize: "22px",
                           pointerEvents: "none",
                           userSelect: "none",
                         }}
                       >
-                        {formData.categoryName?.length > 0 && (
-                          <span
-                            style={{
-                              color: "green",
-                              fontWeight: "bold",
-                              fontSize: "18px",
-                              lineHeight: 1,
-                            }}
-                          >
-                            ✓
-                          </span>
-                        )}
-                        <span style={{ color: "#555", fontSize: "16px", lineHeight: 1 }}>
-                          🔍
-                        </span>
-                      </div>
-                    </div>
+                        ✓
+                      </span>
+                    )}
+
+
                   </div>
                 )}
-              
 
 
                 {/* Mother Account1 - Conditionally displayed */}
@@ -6091,282 +6012,73 @@ const RegularVisaForm = () => {
 
               <Card.Body>
                 {/* Branch / Sub-Account Selector */}
-                <div className="mb-3">
-                  <label className="form-label">
-                    {selectedMother?.name === "NON-CHAIN"
-                      ? "Sub-Accounts for SKU Entry:"
-                      : "Select Branch for SKU Entry:"}
-                  </label>
+           <div className="mt-3">
+                  {(() => {
+                    const storesList = getFilteredBranchesWithExtras();
 
-                  {selectedMother?.name !== "NON-CHAIN" && (
-                    <div className="d-flex align-items-center gap-3">
-                      <select
-                        className="form-control"
-                        value={selectedBranchForSku}
-                        onChange={(e) => setSelectedBranchForSku(e.target.value)}
-                        style={{ maxWidth: "400px" }}
-                      >
-                        <option value="">Select branch...</option>
-                        <option value="ALL_BRANCHES">🔍 View All Branches</option>
-                        {branchTypes
-                          .filter(
-                            (branch) =>
-                              Array.isArray(formData.branchType) &&
-                              formData.branchType.includes(branch.code)
-                          )
-                          .map((branch) => (
-                            <option key={branch.code} value={branch.code}>
-                              {branch.name}
-                            </option>
-                          ))}
-                      </select>
+                    if (storesList.length === 0) {
+                      return (
+                        <div className="text-center p-4 bg-light rounded">
+                          <p className="text-muted mb-0">
+                            No branches selected. Go back to Step 0 and select a Branch.
+                          </p>
+                        </div>
+                      );
+                    }
 
-                      {/* Manual SRP Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => setManualSrp(!manualSrp)}
-                        style={{
-                          height: "38px",
-                          padding: "0 16px",
-                          borderRadius: "8px",
-                          border: "none",
-                          fontWeight: "600",
-                          fontSize: "14px",
-                          cursor: "pointer",
-                          backgroundColor: manualSrp ? "#28a745" : "#e9ecef",
-                          color: manualSrp ? "white" : "#333",
-                          transition: "all 0.2s ease-in-out",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {manualSrp ? "✅ Manual SRP" : "Manual SRP"}
-                      </button>
-                    </div>
-                  )}
+                    return (
+                      <>
+                        <div className="table-responsive">
+                          <Table bordered hover className="align-middle text-center">
+                            <thead className="table-primary text-white">
+                              <tr>
+                                <th>Store</th>
+                                <th>SKU/Notes</th>
+                                <th>Total Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {storesList.map((store) => {
+                                const row = (accountSkuRows[store.name] || [])[0] || {};
+                                return (
+                                  <tr key={store.name}>
+                                    <td>
+                                      <Form.Control value={store.name} disabled />
+                                    </td>
+                                    <td>
+                                      <Form.Control
+                                        value={row.SKUITEM || ""}
+                                        onChange={(e) =>
+                                          handleChangeSkuForBranch(store.name, 0, "SKU_NOTES", e.target.value)
+                                        }
+                                        placeholder="Enter SKU / Notes"
+                                      />
+                                    </td>
+                                    <td>
+                                      <Form.Control
+                                        type="number"
+                                        step="0.01"
+                                        value={row.TOTAL_AMOUNT ?? 0}
+                                        onChange={(e) =>
+                                          handleChangeSkuForBranch(store.name, 0, "TOTAL_AMOUNT", e.target.value)
+                                        }
+                                      />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </Table>
+                        </div>
+
+                        {renderGrandTotalSummary()}
+                      </>
+                    );
+                  })()}
                 </div>
 
-                {/* SKU Table */}
-                <div className="mt-3">
-                  {selectedMother ? (
-                    <>
-                      {(
-                        selectedMother.name === "NON-CHAIN"
-                          ? // Only show sub-accounts that are selected
-                          (subAccounts[selectedMother.id] || []).filter((s) =>
-                            (formData.accountType || []).includes(s.id)
-                          )
-                          : selectedBranchForSku
-                            ? selectedBranchForSku === "ALL_BRANCHES"
-                              ? branchTypes.filter(
-                                (branch) =>
-                                  Array.isArray(formData.branchType) &&
-                                  formData.branchType.includes(branch.name) // ✅ Compare by branch name
-                              )
-                              : branchTypes.filter((branch) => branch.code === selectedBranchForSku) // ✅ FIXED: compare by code, matches <option value={branch.code}>
-                            : []
 
-                      ).map((branchOrSub) => {
-                        const branchCode =
-                          selectedMother.name === "NON-CHAIN"
-                            ? branchOrSub.id
-                            : branchOrSub.code;
-                        const branchName =
-                          selectedMother.name === "NON-CHAIN"
-                            ? branchOrSub.name
-                            : branchOrSub.name;
-
-
-                        const rows =
-                          accountSkuRows[branchName]?.length > 0
-                            ? accountSkuRows[branchName]
-                            : [{ SKUITEM: "", SRP: 0, QTY: 0, UOM: "PC", DISCOUNT: 0 }];
-
-                        const totals = calculateBranchSkuTotals(branchName);
-
-                        return (
-                          <div key={branchName} className="mb-4">
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <h6>
-                                <span className="badge bg-primary me-2">{branchName}</span>
-                                {branchName}
-                              </h6>
-                              <Button
-                                size="sm"
-                                variant="success"
-                                onClick={() => addSkuRowForBranch(branchName)} // <-- use branchName here
-                              >
-                                Add SKU
-                              </Button>
-
-                            </div>
-
-                            <div className="table-responsive">
-                              <Table bordered hover size="sm" className="align-middle text-center">
-                                <thead className="table-primary text-white">
-                                  <tr>
-                                    <th>SKU</th>
-                                    <th style={{ display: "none" }}>SRP</th>
-                                    <th style={{ display: "none" }}>QTY</th>
-                                    <th style={{ display: "none" }}>UOM</th>
-                                    <th style={{ display: "none" }}>Billing Amount</th>
-                                    <th style={{ display: "none" }}>Discount </th>
-                                    <th>Total Amount</th>
-                                    <th>Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {rows.map((row, idx) => {
-                                    const srp = Number(row.SRP || 0);
-                                    const qty = Number(row.QTY || 0);
-                                    const discountAmount = Number(row.DISCOUNT || 0);
-
-                                    const totalBeforeDiscount = srp * qty;
-                                    const totalAmount = totalBeforeDiscount - discountAmount;
-
-                                    return (
-                                      <tr key={`${branchName}-${idx}`}>
-                                        <td
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            minWidth: "200px",
-                                            gap: "8px",
-                                          }}
-                                        >
-                                          <Form.Control
-                                            value={
-                                              categoryListing.find((sku) => sku.sku_code === row.SKUITEM)
-                                                ? `${row.SKUITEM} - ${categoryListing.find((sku) => sku.sku_code === row.SKUITEM)?.name
-                                                }`
-                                                : row.SKUITEM || ""
-                                            }
-                                            readOnly
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setSelectedRowIndex(idx);
-                                              setSelectedBranchName(branchName);
-                                              setShowSkuModal(true);
-                                            }}
-                                            style={{
-                                              border: "none",
-                                              background: "none",
-                                              cursor: "pointer",
-                                              padding: "8px",
-                                            }}
-                                          >
-                                            <FaSearch style={{ color: "blue", fontSize: "20px" }} />
-                                          </button>
-                                        </td>
-
-                                        <td style={{ display: "none" }}>
-                                          <Form.Control
-                                            type="number"
-                                            step="0.01"
-                                            value={row.SRP || 0}
-                                            onChange={(e) =>
-                                              handleChangeSkuForBranch(branchName, idx, "SRP", e.target.value)
-                                            }
-                                            disabled={!manualSrp}
-                                          />
-                                        </td>
-
-                                        <td style={{ display: "none" }}>
-                                          <Form.Control
-                                            type="number"
-                                            value={row.QTY || 0}
-                                            onChange={(e) =>
-                                              handleChangeSkuForBranch(branchName, idx, "QTY", e.target.value)
-                                            }
-                                          />
-                                        </td>
-
-                                        <td style={{ display: "none" }}>
-                                          <Form.Select
-                                            value={row.UOM || "PC"}
-                                            onChange={(e) =>
-                                              handleChangeSkuForBranch(branchName, idx, "UOM", e.target.value)
-                                            }
-                                          >
-                                            {["CASE", "PACK"].map((uom) => (
-                                              <option key={uom} value={uom}>
-                                                {uom}
-                                              </option>
-                                            ))}
-                                          </Form.Select>
-                                        </td>
-
-                                        <td style={{ display: "none" }}>{totalBeforeDiscount.toFixed(2)}</td>
-
-                                        <td style={{ display: "none" }}>
-                                          <Form.Control
-                                            type="number"
-                                            step="0.01"
-                                            value={discountAmount}
-                                            onChange={(e) =>
-                                              handleChangeSkuForBranch(branchName, idx, "DISCOUNT", e.target.value)
-                                            }
-                                          />
-                                        </td>
-
-                                        <td>
-                                          <Form.Control
-                                            type="number"
-                                            step="0.01"
-                                            value={row.TOTAL_AMOUNT ?? 0}
-                                            onChange={(e) =>
-                                              handleChangeSkuForBranch(branchName, idx, "TOTAL_AMOUNT", e.target.value)
-                                            }
-                                          />
-                                        </td>
-
-                                        <td>
-                                          <Button
-                                            variant="danger"
-                                            size="sm"
-                                            onClick={() => removeSkuRowForBranch(branchName, idx)}
-                                          >
-                                            Remove
-                                          </Button>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-
-                                <tfoot className="table text-white">
-                                  <tr>
-                                    <td><strong>Total</strong></td>
-                                    <td style={{ display: "none" }}>{totals.SRP.toFixed(2)}</td>
-                                    <td style={{ display: "none" }}>{totals.QTY}</td>
-                                    <td style={{ display: "none" }}></td>
-                                    <td style={{ display: "none" }}>{totals.BILLING_AMOUNT.toFixed(2)}</td>
-                                    <td style={{ display: "none" }}>{totals.DISCOUNT.toFixed(2)}</td>
-                                    <td>{totals.TOTAL_AMOUNT.toFixed(2)}</td>
-                                    <td>-</td>
-                                  </tr>
-                                </tfoot>
-                              </Table>
-                            </div>
-
-                          </div>
-                        );
-                      })}
-
-                      {/* Grand Totals */}
-                      {renderGrandTotalSummary()}
-
-
-                    </>
-                  ) : (
-                    <div className="text-center p-4 bg-light rounded">
-                      <p className="text-muted mb-0">
-                        Please select a branch or sub-account to manage SKU listings
-                      </p>
-                    </div>
-                  )}
-                </div>
+          
               </Card.Body>
 
 
