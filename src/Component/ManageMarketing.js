@@ -59,46 +59,46 @@ function EnhancedDatabaseInterface() {
   };
 
   // ✅ FIXED: Fetch ALL approval history and get the LATEST status for each PWP code
- const getApprovalStatus = async (pwpCodes) => {
-  try {
-    // Fetch in batches if there are many codes
-    let allApprovalData = [];
-    const batchSize = 1000;
-    
-    for (let i = 0; i < pwpCodes.length; i += batchSize) {
-      const batch = pwpCodes.slice(i, i + batchSize);
-      
-      const { data: approvalData, error } = await supabase
-        .from("Approval_History")
-        .select("PwpCode, Response, DateResponded, created_at")
-        .in("PwpCode", batch);  // ✅ WALANG .order() dito!
+  const getApprovalStatus = async (pwpCodes) => {
+    try {
+      // Fetch in batches if there are many codes
+      let allApprovalData = [];
+      const batchSize = 1000;
 
-      if (error) {
-        console.error("Error fetching approval status:", error);
-        continue;
+      for (let i = 0; i < pwpCodes.length; i += batchSize) {
+        const batch = pwpCodes.slice(i, i + batchSize);
+
+        const { data: approvalData, error } = await supabase
+          .from("Approval_History")
+          .select("PwpCode, Response, DateResponded, created_at")
+          .in("PwpCode", batch);  // ✅ WALANG .order() dito!
+
+        if (error) {
+          console.error("Error fetching approval status:", error);
+          continue;
+        }
+
+        if (approvalData) {
+          allApprovalData = [...allApprovalData, ...approvalData];
+        }
       }
 
-      if (approvalData) {
-        allApprovalData = [...allApprovalData, ...approvalData];
-      }
+      // ✅ SIMPLE LANG - last record lang kinukuha
+      const approvalMap = {};
+      allApprovalData?.forEach(approval => {
+        approvalMap[approval.PwpCode] = {
+          status: approval.Response || 'Pending',
+          date_responded: approval.DateResponded,
+          approval_created: approval.created_at
+        };
+      });
+
+      return approvalMap;
+    } catch (err) {
+      console.error("Unexpected error fetching approval status:", err);
+      return {};
     }
-
-    // ✅ SIMPLE LANG - last record lang kinukuha
-    const approvalMap = {};
-    allApprovalData?.forEach(approval => {
-      approvalMap[approval.PwpCode] = {
-        status: approval.Response || 'Pending',
-        date_responded: approval.DateResponded,
-        approval_created: approval.created_at
-      };
-    });
-
-    return approvalMap;
-  } catch (err) {
-    console.error("Unexpected error fetching approval status:", err);
-    return {};
-  }
-};
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -739,6 +739,21 @@ function EnhancedDatabaseInterface() {
     setCurrentPage(1);
   }, [filter, statusFilter, searchQuery, dateFrom, dateTo]);
 
+  if (isModalOpen) {
+    return (
+      <EditModal
+        isOpen={isModalOpen}
+        title={modalTitle}
+        rowData={selectedRow}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSave}
+        updating={updating}
+        filter={filter}
+        filteredDistributors={filteredDistributors}
+      />
+    );
+  }
+
   return (
     <div style={{ padding: '20px' }}>
       <div style={{ backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden' }}>
@@ -1229,17 +1244,7 @@ function EnhancedDatabaseInterface() {
         </div>
       )}
 
-      <EditModal
-        isOpen={isModalOpen}
-        title={modalTitle}
-        rowData={selectedRow}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSave}
-        updating={updating}
-        filter="all"
-        filteredDistributors={filteredDistributors}
-      />
-
+   
       {deleteConfirm && (
         <div style={{
           position: 'fixed',
