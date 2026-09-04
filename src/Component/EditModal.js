@@ -1,18 +1,38 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../supabaseClient";
 import { FaSearch } from "react-icons/fa";
-import { Modal, Button } from "react-bootstrap";
+import { Modal, Button, Nav, Spinner } from "react-bootstrap";
 import Swal from 'sweetalert2';
 import { FiChevronRight } from "react-icons/fi";
 import { Dropdown, DropdownButton, ButtonGroup } from 'react-bootstrap';
 
 // ============ HELPER FUNCTIONS ============
+const safeJsonArrayParse = (str) => {
+  // Try normal JSON first
+  try {
+    return JSON.parse(str);
+  } catch {
+    // Fallback: Python-style single-quoted array e.g. ['24/7 STORE', 'Branch B']
+    try {
+      const sanitized = str
+        .trim()
+        .replace(/^\[|\]$/g, '')      // strip outer brackets
+        .split(',')
+        .map((s) => s.trim().replace(/^['"]|['"]$/g, '')) // strip quotes per item
+        .filter((s) => s.length > 0);
+      return sanitized;
+    } catch {
+      return null;
+    }
+  }
+};
+
 const fixCategoryNameInput = (value) => {
   if (Array.isArray(value)) {
     if (value.every((char) => typeof char === "string" && char.length === 1)) {
       try {
         const str = value.join('');
-        const parsed = JSON.parse(str);
+        const parsed = safeJsonArrayParse(str);
         if (Array.isArray(parsed)) return parsed;
         if (typeof parsed === "string") return [parsed];
         return [];
@@ -24,14 +44,10 @@ const fixCategoryNameInput = (value) => {
   }
 
   if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed;
-      if (typeof parsed === "string") return [parsed];
-      return [];
-    } catch {
-      return [value];
-    }
+    const parsed = safeJsonArrayParse(value);
+    if (Array.isArray(parsed)) return parsed;
+    if (typeof parsed === "string") return [parsed];
+    return [value];
   }
 
   return [];
@@ -54,12 +70,12 @@ const coverPwpFieldsConfig = [
 const regularPwpFieldsConfig = [
   { name: "regularpwpcode", label: "REGULAR CODE", disabled: true },
   { name: "pwptype", label: "PWP TYPE", disabled: true },
-  { name: "distributor", label: "Distributor", disabled: true},
-  { name: "accountType", label: "Account Type" , disabled: true },
+  { name: "distributor", label: "Distributor", disabled: true },
+  { name: "accountType", label: "Account Type", disabled: true },
   { name: "categoryName", label: "Category" },
-  { name: "activity", label: "Activity",disabled: true },
+  { name: "activity", label: "Activity", disabled: true },
   { name: "objective", label: "Objective" },
-  { name: "branchType", label: "branchType" , disabled: true },
+  { name: "branchType", label: "branchType", disabled: true },
   { name: "promoScheme", label: "Promo Scheme" },
   { name: "activityDurationFrom", label: "Activity Duration From", type: "date" },
   { name: "activityDurationTo", label: "Activity Duration To", type: "date" },
@@ -73,7 +89,6 @@ const regularPwpFieldsConfig = [
   { name: "remarks", label: "Remarks" },
 ];
 
-// ============ CUSTOM HOOKS ============
 // ============ CUSTOM HOOKS ============
 const useDistributors = (loggedInUsername) => {
   const [filteredDistributors, setFilteredDistributors] = useState([]);
@@ -99,7 +114,6 @@ const useDistributors = (loggedInUsername) => {
   return { filteredDistributors, loading };
 };
 
-// ADD THIS NEW HOOK - labas siya ng useSkuList
 const useDistributorMap = () => {
   const [distributorMap, setDistributorMap] = useState({});
   const [loading, setLoading] = useState(false);
@@ -114,7 +128,6 @@ const useDistributorMap = () => {
 
         if (error) throw error;
 
-        // Create lookup map: { code: name }
         const map = {};
         data?.forEach(d => {
           map[d.code] = d.name;
@@ -129,11 +142,10 @@ const useDistributorMap = () => {
     }
 
     fetchDistributors();
-  }, []); // Run once on mount
+  }, []);
 
-  // Helper function to convert code to name
   const getDistributorName = (code) => {
-    return distributorMap[code] || code; // Fallback to code if not found
+    return distributorMap[code] || code;
   };
 
   return { distributorMap, getDistributorName, loading };
@@ -199,7 +211,7 @@ const useActivities = () => {
 
       const { data: settingsData } = await supabase
         .from('activity_settings')
-        .select('activity_code, sku, accounts, amount_display');
+        .select('activity_code, sku, accounts, amount_display, sku_addional, "isPenalties", "Supplies/M.E", branch');
 
       if (actData) setActivities(actData);
 
@@ -210,6 +222,10 @@ const useActivities = () => {
             sku: setting.sku === true,
             accounts: setting.accounts === true,
             amount_display: setting.amount_display === true,
+            sku_addional: setting.sku_addional === true,
+            isPenalties: setting.isPenalties === true,
+            suppliesME: setting["Supplies/M.E"] === true,
+            branch: setting.branch === true,
           };
         });
         setSettingsMap(map);
@@ -259,12 +275,17 @@ const useBudgetList = (regularpwpcode) => {
   }, [regularpwpcode]);
 
   const handleBudgetChange = (id, newBudget) => {
-    setBudgetList(prev => {
-      const updated = prev.map(item =>
+    setBudgetList(prev =>
+      prev.map(item =>
         item.id === id ? { ...item, budget: parseFloat(newBudget) || 0 } : item
-      );
-      return updated;
-    });
+      )
+    );
+  };
+
+  const handleBudgetFieldChange = (id, field, value) => {
+    setBudgetList(prev =>
+      prev.map(item => (item.id === id ? { ...item, [field]: value } : item))
+    );
   };
 
   const currentTotalBudget = budgetList.reduce((sum, item) => sum + Number(item.budget || 0), 0);
@@ -275,6 +296,7 @@ const useBudgetList = (regularpwpcode) => {
     originalTotalBudget,
     currentTotalBudget,
     handleBudgetChange,
+    handleBudgetFieldChange,
     loading
   };
 };
@@ -329,11 +351,9 @@ const useSkuList = (regularpwpcode) => {
     fetchSkuList();
   }, [regularpwpcode]);
 
-
-    const [distributors, setDistributors] = useState([]);
+  const [distributors, setDistributors] = useState([]);
   const [distributorMap, setDistributorMap] = useState({});
 
-  // Fetch distributors on mount
   useEffect(() => {
     async function fetchDistributors() {
       try {
@@ -343,7 +363,6 @@ const useSkuList = (regularpwpcode) => {
 
         if (error) throw error;
 
-        // Create lookup map: { code: name }
         const map = {};
         data?.forEach(d => {
           map[d.code] = d.name;
@@ -359,11 +378,10 @@ const useSkuList = (regularpwpcode) => {
     }
 
     fetchDistributors();
-  }, []); // Run once on mount
+  }, []);
 
-  // Helper function to convert code to name
   const getDistributorName = (code) => {
-    return distributorMap[code] || code; // Fallback to code if not found
+    return distributorMap[code] || code;
   };
 
   const handleSkuChange = (id, field, value) => {
@@ -435,6 +453,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     originalTotalBudget,
     currentTotalBudget,
     handleBudgetChange,
+    handleBudgetFieldChange,
     loading: budgetLoading
   } = useBudgetList(formData?.regularpwpcode);
 
@@ -449,20 +468,168 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
   } = useSkuList(formData?.regularpwpcode);
 
   // State
-  const [showModalCategory, setShowModalCategory] = useState({ accountType: false, account_type: false });
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchTerms, setSearchTerms] = useState("");
   const [isCreditBudgetEditable, setIsCreditBudgetEditable] = useState(false);
   const [accountTypes, setAccountTypes] = useState([]);
-  const [subAccounts, setSubAccounts] = useState({});
-  const [selectedMother, setSelectedMother] = useState(null);
-  const [accountSearchTerm, setAccountSearchTerm] = useState("");
-  const [subSearchTerm, setSubSearchTerm] = useState("");
-  const [showBranchInput, setShowBranchInput] = useState(true);
+
+  // Branch modal state — same gets as RegularVisaForm's grouped branch system
+  const [accountsListCache, setAccountsListCache] = useState({});
+  const [agentNamesMap, setAgentNamesMap] = useState({});
+  const [motherAccountNamesMap, setMotherAccountNamesMap] = useState({});
+  const [bpNamesMap, setBpNamesMap] = useState({});
+  const [branchTypes, setBranchTypes] = useState([]);
+  const [groupedBranches, setGroupedBranches] = useState([]);
+  const [loadingGroupedBranches, setLoadingGroupedBranches] = useState(false);
+  const [showModal_Branch, setShowModal_Branch] = useState(false);
+  const [branchSearchTerm, setBranchSearchTerm] = useState("");
+  const [activeBranchTabKey, setActiveBranchTabKey] = useState(null);
+  const [branchPage, setBranchPage] = useState(1);
+  const [branchesFetchedForDistributor, setBranchesFetchedForDistributor] = useState(null);
+  const BRANCH_PAGE_SIZE = 15;
+
+  // Penalty / Supplies options
+  const [penaltyOptions, setPenaltyOptions] = useState([]);
+  const [suppliesOptions, setSuppliesOptions] = useState([]);
+
+  useEffect(() => {
+    const fetchDynamicOptions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("activity_change_ps")
+          .select("*")
+          .eq("status", true)
+          .order("id", { ascending: true });
+        if (error) throw error;
+        setPenaltyOptions((data || []).filter((row) => row.option_type === "penalty"));
+        setSuppliesOptions((data || []).filter((row) => row.option_type === "supplies"));
+      } catch (err) {
+        console.error("❌ Error fetching activity_change_ps:", err.message);
+        setPenaltyOptions([]);
+        setSuppliesOptions([]);
+      }
+    };
+    fetchDynamicOptions();
+  }, []);
+
+  // Reusable multi-select dropdown (same behavior as the create form's version)
+  const MultiSelectDropdown = ({ options, selected = [], onChange, placeholder }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handleClickOutside = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const toggleOption = (label) => {
+      const updated = selected.includes(label)
+        ? selected.filter((s) => s !== label)
+        : [...selected, label];
+      onChange(updated);
+    };
+
+    return (
+      <div ref={ref} style={{ position: "relative", minWidth: "160px" }}>
+        <div
+          onClick={() => setOpen((o) => !o)}
+          style={{
+            cursor: "pointer",
+            minHeight: "36px",
+            border: "1px solid #ccc",
+            borderRadius: "6px",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "4px",
+            padding: "4px 8px",
+            background: "#fff",
+          }}
+        >
+          {selected.length > 0 ? (
+            selected.map((label) => (
+              <span
+                key={label}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  backgroundColor: "#3b82f6",
+                  color: "#fff",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                }}
+              >
+                {label}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleOption(label);
+                  }}
+                  style={{ marginLeft: "4px", cursor: "pointer", fontWeight: "bold" }}
+                >
+                  ✖
+                </span>
+              </span>
+            ))
+          ) : (
+            <span style={{ color: "#999", fontSize: "13px" }}>{placeholder}</span>
+          )}
+        </div>
+
+        {open && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              zIndex: 1000,
+              background: "#fff",
+              border: "1px solid #ccc",
+              borderRadius: "6px",
+              width: "100%",
+              maxHeight: "180px",
+              overflowY: "auto",
+              boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+            }}
+          >
+            {options.length === 0 ? (
+              <div style={{ padding: "8px", color: "#888" }}>No options</div>
+            ) : (
+              options.map((opt) => {
+                const label = opt.label ?? opt;
+                const key = opt.id ?? opt;
+                const checked = selected.includes(label);
+                return (
+                  <label
+                    key={key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "6px 8px",
+                      cursor: "pointer",
+                      borderBottom: "1px solid #f0f0f0",
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} onChange={() => toggleOption(label)} />
+                    {label}
+                  </label>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // FIXED: Use useMemo to make calculations reactive to skuList and budgetList changes
-  const budgetDifference = useMemo(() => 
+  const budgetDifference = useMemo(() =>
     currentTotalBudget - originalTotalBudget,
     [currentTotalBudget, originalTotalBudget]
   );
@@ -499,8 +666,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     if (isOpen && rowData) {
       const fetchRemainingBalance = async () => {
         let initialRemainingBalance = Number(rowData.remaining_balance) || 0;
-        
-        // If this is part of a Cover PWP, fetch the remaining balance from amount_badget table
+
         const coverPwpCode = rowData.coverPwpCode || rowData.cover_code;
         if (coverPwpCode) {
           try {
@@ -530,6 +696,8 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
             : typeof rowData.categoryName === 'string' && rowData.categoryName.startsWith("[")
               ? JSON.parse(rowData.categoryName)
               : rowData.categoryName || [],
+          accountType: Array.isArray(rowData.accountType) ? rowData.accountType : (rowData.accountType ? [rowData.accountType] : []),
+          branchType: Array.isArray(rowData.branchType) ? rowData.branchType : (rowData.branchType ? [rowData.branchType] : []),
           initial_remaining_balance: initialRemainingBalance,
           remaining_balance: initialRemainingBalance,
         };
@@ -539,22 +707,438 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
       fetchRemainingBalance();
     }
   }, [isOpen, rowData]);
+
   const { distributorMap, getDistributorName } = useDistributorMap();
 
-  // Fetch mother accounts
+  // Sync sku_addional / isPenalties / suppliesME / branch flags once activity + settingsMap are known
   useEffect(() => {
-    const fetchAccounts = async () => {
+    if (!formData.activity || !settingsMap[formData.activity]) return;
+    const setting = settingsMap[formData.activity];
+    setFormData((prev) => ({
+      ...prev,
+      sku_addional: setting.sku_addional === true,
+      isPenalties: setting.isPenalties === true,
+      suppliesME: setting.suppliesME === true,
+      branch: setting.branch === true,
+    }));
+  }, [formData.activity, settingsMap]);
+
+  // ============ GROUPED BRANCH (Mother -> Sub-account -> Branch) — same gets as RegularVisaForm ============
+
+  const ensureAccountsListCached = async (distributorCode) => {
+    if (!distributorCode) return [];
+    if (accountsListCache[distributorCode]) return accountsListCache[distributorCode];
+
+    const [userResult, motherResult, bpResult] = await Promise.all([
+      supabase.from("Account_Users").select("UserID, name"),
+      supabase.from("sub_mother_account").select("dscode, name"),
+      supabase.from("Bp_Accounts").select("bp_code, bp_name"),
+    ]);
+
+    if (!userResult.error) {
+      const userMap = {};
+      userResult.data.forEach((u) => { userMap[u.UserID] = u.name; });
+      setAgentNamesMap(userMap);
+    }
+
+    if (!motherResult.error) {
+      const motherMap = {};
+      motherResult.data.forEach((m) => {
+        const cleanCode = m.dscode?.trim() || "";
+        const displayName = m.name && m.name.trim() !== "" ? m.name.trim() : cleanCode;
+        motherMap[cleanCode] = displayName;
+        motherMap[m.dscode] = displayName;
+      });
+      setMotherAccountNamesMap(motherMap);
+    }
+
+    if (!bpResult.error) {
+      const bpMap = {};
+      bpResult.data.forEach((bp) => { if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name; });
+      setBpNamesMap((prev) => ({ ...prev, ...bpMap }));
+    }
+
+    const batchSize = 1000;
+    let allData = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
       const { data, error } = await supabase
-        .from("mother_account")
-        .select("id, code, name")
-        .eq("status", true)
-        .order("name");
+        .from("Accounts_List")
+        .select("*")
+        .eq("distributor_code", String(distributorCode))
+        .order("id", { ascending: true })
+        .range(offset, offset + batchSize - 1);
 
-      if (!error) setAccountTypes(data);
-    };
+      if (error) {
+        console.error("❌ Failed to fetch Accounts_List:", error);
+        break;
+      }
 
-    fetchAccounts();
-  }, []);
+      const count = data?.length || 0;
+      if (count > 0) {
+        allData = [...allData, ...data];
+        offset += batchSize;
+        hasMore = count === batchSize;
+      } else {
+        hasMore = false;
+      }
+    }
+
+    setAccountsListCache((prev) => ({ ...prev, [distributorCode]: allData }));
+    return allData;
+  };
+
+  const fetchMotherAccountsListForEdit = async (distributorCode) => {
+    if (!distributorCode) return [];
+
+    const { data: distributor, error } = await supabase
+      .from("distributors")
+      .select("id, name, code, mother_accounts_code")
+      .eq("code", distributorCode)
+      .single();
+
+    if (error || !distributor) return [];
+
+    let motherCodes = [];
+    if (distributor.mother_accounts_code) {
+      if (Array.isArray(distributor.mother_accounts_code)) {
+        motherCodes = distributor.mother_accounts_code;
+      } else {
+        motherCodes = distributor.mother_accounts_code
+          .split(",")
+          .map((code) => code.replace(/[()]/g, "").trim())
+          .filter(Boolean);
+      }
+    }
+    if (motherCodes.length === 0) return [];
+
+    const { data: motherAccounts, error: motherErr } = await supabase
+      .from("mother_account")
+      .select("code, name")
+      .in("code", motherCodes.map(Number));
+
+    if (motherErr) return [];
+
+    return motherCodes.map((code, index) => {
+      const matched = motherAccounts?.find((acc) => String(acc.code) === String(code));
+      return { id: index + 1, code, name: matched ? matched.name : code };
+    });
+  };
+
+  const computeSubAccountsForMother = (mother, cachedData, distributorCode) => {
+    if (!cachedData?.length) return [];
+    const safeLower = (val) => (typeof val === "string" ? val.trim().toLowerCase() : String(val ?? "").toLowerCase());
+    const selDist = safeLower(distributorCode);
+    const selGroup = safeLower(mother.code);
+
+    const filtered = cachedData.filter(
+      (item) => safeLower(item.distributor_code) === selDist && safeLower(item.group_code) === selGroup
+    );
+    if (filtered.length === 0) return [];
+
+    const unique = Array.from(
+      new Map(
+        filtered.map((item) => {
+          const cleanCode = (item.mother_code || "").trim();
+          return [cleanCode.toLowerCase(), { ...item, mother_code: cleanCode }];
+        })
+      ).values()
+    );
+
+    return unique.map((item) => {
+      const cleanCode = item.mother_code;
+      const displayName =
+        motherAccountNamesMap[cleanCode] || motherAccountNamesMap[cleanCode.toLowerCase()] || cleanCode;
+      return { id: item.id, name: displayName, code: cleanCode, group_code: item.group_code };
+    });
+  };
+
+  const fetchBranchesForSubEdit = async (motherAccountCode, groupCode, cachedData) => {
+    if (!cachedData?.length) return [];
+    const safeLower = (val) => (typeof val === "string" ? val.trim().toLowerCase() : String(val ?? "").toLowerCase());
+    const selGroup = safeLower(groupCode);
+
+    const filtered = cachedData.filter((item) => {
+      const motherMatch = (item.mother_code || "").trim() === motherAccountCode.trim();
+      const groupMatch = safeLower(item.group_code) === selGroup;
+      const hasBp = item.bp_code && item.bp_code.trim() !== "";
+      return motherMatch && groupMatch && hasBp;
+    });
+    if (filtered.length === 0) return [];
+
+    const allBpCodes = [...new Set(filtered.map((r) => (r.bp_code || "").trim()).filter(Boolean))];
+    let allBpData = [];
+    const batchSize = 1000;
+
+    for (let i = 0; i < allBpCodes.length; i += batchSize) {
+      const batch = allBpCodes.slice(i, i + batchSize);
+      const { data: bpData, error } = await supabase
+        .from("Bp_Accounts")
+        .select("bp_code, bp_name")
+        .in("bp_code", batch);
+      if (error) continue;
+      allBpData = [...allBpData, ...bpData];
+    }
+
+    const bpMap = {};
+    allBpData.forEach((bp) => { if (bp.bp_code) bpMap[bp.bp_code.trim()] = bp.bp_name; });
+    setBpNamesMap((prev) => ({ ...prev, ...bpMap }));
+
+    const seen = new Set();
+    const uniqueBranches = filtered
+      .filter((row) => {
+        const code = (row.bp_code || "").trim();
+        if (!code || seen.has(code)) return false;
+        seen.add(code);
+        return true;
+      })
+      .map((row) => {
+        const code = (row.bp_code || "").trim();
+        const branchName = bpMap[code];
+        return {
+          id: row.id,
+          name: branchName || code,
+          code,
+          status: row.status,
+          distributor_code: row.distributor_code,
+          mother_code: row.mother_code,
+          group_code: row.group_code,
+        };
+      });
+
+    uniqueBranches.sort((a, b) => a.name.localeCompare(b.name));
+    return uniqueBranches;
+  };
+
+  const fetchAllGroupedBranches = async () => {
+    const distributorCode = formData.distributor;
+    if (!distributorCode) return;
+    setLoadingGroupedBranches(true);
+
+    try {
+      const cachedData = await ensureAccountsListCached(distributorCode);
+      let motherAccounts = await fetchMotherAccountsListForEdit(distributorCode);
+      setAccountTypes(motherAccounts);
+
+      if (cachedData?.length) {
+        const accessibleGroupCodes = new Set(
+          cachedData.map((item) => item.group_code?.toString().trim()).filter(Boolean)
+        );
+        if (accessibleGroupCodes.size > 0) {
+          motherAccounts = motherAccounts.filter((opt) => accessibleGroupCodes.has(opt.code?.toString().trim()));
+        }
+      }
+
+      const groups = [];
+
+      for (const mother of motherAccounts) {
+        const subs = computeSubAccountsForMother(mother, cachedData, distributorCode);
+
+        if (mother.name === "NON-CHAIN") {
+          if (subs.length === 0) continue;
+          groups.push({
+            groupKey: `mother-${mother.id}`,
+            groupLabel: mother.name,
+            isNonChain: true,
+            motherId: mother.id,
+            motherCode: mother.code,
+            motherName: mother.name,
+            items: subs.map((s) => ({ id: s.id, name: s.name, code: s.code, groupCode: s.group_code })),
+          });
+          continue;
+        }
+
+        for (const sub of subs) {
+          const branches = await fetchBranchesForSubEdit(sub.code, sub.group_code, cachedData);
+          if (branches.length === 0) continue;
+
+          groups.push({
+            groupKey: `sub-${sub.id}`,
+            groupLabel: `${sub.code} = (${mother.name} - ${sub.name})`,
+            isNonChain: false,
+            motherId: mother.id,
+            motherCode: mother.code,
+            motherName: mother.name,
+            subAccountId: sub.id,
+            subAccountCode: sub.code,
+            subAccountGroupCode: sub.group_code,
+            items: branches.map((b) => ({
+              id: b.id, name: b.name, code: b.code, status: b.status, distributor_code: b.distributor_code,
+            })),
+          });
+        }
+      }
+
+      setGroupedBranches(groups);
+
+      const flatBranches = groups.filter((g) => !g.isNonChain).flatMap((g) => g.items);
+      const uniqueFlatBranches = Array.from(new Map(flatBranches.map((b) => [b.code, b])).values());
+      setBranchTypes(uniqueFlatBranches);
+    } catch (err) {
+      console.error("❌ Error building grouped branches:", err.message);
+      Swal.fire("Error", "Failed to load branches.", "error");
+    } finally {
+      setLoadingGroupedBranches(false);
+    }
+  };
+
+  // Auto-fetch once, as soon as we know the record's distributor
+  useEffect(() => {
+    if (isOpen && formData?.distributor && branchesFetchedForDistributor !== formData.distributor) {
+      setBranchesFetchedForDistributor(formData.distributor);
+      fetchAllGroupedBranches();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, formData?.distributor]);
+
+  // Convert legacy string-labels from DB (non-chain accountType names) back into ids once groups are loaded
+  useEffect(() => {
+    if (!groupedBranches.length) return;
+    const nonChainGroup = groupedBranches.find((g) => g.isNonChain);
+    if (!nonChainGroup) return;
+
+    setFormData((prev) => {
+      if (!Array.isArray(prev.accountType)) return prev;
+      const needsConversion = prev.accountType.some((val) => typeof val === "string");
+      if (!needsConversion) return prev;
+
+      const convertedIds = prev.accountType.map((val) => {
+        if (typeof val !== "string") return val;
+        const match = nonChainGroup.items.find((i) => i.name === val);
+        return match ? match.id : val;
+      });
+      return { ...prev, accountType: convertedIds };
+    });
+  }, [groupedBranches]);
+
+  useEffect(() => {
+    setBranchPage(1);
+  }, [activeBranchTabKey, branchSearchTerm, showModal_Branch]);
+
+  const formatGroupLabelForDisplay = (label) => {
+    const match = label.match(/\(([^)]+)\)/);
+    const inner = match ? match[1] : label;
+    const dashIndex = inner.indexOf(" - ");
+    if (dashIndex === -1) return { bold: inner, rest: "" };
+    return { bold: inner.slice(0, dashIndex), rest: inner.slice(dashIndex) };
+  };
+
+  const getGroupInnerLabel = (group) => {
+    const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
+    return `${bold}${rest}`;
+  };
+
+  const buildConvertedAccountType = (accountTypeArray) => {
+    if (!Array.isArray(accountTypeArray)) return [];
+    const labels = accountTypeArray
+      .map((id) => {
+        const chainGroup = groupedBranches.find((g) => !g.isNonChain && g.subAccountId === id);
+        if (chainGroup) return getGroupInnerLabel(chainGroup);
+
+        for (const g of groupedBranches) {
+          if (g.isNonChain) {
+            const item = g.items.find((i) => i.id === id);
+            if (item) return item.name;
+          }
+        }
+        // already a saved label string (couldn't be resolved back to an id) — keep as-is
+        return typeof id === "string" ? id : null;
+      })
+      .filter(Boolean);
+    return [...new Set(labels)];
+  };
+
+  const toggleGroupedBranchItem = (group, item) => {
+    if (group.isNonChain) {
+      setFormData((prev) => {
+        const current = Array.isArray(prev.accountType) ? prev.accountType : [];
+        const updated = current.includes(item.id)
+          ? current.filter((x) => x !== item.id)
+          : [...current, item.id];
+        return { ...prev, accountType: updated };
+      });
+    } else {
+      setFormData((prev) => {
+        const currentAccountTypes = Array.isArray(prev.accountType) ? prev.accountType : [];
+        const updatedAccountTypes = currentAccountTypes.includes(group.subAccountId)
+          ? currentAccountTypes
+          : [...currentAccountTypes, group.subAccountId];
+
+        const currentBranchType = prev.branchType || [];
+        const updatedBranchType = currentBranchType.includes(item.name)
+          ? currentBranchType.filter((n) => n !== item.name)
+          : [...currentBranchType, item.name];
+
+        return { ...prev, accountType: updatedAccountTypes, branchType: updatedBranchType };
+      });
+    }
+  };
+
+  const isGroupedItemChecked = (group, item) => {
+    if (group.isNonChain) return (formData.accountType || []).includes(item.id);
+    return (formData.branchType || []).includes(item.name);
+  };
+
+  const getSelectedBranchChips = () => {
+    const chips = [];
+
+    (formData.branchType || []).forEach((name) => {
+      chips.push({
+        key: `branch-${name}`,
+        label: name,
+        onRemove: () =>
+          setFormData((prev) => ({ ...prev, branchType: (prev.branchType || []).filter((n) => n !== name) })),
+      });
+    });
+
+    if (Array.isArray(formData.accountType)) {
+      const nonChainGroup = groupedBranches.find((g) => g.isNonChain);
+      formData.accountType.forEach((id) => {
+        const item = nonChainGroup?.items.find((i) => i.id === id);
+        if (item) {
+          chips.push({
+            key: `sub-${id}`,
+            label: item.name,
+            onRemove: () =>
+              setFormData((prev) => ({
+                ...prev,
+                accountType: (prev.accountType || []).filter((x) => x !== id),
+              })),
+          });
+        }
+      });
+    }
+
+    return chips.map((c) => (
+      <span
+        key={c.key}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          backgroundColor: "#3b82f6",
+          color: "#fff",
+          padding: "3px 8px",
+          borderRadius: "5px",
+          fontSize: "13px",
+          marginRight: "5px",
+          marginBottom: "4px",
+        }}
+      >
+        {c.label}
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            c.onRemove();
+          }}
+          style={{ marginLeft: "5px", cursor: "pointer", fontWeight: "bold" }}
+        >
+          ✖
+        </span>
+      </span>
+    ));
+  };
 
   // ============ HANDLERS ============
   const handleChange = (e) => {
@@ -638,7 +1222,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
       const originalRemainingBalance = parseFloat(amountBadgetData.remainingbalance || 0);
       console.log("💰 originalRemainingBalance from DB:", originalRemainingBalance);
 
-      // RESET budgetList to 0
       setBudgetList(prev => prev.map(item => ({
         ...item,
         budget: 0
@@ -711,20 +1294,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     });
   };
 
-  const fetchSubAccounts = async (mother) => {
-    setSelectedMother(mother);
-    if (!subAccounts[mother.id]) {
-      const { data, error } = await supabase
-        .from("sub_mother_account")
-        .select("id, name")
-        .eq("mother_id", mother.id)
-        .eq("status", true)
-        .order("name");
-
-      if (!error) setSubAccounts((prev) => ({ ...prev, [mother.id]: data }));
-    }
-  };
-
   const filteredCategories = categories.filter(
     (cat) =>
       cat.name.toLowerCase().includes(searchTerms.toLowerCase()) ||
@@ -743,7 +1312,8 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
       regularpwpcode: formData.regularpwpcode,
       pwptype: formData.pwptype,
       distributor: formData.distributor,
-      accountType: formData.accountType,
+      accountType: buildConvertedAccountType(formData.accountType),
+      branchType: formData.branchType || [],
       categoryName: formData.categoryName,
       activity: formData.activity,
       objective: formData.objective,
@@ -853,6 +1423,9 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
       account_name: item.account_name,
       budget: item.budget,
       total_budget: item.budget,
+      sku: item.sku || null,
+      penalty: item.penalty || null,
+      suppliesme: item.suppliesme || null,
     }));
 
     let accountsUpdated = true;
@@ -875,6 +1448,9 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
             account_name: account.account_name,
             budget: account.budget,
             total_budget: account.total_budget,
+            sku: account.sku,
+            penalty: account.penalty,
+            suppliesme: account.suppliesme,
           })
           .eq('id', existingAccounts[0].id);
 
@@ -939,7 +1515,9 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
         uom: row.uom || 'pc',
         discount: Number(row.discount || 0),
         billing_amount: computedBilling,
-        total_amount: computedBilling,
+        total_amount: row.total_amount !== undefined && row.total_amount !== null
+          ? Number(row.total_amount)
+          : computedBilling,
         created_at: new Date().toISOString(),
       };
 
@@ -969,6 +1547,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
       }
     }
   };
+
   const submitSkuTotalToRegular = async (regularpwpcode, remaining_balance, _credit_budget, amountbadget) => {
     const resolvedAmountBudget = (amountbadget && amountbadget > 0) ? amountbadget : currentTotalBilling;
 
@@ -1053,7 +1632,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
   };
 
   // ============ RENDER COMPONENTS ============
-
 
   const renderDateInput = (name, label, value, disabled) => (
     <div key={name} style={{ display: "flex", flexDirection: "column", marginBottom: "16px", position: "relative" }}>
@@ -1154,9 +1732,13 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
             sku: setting.sku || false,
             accounts: setting.accounts || false,
             amount_display: setting.amount_display || false,
+            sku_addional: setting.sku_addional || false,
+            isPenalties: setting.isPenalties || false,
+            suppliesME: setting.suppliesME || false,
+            branch: setting.branch || false,
           }));
         }}
-        disabled
+        disabled={updating}
         style={{
           padding: '10px',
           borderRadius: '8px',
@@ -1164,6 +1746,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
           background: '#fff',
           appearance: 'none',
           paddingRight: '40px',
+          cursor: updating ? 'not-allowed' : 'pointer',
         }}
       >
         <option value="">Select Activity</option>
@@ -1173,9 +1756,44 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
           </option>
         ))}
       </select>
-
     </div>
   );
+
+  const renderBranchField = (name, label) => {
+    const branchEnabled = settingsMap[formData.activity]?.branch === true;
+    if (!branchEnabled) return null;
+
+    return (
+      <div key={name} style={{ position: "relative", display: "flex", flexDirection: "column" }}>
+        <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>
+          Branch <span style={{ color: "red" }}>*</span>
+        </label>
+        <div
+          onClick={() => {
+            setShowModal_Branch(true);
+            fetchAllGroupedBranches();
+          }}
+          style={{
+            cursor: "pointer",
+            minHeight: "40px",
+            border: "1px solid #ccc",
+            borderRadius: "8px",
+            padding: "6px 8px",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "5px",
+            background: "#fff",
+          }}
+        >
+          {getSelectedBranchChips().length > 0 ? (
+            getSelectedBranchChips()
+          ) : (
+            <span style={{ color: "#888", fontSize: "13px" }}>Select Branch</span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const renderCategoryInput = (name, label) => (
     <div key={name} style={{ position: "relative", display: "flex", flexDirection: "column" }}>
@@ -1198,9 +1816,7 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
             width: "100%",
             boxSizing: "border-box",
           }}
-         
         />
-   
       </div>
 
       {showCategoryModal && (
@@ -1316,8 +1932,6 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     </div>
   );
 
- 
-
   const renderRemainingBalanceInput = (name, label, disabled) => {
     let displayValue;
 
@@ -1352,37 +1966,35 @@ function EditModal({ isOpen, onClose, rowData, filter = "all" }) {
     );
   };
 
-const renderTextInput = (name, label, value, disabled) => {
-  // Special case para sa distributor - display name instead of code
-  let displayValue = value;
-  if (name === "distributor") {
-    displayValue = getDistributorName(value);
-  }
+  const renderTextInput = (name, label, value, disabled) => {
+    let displayValue = value;
+    if (name === "distributor") {
+      displayValue = getDistributorName(value);
+    }
 
-  return (
-    <div key={name} style={{ display: "flex", flexDirection: "column" }}>
-      <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
-      <input
-        type="text"
-        name={name}
-        value={displayValue}
-        onChange={handleChange}
-        disabled={disabled || updating}
-        style={{
-          padding: "10px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          background: disabled ? "#f9f9f9" : "#fff",
-        }}
-      />
-    </div>
-  );
-};
+    return (
+      <div key={name} style={{ display: "flex", flexDirection: "column" }}>
+        <label style={{ marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>{label}</label>
+        <input
+          type="text"
+          name={name}
+          value={displayValue}
+          onChange={handleChange}
+          disabled={disabled || updating}
+          style={{
+            padding: "10px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            background: disabled ? "#f9f9f9" : "#fff",
+          }}
+        />
+      </div>
+    );
+  };
 
   const renderField = ({ name, label, disabled, type }) => {
     const value = formData[name] ?? (type === "checkbox" ? false : "");
 
-  
     if (name === "activityDurationFrom" || name === "activityDurationTo") {
       return renderDateInput(name, label, value, disabled);
     }
@@ -1399,11 +2011,17 @@ const renderTextInput = (name, label, value, disabled) => {
       return renderCategoryInput(name, label);
     }
 
+    if (name === "branchType") {
+      return renderBranchField(name, label);
+    }
+
+    if (name === "accountType") {
+      return null; // merged into the Branch field above
+    }
+
     if (type === "checkbox") {
       return renderCheckbox(name, label, value, disabled);
     }
-
-  
 
     if (name === "remaining_balance") {
       return renderRemainingBalanceInput(name, label, disabled);
@@ -1411,47 +2029,48 @@ const renderTextInput = (name, label, value, disabled) => {
 
     return renderTextInput(name, label, value, disabled);
   };
-
-  if (!isOpen || !formData) return null;
+ if (!isOpen || !formData) return null;
 
   return (
     <div style={{
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: "rgba(0,0,0,0.5)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: 9999,
+      width: "100%",
+      minHeight: "100vh",
+      backgroundColor: "#f4f6f9",
+      padding: "30px",
+      boxSizing: "border-box",
     }}>
       <div style={{
         backgroundColor: "#fff",
         borderRadius: "16px",
         padding: "30px",
-        width: "98%",
+        width: "100%",
         maxWidth: "1300px",
-        maxHeight: "90vh",
-        overflowY: "auto",
-        boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
+        margin: "0 auto",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "24px" }}>
-          <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "bold" }}>Edit Record</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
           <button
+            type="button"
             onClick={onClose}
             disabled={updating}
             style={{
-              fontSize: "20px",
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              color: "#555",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "14px",
+              fontWeight: "600",
+              border: "1px solid #ccc",
+              background: "#f1f5f9",
+              borderRadius: "8px",
+              padding: "8px 14px",
+              cursor: updating ? "not-allowed" : "pointer",
+              color: "#333",
             }}
           >
-            ✕
+            ← Back
           </button>
+          <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "bold" }}>Edit Record</h2>
+          <div style={{ width: "90px" }} />
         </div>
 
         {error && <p style={{ color: "red", marginBottom: "16px" }}>{error}</p>}
@@ -1465,6 +2084,214 @@ const renderTextInput = (name, label, value, disabled) => {
           }}>
             {fieldsToRender.map(renderField)}
           </div>
+
+          {/* Branch Modal — Mother -> Sub-account -> Branch, same gets as RegularVisaForm */}
+          <Modal
+            show={showModal_Branch}
+            onHide={() => {
+              setShowModal_Branch(false);
+              setBranchSearchTerm("");
+            }}
+            centered
+            size="xl"
+          >
+            <Modal.Header closeButton style={{ background: "rgb(70, 137, 166)", color: "white" }}>
+              <Modal.Title style={{ width: "100%", textAlign: "center" }}>Select Branch</Modal.Title>
+            </Modal.Header>
+
+            <Modal.Body style={{ minHeight: "60vh", display: "flex", flexDirection: "column", padding: "1rem" }}>
+              <input
+                type="text"
+                className="form-control mb-3"
+                placeholder="Search branches or accounts..."
+                value={branchSearchTerm}
+                onChange={(e) => setBranchSearchTerm(e.target.value)}
+                style={{ borderColor: "#007bff", flexShrink: 0 }}
+              />
+
+              {loadingGroupedBranches ? (
+                <div className="text-center p-4">
+                  <Spinner animation="border" variant="primary" />
+                  <p className="text-muted mt-2">Loading branches...</p>
+                </div>
+              ) : (
+                (() => {
+                  if (groupedBranches.length === 0) {
+                    return (
+                      <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+                        No branches found.
+                      </div>
+                    );
+                  }
+
+                  const currentKey =
+                    activeBranchTabKey &&
+                      (activeBranchTabKey === "ALL" || groupedBranches.some((g) => g.groupKey === activeBranchTabKey))
+                      ? activeBranchTabKey
+                      : "ALL";
+
+                  const isAllTab = currentKey === "ALL";
+                  const activeGroup = isAllTab ? null : groupedBranches.find((g) => g.groupKey === currentKey);
+
+                  const allFilteredItems = isAllTab
+                    ? groupedBranches.flatMap((group) =>
+                      group.items
+                        .filter((item) => item.name.toLowerCase().includes(branchSearchTerm.toLowerCase()))
+                        .map((item) => ({ item, group }))
+                    )
+                    : (activeGroup?.items || [])
+                      .filter((item) => item.name.toLowerCase().includes(branchSearchTerm.toLowerCase()))
+                      .map((item) => ({ item, group: activeGroup }));
+
+                  const totalPages = Math.max(1, Math.ceil(allFilteredItems.length / BRANCH_PAGE_SIZE));
+                  const safePage = Math.min(branchPage, totalPages);
+                  const startIdx = (safePage - 1) * BRANCH_PAGE_SIZE;
+                  const pagedItems = allFilteredItems.slice(startIdx, startIdx + BRANCH_PAGE_SIZE);
+
+                  return (
+                    <>
+                      <Nav
+                        variant="tabs"
+                        activeKey={currentKey}
+                        onSelect={(k) => setActiveBranchTabKey(k)}
+                        style={{ flexWrap: "nowrap", overflowX: "auto", marginBottom: "10px" }}
+                      >
+                        <Nav.Item style={{ whiteSpace: "nowrap" }}>
+                          <Nav.Link eventKey="ALL">All</Nav.Link>
+                        </Nav.Item>
+                        {groupedBranches.map((group) => {
+                          const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
+                          return (
+                            <Nav.Item key={group.groupKey} style={{ whiteSpace: "nowrap" }}>
+                              <Nav.Link eventKey={group.groupKey}>
+                                <strong>{bold}</strong>{rest}
+                              </Nav.Link>
+                            </Nav.Item>
+                          );
+                        })}
+                      </Nav>
+
+                      <div style={{ overflowY: "auto", flexGrow: 1 }}>
+                        {pagedItems.length === 0 ? (
+                          <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>
+                            No branches found.
+                          </div>
+                        ) : (
+                          pagedItems.map(({ item, group }) => (
+                            <div
+                              key={`${group.groupKey}-${item.id}`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "8px 10px",
+                                borderBottom: "1px solid #eee",
+                                gap: "8px",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", minWidth: 0, flex: 1 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isGroupedItemChecked(group, item)}
+                                  onChange={() => toggleGroupedBranchItem(group, item)}
+                                  id={`edit-grouped-branch-${group.groupKey}-${item.id}`}
+                                  style={{ width: "18px", height: "18px", cursor: "pointer", flexShrink: 0 }}
+                                />
+                                <label
+                                  htmlFor={`edit-grouped-branch-${group.groupKey}-${item.id}`}
+                                  style={{
+                                    marginLeft: "8px",
+                                    cursor: "pointer",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {item.name}
+                                </label>
+                              </div>
+
+                              {isAllTab && (() => {
+                                const { bold, rest } = formatGroupLabelForDisplay(group.groupLabel);
+                                return (
+                                  <span
+                                    style={{
+                                      backgroundColor: group.isNonChain ? "#fff3cd" : "#e7f1ff",
+                                      color: group.isNonChain ? "#92400e" : "#0050a5",
+                                      border: `1px solid ${group.isNonChain ? "#fbbf24" : "#bfdbfe"}`,
+                                      borderRadius: "999px",
+                                      padding: "2px 10px",
+                                      fontSize: "11px",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    <strong>{bold}</strong>{rest}
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {allFilteredItems.length > BRANCH_PAGE_SIZE && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "center",
+                            alignItems: "center",
+                            gap: "10px",
+                            paddingTop: "10px",
+                            borderTop: "1px solid #eee",
+                            marginTop: "8px",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Button
+                            size="sm"
+                            variant="outline-secondary"
+                            disabled={safePage <= 1}
+                            onClick={() => setBranchPage((p) => Math.max(1, p - 1))}
+                          >
+                            ← Prev
+                          </Button>
+                          <span style={{ fontSize: "13px", color: "#555" }}>
+                            Page {safePage} of {totalPages} ({allFilteredItems.length} items)
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline-secondary"
+                            disabled={safePage >= totalPages}
+                            onClick={() => setBranchPage((p) => Math.min(totalPages, p + 1))}
+                          >
+                            Next →
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
+              )}
+            </Modal.Body>
+
+            <Modal.Footer style={{ display: "flex", justifyContent: "space-between" }}>
+              <Button
+                variant="warning"
+                onClick={() => setFormData((prev) => ({ ...prev, branchType: [], accountType: [] }))}
+              >
+                Clear All
+              </Button>
+              <Button
+                variant="light"
+                onClick={() => {
+                  setShowModal_Branch(false);
+                  setBranchSearchTerm("");
+                }}
+              >
+                Close
+              </Button>
+            </Modal.Footer>
+          </Modal>
 
           {showBudgetTable && (
             <div style={{
@@ -1483,15 +2310,61 @@ const renderTextInput = (name, label, value, disabled) => {
                   <thead>
                     <tr style={{ backgroundColor: "#3b82f6", color: "white" }}>
                       <th style={{ padding: "8px", border: "1px solid #ddd" }}>Account Name</th>
+                      {formData.sku_addional && <th style={{ padding: "8px", border: "1px solid #ddd" }}>SKU</th>}
+                      {formData.isPenalties && <th style={{ padding: "8px", border: "1px solid #ddd" }}>Penalties</th>}
+                      {formData.suppliesME && <th style={{ padding: "8px", border: "1px solid #ddd" }}>Supplies/M.E</th>}
                       <th style={{ padding: "8px", border: "1px solid #ddd" }}>Budget</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {budgetList.map(({ id, account_name, budget }) => (
+                    {budgetList.map(({ id, account_name, budget, sku, penalty, suppliesme }) => (
                       <tr key={id} style={{ borderBottom: "1px solid #ddd" }}>
                         <td style={{ padding: "8px", border: "1px solid #ddd", wordBreak: "break-word" }}>
                           {account_name}
                         </td>
+                        {formData.sku_addional && (
+                          <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            <input
+                              type="text"
+                              value={sku || ""}
+                              onChange={(e) => handleBudgetFieldChange(id, "sku", e.target.value)}
+                              placeholder="Enter SKU"
+                              style={{
+                                width: "100%",
+                                boxSizing: "border-box",
+                                padding: "6px",
+                                borderRadius: "4px",
+                                border: "1px solid #ccc",
+                              }}
+                            />
+                          </td>
+                        )}
+                        {formData.isPenalties && (
+                          <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            <MultiSelectDropdown
+                              options={penaltyOptions}
+                              selected={Array.isArray(penalty) ? penalty : penalty ? [penalty] : []}
+                              placeholder="Select Penalty"
+                              onChange={(updated) => {
+                                handleBudgetFieldChange(id, "penalty", updated);
+                                if (updated.length > 0) handleBudgetFieldChange(id, "suppliesme", []);
+                              }}
+                            />
+                          </td>
+                        )}
+                        {formData.suppliesME && (
+                          <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            <MultiSelectDropdown
+                              options={suppliesOptions}
+                              selected={Array.isArray(suppliesme) ? suppliesme : suppliesme ? [suppliesme] : []}
+                              placeholder="Select Item"
+                              onChange={(updated) => {
+                                handleBudgetFieldChange(id, "suppliesme", updated);
+                                if (updated.length > 0) handleBudgetFieldChange(id, "penalty", []);
+                              }}
+                            />
+                          </td>
+                        )}
                         <td style={{ padding: "8px", border: "1px solid #ddd" }}>
                           <input
                             type="number"
@@ -1557,207 +2430,146 @@ const renderTextInput = (name, label, value, disabled) => {
             </div>
           )}
 
-          {skuList.length > 0 && (
-            <div style={{
-              marginTop: "30px",
-              borderTop: "1px solid #ddd",
-              paddingTop: "20px",
-              maxHeight: "800px",
-              overflowY: "auto",
-            }}>
-              <table style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                backgroundColor: "#f9f9f9",
-                boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
-                borderRadius: "8px",
-                overflow: "hidden",
-              }}>
-                <thead>
-                  <tr style={{
-                    backgroundColor: "#3b82f6",
-                    color: "white",
-                    fontWeight: "bold",
-                    textAlign: "center",
-                    fontSize: "14px",
-                  }}>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Accounts</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SKU</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>SRP</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Qty</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>UOM</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Total</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Discount ₱</th>
-                    <th style={{ padding: "12px", border: "1px solid #ddd" }}>Billing Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {skuList.map(({ id, account_name, sku_code, srp, qty, uom, discount, total_amount }) => {
-                    if (sku_code === "Total:") return null;
+          {skuList.length > 0 && (() => {
+            const groups = {};
+            skuList.forEach((item) => {
+              if (item.sku_code === "Total:") return;
+              const acct = item.account_name || "Unassigned";
+              if (!groups[acct]) groups[acct] = [];
+              groups[acct].push(item);
+            });
 
-                    const srpNum = Number(srp || 0);
-                    const qtyNum = Number(qty || 0);
-                    const discountNum = Number(discount || 0);
-                    const totalAmount = Number(total_amount || 0);
-                    const totalBeforeDiscount = srpNum * qtyNum;
+            const grandTotals = Object.values(groups).flat().reduce(
+              (acc, r) => {
+                acc.QTY += Number(r.qty || 0);
+                acc.BILLING_AMOUNT += Number(r.srp || 0) * Number(r.qty || 0);
+                acc.DISCOUNT += Number(r.discount || 0);
+                acc.TOTAL_AMOUNT += Number(r.total_amount || 0);
+                return acc;
+              },
+              { QTY: 0, BILLING_AMOUNT: 0, DISCOUNT: 0, TOTAL_AMOUNT: 0 }
+            );
 
-                    return (
-                      <tr
-                        key={id}
-                        style={{
-                          borderBottom: "1px solid #ddd",
-                          textAlign: "center",
-                          fontSize: "14px",
-                          transition: "background-color 0.3s ease",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0f8ff")}
-                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
-                      >
-                        <td style={{ minWidth: "180px", padding: "10px", border: "1px solid #ddd" }}>
-                          <input
-                            type="text"
-                            value={account_name || ""}
-                            onChange={(e) => handleSkuChange(id, "account_name", e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                              fontSize: "14px",
-                            }}
-                            disabled
-                          />
-                        </td>
-                        <td style={{ minWidth: "200px", padding: "10px", border: "1px solid #ddd" }}>
-                          <input
-                            type="text"
-                            value={categoryMap[sku_code] || sku_code || ""}
-                            onChange={(e) => handleSkuChange(id, "sku_code", e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                            }}
-                            disabled
-                          />
-                        </td>
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <input
-                            type="number"
-                            value={srp || 0}
-                            step="0.01"
-                            onChange={(e) => handleSkuChange(id, "srp", e.target.value)}
-                            disabled
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <input
-                            type="number"
-                            value={qty || 0}
-                            onChange={(e) => handleSkuChange(id, "qty", e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <select
-                            value={uom || "pc"}
-                            onChange={(e) => handleSkuChange(id, "uom", e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                            }}
-                          >
-                            <option value="pc">PC</option>
-                            <option value="case">Case</option>
-                            <option value="ibx">IBX</option>
-                          </select>
-                        </td>
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <span>{totalBeforeDiscount.toFixed(2)}</span>
-                        </td>
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <input
-                            type="number"
-                            value={discount !== undefined && discount !== null ? discount : 0}
-                            step="0.01"
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              handleSkuChange(id, "discount", value === "" ? 0 : parseFloat(value));
-                            }}
-                            style={{
-                              width: "100%",
-                              padding: "8px",
-                              borderRadius: "5px",
-                              border: "1px solid #ddd",
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>
-                          <strong>{totalAmount.toFixed(2)}</strong>
-                        </td>
+            return (
+              <div style={{ marginTop: "30px", borderTop: "1px solid #ddd", paddingTop: "20px", maxHeight: "800px", overflowY: "auto" }}>
+                {Object.entries(groups).map(([accountName, rows]) => {
+                  const branchTotal = rows.reduce((sum, r) => sum + Number(r.total_amount || 0), 0);
+
+                  return (
+                    <div key={accountName} style={{ marginBottom: "24px" }}>
+                      <h6 style={{ marginBottom: "8px" }}>
+                        <span style={{ backgroundColor: "#3b82f6", color: "#fff", padding: "3px 8px", borderRadius: "5px", fontSize: "13px" }}>
+                          {accountName}
+                        </span>
+                      </h6>
+
+                      <table style={{ width: "100%", borderCollapse: "collapse", backgroundColor: "#f9f9f9", boxShadow: "0 2px 10px rgba(0,0,0,0.1)", borderRadius: "8px", overflow: "hidden" }}>
+                        <thead>
+                          <tr style={{ backgroundColor: "#3b82f6", color: "white", fontWeight: "bold", textAlign: "center", fontSize: "14px" }}>
+                            <th style={{ padding: "12px", border: "1px solid #ddd" }}>SKU</th>
+                            <th style={{ display: "none" }}>SRP</th>
+                            <th style={{ display: "none" }}>Qty</th>
+                            <th style={{ display: "none" }}>UOM</th>
+                            <th style={{ display: "none" }}>Billing Amount</th>
+                            <th style={{ display: "none" }}>Discount ₱</th>
+                            <th style={{ padding: "12px", border: "1px solid #ddd" }}>Total Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map(({ id, sku_code, srp, qty, uom, discount, total_amount }) => (
+                            <tr key={id} style={{ borderBottom: "1px solid #ddd", textAlign: "center", fontSize: "14px" }}>
+                              <td style={{ minWidth: "200px", padding: "10px", border: "1px solid #ddd" }}>
+                                <input
+                                  type="text"
+                                  value={categoryMap[sku_code] || sku_code || ""}
+                                  disabled
+                                  style={{ width: "100%", padding: "8px", borderRadius: "5px", border: "1px solid #ddd" }}
+                                />
+                              </td>
+                              <td style={{ display: "none" }}>
+                                <input type="number" value={srp || 0} step="0.01" disabled />
+                              </td>
+                              <td style={{ display: "none" }}>
+                                <input
+                                  type="number"
+                                  value={qty || 0}
+                                  onChange={(e) => handleSkuChange(id, "qty", e.target.value)}
+                                />
+                              </td>
+                              <td style={{ display: "none" }}>
+                                <select value={uom || "pc"} onChange={(e) => handleSkuChange(id, "uom", e.target.value)}>
+                                  <option value="pc">PC</option>
+                                  <option value="case">Case</option>
+                                  <option value="ibx">IBX</option>
+                                </select>
+                              </td>
+                              <td style={{ display: "none" }}>
+                                {(Number(srp || 0) * Number(qty || 0)).toFixed(2)}
+                              </td>
+                              <td style={{ display: "none" }}>
+                                <input
+                                  type="number"
+                                  value={discount ?? 0}
+                                  step="0.01"
+                                  onChange={(e) => handleSkuChange(id, "discount", e.target.value === "" ? 0 : parseFloat(e.target.value))}
+                                />
+                              </td>
+                              <td style={{ padding: "10px", border: "1px solid #ddd" }}>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={total_amount ?? 0}
+                                  onChange={(e) => handleSkuChange(id, "total_amount", parseFloat(e.target.value) || 0)}
+                                  style={{ width: "100%", padding: "8px", borderRadius: "5px", border: "1px solid #ddd" }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ backgroundColor: "#eef4ff", fontWeight: "bold", textAlign: "center" }}>
+                            <td style={{ padding: "10px", border: "1px solid #ddd" }}>Total</td>
+                            <td style={{ display: "none" }}></td>
+                            <td style={{ display: "none" }}></td>
+                            <td style={{ display: "none" }}></td>
+                            <td style={{ display: "none" }}></td>
+                            <td style={{ display: "none" }}></td>
+                            <td style={{ padding: "10px", border: "1px solid #ddd" }}>{branchTotal.toFixed(2)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  );
+                })}
+
+                <div className="mt-4">
+                  <h4 className="text-center mb-4">📊 Grand Total Summary</h4>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center" }}>
+                    <thead style={{ backgroundColor: "#3b82f6", color: "white" }}>
+                      <tr>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total QTY</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total Billing</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Total Discount</th>
+                        <th style={{ padding: "10px", border: "1px solid #ddd" }}>Grand Total</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      Billing Amount:
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      {skuList.reduce((sum, { total_amount }) => sum + Number(total_amount || 0), 0).toFixed(2)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd" }}>
-                      (-) Discount:
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", color: "red" }}>
-                      -{totalDiscountAll.toFixed(2)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold" }}>
-                      Total Billing (After Discount):
-                    </td>
-                    <td style={{ textAlign: "right", padding: "12px", border: "1px solid #ddd", fontWeight: "bold" }}>
-                      {skuList.reduce((sum, { total_amount }) => sum + Number(total_amount || 0), 0).toFixed(2)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td
-                      colSpan="8"
-                      style={{
-                        textAlign: "right",
-                        padding: "12px",
-                        border: "1px solid #ddd",
-                        fontWeight: "bold",
-                        fontSize: "16px",
-                        paddingTop: "20px",
-                        backgroundColor: "#f0f8ff",
-                      }}
-                    >
-                      Remaining Balance: {unifiedRemainingBalance.toFixed(2)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>{grandTotals.QTY}</td>
+                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>{grandTotals.BILLING_AMOUNT.toFixed(2)}</td>
+                        <td style={{ padding: "10px", border: "1px solid #ddd" }}>{grandTotals.DISCOUNT.toFixed(2)}</td>
+                        <td style={{ padding: "10px", border: "1px solid #ddd", fontWeight: "bold" }}>{grandTotals.TOTAL_AMOUNT.toFixed(2)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: "16px", padding: "12px", backgroundColor: "#f0f8ff", borderRadius: "8px", fontWeight: "bold", textAlign: "right" }}>
+                  Remaining Balance: {unifiedRemainingBalance.toFixed(2)}
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "16px", marginTop: "30px" }}>
             <button
