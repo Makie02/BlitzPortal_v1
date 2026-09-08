@@ -42,7 +42,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
         regularpwpcode: 'Regular PWP Code',
         account_type: 'Account Type',
         activity: 'Activity',
-        expenseType: 'Expense Type',
         pwptype: 'PWP Type',
         activityDurationFrom: 'Activity From',
         activityDurationTo: 'Activity To',
@@ -277,7 +276,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
     };
 
     const [activityNameCache, setActivityNameCache] = useState({});
-    const [activityExpenseTypeCache, setActivityExpenseTypeCache] = useState({});
 
 
     const [accountTypeNameCache, setAccountTypeNameCache] = useState({});
@@ -287,7 +285,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
         try {
             const { data, error } = await supabase
                 .from('activity')
-                .select('code, name, expense_type')
+                .select('code, name')
                 .eq('code', code)
                 .single();
 
@@ -296,19 +294,10 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     ...prev,
                     [code]: data.name,
                 }));
-                setActivityExpenseTypeCache(prev => ({
-                    ...prev,
-                    [code]: data.expense_type,
-                }));
             }
         } catch (err) {
             console.error('Error fetching activity name:', err.message);
         }
-    };
-    const getExpenseTypeDisplay = () => {
-        const code = String(data?.activity || '').trim();
-        if (!code) return null;
-        return activityExpenseTypeCache[code] || null;
     };
     const getUserNameById = (userId) => {
         return userNames[userId] || userNames[String(userId)] || userNames[Number(userId)] || `User ${userId}`;
@@ -1021,13 +1010,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                     <div className="modal-form-content">
                         {/* ✅ Custom Field Order for Regular PWP */}
                         {type === 'Regular PWP' ? (() => {
-// ✅ NEW: 'expenseType' is a virtual key (hindi galing sa `data`,
-                            // kundi resolved via activityExpenseTypeCache), kaya special-case
-                            // siya sa visibility check at sa pag-render ng value.
                             const getVisibleKeys = (keys) => keys.filter((key) => {
-                                if (key === 'expenseType') {
-                                    return !!getExpenseTypeDisplay();
-                                }
                                 const value = data[key];
                                 if (value === null || value === undefined) return false;
                                 if (typeof value === 'string' && value.trim() === '') return false;
@@ -1048,9 +1031,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                         {visibleKeys.map((k) => (
                                             <div className="form-group" key={k}>
                                                 <label>{formatFieldName(k)}</label>
-                                                <div className="readonly-box">
-                                                    {k === 'expenseType' ? getExpenseTypeDisplay() : formatValue(data[k], k)}
-                                                </div>
+                                                <div className="readonly-box">{formatValue(data[k], k)}</div>
                                             </div>
                                         ))}
                                     </div>
@@ -1058,7 +1039,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                             };
 
                             const restGroups = [
-                                { keys: ['activity', 'expenseType', 'activityDurationFrom', 'activityDurationTo', 'created_at', 'coverPwpCode', 'createForm', 'isPartOfCoverPwp'], span: 4 },
+                                { keys: ['activity', 'activityDurationFrom', 'activityDurationTo', 'created_at', 'coverPwpCode', 'createForm', 'isPartOfCoverPwp'], span: 4 },
                                 { keys: ['objective'], span: 2 },
                                 { keys: ['promoScheme'], span: 2 },
                                 { keys: ['accounts'], span: 4 },
@@ -1071,7 +1052,7 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                         {renderBox(['accountType'], 'accountType')}
                                         {renderBox(['branchType'], 'branchType')}
                                     </div>
-                            {restGroups.map((group, idx) => {
+                                    {restGroups.map((group, idx) => {
                                         const visibleKeys = getVisibleKeys(group.keys);
                                         if (visibleKeys.length === 0) return null;
                                         return (
@@ -1083,15 +1064,12 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                                 {visibleKeys.map((key) => (
                                                     <div className="form-group" key={key}>
                                                         <label>{formatFieldName(key)}</label>
-                                                        <div className="readonly-box">
-                                                            {key === 'expenseType' ? getExpenseTypeDisplay() : formatValue(data[key], key)}
-                                                        </div>
+                                                        <div className="readonly-box">{formatValue(data[key], key)}</div>
                                                     </div>
                                                 ))}
                                             </div>
                                         );
                                     })}
-                                 
                                 </>
                             );
                         })() : (
@@ -1435,13 +1413,13 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                     .filter(row => row.sku_code !== 'Total:' && row.sku_code !== 'Total')
                                     .map((row) => (
                                         <tr key={row.id} style={{ borderBottom: '1px solid #ddd' }}>
-                                            <td style={{ padding: '8px' }}>{row.account_name ?? '-'}</td>
+                                            <td style={{ padding: '8px', verticalAlign: 'top' }}>{row.account_name ?? '-'}</td>
 
-                                            <td style={{ padding: '8px' }}>
+                                            <td style={{ padding: '8px', whiteSpace: 'pre-line', verticalAlign: 'top' }}>
                                                 {categoryMap[row.sku_code] || row.sku_code || '-'}
                                             </td>
 
-                                            <td style={{ padding: '8px' }}>
+                                            <td style={{ padding: '8px', verticalAlign: 'top' }}>
                                                 {row.total_amount != null
                                                     ? Number(row.total_amount).toLocaleString()
                                                     : '-'}
@@ -1502,7 +1480,6 @@ const ViewDataModal = ({ visaCode, onClose, userType, onLoadComplete }) => {
                                             .toLocaleString()}
                                     </td>
                                     <td style={{ padding: '10px' }}></td>
-
                                 </tr>
                             </tfoot>
                         </table>
