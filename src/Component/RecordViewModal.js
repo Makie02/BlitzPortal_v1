@@ -15,7 +15,6 @@ const RecordViewModal = ({ record, onClose }) => {
   const [categoryMap, setCategoryMap] = useState({});
   const [distributorMap, setDistributorMap] = useState({});
   const [activityMap, setActivityMap] = useState({});
-  const [activityExpenseTypeMap, setActivityExpenseTypeMap] = useState({});
   const [filteredBudgetHistory, setFilteredBudgetHistory] = useState([]);
   const [remarksNote, setRemarksNote] = useState(null);
 
@@ -190,7 +189,7 @@ const RecordViewModal = ({ record, onClose }) => {
       while (moreData) {
         const { data, error } = await supabase
           .from("activity")
-          .select("code, name, expense_type")
+          .select("code, name")
           .range(from, from + chunkSize - 1);
 
         if (error) throw error;
@@ -204,24 +203,16 @@ const RecordViewModal = ({ record, onClose }) => {
       }
 
       const map = {};
-      const expenseTypeMap = {};
       allData.forEach((item) => {
-        const codeKey = String(item.code).trim();
-        map[codeKey] = item.name;
-        expenseTypeMap[codeKey] = item.expense_type;
+        map[String(item.code).trim()] = item.name;
       });
 
       setActivityMap(map);
-      setActivityExpenseTypeMap(expenseTypeMap);
     } catch (err) {
       console.error("❌ Failed to fetch activity:", err.message);
     }
   };
-  const getExpenseTypeForActivity = (activityValue) => {
-    if (!activityValue) return null;
-    const strCode = String(activityValue).trim();
-    return activityExpenseTypeMap[strCode] || null;
-  };
+
   const fetchRemarksNote = async () => {
     try {
       const pwpCode = record?.source === "cover_pwp" ? record?.cover_code : record?.regularpwpcode;
@@ -796,7 +787,7 @@ const RecordViewModal = ({ record, onClose }) => {
 
                     return true;
                   })
-                  .flatMap(([key, value]) => {
+                  .map(([key, value]) => {
                     const displayValue =
                       (key === "accountType" || key === "account_type") && Object.keys(categoryMap).length > 0
                         ? convertCodesToNames(value)
@@ -805,7 +796,7 @@ const RecordViewModal = ({ record, onClose }) => {
 
                     const isLong = typeof displayValue === "string" && displayValue.length > 60;
 
-                    const cards = [
+                    return (
                       <InfoCard key={key} label={formatColumnName(key)} wide={isLong}>
                         <span
                           style={{
@@ -815,24 +806,8 @@ const RecordViewModal = ({ record, onClose }) => {
                         >
                           {displayValue}
                         </span>
-                      </InfoCard>,
-                    ];
-
-                    // ✅ NEW: kapag activity ang column, isabay ang Expense Type card
-                    if (key === "activity" || key === "activity_code") {
-                      const expenseType = getExpenseTypeForActivity(value);
-                      if (expenseType) {
-                        cards.push(
-                          <InfoCard key={`${key}_expense_type`} label="Expense Type">
-                            <span style={{ whiteSpace: "normal", fontWeight: 500 }}>
-                              {expenseType}
-                            </span>
-                          </InfoCard>
-                        );
-                      }
-                    }
-
-                    return cards;
+                      </InfoCard>
+                    );
                   })}
               </div>
 
@@ -972,10 +947,12 @@ const RecordViewModal = ({ record, onClose }) => {
                       <tbody>
                         {regularSkuData.map((row, index) => (
                           <tr key={row.id || index} style={{ backgroundColor: index % 2 === 0 ? colors.surface : colors.bg }}>
-                            <td style={tdStyle}>{row.id}</td>
-                            <td style={tdStyle}>{row.account_name}</td>
-                            <td style={tdStyle}>{categoryMap[String(row.sku_code).trim()] || row.sku_code || "-"}</td>
-                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600 }}>
+                            <td style={{ ...tdStyle, verticalAlign: "top" }}>{row.id}</td>
+                            <td style={{ ...tdStyle, verticalAlign: "top" }}>{row.account_name}</td>
+                            <td style={{ ...tdStyle, whiteSpace: "pre-line", verticalAlign: "top" }}>
+                              {categoryMap[String(row.sku_code).trim()] || row.sku_code || "-"}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600, verticalAlign: "top" }}>
                               {row.total_amount
                                 ? `₱${Number(row.total_amount).toLocaleString("en-PH", {
                                   minimumFractionDigits: 2,
