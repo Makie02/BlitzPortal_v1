@@ -894,7 +894,8 @@ const RegularVisaForm = () => {
       selectedActivity &&
       (selectedActivity.name?.toUpperCase().includes("BAD ORDER") ||
         selectedActivity.code === 10007 ||
-        selectedActivity.name?.toUpperCase().includes("LISTING FEE"))
+        selectedActivity.name?.toUpperCase().includes("LISTING FEE") ||
+        selectedActivity.name?.toUpperCase().includes("BUNDLING"))
     ) {
       return false;
     }
@@ -6012,7 +6013,7 @@ const RegularVisaForm = () => {
 
               <Card.Body>
                 {/* Branch / Sub-Account Selector */}
-           <div className="mt-3">
+                <div className="mt-3">
                   {(() => {
                     const storesList = getFilteredBranchesWithExtras();
 
@@ -6047,11 +6048,18 @@ const RegularVisaForm = () => {
                                     </td>
                                     <td>
                                       <Form.Control
+                                        as="textarea"
+                                        rows={3}
                                         value={row.SKUITEM || ""}
                                         onChange={(e) =>
                                           handleChangeSkuForBranch(store.name, 0, "SKU_NOTES", e.target.value)
                                         }
-                                        placeholder="Enter SKU / Notes"
+                                        placeholder={"Enter SKU / Notes\n(one item per line)"}
+                                        style={{
+                                          resize: "vertical",
+                                          minHeight: "80px",
+                                          whiteSpace: "pre-wrap",
+                                        }}
                                       />
                                     </td>
                                     <td>
@@ -6078,7 +6086,7 @@ const RegularVisaForm = () => {
                 </div>
 
 
-          
+
               </Card.Body>
 
 
