@@ -4,6 +4,76 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { FaCheckCircle, FaSearch, FaCalendarAlt, FaFileExcel, FaFilePdf } from "react-icons/fa";
 
+// Source ng details (second page) per activity:
+// "sku" → regular_sku | "budget" → regular_accountlis_badget (store + budget)
+const SUMMARY_GROUPS = {
+  "Listing Fee": { source: "sku" },
+  "Bundling": { source: "sku" },
+  "Penalty": { source: "budget", extra: { col: "penalty", label: "PENALTY" } },
+  "Supplies / Material Expense": { source: "budget", extra: { col: "suppliesme", label: "SUPPLIES / MATERIAL EXPENSE" } },
+  "Display Allowance": { source: "budget" },
+  "Change Vendor Fee": { source: "budget" },
+};
+// mga special (may sariling source/extra); lahat ng ibang activity = "budget" (store + budget)
+const SPECIAL_ACTIVITIES = Object.keys(SUMMARY_GROUPS);
+const getGroupCfg = (title) => SUMMARY_GROUPS[title] || { source: "budget" };
+
+const getSummaryKey = (item, activityMap) => {
+  const rawName = (activityMap[String(item.activity_code)] || "").trim();
+  const actName = rawName.toLowerCase().replace(/\s+/g, " ");
+  if (!actName) return null;
+  if (actName.includes("listing fee")) return "Listing Fee";
+  if (actName.includes("bundling")) return "Bundling";
+  if (actName.includes("display allowance")) return "Display Allowance";
+  if (/change\s*(distributor|vendor)/.test(actName)) return "Change Vendor Fee";
+  if (actName.includes("penalt")) return "Penalty";
+  if (/suppl|material expense/.test(actName)) return "Supplies / Material Expense";
+  // lahat ng iba: gamitin mismo ang pangalan ng activity (hal. "ANNIVERSARY SUPPORT")
+  return rawName;
+};
+
+// penalty / suppliesme pwedeng array, JSON string, o plain text
+const fmtList = (v) => {
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "-";
+  if (typeof v === "string" && v.trim().startsWith("[")) {
+    try { const arr = JSON.parse(v); if (Array.isArray(arr)) return arr.length ? arr.join(", ") : "-"; } catch (e) { /* plain text */ }
+  }
+  return v ? String(v) : "-";
+};
+
+// branchType pwedeng array, JSON string, o double-encoded → gawing malinis na listahan ng stores
+const parseStoreList = (v, depth = 0) => {
+  if (v == null || depth > 5) return [];
+  if (Array.isArray(v)) return v.flatMap(x => parseStoreList(x, depth + 1));
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (t.startsWith("[") || t.startsWith('"')) {
+      try { return parseStoreList(JSON.parse(t), depth + 1); } catch (e) { /* plain text */ }
+    }
+    return t ? [t] : [];
+  }
+  return [String(v)];
+};
+
+// SKU Data source: regular_sku (sinusulat ng RegularVisaForm → handleSku)
+const SKU_CONFIG = {
+  table: "regular_sku",
+  pwpColumn: "regular_code",   // PWP code (hal. R2026-11667)
+  idCol: "id",
+  accountCol: "account_name",
+  skuCol: "sku_code",
+  amountCol: "total_amount",
+};
+
+// Display Allowance / Change Vendor Fee: Store + Budget Amount lang
+// (sinusulat ng RegularVisaForm → submit_all → regular_accountlis_badget)
+const BUDGET_CONFIG = {
+  table: "regular_accountlis_badget",
+  pwpColumn: "regularcode",
+  accountCol: "account_name",
+  amountCol: "budget",
+};
+
 const ApprovalList = () => {
   const [approvalData, setApprovalData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -19,7 +89,15 @@ const ApprovalList = () => {
   const [accountUsers, setAccountUsers] = useState([]);
   const [distributorMap, setDistributorMap] = useState({});
   const [activityMap, setActivityMap] = useState({});
-
+  const [activeTab, setActiveTab] = useState("history"); // "history" | "summary"
+  const [activityFilter, setActivityFilter] = useState("All"); // summary tab: All | Listing Fee | ...
+  const [dateBasis, setDateBasis] = useState("created_at");    // created_at | DateResponded
+  const [summaryPages, setSummaryPages] = useState({});        // per-table page
+  const summaryRowsPerPage = 10;
+  const [expandedRows, setExpandedRows] = useState({});   // rowKey → true (dropdown open)
+  const [detailsCache, setDetailsCache] = useState({});     // `${mode}|${PwpCode}` → { loading, error, rows }
+  const [summaryDetails, setSummaryDetails] = useState({ sku: {}, budget: {} }); // source → PwpCode → rows
+  const [summaryDetailsLoading, setSummaryDetailsLoading] = useState(false);
   // ── Remarks Modal ──────────────────────────────────────────
   const [selectedRemarks, setSelectedRemarks] = useState(null);
   const [showRemarksModal, setShowRemarksModal] = useState(false);
@@ -231,6 +309,8 @@ const ApprovalList = () => {
             activity_code: pwpDetail.activity || null,
             credit_budget: pwpDetail.credit_budget || null,
             branchType: pwpDetail.branchType || null,
+            storeName: pwpDetail.branchType || null, // ⚠️ palitan ng actual store name column
+            skus: pwpDetail.skus || null,            // ⚠️ palitan ng actual SKU source
             activityDurationFrom: pwpDetail.activityDurationFrom || null,
             activityDurationTo: pwpDetail.activityDurationTo || null,
             pwpType: regularMap[item.PwpCode] ? "Regular" : coverMap[item.PwpCode] ? "Cover" : "-",
@@ -270,7 +350,20 @@ const ApprovalList = () => {
       });
     }
 
-    if (filterStatus !== "All") {
+    if (activeTab === "summary") {
+      const seenPwp = new Set();
+      filtered = filtered.filter(item => {
+            if (item.Response !== "Approved") return false;
+        if (item.pwpType !== "Regular") return false;
+        const key = getSummaryKey(item, activityMap);
+        if (!key) return false;
+        if (activityFilter !== "All" && key !== activityFilter) return false;
+        // isang beses lang kada PWP (may multiple approval rows minsan)
+        if (seenPwp.has(item.PwpCode)) return false;
+        seenPwp.add(item.PwpCode);
+        return true;
+      });
+    } else if (filterStatus !== "All") {
       filtered = filtered.filter(item => item.Response === filterStatus);
     }
 
@@ -282,7 +375,9 @@ const ApprovalList = () => {
 
       let matchesDate = true;
       if (dateFrom || dateTo) {
-        const itemDate = new Date(item.created_at);
+        const rawDate = item[dateBasis];
+        if (!rawDate) return false;
+        const itemDate = new Date(rawDate);
         if (dateFrom && itemDate < new Date(dateFrom)) matchesDate = false;
         if (dateTo && itemDate > new Date(dateTo + 'T23:59:59')) matchesDate = false;
       }
@@ -292,14 +387,301 @@ const ApprovalList = () => {
 
     setFilteredData(filtered);
     setCurrentPage(1);
+    setSummaryPages({});
+    setExpandedRows({});
   }, [approvalData, searchTerm, dateFrom, dateTo, currentUserId, role,
-      filterStatus, assignedDistributorCodes, distributorMap]);
+      filterStatus, assignedDistributorCodes, distributorMap, activeTab,
+      activityFilter, dateBasis, activityMap]);
 
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   );
+
+  // ── Summary grouping (Listing Fee / Display Allowance / Change Vendor Fee) ──
+    const summaryGroups = useMemo(() => {
+    const groups = {};
+    filteredData.forEach(item => {
+      const key = getSummaryKey(item, activityMap);
+      if (!key) return;
+      (groups[key] = groups[key] || []).push(item);
+    });
+    return groups;
+  }, [filteredData, activityMap]);
+
+  // listahan ng lahat ng activity na may approved PWP (special muna, tapos alphabetical)
+  // listahan ng activity na may approved PWP (base sa approvalData para laging kumpleto ang buttons)
+  const summaryActivities = useMemo(() => {
+    const names = new Set();
+    approvalData.forEach(item => {
+      if (item.Response !== "Approved" || item.pwpType !== "Regular") return;
+      const k = getSummaryKey(item, activityMap);
+      if (k) names.add(k);
+    });
+    const others = [...names].filter(k => !SPECIAL_ACTIVITIES.includes(k)).sort();
+    return [...SPECIAL_ACTIVITIES.filter(k => names.has(k)), ...others];
+  }, [approvalData, activityMap]);
+  useEffect(() => {
+    if (activeTab !== "summary") return;
+    let cancelled = false;
+    const run = async () => {
+      const skuCodes = new Set();
+      const budgetCodes = new Set();
+      Object.keys(summaryGroups).forEach(t => (summaryGroups[t] || []).forEach(r => {
+        if (!r.PwpCode) return;
+        (getGroupCfg(t).source === "sku" ? skuCodes : budgetCodes).add(r.PwpCode);
+      }));
+      setSummaryDetailsLoading(true);
+      try {
+        const [skuRows, budgetRows] = await Promise.all([
+          skuCodes.size ? fetchDetailsByCodes(SKU_CONFIG.table, SKU_CONFIG.pwpColumn, [...skuCodes]) : [],
+          budgetCodes.size ? fetchDetailsByCodes(BUDGET_CONFIG.table, BUDGET_CONFIG.pwpColumn, [...budgetCodes]) : [],
+        ]);
+        const groupBy = (rows, col) => rows.reduce((m, r) => { (m[r[col]] = m[r[col]] || []).push(r); return m; }, {});
+        if (!cancelled) {
+          setSummaryDetails({
+            sku: groupBy(skuRows, SKU_CONFIG.pwpColumn),
+            budget: groupBy(budgetRows, BUDGET_CONFIG.pwpColumn),
+          });
+        }
+      } catch (err) {
+        console.error("Error loading summary details:", err);
+        if (!cancelled) setError("Failed to load store details: " + (err.message || err));
+      } finally {
+        if (!cancelled) setSummaryDetailsLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [summaryGroups, activeTab]);
+  const fmtAmount = (v) =>
+    v != null ? `₱${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-';
+
+  const getGroupInfo = (item) => {
+       const grp = getGroupCfg(getSummaryKey(item, activityMap));
+    const mode = grp.source === "sku" ? "sku" : "budget";
+    return { mode, extra: grp.extra || null, cfg: mode === "sku" ? SKU_CONFIG : BUDGET_CONFIG };
+  };
+
+  const loadDetails = async (item) => {
+    const { mode, cfg } = getGroupInfo(item);
+    const ck = `${mode}|${item.PwpCode}`;
+    if (detailsCache[ck]) return; // cached na
+    setDetailsCache(prev => ({ ...prev, [ck]: { loading: true, error: null, rows: [] } }));
+    try {
+      const { data, error } = await supabase
+        .from(cfg.table)
+        .select("*")
+        .eq(cfg.pwpColumn, item.PwpCode);
+      console.log("[Details]", cfg.table, `${cfg.pwpColumn} = ${item.PwpCode}`, "→", data?.length ?? 0, "rows", { data, error });
+      if (error) throw error;
+      setDetailsCache(prev => ({ ...prev, [ck]: { loading: false, error: null, rows: data || [] } }));
+    } catch (err) {
+      console.error("Error fetching PWP details:", err);
+      setDetailsCache(prev => ({ ...prev, [ck]: { loading: false, error: err.message, rows: [] } }));
+    }
+  };
+
+  const toggleRow = (item, rowKey) => {
+    const willOpen = !expandedRows[rowKey];
+    setExpandedRows(prev => ({ ...prev, [rowKey]: willOpen }));
+    if (willOpen) loadDetails(item);
+  };
+
+  // Dropdown panel sa ilalim ng row: lahat ng store ng PWP
+  const renderDetailsPanel = (item) => {
+    const { mode, extra, cfg } = getGroupInfo(item);
+    const entry = detailsCache[`${mode}|${item.PwpCode}`] || { loading: true, error: null, rows: [] };
+    const stores = parseStoreList(item.branchType);
+    const usingFallback = !entry.loading && !entry.error && entry.rows.length === 0 && stores.length > 0;
+    const rows = entry.rows.length > 0
+      ? entry.rows
+      : stores.map(name => ({ [BUDGET_CONFIG.accountCol]: name, [SKU_CONFIG.accountCol]: name, [SKU_CONFIG.skuCol]: "-" }));
+    const amountCol = mode === "budget" ? BUDGET_CONFIG.amountCol : SKU_CONFIG.amountCol;
+    const total = entry.rows.reduce((sum, d) => sum + (Number(d[amountCol]) || 0), 0);
+    const headers = mode === "budget"
+      ? ["STORE", ...(extra ? [extra.label] : []), "BUDGET AMOUNT"]
+      : ["ID", "ACCOUNT NAME", "SKU / NOTES", "TOTAL AMOUNT"];
+
+    const nth = { padding: '8px 12px', fontSize: '11px', fontWeight: 600, color: '#78909c', borderBottom: '1px solid #e0e0e0', backgroundColor: '#f8f9fa' };
+    const ntd = { padding: '8px 12px', fontSize: '13px', color: '#111', borderBottom: '1px solid #eee', whiteSpace: 'pre-wrap' };
+    const ntdR = { ...ntd, textAlign: 'right', fontWeight: 700 };
+
+    return (
+      <div style={{ padding: '14px 18px' }}>
+        <div style={{ fontSize: '12px', color: '#555', marginBottom: '8px' }}>
+          Stores for <strong style={{ fontFamily: 'monospace' }}>{item.PwpCode}</strong>
+          {!entry.loading && !entry.error && ` · ${rows.length} store${rows.length !== 1 ? 's' : ''}`}
+        </div>
+
+        {entry.loading && <p style={{ margin: 0, color: '#666', fontSize: '13px' }}>Loading details...</p>}
+
+        {entry.error && (
+          <div style={{ padding: '10px 14px', backgroundColor: '#ffebee', border: '1px solid #ef5350', borderRadius: '6px', color: '#c62828', fontSize: '13px' }}>
+            <strong>Error:</strong> {entry.error}
+            <div style={{ marginTop: '4px', color: '#888' }}>Check SKU_CONFIG / BUDGET_CONFIG (table / column names) sa taas ng file.</div>
+          </div>
+        )}
+
+        {!entry.loading && !entry.error && rows.length === 0 && (
+          <p style={{ margin: 0, color: '#888', fontSize: '13px' }}>
+            No details found for this PWP.
+            <span style={{ display: 'block', fontSize: '11px', color: '#aaa', marginTop: '2px' }}>
+              Checked: {cfg.table}.{cfg.pwpColumn} = {item.PwpCode}
+            </span>
+          </p>
+        )}
+
+        {!entry.loading && !entry.error && rows.length > 0 && (
+          <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'white' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  {headers.map(h => (
+                    <th key={h} style={{ ...nth, textAlign: h.includes('AMOUNT') ? 'right' : 'left' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((d, i) => (
+                  <tr key={d.id ?? i}>
+                    {mode === "budget" ? (
+                      <>
+                        <td style={ntd}>{d[BUDGET_CONFIG.accountCol] ?? '-'}</td>
+                        {extra && <td style={ntd}>{fmtList(d[extra.col])}</td>}
+                        <td style={ntdR}>{fmtAmount(d[BUDGET_CONFIG.amountCol])}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={ntd}>{d[SKU_CONFIG.idCol] ?? '-'}</td>
+                        <td style={ntd}>{d[SKU_CONFIG.accountCol] ?? '-'}</td>
+                        <td style={ntd}>{d[SKU_CONFIG.skuCol] ?? '-'}</td>
+                        <td style={ntdR}>{fmtAmount(d[SKU_CONFIG.amountCol])}</td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+                {entry.rows.length > 0 && (
+                  <tr style={{ backgroundColor: '#eef2ff' }}>
+                    <td colSpan={headers.length - 1} style={{ ...ntd, textAlign: 'right', fontWeight: 700 }}>Total:</td>
+                    <td style={{ ...ntdR, color: '#3f3fc4' }}>{fmtAmount(total)}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {usingFallback && (
+          <div style={{ marginTop: '10px', fontSize: '12px', color: '#8a6d3b', backgroundColor: '#fff3cd', border: '1px solid #ffe08a', borderRadius: '6px', padding: '8px 12px' }}>
+            ⚠️ Walang per-store amount na naka-save para sa PWP na ito. Stores lang ang ipinapakita.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // isang row per STORE (amount ng store, hindi ng buong PWP)
+  const buildFlatRows = (title, rows) => {
+    const cfg = getGroupCfg(title);
+    return rows.flatMap(r => {
+      const dist = distributorMap[String(r.distributor)] || r.distributor || '-';
+      const list = (summaryDetails[cfg.source] || {})[r.PwpCode] || [];
+      if (list.length === 0) {
+        return [{
+          key: `${r.id}-none`, dist, pwp: r.PwpCode || '-',
+          store: parseStoreList(r.branchType).join(', ') || '-',
+          col: '-', amount: null,
+        }];
+      }
+      return list.map((d, i) => cfg.source === "sku"
+        ? { key: `${r.id}-${d.id ?? i}`, dist, pwp: r.PwpCode || '-',
+            store: d[SKU_CONFIG.accountCol] ?? '-', col: d[SKU_CONFIG.skuCol] ?? '-',
+            amount: Number(d[SKU_CONFIG.amountCol]) || 0 }
+        : { key: `${r.id}-${d.id ?? i}`, dist, pwp: r.PwpCode || '-',
+            store: d[BUDGET_CONFIG.accountCol] ?? '-',
+            col: cfg.extra ? fmtList(d[cfg.extra.col]) : '',
+            amount: Number(d[BUDGET_CONFIG.amountCol]) || 0 });
+    });
+  };
+  const renderSummaryTable = (title, rows) => {
+    const cfg = getGroupCfg(title);
+    const colLabel = cfg.source === "sku" ? "SKU'S" : cfg.extra ? cfg.extra.label : null;
+    const flat = buildFlatRows(title, rows);
+    const total = flat.reduce((s, r) => s + (r.amount || 0), 0);
+    const pages = Math.max(1, Math.ceil(flat.length / summaryRowsPerPage));
+    const page = Math.min(summaryPages[title] || 1, pages);
+    const pageRows = flat.slice((page - 1) * summaryRowsPerPage, page * summaryRowsPerPage);
+    const setPage = (p) => setSummaryPages(prev => ({ ...prev, [title]: p }));
+    const colCount = colLabel ? 5 : 4;
+
+    const th = { padding: '10px 14px', border: '1px solid #333', fontSize: '13px', fontWeight: 600, textAlign: 'left', backgroundColor: '#f1f5ff' };
+    const td = { padding: '10px 14px', border: '1px solid #333', fontSize: '13px', color: '#111' };
+    const pgBtn = (disabled) => ({
+      padding: '6px 14px', border: 'none', borderRadius: '6px', fontSize: '13px',
+      backgroundColor: disabled ? '#f5f5f5' : '#2196f3', color: disabled ? '#999' : 'white',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+    });
+
+    return (
+      <div key={title} style={{ marginBottom: '32px' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: '15px', fontWeight: 700 }}>
+          {title.toUpperCase()}{' '}
+          <span style={{ fontWeight: 400, color: '#666', fontSize: '13px' }}>
+            ({rows.length} PWP · {flat.length} store{flat.length !== 1 ? 's' : ''})
+          </span>
+        </h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+            <thead>
+              <tr>
+                <th style={th}>DISTRIBUTOR</th>
+                <th style={th}>PWP#</th>
+                <th style={th}>STORE NAME</th>
+                {colLabel && <th style={th}>{colLabel}</th>}
+                <th style={{ ...th, textAlign: 'right' }}>AMOUNT</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaryDetailsLoading ? (
+                <tr><td colSpan={colCount} style={{ ...td, textAlign: 'center', color: '#888' }}>Loading store details...</td></tr>
+              ) : flat.length === 0 ? (
+                <tr><td colSpan={colCount} style={{ ...td, textAlign: 'center', color: '#888' }}>No approved records.</td></tr>
+              ) : pageRows.map(r => (
+                <tr key={r.key}>
+                  <td style={td}>{r.dist}</td>
+                  <td style={{ ...td, fontFamily: 'monospace' }}>{r.pwp}</td>
+                  <td style={td}>{r.store}</td>
+                  {colLabel && <td style={td}>{r.col}</td>}
+                  <td style={{ ...td, textAlign: 'right' }}>{r.amount == null ? '-' : fmtAmount(r.amount)}</td>
+                </tr>
+              ))}
+              {!summaryDetailsLoading && flat.length > 0 && (
+                <tr style={{ fontWeight: 700, backgroundColor: '#fafafa' }}>
+                  <td style={td} colSpan={colCount - 1}>TOTAL (all {flat.length} stores)</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{fmtAmount(total)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {flat.length > 0 && !summaryDetailsLoading && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginTop: '10px' }}>
+            <div style={{ fontSize: '13px', color: '#666' }}>
+              Showing {(page - 1) * summaryRowsPerPage + 1} to {Math.min(page * summaryRowsPerPage, flat.length)} of {flat.length}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button onClick={() => setPage(Math.max(page - 1, 1))} disabled={page === 1} style={pgBtn(page === 1)}>Previous</button>
+              <span style={{ fontSize: '13px', color: '#333' }}>Page {page} of {pages}</span>
+              <button onClick={() => setPage(Math.min(page + 1, pages))} disabled={page === pages} style={pgBtn(page === pages)}>Next</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+  // ─────────────────────────────────────────────────────────────
 
   const getStatusStyle = (response) => {
     switch (response) {
@@ -432,7 +814,137 @@ const ApprovalList = () => {
     }
   };
 
+  // Kunin lahat ng rows ng details table para sa listahan ng PWP codes (batched)
+  const fetchDetailsByCodes = async (table, col, codes) => {
+    const out = [];
+    const chunk = 150;
+    for (let i = 0; i < codes.length; i += chunk) {
+      const batch = codes.slice(i, i + chunk);
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from(table)
+          .select("*")
+          .in(col, batch)
+          .order("id", { ascending: true })
+          .range(from, from + 999);
+        if (error) throw error;
+        out.push(...(data || []));
+        if (!data || data.length < 1000) break;
+        from += 1000;
+      }
+    }
+    return out;
+  };
+
+  // Report template: isang row per STORE (amount per store, galing sa second page / details)
+   const handleExportSummaryToExcel = async () => {
+    setExportLoading(true);
+    setError(null);
+    try {
+      const titles = activityFilter === "All" ? summaryActivities : [activityFilter];
+
+      const skuCodes = new Set();
+      const budgetCodes = new Set();
+      titles.forEach(t => (summaryGroups[t] || []).forEach(r => {
+        if (!r.PwpCode) return;
+        (getGroupCfg(t).source === "sku" ? skuCodes : budgetCodes).add(r.PwpCode);
+      }));
+
+      const [skuRows, budgetRows] = await Promise.all([
+        skuCodes.size ? fetchDetailsByCodes(SKU_CONFIG.table, SKU_CONFIG.pwpColumn, [...skuCodes]) : [],
+        budgetCodes.size ? fetchDetailsByCodes(BUDGET_CONFIG.table, BUDGET_CONFIG.pwpColumn, [...budgetCodes]) : [],
+      ]);
+
+      const groupBy = (rows, col) => rows.reduce((m, r) => { (m[r[col]] = m[r[col]] || []).push(r); return m; }, {});
+      const skuByPwp = groupBy(skuRows, SKU_CONFIG.pwpColumn);
+      const budgetByPwp = groupBy(budgetRows, BUDGET_CONFIG.pwpColumn);
+
+      const workbook = XLSX.utils.book_new();
+      let missing = 0;
+      let totalRows = 0;
+
+        titles.forEach(title => {
+        const cfg = getGroupCfg(title);
+        const rows = summaryGroups[title] || [];
+        if (rows.length === 0) return; // walang laman, walang sheet
+
+        const colLabel = cfg.source === "sku" ? "SKU" : cfg.extra ? cfg.extra.label : null;
+        const aoa = [];
+        aoa.push(colLabel
+          ? ["DISTRIBUTOR", "PWP#", "STORE", colLabel, "AMOUNT"]
+          : ["DISTRIBUTOR", "PWP#", "STORE", "AMOUNT"]);
+
+        let sheetTotal = 0;
+        rows.forEach(r => {
+          const dist = distributorMap[String(r.distributor)] || r.distributor || "-";
+          const pwp = r.PwpCode || "-";
+          const details = (cfg.source === "sku" ? skuByPwp : budgetByPwp)[r.PwpCode] || [];
+
+          if (details.length === 0) {
+            missing++;
+            totalRows++;
+            const store = parseStoreList(r.branchType).join(", ") || "-";
+            aoa.push(colLabel ? [dist, pwp, store, "-", ""] : [dist, pwp, store, ""]);
+            return;
+          }
+
+          details.forEach(d => {
+            totalRows++;
+            if (cfg.source === "sku") {
+              const amt = Number(d[SKU_CONFIG.amountCol]) || 0;
+              sheetTotal += amt;
+              aoa.push([dist, pwp, d[SKU_CONFIG.accountCol] ?? "-", d[SKU_CONFIG.skuCol] ?? "-", amt]);
+            } else {
+              const amt = Number(d[BUDGET_CONFIG.amountCol]) || 0;
+              sheetTotal += amt;
+              const store = d[BUDGET_CONFIG.accountCol] ?? "-";
+              aoa.push(colLabel
+                ? [dist, pwp, store, fmtList(d[cfg.extra.col]), amt]
+                : [dist, pwp, store, amt]);
+            }
+          });
+        });
+
+        aoa.push([]);
+        aoa.push(colLabel ? ["TOTAL", "", "", "", sheetTotal] : ["TOTAL", "", "", sheetTotal]);
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = colLabel
+          ? [{ wch: 32 }, { wch: 16 }, { wch: 38 }, { wch: 42 }, { wch: 16 }]
+          : [{ wch: 32 }, { wch: 16 }, { wch: 38 }, { wch: 16 }];
+
+        let sheetName = title.replace(/[\\/?*\[\]:]/g, "-").slice(0, 31);
+        let n = 2;
+        while (workbook.SheetNames.includes(sheetName)) {
+          sheetName = title.replace(/[\\/?*\[\]:]/g, "-").slice(0, 28) + "_" + n++;
+        }
+        XLSX.utils.book_append_sheet(workbook, ws, sheetName);
+      });
+
+      if (totalRows === 0) { setError('No approved records to export'); return; }
+
+      const buf = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const suffix = activityFilter === "All" ? "All" : activityFilter.replace(/[^A-Za-z]+/g, '');
+      saveAs(
+        new Blob([buf], { type: "application/octet-stream" }),
+        `ApprovedReport_${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`
+      );
+
+      if (missing > 0) {
+        setError(`Na-export na. ${missing} PWP ang walang per-store details (blank ang amount nila).`);
+      }
+    } catch (err) {
+      setError('Failed to export report: ' + (err.message || err));
+      console.error(err);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   const clearFilters = () => {
+    setActivityFilter("All");
+    setDateBasis("created_at");
     setSearchTerm("");
     setDateFrom("");
     setDateTo("");
@@ -463,6 +975,24 @@ const ApprovalList = () => {
           </p>
         </div>
 
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: '4px', padding: '0 30px', backgroundColor: '#f8f8f8', borderBottom: '1px solid #e0e0e0' }}>
+          {[
+            { key: 'history', label: '📋 Approval History' },
+            { key: 'summary', label: '✅ Approved Summary' },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
+              style={{
+                padding: '10px 20px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: 600,
+                backgroundColor: activeTab === t.key ? 'white' : 'transparent',
+                color: activeTab === t.key ? '#1976d2' : '#666',
+                borderBottom: activeTab === t.key ? '3px solid #1976d2' : '3px solid transparent',
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         {/* Filters */}
         <div style={{ padding: '20px 30px', backgroundColor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
           <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '15px' }}>
@@ -490,25 +1020,55 @@ const ApprovalList = () => {
                 style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
             </div>
 
-            {/* Status Buttons */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {['All', 'Approved', 'Disapproved', 'Cancelled'].map(status => {
-                const colors = { Approved: '#4caf50', Disapproved: '#f44336', Cancelled: '#ff9800', All: '#2196f3' };
-                const color = colors[status];
-                return (
-                  <button key={status} onClick={() => setFilterStatus(status)}
+            {/* Date basis */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '14px', color: '#666' }}>Date by:</span>
+              <select value={dateBasis} onChange={(e) => setDateBasis(e.target.value)}
+                style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', outline: 'none', backgroundColor: 'white' }}>
+                <option value="created_at">Created At</option>
+                <option value="DateResponded">Date Responded</option>
+              </select>
+            </div>
+
+            {/* Status Buttons (history tab only) */}
+            {activeTab === 'history' && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {['All', 'Approved', 'Disapproved', 'Cancelled'].map(status => {
+                  const colors = { Approved: '#4caf50', Disapproved: '#f44336', Cancelled: '#ff9800', All: '#2196f3' };
+                  const color = colors[status];
+                  return (
+                    <button key={status} onClick={() => setFilterStatus(status)}
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: filterStatus === status ? color : 'white',
+                        color: filterStatus === status ? 'white' : '#666',
+                        border: `2px solid ${color}`,
+                        borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', transition: 'all 0.2s'
+                      }}>
+                      {status === 'Approved' && '✓ '}{status === 'Disapproved' && '✕ '}{status === 'Cancelled' && '⊘ '}{status}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Activity Filter (summary tab only) */}
+            {activeTab === 'summary' && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                             {['All', ...summaryActivities].map(act => (
+                  <button key={act} onClick={() => setActivityFilter(act)}
                     style={{
                       padding: '8px 16px',
-                      backgroundColor: filterStatus === status ? color : 'white',
-                      color: filterStatus === status ? 'white' : '#666',
-                      border: `2px solid ${color}`,
-                      borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', transition: 'all 0.2s'
+                      backgroundColor: activityFilter === act ? '#1976d2' : 'white',
+                      color: activityFilter === act ? 'white' : '#666',
+                      border: '2px solid #1976d2',
+                      borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'
                     }}>
-                    {status === 'Approved' && '✓ '}{status === 'Disapproved' && '✕ '}{status === 'Cancelled' && '⊘ '}{status}
+                    {act}
                   </button>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
 
             <button onClick={clearFilters}
               style={{ padding: '8px 16px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
@@ -518,14 +1078,16 @@ const ApprovalList = () => {
 
           {/* Export Buttons */}
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={handleExportToExcel} disabled={exportLoading}
+            <button onClick={activeTab === 'summary' ? handleExportSummaryToExcel : handleExportToExcel} disabled={exportLoading}
               style={{ padding: '10px 20px', backgroundColor: exportLoading ? '#ccc' : '#4caf50', color: 'white', border: 'none', borderRadius: '6px', cursor: exportLoading ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FaFileExcel />{exportLoading ? 'Generating...' : 'Generate Excel'}
+              <FaFileExcel />{exportLoading ? 'Generating...' : activeTab === 'summary' ? 'Export Report Excel' : 'Generate Excel'}
             </button>
-            <button onClick={handleExportToPDF} disabled={exportLoading}
-              style={{ padding: '10px 20px', backgroundColor: exportLoading ? '#ccc' : '#f44336', color: 'white', border: 'none', borderRadius: '6px', cursor: exportLoading ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FaFilePdf />{exportLoading ? 'Generating...' : 'Generate PDF'}
-            </button>
+            {activeTab === 'history' && (
+              <button onClick={handleExportToPDF} disabled={exportLoading}
+                style={{ padding: '10px 20px', backgroundColor: exportLoading ? '#ccc' : '#f44336', color: 'white', border: 'none', borderRadius: '6px', cursor: exportLoading ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FaFilePdf />{exportLoading ? 'Generating...' : 'Generate PDF'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -542,8 +1104,17 @@ const ApprovalList = () => {
           </div>
         )}
 
+        {/* Summary */}
+        {!loading && activeTab === 'summary' && (
+          <div style={{ padding: '24px 30px' }}>
+                   {(activityFilter === "All" ? summaryActivities : [activityFilter]).map(t =>
+                    renderSummaryTable(t, summaryGroups[t] || [])
+            )}
+          </div>
+        )}
+
         {/* Table */}
-        {!loading && (
+        {!loading && activeTab === 'history' && (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -627,38 +1198,40 @@ const ApprovalList = () => {
           </div>
         )}
 
-        {/* Pagination */}
-        <div style={{ padding: '20px 30px', backgroundColor: '#fafafa', borderTop: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-          <div style={{ fontSize: '14px', color: '#666' }}>
-            Showing {paginatedData.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to{' '}
-            {Math.min(currentPage * rowsPerPage, filteredData.length)} of {filteredData.length} records
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}
-              style={{ padding: '8px 16px', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#2196f3', color: currentPage === 1 ? '#999' : 'white', border: 'none', borderRadius: '6px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
-              Previous
-            </button>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) pageNum = i + 1;
-                else if (currentPage <= 3) pageNum = i + 1;
-                else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
-                else pageNum = currentPage - 2 + i;
-                return (
-                  <button key={pageNum} onClick={() => setCurrentPage(pageNum)}
-                    style={{ padding: '8px 12px', backgroundColor: currentPage === pageNum ? '#1976d2' : 'white', color: currentPage === pageNum ? 'white' : '#333', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', minWidth: '40px' }}>
-                    {pageNum}
-                  </button>
-                );
-              })}
+        {/* Pagination (history tab only) */}
+        {activeTab === 'history' && (
+          <div style={{ padding: '20px 30px', backgroundColor: '#fafafa', borderTop: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+            <div style={{ fontSize: '14px', color: '#666' }}>
+              Showing {paginatedData.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to{' '}
+              {Math.min(currentPage * rowsPerPage, filteredData.length)} of {filteredData.length} records
             </div>
-            <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages || totalPages === 0}
-              style={{ padding: '8px 16px', backgroundColor: currentPage === totalPages || totalPages === 0 ? '#f5f5f5' : '#2196f3', color: currentPage === totalPages || totalPages === 0 ? '#999' : 'white', border: 'none', borderRadius: '6px', cursor: currentPage === totalPages || totalPages === 0 ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
-              Next
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}
+                style={{ padding: '8px 16px', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#2196f3', color: currentPage === 1 ? '#999' : 'white', border: 'none', borderRadius: '6px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
+                Previous
+              </button>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) pageNum = i + 1;
+                  else if (currentPage <= 3) pageNum = i + 1;
+                  else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                  else pageNum = currentPage - 2 + i;
+                  return (
+                    <button key={pageNum} onClick={() => setCurrentPage(pageNum)}
+                      style={{ padding: '8px 12px', backgroundColor: currentPage === pageNum ? '#1976d2' : 'white', color: currentPage === pageNum ? 'white' : '#333', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', minWidth: '40px' }}>
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages || totalPages === 0}
+                style={{ padding: '8px 16px', backgroundColor: currentPage === totalPages || totalPages === 0 ? '#f5f5f5' : '#2196f3', color: currentPage === totalPages || totalPages === 0 ? '#999' : 'white', border: 'none', borderRadius: '6px', cursor: currentPage === totalPages || totalPages === 0 ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
+                Next
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Remarks/Notes Modal */}
