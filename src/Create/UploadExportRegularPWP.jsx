@@ -71,51 +71,74 @@ const buildOporRows = (filteredData, freshApprovalMap, distributorMap, userMap) 
     });
 };
 
+// kunin ang per-store amounts ng PWP (second page): SKU muna, tapos account budget
+const getDetailMap = (code, accountBudgetMap, skuMap) => {
+    const sku = skuMap?.[code];
+    if (sku && Object.keys(sku).length > 0) return sku;
+    const acc = accountBudgetMap?.[code];
+    if (acc && Object.keys(acc).length > 0) return acc;
+    return null;
+};
+
 const buildPor1Rows = (filteredData, activityMap, accountBudgetMap, skuMap, separate = false) => {
     const rows = [];
+    const noDetails = [];
+
     filteredData.forEach((r) => {
-        // NEW
-        let customerList = [];
-        if (r.branchType) {
-            try {
-                const parsed = JSON.parse(r.branchType);
-                customerList = Array.isArray(parsed) ? parsed.filter(c => c && c.toString().trim() !== "") : [r.branchType];
-            } catch {
-                customerList = r.branchType.split(/[\n,;]/).map(c => c.trim()).filter(c => c.length > 0);
+        // lines: [{ customer, amount }]
+        let lines = [];
+        const detailMap = getDetailMap(r.regularpwpcode, accountBudgetMap, skuMap);
+
+        if (detailMap) {
+            const entries = Object.entries(detailMap).map(([name, amt]) => ({
+                customer: name,
+                amount: parseFloat(amt) || 0,
+            }));
+            if (separate) {
+                lines = entries;
+            } else {
+                lines = [{
+                    customer: entries.map(e => e.customer).join(", "),
+                    amount: entries.reduce((s, e) => s + e.amount, 0),
+                }];
             }
         } else {
-            customerList = [];
-        }
-
-        // ✅ Failsafe: kung walang customer na napunta (empty/blank branchType), gawan pa rin ng 1 default row
-        if (customerList.length === 0) customerList = ["-"];
-
-        const customers = separate ? customerList : [customerList.join(", ")];
-
-        customers.forEach((customer) => {
-            let priceVatExt = parseFloat(r.credit_budget || 0);
-            if (separate) {
-                const accountBudgets = accountBudgetMap?.[r.regularpwpcode];
-                const skuBudgets = skuMap?.[r.regularpwpcode];
-                if (skuBudgets && skuBudgets[customer]) {
-                    priceVatExt = skuBudgets[customer];
-                } else if (accountBudgets && accountBudgets[customer]) {
-                    priceVatExt = accountBudgets[customer];
-                } else if (customerList.length > 1) {
-                    priceVatExt = parseFloat(r.credit_budget || 0) / customerList.length;
+            // walang per-store details: fallback sa branchType + credit_budget
+            noDetails.push(r.regularpwpcode);
+            let customerList = [];
+            if (r.branchType) {
+                try {
+                    const parsed = JSON.parse(r.branchType);
+                    customerList = Array.isArray(parsed)
+                        ? parsed.filter(c => c && c.toString().trim() !== "")
+                        : [r.branchType];
+                } catch {
+                    customerList = r.branchType.split(/[\n,;]/).map(c => c.trim()).filter(c => c.length > 0);
                 }
             }
+            if (customerList.length === 0) customerList = ["-"];
+            const total = parseFloat(r.credit_budget || 0);
+            lines = separate
+                ? customerList.map(c => ({ customer: c, amount: total / customerList.length }))
+                : [{ customer: customerList.join(", "), amount: total }];
+        }
+
+        lines.forEach(({ customer, amount }) => {
             const row = blankRow(POR1_TOTAL_COLS);
             row[POR1_COL["NumAtCard"] - 1] = r.regularpwpcode;
             row[POR1_COL["Dscription"] - 1] = cleanText(activityMap[r.activity]?.name || r.activity);
             row[POR1_COL["AcctCode"] - 1] = cleanText(activityMap[r.activity]?.glcode || "");
-            row[POR1_COL["PriceBefDi"] - 1] = parseFloat(priceVatExt) || 0;
+            row[POR1_COL["PriceBefDi"] - 1] = parseFloat(amount) || 0;
             row[POR1_COL["U_U_Customers"] - 1] = cleanText(customer);
             row[POR1_COL["U_Start_Date"] - 1] = formatDateYYYYMMDD(r.activityDurationFrom);
             row[POR1_COL["U_End_Date"] - 1] = formatDateYYYYMMDD(r.activityDurationTo);
             rows.push(row);
         });
     });
+
+    if (noDetails.length > 0) {
+        console.warn(`⚠️ ${noDetails.length} PWP walang per-store details (credit_budget ang ginamit):`, noDetails);
+    }
     return rows;
 };
 
@@ -258,8 +281,9 @@ const UploadExportRegularPWP = () => {
         let hasApprovalMore = true;
         while (hasApprovalMore) {
             const { data: approvalData, error: approvalError } = await supabase
-                .from("Approval_History")
+                            .from("Approval_History")
                 .select("PwpCode, DateResponded, Response")
+                .order("id", { ascending: true })
                 .range(approvalOffset, approvalOffset + batchSize - 1);
             if (approvalError || !approvalData || approvalData.length === 0) { hasApprovalMore = false; break; }
             approvalData.forEach(a => {
@@ -295,7 +319,49 @@ const UploadExportRegularPWP = () => {
         }
         return allData;
     };
+    // ============================================================
+    // SHARED: Per-store amounts (second page) ng lahat ng PWP
+    // ============================================================
+    const fetchDetailMaps = async (batchSize = 1000) => {
+        const accountBudgetMap = {};
+        const skuMap = {};
 
+        let offset = 0, more = true;
+        while (more) {
+            const { data, error } = await supabase
+                .from("regular_accountlis_badget")
+                .select("regularcode, account_name, budget")
+                .order("id", { ascending: true })
+                .range(offset, offset + batchSize - 1);
+            if (error || !data?.length) break;
+            data.forEach(b => {
+                const name = String(b.account_name ?? "").trim();
+                if (!accountBudgetMap[b.regularcode]) accountBudgetMap[b.regularcode] = {};
+                accountBudgetMap[b.regularcode][name] = (accountBudgetMap[b.regularcode][name] || 0) + parseFloat(b.budget || 0);
+            });
+            offset += batchSize;
+            more = data.length === batchSize;
+        }
+
+        offset = 0; more = true;
+        while (more) {
+            const { data, error } = await supabase
+                .from("regular_sku")
+                .select("regular_code, account_name, total_amount")
+                .order("id", { ascending: true })
+                .range(offset, offset + batchSize - 1);
+            if (error || !data?.length) break;
+            data.forEach(s => {
+                const name = String(s.account_name ?? "").trim();
+                if (!skuMap[s.regular_code]) skuMap[s.regular_code] = {};
+                skuMap[s.regular_code][name] = (skuMap[s.regular_code][name] || 0) + parseFloat(s.total_amount || 0);
+            });
+            offset += batchSize;
+            more = data.length === batchSize;
+        }
+
+        return { accountBudgetMap, skuMap };
+    };
     // ============================================================
     // SHARED: Apply date range filter
     // ============================================================
@@ -306,8 +372,8 @@ const UploadExportRegularPWP = () => {
                 ? new Date(approvalMap[r.regularpwpcode].date)
                 : null;
             if (!postingDate) return false;
-            const fFrom = dateFrom ? new Date(dateFrom) : null;
-            const fTo = dateTo ? new Date(dateTo) : null;
+                   const fFrom = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+            const fTo = dateTo ? new Date(dateTo + "T23:59:59") : null;
             if (fFrom && fTo) return postingDate >= fFrom && postingDate <= fTo;
             if (fFrom && !fTo) return postingDate >= fFrom;
             if (!fFrom && fTo) return postingDate <= fTo;
@@ -338,7 +404,8 @@ const UploadExportRegularPWP = () => {
             const exportedBy = currentUser?.name || "Unknown";
             setExportHistory({ dateFrom, dateTo, exportedCodes, exportedAt: new Date().toISOString(), totalRecords: exportedCodes.length });
             setExportedCodesSet(new Set(exportedCodes));
-            await supabase.from("export_history").insert([{ date_from: dateFrom, date_to: dateTo, pwp_codes: exportedCodes, exported_by: exportedBy, total_records: exportedCodes.length }]);
+            const { error } = await supabase.from("export_history").insert([{ date_from: dateFrom || null, date_to: dateTo || null, pwp_codes: exportedCodes, exported_by: exportedBy, total_records: exportedCodes.length }]);
+            if (error) console.error("❌ export_history insert failed:", error);
         } catch (err) { console.error("❌ Error saving export history:", err); }
     };
 
@@ -376,7 +443,8 @@ const UploadExportRegularPWP = () => {
             }
 
             const oporDataRows = buildOporRows(filteredData, freshApprovalMap, distributorMap, userMap);
-            const por1DataRows = buildPor1Rows(filteredData, activityMap, null, null, false);
+                    const { accountBudgetMap, skuMap } = await fetchDetailMaps(batchSize);
+            const por1DataRows = buildPor1Rows(filteredData, activityMap, accountBudgetMap, skuMap, false);
             const dateStamp = formatDateYYYYMMDD(new Date().toISOString());
 
             buildAndDownloadWorkbook(
@@ -410,7 +478,7 @@ const UploadExportRegularPWP = () => {
                 freshApprovalMap[r.regularpwpcode]?.status?.toLowerCase() === "approved"
             );
             // NEW
-            filteredData = applyDateFilter(filteredData, dateFrom, dateTo);
+                  filteredData = applyDateFilter(filteredData, dateFrom, dateTo, freshApprovalMap);
 
             // ✅ I-filter out yung walang valid SAP Vendor Code
             filteredData = filteredData.filter(r => {
@@ -423,35 +491,7 @@ const UploadExportRegularPWP = () => {
                 return;
             }
 
-            // Fetch account budget data
-            let accountBudgetMap = {};
-            let budgetOffset = 0;
-            let hasBudgetMore = true;
-            while (hasBudgetMore) {
-                const { data: budgetData, error } = await supabase.from("regular_accountlis_badget").select("regularcode, account_name, budget").range(budgetOffset, budgetOffset + batchSize - 1);
-                if (error || !budgetData?.length) { hasBudgetMore = false; break; }
-                budgetData.forEach(b => {
-                    if (!accountBudgetMap[b.regularcode]) accountBudgetMap[b.regularcode] = {};
-                    accountBudgetMap[b.regularcode][b.account_name] = parseFloat(b.budget || 0);
-                });
-                budgetOffset += batchSize;
-                hasBudgetMore = budgetData.length === batchSize;
-            }
-
-            // Fetch SKU data
-            let skuMap = {};
-            let skuOffset = 0;
-            let hasSkuMore = true;
-            while (hasSkuMore) {
-                const { data: skuData, error } = await supabase.from("regular_sku").select("regular_code, account_name, total_amount").range(skuOffset, skuOffset + batchSize - 1);
-                if (error || !skuData?.length) { hasSkuMore = false; break; }
-                skuData.forEach(s => {
-                    if (!skuMap[s.regular_code]) skuMap[s.regular_code] = {};
-                    skuMap[s.regular_code][s.account_name] = (skuMap[s.regular_code][s.account_name] || 0) + parseFloat(s.total_amount || 0);
-                });
-                skuOffset += batchSize;
-                hasSkuMore = skuData.length === batchSize;
-            }
+                      const { accountBudgetMap, skuMap } = await fetchDetailMaps(batchSize);
 
             const oporDataRows = buildOporRows(filteredData, freshApprovalMap, distributorMap, userMap);
             const por1DataRows = buildPor1Rows(filteredData, activityMap, accountBudgetMap, skuMap, true);
@@ -561,7 +601,7 @@ const UploadExportRegularPWP = () => {
         try {
             const batchSize = 1000; let allData = []; let hasMore = true; let offset = 0;
             while (hasMore) {
-                const { data, error } = await supabase.from("Approval_History").select("PwpCode, DateResponded, Response").range(offset, offset + batchSize - 1);
+                const { data, error } = await supabase.from("Approval_History").select("PwpCode, DateResponded, Response").order("id", { ascending: true }).range(offset, offset + batchSize - 1);
                 if (error || !data?.length) { hasMore = false; break; }
                 allData = [...allData, ...data]; offset += batchSize; hasMore = data.length === batchSize;
             }
